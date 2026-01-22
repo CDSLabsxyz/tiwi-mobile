@@ -1,0 +1,3245 @@
+Create your first app
+In this chapter, learn how to create a new Expo project.
+
+
+
+Copy page
+
+In this chapter, let's learn how to create a new Expo project and how to get it running.
+
+Watch: Creating your first universal Expo app
+Watch: Creating your first universal Expo app
+Prerequisites
+We'll need the following to get started:
+
+Expo Go installed on a physical device
+Node.js (LTS version) installed
+VS Code or any other preferred code editor or IDE installed
+A macOS, Linux, or Windows (PowerShell and WSL2) with a terminal window open
+The tutorial assumes that you are familiar with TypeScript and React. If you are not familiar with them, check out the TypeScript Handbook and React's official tutorial.
+
+1
+
+Initialize a new Expo app
+We'll use create-expo-app to initialize a new Expo app. It is a command line tool to create a new React Native project. Run the following command in your terminal:
+
+Terminal
+
+Copy
+
+npx create-expo-app@latest StickerSmash
+cd StickerSmash
+This command will create a new project directory named StickerSmash, using the default template. This template has essential boilerplate code and libraries needed to build our app, including Expo Router. We'll continue to add more libraries throughout this tutorial as needed.
+
+Benefits of using the default template
+2
+
+Download assets
+Download assets archive
+We'll be using these assets throughout this tutorial.
+
+After downloading the archive:
+
+Unzip the archive and replace the default assets in the your-project-name/assets/images directory.
+Open the project directory in a code editor or IDE.
+3
+
+Run reset-project script
+In this tutorial, we'll build our app from scratch and understand the fundamentals of adding a file-based navigation. Let's run the reset-project script to remove the boilerplate code:
+
+Terminal
+
+Copy
+
+npm run reset-project
+After running the above command, there are two files (index.tsx and _layout.tsx) left inside the app directory. The previous files from app and other directories (components, constants, and hooks — containing boilerplate code) are moved inside the app-example directory by the script. We'll create our own directories and component files as we go along.
+
+What does the reset-project script do?
+
+4
+
+Run the app on mobile and web
+In the project directory, run the following command to start the development server from the terminal:
+
+Terminal
+
+Copy
+
+npx expo start
+After running the above command:
+
+The development server will start, and you'll see a QR code inside the terminal window.
+Scan that QR code to open the app on the device. On Android, use the Expo Go > Scan QR code option. On iOS, use the default camera app.
+To run the web app, press w in the terminal. It will open the web app in the default web browser.
+Once it is running on all platforms, the app should look like this:
+
+App running on all platforms
+5
+
+Edit the index screen
+The app/index.tsx file defines the text displayed on the app's screen. It is the entry point of our app and executes when the development server starts. It uses core React Native components such as <View> and <Text> to display background and text.
+
+Styles applied to these components use JavaScript objects rather than CSS, which is used on web. However, a lot of the properties will look familiar if you've previously used CSS on web. Most React Native components accept a style prop that accepts a JavaScript object as its value. For more details, see Styling in React Native.
+
+Let's modify app/index.tsx screen:
+
+Import StyleSheet from react-native and create a styles object to define our custom styles.
+Add a styles.container.backgroundColor property to <View> with the value of #25292e. This changes the background color.
+Replace the default value of <Text> with "Home screen".
+Add a styles.text.color property to <Text> with the value of #fff (white) to change the text color.
+app/index.tsx
+
+Copy
+
+
+import { Text, View, StyleSheet } from 'react-native';
+
+export default function Index() {
+  return (
+    <View style={styles.container}>
+      <Text style={styles.text}>Home screen</Text>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#25292e',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  text: {
+    color: '#fff',
+  },
+});
+
+Show More
+React Native uses the same color format as the web. It supports hex triplets (this is what #fff is), rgba, hsl, and named colors, such as red, green, blue, peru, and papayawhip. For more information, see Colors in React Native.
+
+Once you save your changes, they're sent and applied to the running apps connected to the development server:
+
+App with updated text and background color
+Summary
+Chapter 1: Create your first app
+
+We've successfully created a new Expo project, used React Native core components, and are ready to develop our StickerSmash app.
+
+
+
+In the next chapter, we will learn how to add a stack and a tab navigator to our app.
+
+
+Add navigation
+In this chapter, learn how to add navigation to the Expo app.
+
+
+
+Copy page
+
+In this chapter, we'll learn Expo Router's fundamentals to create stack navigation and a bottom tab bar with two tabs.
+
+Watch: Adding navigation in your universal Expo app
+Watch: Adding navigation in your universal Expo app
+Expo Router basics
+Expo Router is a file-based routing framework for React Native and web apps. It manages navigation between screens and uses the same components across multiple platforms. To get started, we need to know about the following conventions:
+
+app directory: A special directory containing only routes and their layouts. Any files added to this directory become a screen inside our native app and a page on the web.
+Root layout: The app/_layout.tsx file. It defines shared UI elements such as headers and tab bars so they are consistent between different routes.
+File name conventions: Index file names, such as index.tsx, match their parent directory and do not add a path segment. For example, the index.tsx file in the app directory matches / route.
+A route file exports a React component as its default value. It can use either .js, .jsx, .ts, or .tsx extension.
+Android, iOS, and web share a unified navigation structure.
+The above list is enough for us to get started. For a complete list of features, see Introduction to Expo Router.
+
+1
+
+Add a new screen to the stack
+Let's create a new file named about.tsx inside the app directory. It displays the screen name when the user navigates to the /about route.
+
+app/about.tsx
+
+Copy
+
+
+import { Text, View, StyleSheet } from 'react-native';
+
+export default function AboutScreen() {
+  return (
+    <View style={styles.container}>
+      <Text style={styles.text}>About screen</Text>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#25292e',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  text: {
+    color: '#fff',
+  },
+});
+
+Show More
+Inside app/_layout.tsx:
+
+Add a <Stack.Screen /> component and an options prop to update the title of the /about route.
+Update the /index route's title to Home by adding options prop.
+app/_layout.tsx
+
+Copy
+
+
+import { Stack } from 'expo-router';
+
+export default function RootLayout() {
+  return (
+    <Stack>
+      <Stack.Screen name="index" options={{ title: 'Home' }} />
+      <Stack.Screen name="about" options={{ title: 'About' }} />
+    </Stack>
+  );
+}
+What is a Stack?
+
+2
+
+Navigate between screens
+We'll use Expo Router's Link component to navigate from the /index route to the /about route. It is a React component that renders a <Text> with a given href prop.
+
+Import the Link component from expo-router inside index.tsx.
+Add a Link component after <Text> component and pass href prop with the /about route.
+Add a style of fontSize, textDecorationLine, and color to Link component. It takes the same props as the <Text> component.
+app/index.tsx
+
+Copy
+
+
+import { Text, View, StyleSheet } from 'react-native';
+import { Link } from 'expo-router';
+
+export default function Index() {
+  return (
+    <View style={styles.container}>
+      <Text style={styles.text}>Home screen</Text>
+      <Link href="/about" style={styles.button}>
+        Go to About screen
+      </Link>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#25292e',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  text: {
+    color: '#fff',
+  },
+  button: {
+    fontSize: 20,
+    textDecorationLine: 'underline',
+    color: '#fff',
+  },
+});
+
+Show More
+Let's take a look at the changes in our app. Click on Link to navigate to the /about route:
+
+3
+
+Add a not-found route
+When a route doesn't exist, we can use a +not-found route to display a fallback screen. This is useful when we want to display a custom screen when navigating to an invalid route on mobile instead of crashing the app or display a 404 error on web. Expo Router uses a special +not-found.tsx file to handle this case.
+
+Create a new file named +not-found.tsx inside the app directory to add the NotFoundScreen component.
+Add options prop from the Stack.Screen to display a custom screen title for this route.
+Add a Link component to navigate to the / route, which is our fallback route.
+app/+not-found.tsx
+
+Copy
+
+
+import { View, StyleSheet } from 'react-native';
+import { Link, Stack } from 'expo-router';
+
+export default function NotFoundScreen() {
+  return (
+    <>
+      <Stack.Screen options={{ title: 'Oops! Not Found' }} />
+      <View style={styles.container}>
+        <Link href="/" style={styles.button}>
+          Go back to Home screen!
+        </Link>
+      </View>
+    </>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#25292e',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  button: {
+    fontSize: 20,
+    textDecorationLine: 'underline',
+    color: '#fff',
+  },
+});
+
+Show More
+To test this, navigate to http:localhost:8081/123 URL in the web browser since it is easy to change the URL path there. The app should display the NotFoundScreen component:
+
+4
+
+Add a bottom tab navigator
+At this point, the file structure of our app directory looks like the following:
+
+app
+ 
+_layout.tsx
+Root layout
+ 
+index.tsx
+matches route '/'
+ 
+about.tsx
+matches route '/about'
+ 
++not-found.tsx
+matches route any 404 route
+We'll add a bottom tab navigator to our app and reuse the existing Home and About screens to create a tab layout (a common navigation pattern in many social media apps like X or BlueSky). We'll also use the stack navigator in the Root layout so the +not-found route displays over any other nested navigators.
+
+Inside the app directory, add a (tabs) subdirectory. This special directory is used to group routes together and display them in a bottom tab bar.
+Create a (tabs)/_layout.tsx file inside the directory. It will be used to define the tab layout, which is separate from Root layout.
+Move the existing index.tsx and about.tsx files inside the (tabs) directory. The structure of app directory will look like this:
+app
+ 
+_layout.tsx
+Root layout
+ 
++not-found.tsx
+matches route any 404 route
+ 
+(tabs)
+  
+_layout.tsx
+Tab layout
+  
+index.tsx
+matches route '/'
+  
+about.tsx
+matches route '/about'
+Update the Root layout file to add a (tabs) route:
+
+app/_layout.tsx
+
+Copy
+
+
+import { Stack } from 'expo-router';
+
+export default function RootLayout() {
+  return (
+    <Stack>
+      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+    </Stack>
+  );
+}
+Inside (tabs)/_layout.tsx, add a Tabs component to define the bottom tab layout:
+
+app/(tabs)/_layout.tsx
+
+Copy
+
+
+import { Tabs } from 'expo-router';
+
+export default function TabLayout() {
+  return (
+    <Tabs>
+      <Tabs.Screen name="index" options={{ title: 'Home' }} />
+      <Tabs.Screen name="about" options={{ title: 'About' }} />
+    </Tabs>
+  );
+}
+Let's take a look at our app now to see the new bottom tabs:
+
+Bottom tab navigator shown on all platforms
+5
+
+Update bottom tab navigator appearance
+Right now, the bottom tab navigator looks the same on all platforms but doesn't match the style of our app. For example, the tab bar or header doesn't display a custom icon, and the bottom tab background color doesn't match the app's background color.
+
+Modify the (tabs)/_layout.tsx file to add tab bar icons:
+
+Import Ionicons icons set from @expo/vector-icons — a library that includes popular icon sets.
+Add the tabBarIcon to both the index and about routes. This function takes focused and color as params and renders the icon component. From the icon set, we can provide custom icon names.
+Add screenOptions.tabBarActiveTintColor to the Tabs component and set its value to #ffd33d. This will change the color of the tab bar icon and label when active.
+app/(tabs)/_layout.tsx
+
+Copy
+
+
+import { Tabs } from 'expo-router';
+import Ionicons from '@expo/vector-icons/Ionicons';
+
+export default function TabLayout() {
+  return (
+    <Tabs
+      screenOptions={{
+        tabBarActiveTintColor: '#ffd33d',
+      }}
+    >
+      <Tabs.Screen
+        name="index"
+        options={{
+          title: 'Home',
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? 'home-sharp' : 'home-outline'} color={color} size={24} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="about"
+        options={{
+          title: 'About',
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? 'information-circle' : 'information-circle-outline'} color={color} size={24}/>
+          ),
+        }}
+      />
+    </Tabs>
+  );
+}
+
+Show More
+Let's also change the background color of the tab bar and header using screenOptions prop:
+
+app/(tabs)/_layout.tsx
+
+Copy
+
+
+<Tabs
+  screenOptions={{
+    tabBarActiveTintColor: '#ffd33d',
+    headerStyle: {
+      backgroundColor: '#25292e',
+    },
+    headerShadowVisible: false,
+    headerTintColor: '#fff',
+    tabBarStyle: {
+      backgroundColor: '#25292e',
+    },
+  }}
+>
+In the above code:
+
+The header's background is set to #25292e using the headerStyle property. We have also disabled the header's shadow using headerShadowVisible.
+headerTintColor applies #fff to the header label
+tabBarStyle.backgroundColor applies #25292e to the tab bar
+Our app now has a custom bottom tabs navigator:
+
+Custom bottom tabs navigator
+Summary
+Chapter 2: Add navigation
+
+We've successfully added a stack and a tab navigator to our app.
+
+
+
+In the next chapter, we'll learn how to build the app's first screen.
+
+
+Build a screen
+In this tutorial, learn how to use components such as React Native's Pressable and Expo Image to build a screen.
+
+
+
+Copy page
+
+In this chapter, we'll create the first screen of the StickerSmash app.
+
+Initial layout.
+The screen above displays an image and two buttons. The app user can select an image using one of the two buttons. The first button allows the user to select an image from their device. The second button allows the user to continue with a default image provided by the app.
+
+Once the user selects an image, they can add a sticker to it. So, let's start creating this screen.
+
+Watch: Building a screen in your universal Expo app
+Watch: Building a screen in your universal Expo app
+1
+
+Break down the screen
+Before we build this screen by writing code, let's break it down into some essential elements.
+
+Break down of initial layout.
+There are two essential elements:
+
+There is a large image displayed at the center of the screen
+There are two buttons in the bottom half of the screen
+The first button contains multiple components. The parent element provides a yellow border, and contains an icon and text components inside a row.
+
+Break down of the button component with row.
+Now that we've broken down the UI into smaller chunks, we're ready to start coding.
+
+2
+
+Display the image
+We'll use expo-image library to display the image in the app. It provides a cross-platform <Image> component to load and render an image.
+
+Stop the development server by pressing Ctrl + c in the terminal. Then, install the expo-image library:
+
+Terminal
+
+Copy
+
+npx expo install expo-image
+The npx expo install command will install the library and add it to the project's dependencies in package.json.
+
+Tip: Any time we install a new library in our project, stop the development server by pressing Ctrl + c in the terminal and then run the installation command. After the installation completes, we can start the development server again by running npx expo start from the same terminal window.
+The Image component takes the source of an image as its value. The source can be either a static asset or a URL. For example, the source required from assets/images directory is static. It can also come from Network as a uri property.
+
+Background image that we are going to use as a placeholder for the tutorial.
+To use the Image component in app/(tabs)/index.tsx file:
+
+Import Image from the expo-image library.
+Create a PlaceholderImage variable to use assets/images/background-image.png file as the source prop on the Image component.
+app/(tabs)/index.tsx
+
+Copy
+
+
+import { View, StyleSheet } from 'react-native';
+import { Image } from 'expo-image';
+
+const PlaceholderImage = require('@/assets/images/background-image.png');
+
+export default function Index() {
+  return (
+    <View style={styles.container}>
+      <View style={styles.imageContainer}>
+        <Image source={PlaceholderImage} style={styles.image} />
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#25292e',
+    alignItems: 'center',
+  },
+  imageContainer: {
+    flex: 1,
+  },
+  image: {
+    width: 320,
+    height: 440,
+    borderRadius: 18,
+  },
+});
+
+Show More
+3
+
+Divide components into files
+Let's divide the code into multiple files as we add more components to this screen. Throughout this tutorial, we'll use the components directory to create custom components.
+
+Create a top-level components directory, and inside it, create the ImageViewer.tsx file.
+Move the code to display the image in this file along with the image styles.
+components/ImageViewer.tsx
+
+Copy
+
+
+import { ImageSourcePropType, StyleSheet } from 'react-native';
+import { Image } from 'expo-image';
+
+type Props = {
+  imgSource: ImageSourcePropType;
+};
+
+export default function ImageViewer({ imgSource }: Props) {
+  return <Image source={imgSource} style={styles.image} />;
+}
+
+const styles = StyleSheet.create({
+  image: {
+    width: 320,
+    height: 440,
+    borderRadius: 18,
+  },
+});
+
+Show More
+Since ImageViewer is a custom component, we are placing it in a separate directory instead of the app directory. Every file inside app directory is either a layout file or a route file. For more information, see Non-navigation components live outside of app directory.
+Import ImageViewer and use it in the app/(tabs)/index.tsx:
+
+app/(tabs)/index.tsx
+
+Copy
+
+
+import { StyleSheet, View } from 'react-native';
+
+import ImageViewer from '@/components/ImageViewer';
+
+const PlaceholderImage = require('@/assets/images/background-image.png');
+
+export default function Index() {
+  return (
+    <View style={styles.container}>
+      <View style={styles.imageContainer}>
+        <ImageViewer imgSource={PlaceholderImage} />
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#25292e',
+    alignItems: 'center',
+  },
+  imageContainer: {
+    flex: 1,
+  },
+});
+
+Show More
+What is the @ in import statement?
+
+4
+
+Create buttons using Pressable
+React Native includes a few different components for handling touch events, but <Pressable> is recommended for its flexibility. It can detect single taps, long presses, trigger separate events when the button is pushed in and released, and more.
+
+In the design, there are two buttons we need to create. Each has a different style and label. Let's start by creating a reusable component for these buttons. Create a Button.tsx file inside the components directory with the following code:
+
+components/Button.tsx
+
+Copy
+
+
+import { StyleSheet, View, Pressable, Text } from 'react-native';
+
+type Props = {
+  label: string;
+};
+
+export default function Button({ label }: Props) {
+  return (
+    <View style={styles.buttonContainer}>
+      <Pressable style={styles.button} onPress={() => alert('You pressed a button.')}>
+        <Text style={styles.buttonLabel}>{label}</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  buttonContainer: {
+    width: 320,
+    height: 68,
+    marginHorizontal: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 3,
+  },
+  button: {
+    borderRadius: 10,
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+  },
+  buttonLabel: {
+    color: '#fff',
+    fontSize: 16,
+  },
+});
+
+Show More
+The app displays an alert when the user taps any of the buttons on the screen. It happens because <Pressable> calls alert() on its onPress prop. Let's import this component into app/(tabs)/index.tsx file and add styles for the <View> that encapsulates these buttons:
+
+app/(tabs)/index.tsx
+
+Copy
+
+
+import { View, StyleSheet } from 'react-native';
+
+import Button from '@/components/Button';
+import ImageViewer from '@/components/ImageViewer';
+
+const PlaceholderImage = require("@/assets/images/background-image.png");
+
+export default function Index() {
+  return (
+    <View style={styles.container}>
+      <View style={styles.imageContainer}>
+        <ImageViewer imgSource={PlaceholderImage} />
+      </View>
+      <View style={styles.footerContainer}>
+        <Button label="Choose a photo" />
+        <Button label="Use this photo" />
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#25292e',
+    alignItems: 'center',
+  },
+  imageContainer: {
+    flex: 1,
+    paddingTop: 28,
+  },
+  footerContainer: {
+    flex: 1 / 3,
+    alignItems: 'center',
+  },
+});
+
+Show More
+Let's take a look at our app on Android, iOS and the web:
+
+Initial layout.
+The second button with the label "Use this photo" resembles the actual button from the design. However, the first button needs more styling to match the design.
+
+5
+
+Enhance the reusable button component
+The "Choose a photo" button requires different styling than the "Use this photo" button, so we will add a new button theme prop that will allow us to apply a primary theme. This button also has an icon before the label. We will use an icon from the @expo/vector-icons library.
+
+To load and display the icon on the button, let's use FontAwesome from the library. Modify components/Button.tsx to add the following code snippet:
+
+components/Button.tsx
+
+Copy
+
+
+import { StyleSheet, View, Pressable, Text } from 'react-native';
+import FontAwesome from '@expo/vector-icons/FontAwesome';
+
+type Props = {
+  label: string;
+  theme?: 'primary';
+};
+
+export default function Button({ label, theme }: Props) {
+  if (theme === 'primary') {
+  return (
+      <View
+        style={[
+          styles.buttonContainer,
+          { borderWidth: 4, borderColor: '#ffd33d', borderRadius: 18 },
+        ]}>
+        <Pressable
+          style={[styles.button, { backgroundColor: '#fff' }]}
+          onPress={() => alert('You pressed a button.')}>
+          <FontAwesome name="picture-o" size={18} color="#25292e" style={styles.buttonIcon} />
+          <Text style={[styles.buttonLabel, { color: '#25292e' }]}>{label}</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.buttonContainer}>
+      <Pressable style={styles.button} onPress={() => alert('You pressed a button.')}>
+        <Text style={styles.buttonLabel}>{label}</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  buttonContainer: {
+    width: 320,
+    height: 68,
+    marginHorizontal: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 3,
+  },
+  button: {
+    borderRadius: 10,
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+  },
+  buttonIcon: {
+    paddingRight: 8,
+  },
+  buttonLabel: {
+    color: '#fff',
+    fontSize: 16,
+  },
+});
+
+Show More
+Let's learn what the above code does:
+
+The primary theme button uses inline styles, which overrides the styles defined in StyleSheet.create() with an object directly passed in the style prop.
+The <Pressable> component in the primary theme uses a backgroundColor property with a value #fff to set the button's background to white. If we add this property to the styles.button, the background color value will be set for both the primary theme and the unstyled one.
+Inline styles use JavaScript and override the default styles for a specific value.
+Now, modify the app/(tabs)/index.tsx file to use the theme="primary" prop on the first button.
+
+app/(tabs)/index.tsx
+
+Copy
+
+
+import { View, StyleSheet } from 'react-native';
+
+import Button from '@/components/Button';
+import ImageViewer from '@/components/ImageViewer';
+
+const PlaceholderImage = require('@/assets/images/background-image.png');
+
+export default function Index() {
+  return (
+    <View style={styles.container}>
+      <View style={styles.imageContainer}>
+        <ImageViewer imgSource={PlaceholderImage} />
+      </View>
+      <View style={styles.footerContainer}>
+        <Button theme="primary" label="Choose a photo" />
+        <Button label="Use this photo" />
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#25292e',
+    alignItems: 'center',
+  },
+  imageContainer: {
+    flex: 1,
+  },
+  footerContainer: {
+    flex: 1 / 3,
+    alignItems: 'center',
+  },
+});
+
+Show More
+Let's take a look at our app on Android, iOS and the web:
+
+Summary
+Chapter 3: Build a screen
+
+We've successfully implemented the initial design to start building our app's first screen.
+
+
+
+In the next chapter, we'll add the functionality to pick an image from the device's media library.
+
+Use an image picker
+In this tutorial, learn how to use Expo Image Picker.
+
+
+
+Copy page
+
+React Native provides built-in components as standard building blocks, such as <View>, <Text>, and <Pressable>. We are building a feature to select an image from the device's media gallery. This isn't possible with the core components and we'll need a library to add this feature in our app.
+
+We'll use expo-image-picker, a library from Expo SDK.
+
+expo-image-picker provides access to the system's UI to select images and videos from the phone's library.
+
+Watch: Using an image picker in your universal Expo app
+Watch: Using an image picker in your universal Expo app
+1
+
+Install expo-image-picker
+To install the library, run the following command:
+
+Terminal
+
+Copy
+
+npx expo install expo-image-picker
+2
+
+Pick an image from the device's media library
+expo-image-picker provides launchImageLibraryAsync() method to display the system UI by choosing an image or a video from the device's media library. We'll use the primary themed button created in the previous chapter to select an image from the device's media library and create a function to launch the device's image library to implement this functionality.
+
+In app/(tabs)/index.tsx, import expo-image-picker library and create a pickImageAsync() function inside the Index component:
+
+app/(tabs)/index.tsx
+
+Copy
+
+
+// ...rest of the import statements remain unchanged
+import * as ImagePicker from 'expo-image-picker';
+
+export default function Index() {
+  const pickImageAsync = async () => {
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      quality: 1,
+    });
+
+    if (!result.canceled) {
+      console.log(result);
+    } else {
+      alert('You did not select any image.');
+    }
+  };
+
+  // ...rest of the code remains same
+}
+
+Show More
+Let's learn what the above code does:
+
+The launchImageLibraryAsync() receives an object to specify different options. This object is the ImagePickerOptions object, which we are passing when invoking the method.
+When allowsEditing is set to true, the user can crop the image during the selection process on Android and iOS.
+3
+
+Update the button component
+On pressing the primary button, we'll call the pickImageAsync() function on the Button component. Update the onPress prop of the Button component in components/Button.tsx:
+
+components/Button.tsx
+
+Copy
+
+
+import { StyleSheet, View, Pressable, Text } from 'react-native';
+import FontAwesome from '@expo/vector-icons/FontAwesome';
+
+type Props = {
+  label: string;
+  theme?: 'primary';
+  onPress?: () => void;
+};
+
+export default function Button({ label, theme, onPress }: Props) {
+  if (theme === 'primary') {
+    return (
+      <View
+        style={[
+          styles.buttonContainer,
+          { borderWidth: 4, borderColor: '#ffd33d', borderRadius: 18 },
+        ]}>
+        <Pressable style={[styles.button, { backgroundColor: '#fff' }]} onPress={onPress}>
+          <FontAwesome name="picture-o" size={18} color="#25292e" style={styles.buttonIcon} />
+          <Text style={[styles.buttonLabel, { color: '#25292e' }]}>{label}</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.buttonContainer}>
+      <Pressable style={styles.button} onPress={() => alert('You pressed a button.')}>
+        <Text style={styles.buttonLabel}>{label}</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  buttonContainer: {
+    width: 320,
+    height: 68,
+    marginHorizontal: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 3,
+  },
+  button: {
+    borderRadius: 10,
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+  },
+  buttonIcon: {
+    paddingRight: 8,
+  },
+  buttonLabel: {
+    color: '#fff',
+    fontSize: 16,
+  },
+});
+
+Show More
+In app/(tabs)/index.tsx, add the pickImageAsync() function to the onPress prop on the first <Button>.
+
+app/(tabs)/index.tsx
+
+Copy
+
+
+import { View, StyleSheet } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+
+import Button from '@/components/Button';
+import ImageViewer from '@/components/ImageViewer';
+
+const PlaceholderImage = require('@/assets/images/background-image.png');
+
+export default function Index() {
+  const pickImageAsync = async () => {
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      quality: 1,
+    });
+
+    if (!result.canceled) {
+      console.log(result);
+    } else {
+      alert('You did not select any image.');
+    }
+  };
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.imageContainer}>
+        <ImageViewer imgSource={PlaceholderImage} />
+      </View>
+      <View style={styles.footerContainer}>
+        <Button theme="primary" label="Choose a photo" onPress={pickImageAsync} />
+        <Button label="Use this photo" />
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#25292e',
+    alignItems: 'center',
+  },
+  imageContainer: {
+    flex: 1,
+  },
+  footerContainer: {
+    flex: 1 / 3,
+    alignItems: 'center',
+  },
+});
+
+Show More
+The pickImageAsync() function invokes ImagePicker.launchImageLibraryAsync() and then handles the result. The launchImageLibraryAsync() method returns an object containing information about the selected image.
+
+Here is an example of the result object and the properties it contains:
+
+
+Android
+
+
+iOS
+
+
+web
+
+{
+  "assets": [
+    {
+      "assetId": null,
+      "base64": null,
+      "duration": null,
+      "exif": null,
+      "fileName": "ea574eaa-f332-44a7-85b7-99704c22b402.jpeg",
+      "fileSize": 4513577,
+      "height": 4570,
+      "mimeType": "image/jpeg",
+      "rotation": null,
+      "type": "image",
+      "uri": "file:///data/user/0/host.exp.exponent/cache/ExperienceData/%2540anonymous%252FStickerSmash-13f21121-fc9d-4ec6-bf89-bf7d6165eb69/ImagePicker/ea574eaa-f332-44a7-85b7-99704c22b402.jpeg",
+      "width": 2854
+    }
+  ],
+  "canceled": false
+}
+
+Show More
+4
+
+Use the selected image
+The result object provides the assets array, which contains the uri of the selected image. Let's take this value from the image picker and use it to show the selected image in the app.
+
+Modify the app/(tabs)/index.tsx file:
+
+Declare a state variable called selectedImage using the useState hook from React. We'll use this state variable to hold the URI of the selected image.
+Update the pickImageAsync() function to save the image URI in the selectedImage state variable.
+Pass the selectedImage as a prop to the ImageViewer component.
+app/(tabs)/index.tsx
+
+Copy
+
+
+import { View, StyleSheet } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import { useState } from 'react';
+
+import Button from '@/components/Button';
+import ImageViewer from '@/components/ImageViewer';
+
+const PlaceholderImage = require('@/assets/images/background-image.png');
+
+export default function Index() {
+  const [selectedImage, setSelectedImage] = useState<string | undefined>(undefined);
+
+  const pickImageAsync = async () => {
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      quality: 1,
+    });
+
+    if (!result.canceled) {
+      setSelectedImage(result.assets[0].uri);
+    } else {
+      alert('You did not select any image.');
+    }
+  };
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.imageContainer}>
+        <ImageViewer imgSource={PlaceholderImage} selectedImage={selectedImage} />
+      </View>
+      <View style={styles.footerContainer}>
+        <Button theme="primary" label="Choose a photo" onPress={pickImageAsync} />
+        <Button label="Use this photo" />
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#25292e',
+    alignItems: 'center',
+  },
+  imageContainer: {
+    flex: 1,
+  },
+  footerContainer: {
+    flex: 1 / 3,
+    alignItems: 'center',
+  },
+});
+
+Show More
+Pass the selectedImage prop to the ImageViewer component to display the selected image instead of a placeholder image.
+
+Modify the components/ImageViewer.tsx file to accept the selectedImage prop.
+The source of the image is getting long, so let's also move it to a separate variable called imageSource.
+Pass imageSource as the value of the source prop on the Image component.
+components/ImageViewer.tsx
+
+Copy
+
+
+import { ImageSourcePropType, StyleSheet } from 'react-native';
+import { Image } from 'expo-image';
+
+type Props = {
+  imgSource: ImageSourcePropType;
+  selectedImage?: string;
+};
+
+export default function ImageViewer({ imgSource, selectedImage }: Props) {
+  const imageSource = selectedImage ? { uri: selectedImage } : imgSource;
+
+  return <Image source={imageSource} style={styles.image} />;
+}
+
+const styles = StyleSheet.create({
+  image: {
+    width: 320,
+    height: 440,
+    borderRadius: 18,
+  },
+});
+
+Show More
+In the above snippet, the Image component uses a conditional operator to load the image's source. The picked image is a uri string, not a local asset like the placeholder image.
+
+Let's take a look at our app now:
+
+The images used for the example app in this tutorial were picked from Unsplash.
+
+Summary
+Chapter 4: Use an image picker
+
+We've successfully added the functionality to pick an image from the device's media library.
+
+
+
+In the next chapter, we'll learn how to create an emoji picker modal component.
+
+
+Use an image picker
+In this tutorial, learn how to use Expo Image Picker.
+
+
+
+Copy page
+
+React Native provides built-in components as standard building blocks, such as <View>, <Text>, and <Pressable>. We are building a feature to select an image from the device's media gallery. This isn't possible with the core components and we'll need a library to add this feature in our app.
+
+We'll use expo-image-picker, a library from Expo SDK.
+
+expo-image-picker provides access to the system's UI to select images and videos from the phone's library.
+
+Watch: Using an image picker in your universal Expo app
+Watch: Using an image picker in your universal Expo app
+1
+
+Install expo-image-picker
+To install the library, run the following command:
+
+Terminal
+
+Copy
+
+npx expo install expo-image-picker
+2
+
+Pick an image from the device's media library
+expo-image-picker provides launchImageLibraryAsync() method to display the system UI by choosing an image or a video from the device's media library. We'll use the primary themed button created in the previous chapter to select an image from the device's media library and create a function to launch the device's image library to implement this functionality.
+
+In app/(tabs)/index.tsx, import expo-image-picker library and create a pickImageAsync() function inside the Index component:
+
+app/(tabs)/index.tsx
+
+Copy
+
+
+// ...rest of the import statements remain unchanged
+import * as ImagePicker from 'expo-image-picker';
+
+export default function Index() {
+  const pickImageAsync = async () => {
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      quality: 1,
+    });
+
+    if (!result.canceled) {
+      console.log(result);
+    } else {
+      alert('You did not select any image.');
+    }
+  };
+
+  // ...rest of the code remains same
+}
+
+Show More
+Let's learn what the above code does:
+
+The launchImageLibraryAsync() receives an object to specify different options. This object is the ImagePickerOptions object, which we are passing when invoking the method.
+When allowsEditing is set to true, the user can crop the image during the selection process on Android and iOS.
+3
+
+Update the button component
+On pressing the primary button, we'll call the pickImageAsync() function on the Button component. Update the onPress prop of the Button component in components/Button.tsx:
+
+components/Button.tsx
+
+Copy
+
+
+import { StyleSheet, View, Pressable, Text } from 'react-native';
+import FontAwesome from '@expo/vector-icons/FontAwesome';
+
+type Props = {
+  label: string;
+  theme?: 'primary';
+  onPress?: () => void;
+};
+
+export default function Button({ label, theme, onPress }: Props) {
+  if (theme === 'primary') {
+    return (
+      <View
+        style={[
+          styles.buttonContainer,
+          { borderWidth: 4, borderColor: '#ffd33d', borderRadius: 18 },
+        ]}>
+        <Pressable style={[styles.button, { backgroundColor: '#fff' }]} onPress={onPress}>
+          <FontAwesome name="picture-o" size={18} color="#25292e" style={styles.buttonIcon} />
+          <Text style={[styles.buttonLabel, { color: '#25292e' }]}>{label}</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.buttonContainer}>
+      <Pressable style={styles.button} onPress={() => alert('You pressed a button.')}>
+        <Text style={styles.buttonLabel}>{label}</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  buttonContainer: {
+    width: 320,
+    height: 68,
+    marginHorizontal: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 3,
+  },
+  button: {
+    borderRadius: 10,
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+  },
+  buttonIcon: {
+    paddingRight: 8,
+  },
+  buttonLabel: {
+    color: '#fff',
+    fontSize: 16,
+  },
+});
+
+Show More
+In app/(tabs)/index.tsx, add the pickImageAsync() function to the onPress prop on the first <Button>.
+
+app/(tabs)/index.tsx
+
+Copy
+
+
+import { View, StyleSheet } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+
+import Button from '@/components/Button';
+import ImageViewer from '@/components/ImageViewer';
+
+const PlaceholderImage = require('@/assets/images/background-image.png');
+
+export default function Index() {
+  const pickImageAsync = async () => {
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      quality: 1,
+    });
+
+    if (!result.canceled) {
+      console.log(result);
+    } else {
+      alert('You did not select any image.');
+    }
+  };
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.imageContainer}>
+        <ImageViewer imgSource={PlaceholderImage} />
+      </View>
+      <View style={styles.footerContainer}>
+        <Button theme="primary" label="Choose a photo" onPress={pickImageAsync} />
+        <Button label="Use this photo" />
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#25292e',
+    alignItems: 'center',
+  },
+  imageContainer: {
+    flex: 1,
+  },
+  footerContainer: {
+    flex: 1 / 3,
+    alignItems: 'center',
+  },
+});
+
+Show More
+The pickImageAsync() function invokes ImagePicker.launchImageLibraryAsync() and then handles the result. The launchImageLibraryAsync() method returns an object containing information about the selected image.
+
+Here is an example of the result object and the properties it contains:
+
+
+Android
+
+
+iOS
+
+
+web
+
+{
+  "assets": [
+    {
+      "assetId": null,
+      "base64": null,
+      "duration": null,
+      "exif": null,
+      "fileName": "ea574eaa-f332-44a7-85b7-99704c22b402.jpeg",
+      "fileSize": 4513577,
+      "height": 4570,
+      "mimeType": "image/jpeg",
+      "rotation": null,
+      "type": "image",
+      "uri": "file:///data/user/0/host.exp.exponent/cache/ExperienceData/%2540anonymous%252FStickerSmash-13f21121-fc9d-4ec6-bf89-bf7d6165eb69/ImagePicker/ea574eaa-f332-44a7-85b7-99704c22b402.jpeg",
+      "width": 2854
+    }
+  ],
+  "canceled": false
+}
+
+Show More
+4
+
+Use the selected image
+The result object provides the assets array, which contains the uri of the selected image. Let's take this value from the image picker and use it to show the selected image in the app.
+
+Modify the app/(tabs)/index.tsx file:
+
+Declare a state variable called selectedImage using the useState hook from React. We'll use this state variable to hold the URI of the selected image.
+Update the pickImageAsync() function to save the image URI in the selectedImage state variable.
+Pass the selectedImage as a prop to the ImageViewer component.
+app/(tabs)/index.tsx
+
+Copy
+
+
+import { View, StyleSheet } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import { useState } from 'react';
+
+import Button from '@/components/Button';
+import ImageViewer from '@/components/ImageViewer';
+
+const PlaceholderImage = require('@/assets/images/background-image.png');
+
+export default function Index() {
+  const [selectedImage, setSelectedImage] = useState<string | undefined>(undefined);
+
+  const pickImageAsync = async () => {
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      quality: 1,
+    });
+
+    if (!result.canceled) {
+      setSelectedImage(result.assets[0].uri);
+    } else {
+      alert('You did not select any image.');
+    }
+  };
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.imageContainer}>
+        <ImageViewer imgSource={PlaceholderImage} selectedImage={selectedImage} />
+      </View>
+      <View style={styles.footerContainer}>
+        <Button theme="primary" label="Choose a photo" onPress={pickImageAsync} />
+        <Button label="Use this photo" />
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#25292e',
+    alignItems: 'center',
+  },
+  imageContainer: {
+    flex: 1,
+  },
+  footerContainer: {
+    flex: 1 / 3,
+    alignItems: 'center',
+  },
+});
+
+Show More
+Pass the selectedImage prop to the ImageViewer component to display the selected image instead of a placeholder image.
+
+Modify the components/ImageViewer.tsx file to accept the selectedImage prop.
+The source of the image is getting long, so let's also move it to a separate variable called imageSource.
+Pass imageSource as the value of the source prop on the Image component.
+components/ImageViewer.tsx
+
+Copy
+
+
+import { ImageSourcePropType, StyleSheet } from 'react-native';
+import { Image } from 'expo-image';
+
+type Props = {
+  imgSource: ImageSourcePropType;
+  selectedImage?: string;
+};
+
+export default function ImageViewer({ imgSource, selectedImage }: Props) {
+  const imageSource = selectedImage ? { uri: selectedImage } : imgSource;
+
+  return <Image source={imageSource} style={styles.image} />;
+}
+
+const styles = StyleSheet.create({
+  image: {
+    width: 320,
+    height: 440,
+    borderRadius: 18,
+  },
+});
+
+Show More
+In the above snippet, the Image component uses a conditional operator to load the image's source. The picked image is a uri string, not a local asset like the placeholder image.
+
+Let's take a look at our app now:
+
+The images used for the example app in this tutorial were picked from Unsplash.
+
+Summary
+Chapter 4: Use an image picker
+
+We've successfully added the functionality to pick an image from the device's media library.
+
+
+
+In the next chapter, we'll learn how to create an emoji picker modal component.
+
+Create a modal
+In this tutorial, learn how to create a React Native modal to select an image.
+
+
+
+Copy page
+
+React Native provides a <Modal> component that presents content above the rest of your app. In general, modals are used to draw a user's attention toward critical information or guide them to take action. For example, in the third chapter, after pressing the button, we used alert() to display some placeholder text. That's how a modal component displays an overlay.
+
+In this chapter, we'll create a modal that shows an emoji picker list.
+
+Watch: Creating a modal in your universal Expo app
+Watch: Creating a modal in your universal Expo app
+1
+
+Declare a state variable to show buttons
+Before implementing the modal, we are going to add three new buttons. These buttons are visible after the user picks an image from the media library or uses the placeholder image. One of these buttons will trigger the emoji picker modal.
+
+In app/(tabs)/index.tsx:
+
+Declare a boolean state variable, showAppOptions, to show or hide the buttons that open the modal, alongside a few other options. When the app screen loads, we'll set it to false so the options are not shown before picking an image. When the user picks an image or uses the placeholder image, we'll set it to true.
+Update the pickImageAsync() function to set the value of showAppOptions to true after the user picks an image.
+Update the button with no theme by adding an onPress prop with the following value.
+app/(tabs)/index.tsx
+
+Copy
+
+
+import { View, StyleSheet } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import { useState } from 'react';
+
+import Button from '@/components/Button';
+import ImageViewer from '@/components/ImageViewer';
+
+const PlaceholderImage = require('@/assets/images/background-image.png');
+
+export default function Index() {
+  const [selectedImage, setSelectedImage] = useState<string | undefined>(undefined);
+  const [showAppOptions, setShowAppOptions] = useState<boolean>(false);
+
+  const pickImageAsync = async () => {
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      quality: 1,
+    });
+
+    if (!result.canceled) {
+      setSelectedImage(result.assets[0].uri);
+      setShowAppOptions(true);
+    } else {
+      alert('You did not select any image.');
+    }
+  };
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.imageContainer}>
+        <ImageViewer imgSource={PlaceholderImage} selectedImage={selectedImage} />
+      </View>
+      {showAppOptions ? (
+        <View />
+      ) : (
+        <View style={styles.footerContainer}>
+          <Button theme="primary" label="Choose a photo" onPress={pickImageAsync} />
+          <Button label="Use this photo" onPress={() => setShowAppOptions(true)} />
+        </View>
+      )}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#25292e',
+    alignItems: 'center',
+  },
+  imageContainer: {
+    flex: 1,
+  },
+  footerContainer: {
+    flex: 1 / 3,
+    alignItems: 'center',
+  },
+});
+
+Show More
+In the above snippet, we're rendering the Button component based on the value of showAppOptions and moving the buttons in the ternary operator block. When the value of showAppOptions is true, render an empty <View> component. We'll address this state in the next step.
+
+Now, we can remove the alert on the Button component and update the onPress prop when rendering the second button in the components/Button.tsx:
+
+components/Button.tsx
+
+Copy
+
+
+<Pressable style={styles.button} onPress={onPress}>
+2
+
+Add buttons
+Let's break down the layout of the option buttons we'll implement in this chapter. The design looks like this:
+
+Break down of the layout of the buttons row.
+It contains a parent <View> with three buttons aligned in a row. The button in the middle with the plus icon (+) will open the modal and is styled differently than the other two buttons.
+
+Inside the components directory, create a new CircleButton.tsx file with the following code:
+
+components/CircleButton.tsx
+
+Copy
+
+
+import { View, Pressable, StyleSheet } from 'react-native';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+
+type Props = {
+  onPress: () => void;
+};
+
+export default function CircleButton({ onPress }: Props) {
+  return (
+    <View style={styles.circleButtonContainer}>
+      <Pressable style={styles.circleButton} onPress={onPress}>
+        <MaterialIcons name="add" size={38} color="#25292e" />
+      </Pressable>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  circleButtonContainer: {
+    width: 84,
+    height: 84,
+    marginHorizontal: 60,
+    borderWidth: 4,
+    borderColor: '#ffd33d',
+    borderRadius: 42,
+    padding: 3,
+  },
+  circleButton: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 42,
+    backgroundColor: '#fff',
+  },
+});
+
+Show More
+To render the plus icon, this button uses the <MaterialIcons> icon set from the @expo/vector-icons library.
+
+The other two buttons also use <MaterialIcons> to display vertically aligned text labels and icons. Create a file named IconButton.tsx inside the components directory. This component accepts three props:
+
+icon: the name corresponding to the MaterialIcons library icon.
+label: the text label displayed on the button.
+onPress: this function invokes when the user presses the button.
+components/IconButton.tsx
+
+Copy
+
+
+import { Pressable, StyleSheet, Text } from 'react-native';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+
+type Props = {
+  icon: keyof typeof MaterialIcons.glyphMap;
+  label: string;
+  onPress: () => void;
+};
+
+export default function IconButton({ icon, label, onPress }: Props) {
+  return (
+    <Pressable style={styles.iconButton} onPress={onPress}>
+      <MaterialIcons name={icon} size={24} color="#fff" />
+      <Text style={styles.iconButtonLabel}>{label}</Text>
+    </Pressable>
+  );
+}
+
+const styles = StyleSheet.create({
+  iconButton: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  iconButtonLabel: {
+    color: '#fff',
+    marginTop: 12,
+  },
+});
+
+Show More
+Inside app/(tabs)/index.tsx:
+
+Import the CircleButton and IconButton components to display them.
+Add three placeholder functions for these buttons. The onReset() function invokes when the user presses the reset button, causing the image picker button to appear again. We'll add the functionality for the other two functions later.
+app/(tabs)/index.tsx
+
+Copy
+
+
+import { View, StyleSheet } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import { useState } from 'react';
+
+import Button from '@/components/Button';
+import ImageViewer from '@/components/ImageViewer';
+import IconButton from '@/components/IconButton';
+import CircleButton from '@/components/CircleButton';
+
+const PlaceholderImage = require('@/assets/images/background-image.png');
+
+export default function Index() {
+  const [selectedImage, setSelectedImage] = useState<string | undefined>(undefined);
+  const [showAppOptions, setShowAppOptions] = useState<boolean>(false);
+
+  const pickImageAsync = async () => {
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      quality: 1,
+    });
+
+    if (!result.canceled) {
+      setSelectedImage(result.assets[0].uri);
+      setShowAppOptions(true);
+    } else {
+      alert('You did not select any image.');
+    }
+  };
+
+  const onReset = () => {
+    setShowAppOptions(false);
+  };
+
+  const onAddSticker = () => {
+    // we will implement this later
+  };
+
+  const onSaveImageAsync = async () => {
+    // we will implement this later
+  };
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.imageContainer}>
+        <ImageViewer imgSource={PlaceholderImage} selectedImage={selectedImage} />
+      </View>
+      {showAppOptions ? (
+        <View style={styles.optionsContainer}>
+          <View style={styles.optionsRow}>
+            <IconButton icon="refresh" label="Reset" onPress={onReset} />
+            <CircleButton onPress={onAddSticker} />
+            <IconButton icon="save-alt" label="Save" onPress={onSaveImageAsync} />
+          </View>
+        </View>
+      ) : (
+        <View style={styles.footerContainer}>
+          <Button theme="primary" label="Choose a photo" onPress={pickImageAsync} />
+          <Button label="Use this photo" onPress={() => setShowAppOptions(true)} />
+        </View>
+      )}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#25292e',
+    alignItems: 'center',
+  },
+  imageContainer: {
+    flex: 1,
+  },
+  footerContainer: {
+    flex: 1 / 3,
+    alignItems: 'center',
+  },
+  optionsContainer: {
+    position: 'absolute',
+    bottom: 80,
+  },
+  optionsRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+  },
+});
+
+Show More
+Let's take a look at our app on Android, iOS and the web:
+
+Button options displayed after a image is selected.
+3
+
+Create an emoji picker modal
+The modal allows the user to choose an emoji from a list of available emoji. Create an EmojiPicker.tsx file inside the components directory. This component accepts three props:
+
+isVisible: a boolean to determine the state of the modal's visibility.
+onClose: a function to close the modal.
+children: used later to display a list of emoji.
+components/EmojiPicker.tsx
+
+Copy
+
+
+import { Modal, View, Text, Pressable, StyleSheet } from 'react-native';
+import { PropsWithChildren } from 'react';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+
+type Props = PropsWithChildren<{
+  isVisible: boolean;
+  onClose: () => void;
+}>;
+
+export default function EmojiPicker({ isVisible, children, onClose }: Props) {
+  return (
+    <View>
+    <Modal animationType="slide" transparent={true} visible={isVisible}>
+      <View style={styles.modalContent}>
+        <View style={styles.titleContainer}>
+          <Text style={styles.title}>Choose a sticker</Text>
+          <Pressable onPress={onClose}>
+            <MaterialIcons name="close" color="#fff" size={22} />
+          </Pressable>
+        </View>
+        {children}
+      </View>
+    </Modal>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  modalContent: {
+    height: '25%',
+    width: '100%',
+    backgroundColor: '#25292e',
+    borderTopRightRadius: 18,
+    borderTopLeftRadius: 18,
+    position: 'absolute',
+    bottom: 0,
+  },
+  titleContainer: {
+    height: '16%',
+    backgroundColor: '#464C55',
+    borderTopRightRadius: 10,
+    borderTopLeftRadius: 10,
+    paddingHorizontal: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  title: {
+    color: '#fff',
+    fontSize: 16,
+  },
+});
+
+Show More
+Let's learn what the above code does:
+
+The <Modal> component displays a title and a close button.
+Its visible prop takes the value of isVisible and controls whether the modal is open or closed.
+Its transparent prop is a boolean value, which determines whether the modal fills the entire view.
+Its animationType prop determines how it enters and leaves the screen. In this case, it is sliding from the bottom of the screen.
+Lastly, the <EmojiPicker> invokes the onClose prop when the user presses the close <Pressable>.
+Now, let's modify the app/(tabs)/index.tsx:
+
+Import the <EmojiPicker> component.
+Create an isModalVisible state variable with the useState hook. Its default value is false, which hides the modal until the user presses the button to open it.
+Replace the comment in the onAddSticker() function to update the isModalVisible variable to true when the user presses the button. This will open the emoji picker.
+Create the onModalClose() function to update the isModalVisible state variable.
+Place the <EmojiPicker> component at the bottom of the Index component.
+app/(tabs)/index.tsx
+
+Copy
+
+
+import { View, StyleSheet } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import { useState } from 'react';
+
+import Button from '@/components/Button';
+import ImageViewer from '@/components/ImageViewer';
+import IconButton from '@/components/IconButton';
+import CircleButton from '@/components/CircleButton';
+import EmojiPicker from '@/components/EmojiPicker';
+
+const PlaceholderImage = require('@/assets/images/background-image.png');
+
+export default function Index() {
+  const [selectedImage, setSelectedImage] = useState<string | undefined>(undefined);
+  const [showAppOptions, setShowAppOptions] = useState<boolean>(false);
+  const [isModalVisible, setIsModalVisible] = useState<boolean>(false);
+
+  const pickImageAsync = async () => {
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      quality: 1,
+    });
+
+    if (!result.canceled) {
+      setSelectedImage(result.assets[0].uri);
+      setShowAppOptions(true);
+    } else {
+      alert('You did not select any image.');
+    }
+  };
+
+  const onReset = () => {
+    setShowAppOptions(false);
+  };
+
+  const onAddSticker = () => {
+    setIsModalVisible(true);
+  };
+
+  const onModalClose = () => {
+    setIsModalVisible(false);
+  };
+
+  const onSaveImageAsync = async () => {
+    // we will implement this later
+  };
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.imageContainer}>
+        <ImageViewer imgSource={PlaceholderImage} selectedImage={selectedImage} />
+      </View>
+      {showAppOptions ? (
+        <View style={styles.optionsContainer}>
+          <View style={styles.optionsRow}>
+            <IconButton icon="refresh" label="Reset" onPress={onReset} />
+            <CircleButton onPress={onAddSticker} />
+            <IconButton icon="save-alt" label="Save" onPress={onSaveImageAsync} />
+          </View>
+        </View>
+      ) : (
+        <View style={styles.footerContainer}>
+          <Button theme="primary" label="Choose a photo" onPress={pickImageAsync} />
+          <Button label="Use this photo" onPress={() => setShowAppOptions(true)} />
+        </View>
+      )}
+      <EmojiPicker isVisible={isModalVisible} onClose={onModalClose}>
+        {/* Emoji list component will go here */}
+      </EmojiPicker>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#25292e',
+    alignItems: 'center',
+  },
+  imageContainer: {
+    flex: 1,
+  },
+  footerContainer: {
+    flex: 1 / 3,
+    alignItems: 'center',
+  },
+  optionsContainer: {
+    position: 'absolute',
+    bottom: 80,
+  },
+  optionsRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+  },
+});
+
+Show More
+Here is the result after this step:
+
+A modal working on all platforms
+4
+
+Display a list of emoji
+Let's add a horizontal list of emoji in the modal's content. We'll use the <FlatList> component from React Native for it.
+
+Create a EmojiList.tsx file inside the components directory and add the following code:
+
+components/EmojiList.tsx
+
+Copy
+
+
+import { useState } from 'react';
+import { ImageSourcePropType, StyleSheet, FlatList, Platform, Pressable } from 'react-native';
+import { Image } from 'expo-image';
+
+type Props = {
+  onSelect: (image: ImageSourcePropType) => void;
+  onCloseModal: () => void;
+};
+
+export default function EmojiList({ onSelect, onCloseModal }: Props) {
+  const [emoji] = useState<ImageSourcePropType[]>([
+    require("../assets/images/emoji1.png"),
+    require("../assets/images/emoji2.png"),
+    require("../assets/images/emoji3.png"),
+    require("../assets/images/emoji4.png"),
+    require("../assets/images/emoji5.png"),
+    require("../assets/images/emoji6.png"),
+  ]);
+
+  return (
+    <FlatList
+      horizontal
+      showsHorizontalScrollIndicator={Platform.OS === 'web'}
+      data={emoji}
+      contentContainerStyle={styles.listContainer}
+      renderItem={({ item, index }) => (
+        <Pressable
+          onPress={() => {
+            onSelect(item);
+            onCloseModal();
+          }}>
+          <Image source={item} key={index} style={styles.image} />
+        </Pressable>
+      )}
+    />
+  );
+}
+
+const styles = StyleSheet.create({
+  listContainer: {
+    borderTopRightRadius: 10,
+    borderTopLeftRadius: 10,
+    paddingHorizontal: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  image: {
+    width: 100,
+    height: 100,
+    marginRight: 20,
+  },
+});
+
+Show More
+Let's learn what the above code does:
+
+The <FlatList> component above renders all the emoji images using the Image component, wrapped by a <Pressable>. Later, we will improve it so that the user can tap an emoji on the screen to make it appear as a sticker on the image.
+It also takes an array of items provided by the emoji array variable as the value of the data prop. The renderItem prop takes the item from the data and returns the item in the list. Finally, we added Image and the <Pressable> components to display this item.
+The horizontal prop renders the list horizontally instead of vertically. The showsHorizontalScrollIndicator uses React Native's Platform module to check the value and display the horizontal scroll bar on web.
+Now, update the app/(tabs)/index.tsx to import the <EmojiList> component and replace the comments inside the <EmojiPicker> component with the following code snippet:
+
+app/(tabs)/index.tsx
+
+Copy
+
+
+import { ImageSourcePropType, View, StyleSheet } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import { useState } from 'react';
+
+import Button from '@/components/Button';
+import ImageViewer from '@/components/ImageViewer';
+import IconButton from '@/components/IconButton';
+import CircleButton from '@/components/CircleButton';
+import EmojiPicker from '@/components/EmojiPicker';
+import EmojiList from '@/components/EmojiList';
+
+const PlaceholderImage = require('@/assets/images/background-image.png');
+
+export default function Index() {
+  const [selectedImage, setSelectedImage] = useState<string | undefined>(undefined);
+  const [showAppOptions, setShowAppOptions] = useState<boolean>(false);
+  const [isModalVisible, setIsModalVisible] = useState<boolean>(false);
+  const [pickedEmoji, setPickedEmoji] = useState<ImageSourcePropType | undefined>(undefined);
+
+  const pickImageAsync = async () => {
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      quality: 1,
+    });
+
+    if (!result.canceled) {
+      setSelectedImage(result.assets[0].uri);
+      setShowAppOptions(true);
+    } else {
+      alert('You did not select any image.');
+    }
+  };
+
+  const onReset = () => {
+    setShowAppOptions(false);
+  };
+
+  const onAddSticker = () => {
+    setIsModalVisible(true);
+  };
+
+  const onModalClose = () => {
+    setIsModalVisible(false);
+  };
+
+  const onSaveImageAsync = async () => {
+    // we will implement this later
+  };
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.imageContainer}>
+        <ImageViewer imgSource={PlaceholderImage} selectedImage={selectedImage} />
+      </View>
+      {showAppOptions ? (
+        <View style={styles.optionsContainer}>
+          <View style={styles.optionsRow}>
+            <IconButton icon="refresh" label="Reset" onPress={onReset} />
+            <CircleButton onPress={onAddSticker} />
+            <IconButton icon="save-alt" label="Save" onPress={onSaveImageAsync} />
+          </View>
+        </View>
+      ) : (
+        <View style={styles.footerContainer}>
+          <Button theme="primary" label="Choose a photo" onPress={pickImageAsync} />
+          <Button label="Use this photo" onPress={() => setShowAppOptions(true)} />
+        </View>
+      )}
+      <EmojiPicker isVisible={isModalVisible} onClose={onModalClose}>
+        <EmojiList onSelect={setPickedEmoji} onCloseModal={onModalClose} />
+      </EmojiPicker>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#25292e',
+    alignItems: 'center',
+  },
+  imageContainer: {
+    flex: 1,
+  },
+  footerContainer: {
+    flex: 1 / 3,
+    alignItems: 'center',
+  },
+  optionsContainer: {
+    position: 'absolute',
+    bottom: 80,
+  },
+  optionsRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+  },
+});
+
+Show More
+In the EmojiList component, the onSelect prop selects the emoji and after selecting it, the onCloseModal closes the modal.
+
+Let's take a look at our app on Android, iOS and the web:
+
+Emoji list displayed on all platforms
+5
+
+Display the selected emoji
+Now, we'll put the emoji sticker on the image. Create a new file in the components directory and call it EmojiSticker.tsx. Then, add the following code:
+
+components/EmojiSticker.tsx
+
+Copy
+
+
+import { ImageSourcePropType, View } from 'react-native';
+import { Image } from 'expo-image';
+
+type Props = {
+  imageSize: number;
+  stickerSource: ImageSourcePropType;
+};
+
+export default function EmojiSticker({ imageSize, stickerSource }: Props) {
+  return (
+    <View style={{ top: -350 }}>
+      <Image source={stickerSource} style={{ width: imageSize, height: imageSize }} />
+    </View>
+  );
+}
+
+Show More
+This component receives two props:
+
+imageSize: a value defined inside the Index component. We will use this value in the next chapter to scale the image's size when tapped.
+stickerSource: the source of the selected emoji image.
+Import this component in the app/(tabs)/index.tsx file and update the Index component to display the emoji sticker on the image. We'll check if the pickedEmoji state is not undefined:
+
+app/(tabs)/index.tsx
+
+Copy
+
+
+import { ImageSourcePropType, View, StyleSheet } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import { useState } from 'react';
+
+import Button from '@/components/Button';
+import ImageViewer from '@/components/ImageViewer';
+import IconButton from '@/components/IconButton';
+import CircleButton from '@/components/CircleButton';
+import EmojiPicker from '@/components/EmojiPicker';
+import EmojiList from '@/components/EmojiList';
+import EmojiSticker from '@/components/EmojiSticker';
+
+const PlaceholderImage = require('@/assets/images/background-image.png');
+
+export default function Index() {
+  const [selectedImage, setSelectedImage] = useState<string | undefined>(undefined);
+  const [showAppOptions, setShowAppOptions] = useState<boolean>(false);
+  const [isModalVisible, setIsModalVisible] = useState<boolean>(false);
+  const [pickedEmoji, setPickedEmoji] = useState<ImageSourcePropType | undefined>(undefined);
+
+
+  const pickImageAsync = async () => {
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      quality: 1,
+    });
+
+    if (!result.canceled) {
+      setSelectedImage(result.assets[0].uri);
+      setShowAppOptions(true);
+    } else {
+      alert('You did not select any image.');
+    }
+  };
+
+  const onReset = () => {
+    setShowAppOptions(false);
+  };
+
+  const onAddSticker = () => {
+    setIsModalVisible(true);
+  };
+
+  const onModalClose = () => {
+    setIsModalVisible(false);
+  };
+
+  const onSaveImageAsync = async () => {
+    // we will implement this later
+  };
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.imageContainer}>
+        <ImageViewer imgSource={PlaceholderImage} selectedImage={selectedImage} />
+        {pickedEmoji && <EmojiSticker imageSize={40} stickerSource={pickedEmoji} />}
+      </View>
+      {showAppOptions ? (
+        <View style={styles.optionsContainer}>
+          <View style={styles.optionsRow}>
+            <IconButton icon="refresh" label="Reset" onPress={onReset} />
+            <CircleButton onPress={onAddSticker} />
+            <IconButton icon="save-alt" label="Save" onPress={onSaveImageAsync} />
+          </View>
+        </View>
+      ) : (
+        <View style={styles.footerContainer}>
+          <Button theme="primary" label="Choose a photo" onPress={pickImageAsync} />
+          <Button label="Use this photo" onPress={() => setShowAppOptions(true)} />
+        </View>
+      )}
+      <EmojiPicker isVisible={isModalVisible} onClose={onModalClose}>
+        <EmojiList onSelect={setPickedEmoji} onCloseModal={onModalClose} />
+      </EmojiPicker>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#25292e',
+    alignItems: 'center',
+  },
+  imageContainer: {
+    flex: 1,
+  },
+  footerContainer: {
+    flex: 1 / 3,
+    alignItems: 'center',
+  },
+  optionsContainer: {
+    position: 'absolute',
+    bottom: 80,
+  },
+  optionsRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+  },
+});
+
+Show More
+Let's take a look at our app on Android, iOS and the web:
+
+Summary
+Chapter 5: Create a modal
+
+We've successfully created the emoji picker modal and implemented the logic to select an emoji and display it over the image.
+
+
+
+In the next chapter, let's add user interactions with gestures to drag the emoji and scale the size by tapping it.
+
+
+
+Add gestures
+In this tutorial, learn how to implement gestures from React Native Gesture Handler and Reanimated libraries.
+
+
+
+Copy page
+
+Gestures are a great way to provide an intuitive user experience in an app. The React Native Gesture Handler library provides built-in native components that can handle gestures. It recognizes pan, tap, rotation, and other gestures using the platform's native touch handling system. In this chapter, we'll add two different gestures using this library:
+
+Double tap to scale the size of the emoji sticker and reduce the scale when double tapped again.
+Pan to move the emoji sticker around the screen so that the user can place the sticker anywhere on the image.
+We'll also use the Reanimated library to animate between gesture states.
+
+Watch: Adding gestures to your universal Expo app
+Watch: Adding gestures to your universal Expo app
+1
+
+Add GestureHandlerRootView
+To get gesture interactions to work in the app, we'll render <GestureHandlerRootView> from react-native-gesture-handler at the top of Index component. Replace the root level <View> component in the app/(tabs)/index.tsx with <GestureHandlerRootView>.
+
+app/(tabs)/index.tsx
+
+Copy
+
+
+// ... rest of the import statements remain same
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+
+export default function Index() {
+  return (
+    <GestureHandlerRootView style={styles.container}>
+      {/* ...rest of the code remains */}
+    </GestureHandlerRootView>
+  )
+}
+2
+
+Use animated components
+An Animated component looks at the style prop of the component and determines which values to animate and apply updates to create an animation. Reanimated exports animated components such as <Animated.View>, <Animated.Text>, or <Animated.ScrollView>. We will apply animations to the <Animated.Image> component to make a double tap gesture work.
+
+Open the EmojiSticker.tsx file in the components directory. Inside it, import Animated from the react-native-reanimated library to use animated components.
+Replace the Image component with <Animated.Image>.
+components/EmojiSticker.tsx
+
+Copy
+
+
+import { ImageSourcePropType, View } from 'react-native';
+import Animated from 'react-native-reanimated';
+
+type Props = {
+  imageSize: number;
+  stickerSource: ImageSourcePropType;
+};
+
+export default function EmojiSticker({ imageSize, stickerSource }: Props) {
+  return (
+    <View style={{ top: -350 }}>
+      <Animated.Image
+        source={stickerSource}
+        resizeMode="contain"
+        style={{ width: imageSize, height: imageSize }}
+      />
+    </View>
+  );
+}
+
+Show More
+For a complete reference of the animated component API, see React Native Reanimated documentation.
+
+3
+
+Add a tap gesture
+React Native Gesture Handler allows us to add behavior when it detects touch input, like a double tap event.
+
+In the EmojiSticker.tsx file:
+
+Import Gesture and GestureDetector from react-native-gesture-handler.
+To recognize the tap on the sticker, import useAnimatedStyle, useSharedValue, and withSpring from react-native-reanimated to animate the style of the <Animated.Image>.
+Inside the EmojiSticker component, create a reference called scaleImage using the useSharedValue() hook. It will take the value of imageSize as its initial value.
+components/EmojiSticker.tsx
+
+Copy
+
+
+// ...rest of the import statements remain same
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+
+export default function EmojiSticker({ imageSize, stickerSource }: Props) {
+  const scaleImage = useSharedValue(imageSize);
+
+  return (
+    // ...rest of the code remains same
+  )
+}
+Creating a shared value using the useSharedValue() hook has many advantages. It helps to mutate data and runs animations based on the current value. We can access and modify the shared value using the .value property. We'll create a doubleTap object to scale the initial value and use Gesture.Tap() to animate the transition while scaling the sticker image. To determine the number of taps required, we'll add numberOfTaps().
+
+Create the following object in the EmojiSticker component:
+
+components/EmojiSticker.tsx
+
+Copy
+
+
+const doubleTap = Gesture.Tap()
+  .numberOfTaps(2)
+  .onStart(() => {
+    if (scaleImage.value !== imageSize * 2) {
+      scaleImage.value = scaleImage.value * 2;
+    } else {
+      scaleImage.value = Math.round(scaleImage.value / 2);
+    }
+  });
+To animate the transition, let's use a spring-based animation. This will make it feel alive because it's based on the real-world physics of a spring. We will use the withSpring() function provided by react-native-reanimated.
+
+On the sticker image, we'll use the useAnimatedStyle() hook to create a style object. This will help us to update styles using shared values when the animation happens. We'll also scale the size of the image by manipulating the width and height properties. The initial values of these properties are set to imageSize.
+
+Create an imageStyle variable and add it to the EmojiSticker component:
+
+components/EmojiSticker.tsx
+
+Copy
+
+
+const imageStyle = useAnimatedStyle(() => {
+  return {
+    width: withSpring(scaleImage.value),
+    height: withSpring(scaleImage.value),
+  };
+});
+Next, wrap the <Animated.Image> component with the <GestureDetector> and modify the style prop on the <Animated.Image> to pass the imageStyle.
+
+components/EmojiSticker.tsx
+
+Copy
+
+
+import { ImageSourcePropType, View } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+
+type Props = {
+  imageSize: number;
+  stickerSource: ImageSourcePropType;
+};
+
+export default function EmojiSticker({ imageSize, stickerSource }: Props) {
+  const scaleImage = useSharedValue(imageSize);
+
+  const doubleTap = Gesture.Tap()
+    .numberOfTaps(2)
+    .onStart(() => {
+      if (scaleImage.value !== imageSize * 2) {
+        scaleImage.value = scaleImage.value * 2;
+      } else {
+        scaleImage.value = Math.round(scaleImage.value / 2);
+      }
+    });
+
+  const imageStyle = useAnimatedStyle(() => {
+    return {
+      width: withSpring(scaleImage.value),
+      height: withSpring(scaleImage.value),
+    };
+  });
+
+  return (
+    <View style={{ top: -350 }}>
+      <GestureDetector gesture={doubleTap}>
+        <Animated.Image
+          source={stickerSource}
+          resizeMode="contain"
+          style={[imageStyle, { width: imageSize, height: imageSize }]}
+        />
+      </GestureDetector>
+    </View>
+  );
+}
+
+Show More
+In the above snippet, the gesture prop takes the value of the doubleTap to trigger a gesture when a user double-taps the sticker image.
+
+Let's take a look at our app on Android, iOS and the web:
+
+For a complete reference of the tap gesture API, see the React Native Gesture Handler documentation.
+
+4
+
+Add a pan gesture
+To recognize a dragging gesture on the sticker and to track its movement, we'll use a pan gesture. In the components/EmojiSticker.tsx:
+
+Create two new shared values: translateX and translateY.
+Replace the <View> with the <Animated.View> component.
+components/EmojiSticker.tsx
+
+Copy
+
+
+export default function EmojiSticker({ imageSize, stickerSource }: Props) {
+  const scaleImage = useSharedValue(imageSize);
+  const translateX = useSharedValue(0);
+  const translateY = useSharedValue(0);
+  // ...rest of the code remains same
+
+  return (
+    <Animated.View style={{ top: -350 }}>
+      <GestureDetector gesture={doubleTap}>
+        {/* ...rest of the code remains same */}
+      </GestureDetector>
+    </Animated.View>
+  );
+}
+Let's learn what the above code does:
+
+The translation values defined will move the sticker around the screen. Since the sticker moves along both axes, we need to track the X and Y values.
+In the useSharedValue() hooks, we have set both translation variables to have an initial position of 0. This is the sticker's initial position and a starting point. This value sets the sticker's initial position when the gesture starts.
+In the previous step, we triggered the onStart() callback for the tap gesture chained to the Gesture.Tap() method. For the pan gesture, specify an onChange() callback, which runs when the gesture is active and moving.
+
+Create a drag object to handle the pan gesture. The onChange() callback accepts event as a parameter. changeX and changeY properties hold the change in position since the last event. and update the values stored in translateX and translateY.
+Define the containerStyle object using the useAnimatedStyle() hook. It will return an array of transforms. For the <Animated.View> component, we need to set the transform property to the translateX and translateY values. This will change the sticker's position when the gesture is active.
+components/EmojiSticker.tsx
+
+Copy
+
+
+const drag = Gesture.Pan().onChange(event => {
+  translateX.value += event.changeX;
+  translateY.value += event.changeY;
+});
+
+const containerStyle = useAnimatedStyle(() => {
+  return {
+    transform: [
+      {
+        translateX: translateX.value,
+      },
+      {
+        translateY: translateY.value,
+      },
+    ],
+  };
+});
+Next, inside the JSX code:
+
+Update the <EmojiSticker> component so that the <GestureDetector> component becomes the top-level component.
+Add the containerStyle on the <Animated.View> component to apply the transform styles.
+components/EmojiSticker.tsx
+
+Copy
+
+
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import { ImageSourcePropType } from 'react-native';
+
+type Props = {
+  imageSize: number;
+  stickerSource: ImageSourcePropType;
+};
+
+export default function EmojiSticker({ imageSize, stickerSource }: Props) {
+  const scaleImage = useSharedValue(imageSize);
+  const translateX = useSharedValue(0);
+  const translateY = useSharedValue(0);
+
+  const doubleTap = Gesture.Tap()
+    .numberOfTaps(2)
+    .onStart(() => {
+      if (scaleImage.value !== imageSize * 2) {
+        scaleImage.value = scaleImage.value * 2;
+      } else {
+        scaleImage.value = Math.round(scaleImage.value / 2);
+      }
+    });
+
+  const imageStyle = useAnimatedStyle(() => {
+    return {
+      width: withSpring(scaleImage.value),
+      height: withSpring(scaleImage.value),
+    };
+  });
+
+  const drag = Gesture.Pan().onChange(event => {
+    translateX.value += event.changeX;
+    translateY.value += event.changeY;
+  });
+
+  const containerStyle = useAnimatedStyle(() => {
+    return {
+      transform: [
+        {
+          translateX: translateX.value,
+        },
+        {
+          translateY: translateY.value,
+        },
+      ],
+    };
+  });
+
+  return (
+    <GestureDetector gesture={drag}>
+      <Animated.View style={[containerStyle, { top: -350 }]}>
+        <GestureDetector gesture={doubleTap}>
+          <Animated.Image
+            source={stickerSource}
+            resizeMode="contain"
+            style={[imageStyle, { width: imageSize, height: imageSize }]}
+          />
+        </GestureDetector>
+      </Animated.View>
+    </GestureDetector>
+  );
+}
+
+Show More
+Let's take a look at our app on Android, iOS and the web:
+
+Summary
+Chapter 6: Add gestures
+
+We've successfully implemented pan and tap gestures.
+
+
+
+In the next chapter, we'll learn how to take a screenshot of the image and the sticker, and save it on the device's library.
+
+
+
+Take a screenshot
+In this tutorial, learn how to capture a screenshot using a third-party library and Expo Media Library.
+
+
+
+Copy page
+
+In this chapter, we'll learn how to take a screenshot using a third-party library and save it on the device's media library. We'll use react-native-view-shot to take a screenshot and expo-media-library to save an image on device's media library.
+
+So far, we have used third-party libraries, such as react-native-gesture-handler, react-native-reanimated. We can find hundreds of other third-party libraries on React Native Directory depending on a use case.
+Watch: Taking screenshots in your universal Expo app
+Watch: Taking screenshots in your universal Expo app
+1
+
+Install libraries
+To install react-native-view-shot and expo-media-library, run the following commands:
+
+Terminal
+
+Copy
+
+npx expo install react-native-view-shot expo-media-library
+2
+
+Prompt for permissions
+An app that requires sensitive information, such as accessing a device's media library, has to prompt permission to allow or deny access. Using usePermissions() hook from expo-media-library, we can use the permission permissionResponse and requestPermission() method to ask for access.
+
+When the app loads for the first time and the permission status is neither granted nor denied, the value of the permissionResponse is null. When asked for permission, a user can either grant the permission or deny it. We can add a condition to check if it is not granted. If it is not granted, trigger the requestPermission() method. After getting the access, the value of the permissionResponse changes to granted.
+
+Add the following code snippet inside the app/(tabs)/index.tsx:
+
+app/(tabs)/index.tsx
+
+Copy
+
+
+import { useEffect, useState } from 'react';
+import * as MediaLibrary from 'expo-media-library';
+
+// ...rest of the code remains same
+
+export default function Index() {
+  const [permissionResponse, requestPermission] = MediaLibrary.usePermissions();
+  // ...rest of the code remains same
+
+  useEffect(() => {
+    if (!permissionResponse?.granted) {
+      requestPermission();
+    }
+  }, []);
+
+  // ...rest of the code remains same
+}
+3
+
+Create a ref to save the current view
+We'll use react-native-view-shot to allow the user to take a screenshot within the app. This library captures the screenshot of a <View> as an image using the captureRef() method. It returns the URI of the captured screenshot image file.
+
+Import captureRef from react-native-view-shot and useRef from React.
+Create an imageRef reference variable to store the reference of the screenshot image captured.
+Wrap the <ImageViewer> and <EmojiSticker> components inside a <View> and then pass the reference variable to it.
+app/(tabs)/index.tsx
+
+Copy
+
+
+import { useEffect, useState, useRef } from 'react';
+import { captureRef } from 'react-native-view-shot';
+
+export default function Index() {
+  const imageRef = useRef<View>(null);
+
+  // ...rest of the code remains same
+
+  return (
+    <GestureHandlerRootView style={styles.container}>
+      <View style={styles.imageContainer}>
+        <View ref={imageRef} collapsable={false}>
+          <ImageViewer imgSource={PlaceholderImage} selectedImage={selectedImage} />
+          {pickedEmoji && <EmojiSticker imageSize={40} stickerSource={pickedEmoji} />}
+        </View>
+      </View>
+      {/* ...rest of the code remains same */}
+    </GestureHandlerRootView>
+  );
+}
+
+Show More
+In the above snippet, the collapsable prop is set to false. This allows the <View> component to screenshot only of the background image and emoji sticker.
+
+4
+
+Capture a screenshot and save it
+We can capture a screenshot of the view by calling the captureRef() method from react-native-view-shot inside the onSaveImageAsync() function. It accepts an optional argument where we can pass the width and height of the screenshot capturing area. We can read more about available options in the library's documentation.
+
+The captureRef() method also returns a promise that fulfills with the screenshot's URI. We will pass this URI as a parameter to MediaLibrary.saveToLibraryAsync() and save the screenshot to the device's media library.
+
+Inside app/(tabs)/index.tsx, update the onSaveImageAsync() function with the following code:
+
+app/(tabs)/index.tsx
+
+Copy
+
+
+import * as ImagePicker from 'expo-image-picker';
+import * as MediaLibrary from 'expo-media-library';
+import { useEffect, useRef, useState } from 'react';
+import { ImageSourcePropType, StyleSheet, View } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { captureRef } from 'react-native-view-shot';
+
+import Button from '@/components/Button';
+import CircleButton from '@/components/CircleButton';
+import EmojiList from '@/components/EmojiList';
+import EmojiPicker from '@/components/EmojiPicker';
+import IconButton from '@/components/IconButton';
+import ImageViewer from '@/components/ImageViewer';
+
+import EmojiSticker from '@/components/EmojiSticker';
+
+const PlaceholderImage = require('@/assets/images/background-image.png');
+
+export default function Index() {
+  const [selectedImage, setSelectedImage] = useState<string | undefined>(
+    undefined
+  );
+  const [showAppOptions, setShowAppOptions] = useState<boolean>(false);
+  const [isModalVisible, setIsModalVisible] = useState<boolean>(false);
+  const [pickedEmoji, setPickedEmoji] = useState<
+    ImageSourcePropType | undefined
+  >(undefined);
+  const [permissionResponse, requestPermission] = MediaLibrary.usePermissions();
+  const imageRef = useRef<View>(null);
+
+  useEffect(() => {
+    if (!permissionResponse?.granted) {
+      requestPermission();
+    }
+  }, []);
+
+  const pickImageAsync = async () => {
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      quality: 1,
+    });
+
+    if (!result.canceled) {
+      setSelectedImage(result.assets[0].uri);
+      setShowAppOptions(true);
+    } else {
+      alert('You did not select any image.');
+    }
+  };
+
+  const onReset = () => {
+    setShowAppOptions(false);
+  };
+
+  const onAddSticker = () => {
+    setIsModalVisible(true);
+  };
+
+  const onModalClose = () => {
+    setIsModalVisible(false);
+  };
+
+  const onSaveImageAsync = async () => {
+    try {
+      const localUri = await captureRef(imageRef, {
+        height: 440,
+        quality: 1,
+      });
+
+      await MediaLibrary.saveToLibraryAsync(localUri);
+      if (localUri) {
+        alert('Saved!');
+      }
+    } catch (e) {
+      console.log(e);
+    }
+  };
+
+  return (
+    <GestureHandlerRootView style={styles.container}>
+      <View style={styles.imageContainer}>
+        <View ref={imageRef} collapsable={false}>
+          <ImageViewer imgSource={PlaceholderImage} selectedImage={selectedImage} />
+          {pickedEmoji && <EmojiSticker imageSize={40} stickerSource={pickedEmoji} />}
+        </View>
+      </View>
+      {showAppOptions ? (
+        <View style={styles.optionsContainer}>
+          <View style={styles.optionsRow}>
+            <IconButton icon="refresh" label="Reset" onPress={onReset} />
+            <CircleButton onPress={onAddSticker} />
+            <IconButton icon="save-alt" label="Save" onPress={onSaveImageAsync} />
+          </View>
+        </View>
+      ) : (
+        <View style={styles.footerContainer}>
+          <Button theme="primary" label="Choose a photo" onPress={pickImageAsync} />
+          <Button label="Use this photo" onPress={() => setShowAppOptions(true)} />
+        </View>
+      )}
+      <EmojiPicker isVisible={isModalVisible} onClose={onModalClose}>
+        <EmojiList onSelect={setPickedEmoji} onCloseModal={onModalClose} />
+      </EmojiPicker>
+    </GestureHandlerRootView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#25292e',
+    alignItems: 'center',
+  },
+  imageContainer: {
+    flex: 1,
+  },
+  footerContainer: {
+    flex: 1 / 3,
+    alignItems: 'center',
+  },
+  optionsContainer: {
+    position: 'absolute',
+    bottom: 80,
+  },
+  optionsRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+  },
+});
+
+Show More
+Now, choose a photo and add a sticker in the app. Then tap the "Save" button. We should see the following result on Android and iOS:
+
+Summary
+Chapter 7: Take a screenshot
+
+We've successfully used react-native-view-shot and expo-media-library to capture a screenshot and save it on the device's library.
+
+
+
+In the next chapter, let's learn how to handle the differences between mobile and web platforms to implement the same functionality on web.
+
+
+Handle platform differences
+In this tutorial, learn how to handle platform differences between native and web when creating a universal app.
+
+
+
+Copy page
+
+Android, iOS, and the web have different capabilities. In our case, both Android and iOS can capture a screenshot with the react-native-view-shot library. However, web browsers cannot.
+
+In this chapter, we'll learn how to handle capturing screenshots for web browsers so our app has the same functionality on all platforms.
+
+Watch: Handling platform differences in your universal Expo app
+Watch: Handling platform differences in your universal Expo app
+1
+
+Install and import dom-to-image
+To capture a screenshot on the web and save it as an image, we'll use a third-party library called dom-to-image. It takes a screenshot of any DOM node and turns it into a vector (SVG) or raster (PNG or JPEG) image.
+
+Stop the development server and run the following command to install the library:
+
+Terminal
+
+Copy
+
+npm install dom-to-image
+Note: The dom-to-image library is used here for illustrative purposes. For production apps, you may want to explore other solutions or APIs that better suit your specific use case.
+
+After installing it, make sure to restart the development server and press w in the terminal.
+
+2
+
+Add platform-specific code
+Using Platform module from React Native, we can implement platform-specific behavior. Inside app/(tabs)/index.tsx:
+
+Import the Platform module from react-native.
+Import the domtoimage library from dom-to-image.
+Update the onSaveImageAsync() function to check whether the current platform is 'web' with the Platform.OS property. If it is 'web', we'll use the domtoimage.toJpeg() method to convert and capture the current <View> as a JPEG image. Otherwise, we'll keep using the same logic added for native platforms.
+app/(tabs)/index.tsx
+
+Copy
+
+
+import * as ImagePicker from 'expo-image-picker';
+import * as MediaLibrary from 'expo-media-library';
+import { useEffect, useRef, useState } from 'react';
+import { ImageSourcePropType, View, StyleSheet, Platform } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { captureRef } from 'react-native-view-shot';
+import domtoimage from 'dom-to-image';
+
+import Button from '@/components/Button';
+import ImageViewer from '@/components/ImageViewer';
+import IconButton from '@/components/IconButton';
+import CircleButton from '@/components/CircleButton';
+import EmojiPicker from '@/components/EmojiPicker';
+import EmojiList from '@/components/EmojiList';
+import EmojiSticker from '@/components/EmojiSticker';
+
+const PlaceholderImage = require('@/assets/images/background-image.png');
+
+export default function Index() {
+  const [selectedImage, setSelectedImage] = useState<string | undefined>(undefined);
+  const [showAppOptions, setShowAppOptions] = useState<boolean>(false);
+  const [isModalVisible, setIsModalVisible] = useState<boolean>(false);
+  const [pickedEmoji, setPickedEmoji] = useState<ImageSourcePropType | undefined>(undefined);
+  const [permissionResponse, requestPermission] = MediaLibrary.usePermissions();
+
+  const imageRef = useRef<View>(null);
+
+  useEffect(() => {
+    if (!permissionResponse?.granted) {
+      requestPermission();
+    }
+  }, []);
+
+  const pickImageAsync = async () => {
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      quality: 1,
+    });
+
+    if (!result.canceled) {
+      setSelectedImage(result.assets[0].uri);
+      setShowAppOptions(true);
+    } else {
+      alert('You did not select any image.');
+    }
+  };
+
+  const onReset = () => {
+    setShowAppOptions(false);
+  };
+
+  const onAddSticker = () => {
+    setIsModalVisible(true);
+  };
+
+  const onModalClose = () => {
+    setIsModalVisible(false);
+  };
+
+  const onSaveImageAsync = async () => {
+    if (Platform.OS !== 'web') {
+      try {
+        const localUri = await captureRef(imageRef, {
+          height: 440,
+          quality: 1,
+        });
+
+        await MediaLibrary.saveToLibraryAsync(localUri);
+        if (localUri) {
+          alert('Saved!');
+        }
+      } catch (e) {
+        console.log(e);
+      }
+    } else {
+      try {
+        const dataUrl = await domtoimage.toJpeg(imageRef.current, {
+          quality: 0.95,
+          width: 320,
+          height: 440,
+        });
+
+        let link = document.createElement('a');
+        link.download = 'sticker-smash.jpeg';
+        link.href = dataUrl;
+        link.click();
+      } catch (e) {
+        console.log(e);
+      }
+    }
+  };
+
+  return (
+    <GestureHandlerRootView style={styles.container}>
+      <View style={styles.imageContainer}>
+        <View ref={imageRef} collapsable={false}>
+          <ImageViewer imgSource={PlaceholderImage} selectedImage={selectedImage} />
+          {pickedEmoji && <EmojiSticker imageSize={40} stickerSource={pickedEmoji} />}
+        </View>
+      </View>
+      {showAppOptions ? (
+        <View style={styles.optionsContainer}>
+          <View style={styles.optionsRow}>
+            <IconButton icon="refresh" label="Reset" onPress={onReset} />
+            <CircleButton onPress={onAddSticker} />
+            <IconButton icon="save-alt" label="Save" onPress={onSaveImageAsync} />
+          </View>
+        </View>
+      ) : (
+        <View style={styles.footerContainer}>
+          <Button theme="primary" label="Choose a photo" onPress={pickImageAsync} />
+          <Button label="Use this photo" onPress={() => setShowAppOptions(true)} />
+        </View>
+      )}
+      <EmojiPicker isVisible={isModalVisible} onClose={onModalClose}>
+        <EmojiList onSelect={setPickedEmoji} onCloseModal={onModalClose} />
+      </EmojiPicker>
+    </GestureHandlerRootView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#25292e',
+    alignItems: 'center',
+  },
+  imageContainer: {
+    flex: 1,
+  },
+  footerContainer: {
+    flex: 1 / 3,
+    alignItems: 'center',
+  },
+  optionsContainer: {
+    position: 'absolute',
+    bottom: 80,
+  },
+  optionsRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+  },
+});
+
+Show More
+Fix dom-to-image TypeScript module error
+
+
+On running the app in a web browser, we can now save a screenshot:
+
+Summary
+Chapter 8: Handle platform differences
+
+The app does everything we set out for it to do, so it's time to shift our focus toward the purely aesthetic..
+
+
+
+In the next chapter, we will customize the app's status bar, splash screen, and app icon.
+
+
+
+
+Configure status bar, splash screen and app icon
+In this tutorial, learn the basics of how to configure a status bar, app icon, and splash screen.
+
+
+
+Copy page
+
+In this chapter, we'll address some app details before deploying our app to an app store, such as theming the status bar, customizing the app icon, and splash screen.
+
+Watch: Adding the finishing touches to your universal Expo app
+Watch: Adding the finishing touches to your universal Expo app
+1
+
+Configure the status bar
+expo-status-bar library comes pre-installed in every project created using create-expo-app. This library provides a StatusBar component to configure the app's status bar style.
+
+Inside app/_layout.tsx:
+
+Import StatusBar from expo-status-bar.
+Group the StatusBar and existing Stack components with React's Fragment component.
+app/_layout.tsx
+
+Copy
+
+
+import { Stack } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+
+export default function RootLayout() {
+  return (
+    <>
+      <Stack>
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      </Stack>
+      <StatusBar style="light" />
+    </>
+  );
+}
+Let's take a look at our app now on Android, and iOS:
+
+StatusBar with light style shown on both Android and iOS.
+2
+
+App icon
+Inside the project, there's an icon.png file inside the assets/images directory. This is our app icon. It's a 1024px by 1024px image and looks as shown below:
+
+
+Like the splash screen image, the "icon" property in the app.json file configures the app icon's path. By default, a new Expo project defines the correct path to "./assets/images/icon.png". We don't have to change anything.
+
+Eventually, when you'll build your app for the app stores, Expo Application Services (EAS) will take this image and create optimized icon for every device.
+
+You can see the icon in various places in Expo Go. Here is an example of the app icon displayed in the developer menu of Expo Go:
+
+Splash screen on Developer Menu in Expo Go app.
+3
+
+Splash screen
+A splash screen is visible before the app's content is loaded. It uses a smaller image, such as an app's icon, which is centered. It hides once the app's content is ready to be displayed.
+
+The expo-splash-screen plugin already comes pre-installed in every project created using create-expo-app. This library provides a config plugin to configure the splash screen.
+
+In app.json, the expo-splash-screen plugin is already configured to use the app's icon as the splash screen image (provided in the downloadable assets) with the following snippet so we don't have to change anything:
+
+app.json
+
+Copy
+
+
+{
+  "plugins": [
+    ... 
+    [
+      "expo-splash-screen",
+      {
+        "image": "./assets/images/splash-icon.png"
+        ... 
+      }
+    ]
+  ]
+}
+However, to test the splash screen, we cannot use Expo Go or a development build. To test it, we need to create a preview or a production build of our app. We recommend going through the following resources to learn more about the splash screen configuration and how to test it:
+
+Create a splash screen icon guide to learn how splash screen icon is configured.
+To learn how to create a preview build, see Internal distribution guide in EAS Tutorial, or to create production builds see guides for Android and iOS.
+Summary
+Chapter 9: Configure status bar, splash screen and app icon
+
+Well done! We built an app that runs on Android, iOS, and the web from the same codebase.
+
+
+
+The next section of the tutorial will guide you toward resources to learn more about concepts we've covered here and others we have mentioned briefly.

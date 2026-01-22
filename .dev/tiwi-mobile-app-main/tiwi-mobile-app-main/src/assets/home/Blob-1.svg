@@ -1,0 +1,20 @@
+<svg width="37" height="23" viewBox="0 0 37 23" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g filter="url(#filter0_g_286_346)">
+<path fill-rule="evenodd" clip-rule="evenodd" d="M30.8256 18.0634C36.8072 14.9787 26.0899 12.329 20.8181 8.5043C17.9454 6.42016 17.1109 4.4811 13.9548 4.06437C7.50257 3.21241 3.40087 11.0706 4.07156 12.6901C6.60054 18.7967 28.3498 19.3402 30.8256 18.0634Z" fill="url(#paint0_radial_286_346)"/>
+</g>
+<defs>
+<filter id="filter0_g_286_346" x="0" y="0" width="36.59" height="22.626" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+<feFlood flood-opacity="0" result="BackgroundImageFix"/>
+<feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape"/>
+<feTurbulence type="fractalNoise" baseFrequency="2 2" numOctaves="3" seed="48" />
+<feDisplacementMap in="shape" scale="8" xChannelSelector="R" yChannelSelector="G" result="displacedImage" width="100%" height="100%" />
+<feMerge result="effect1_texture_286_346">
+<feMergeNode in="displacedImage"/>
+</feMerge>
+</filter>
+<radialGradient id="paint0_radial_286_346" cx="0" cy="0" r="1" gradientTransform="matrix(-15.9313 0.830873 -3.11534 7.88193 19.3892 11.657)" gradientUnits="userSpaceOnUse">
+<stop stop-color="#B1F128"/>
+<stop offset="1" stop-color="#466B06"/>
+</radialGradient>
+</defs>
+</svg>

@@ -1,0 +1,43 @@
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/preflight.css" layer(base);
+@import "tailwindcss/utilities.css";
+@import "nativewind/theme";
+
+@layer theme {
+  @theme {
+    /* Fonts */
+    --font-manrope: "Manrope", system-ui, sans-serif;
+    --font-rounded: "SF Pro Rounded", "Hiragino Maru Gothic ProN", Meiryo,
+      "MS PGothic", sans-serif;
+    
+    /* Colors from Figma */
+    --color-primary-cta: #B1F128;
+    --color-bg: #010501;
+    --color-bg-semi: #0B0F0A;
+    --color-bg-cards: #121712;
+    --color-bg-stroke: #1F261E;
+    --color-bg-shade-20: #0D3600;
+    --color-title-text: #FFFFFF;
+    --color-body-text: #B5B5B5;
+    --color-error: #FF5C5C;
+    --color-success: #3FEA9B;
+  }
+}
+
+@media android {
+  :root {
+    --font-mono: monospace;
+    --font-rounded: normal;
+    --font-serif: serif;
+    --font-sans: normal;
+  }
+}
+
+@media ios {
+  :root {
+    --font-mono: ui-monospace;
+    --font-serif: ui-serif;
+    --font-sans: system-ui;
+    --font-rounded: ui-rounded;
+  }
+}
