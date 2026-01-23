@@ -1,97 +1,150 @@
-import { SkeletonLoader } from '@/components/ui/skeleton-loader';
+import { Skeleton } from '@/components/ui/skeleton';
 import { colors } from '@/constants/colors';
 import { TradingPair } from '@/types';
 import { Image } from 'expo-image';
 import React, { useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 interface MarketSectionProps {
     pairs: TradingPair[];
     isLoading?: boolean;
 }
 
+const tabs = [
+    { id: 'favourite', label: 'Favourite' },
+    { id: 'top', label: 'Top' },
+    { id: 'spotlight', label: 'Spotlight' },
+    { id: 'new', label: 'New' },
+    { id: 'gainers', label: 'Gainers' },
+    { id: 'losers', label: 'Losers' },
+];
+
 /**
- * Market Section Component
- * Displays top trading pairs with tabs for Gainers and Losers
+ * Market Section
+ * Tabbed interface with trading pairs list
  * Matches Figma design exactly
  */
 export const MarketSection: React.FC<MarketSectionProps> = ({
     pairs,
     isLoading = false,
 }) => {
-    const [activeTab, setActiveTab] = useState<'gainers' | 'losers'>('gainers');
-
-    const filteredPairs = pairs; // In a real app, logic for filtering gainers/losers
+    const [activeTab, setActiveTab] = useState('top');
 
     if (isLoading) {
         return (
-            <View style={styles.container}>
-                <View style={styles.header}>
-                    <SkeletonLoader width={100} height={24} borderRadius={4} />
-                    <SkeletonLoader width={40} height={16} borderRadius={4} />
+            <View style={styles.loadingContainer}>
+                <Skeleton width={54} height={22} borderRadius={4} />
+                <View style={styles.loadingTabs}>
+                    {[1, 2, 3, 4, 5, 6].map((i) => (
+                        <Skeleton key={i} width={50} height={16} borderRadius={4} />
+                    ))}
                 </View>
-                <View style={styles.list}>
-                    {[1, 2, 3].map((i) => (
-                        <View key={i} style={styles.pairRowSkeleton}>
-                            <View style={styles.pairInfoSkeleton}>
-                                <SkeletonLoader width={32} height={32} borderRadius={16} />
-                                <View style={{ gap: 4 }}>
-                                    <SkeletonLoader width={60} height={16} borderRadius={4} />
-                                    <SkeletonLoader width={40} height={12} borderRadius={4} />
-                                </View>
-                            </View>
-                            <SkeletonLoader width={60} height={20} borderRadius={4} />
-                        </View>
+                <View style={styles.loadingList}>
+                    {[1, 2, 3, 4, 5].map((i) => (
+                        <Skeleton key={i} width="100%" height={55} borderRadius={0} />
                     ))}
                 </View>
             </View>
         );
     }
 
-    const renderPair = ({ item }: { item: TradingPair }) => {
-        const isPositive = item.change24h >= 0;
+    const getChangeColor = (change: number) => {
+        return change >= 0 ? colors.success : colors.error;
+    };
 
-        return (
-            <View style={styles.pairRow}>
-                <View style={styles.pairLeft}>
-                    <Image source={item.logo} style={styles.tokenLogo} contentFit="contain" />
-                    <View>
-                        <Text style={styles.pairSymbol}>{item.baseSymbol}/{item.quoteSymbol}</Text>
-                        <Text style={styles.leverage}>{item.leverage}</Text>
-                    </View>
-                </View>
-                <View style={styles.pairRight}>
-                    <Text style={styles.price}>{item.price}</Text>
-                    <Text style={[styles.change, { color: isPositive ? colors.success : colors.error }]}>
-                        {isPositive ? '+' : ''}{item.change24h}%
-                    </Text>
-                </View>
-            </View>
-        );
+    const formatChange = (change: number) => {
+        const sign = change >= 0 ? '+' : '';
+        return `${sign}${change.toFixed(2)}%`;
     };
 
     return (
         <View style={styles.container}>
+            {/* Header */}
             <View style={styles.header}>
-                <View style={styles.tabs}>
-                    <TouchableOpacity onPress={() => setActiveTab('gainers')}>
-                        <Text style={[styles.tabText, activeTab === 'gainers' && styles.activeTabText]}>Top Gainers</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => setActiveTab('losers')}>
-                        <Text style={[styles.tabText, activeTab === 'losers' && styles.activeTabText]}>Top Losers</Text>
-                    </TouchableOpacity>
+                <View style={styles.titleContainer}>
+                    <Text style={styles.title}>Market</Text>
                 </View>
-                <TouchableOpacity>
-                    <Text style={styles.viewMore}>See All</Text>
-                </TouchableOpacity>
+
+                {/* Tabs */}
+                <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    style={styles.tabsScroll}
+                    contentContainerStyle={styles.tabsContainer}
+                >
+                    {tabs.map((tab) => {
+                        const isActive = tab.id === activeTab;
+                        return (
+                            <TouchableOpacity
+                                key={tab.id}
+                                onPress={() => setActiveTab(tab.id)}
+                                style={styles.tabButton}
+                                activeOpacity={0.7}
+                            >
+                                <Text
+                                    style={[
+                                        styles.tabLabel,
+                                        { color: isActive ? colors.primaryCTA : colors.bodyText }
+                                    ]}
+                                >
+                                    {tab.label}
+                                </Text>
+                                {isActive && <View style={styles.activeIndicator} />}
+                            </TouchableOpacity>
+                        );
+                    })}
+                </ScrollView>
             </View>
 
-            <View style={styles.list}>
-                {filteredPairs.slice(0, 3).map((pair) => (
-                    <React.Fragment key={pair.id}>
-                        {renderPair({ item: pair })}
-                    </React.Fragment>
+            {/* Trading Pairs List */}
+            <View style={styles.listContainer}>
+                {pairs.map((pair) => (
+                    <TouchableOpacity
+                        key={pair.id}
+                        style={styles.pairItem}
+                        activeOpacity={0.7}
+                    >
+                        {/* Logo */}
+                        <Image
+                            source={pair.logo}
+                            style={styles.pairLogo}
+                            contentFit="cover"
+                        />
+
+                        {/* Info */}
+                        <View style={styles.pairInfo}>
+                            <View style={styles.symbolRow}>
+                                <Text style={styles.baseSymbol}>{pair.baseSymbol}</Text>
+                                <Text style={styles.quoteSymbol}>/{pair.quoteSymbol}</Text>
+                                <View style={styles.leverageBadge}>
+                                    <Text style={styles.leverageText}>{pair.leverage}</Text>
+                                </View>
+                            </View>
+                            <Text style={styles.volumeText}>{pair.volume}</Text>
+                        </View>
+
+                        {/* Price and Change */}
+                        <View style={styles.priceContainer}>
+                            <Text style={styles.priceText}>{pair.price}</Text>
+                            <Text
+                                style={[
+                                    styles.changeText,
+                                    { color: getChangeColor(pair.change24h) }
+                                ]}
+                            >
+                                {formatChange(pair.change24h)}
+                            </Text>
+                        </View>
+                    </TouchableOpacity>
                 ))}
+
+                {/* View All Button */}
+                <TouchableOpacity
+                    style={styles.viewAllButton}
+                    activeOpacity={0.8}
+                >
+                    <Text style={styles.viewAllText}>View all</Text>
+                </TouchableOpacity>
             </View>
         </View>
     );
@@ -99,83 +152,139 @@ export const MarketSection: React.FC<MarketSectionProps> = ({
 
 const styles = StyleSheet.create({
     container: {
+        width: '100%',
+        alignItems: 'center',
+        paddingVertical: 8,
+    },
+    loadingContainer: {
         width: 353,
+        gap: 12,
+        paddingHorizontal: 20,
+    },
+    loadingTabs: {
+        flexDirection: 'row',
         gap: 16,
+    },
+    loadingList: {
+        gap: 8,
     },
     header: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
+        width: '100%',
+        gap: 8,
     },
-    tabs: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 16,
+    titleContainer: {
+        paddingHorizontal: 20,
+        width: '100%',
     },
-    tabText: {
+    title: {
         fontFamily: 'Manrope-SemiBold',
         fontSize: 16,
-        color: colors.mutedText,
-    },
-    activeTabText: {
         color: colors.titleText,
     },
-    viewMore: {
-        fontFamily: 'Manrope-Medium',
-        fontSize: 14,
-        color: colors.primaryCTA,
+    tabsScroll: {
+        borderBottomWidth: 0.5,
+        borderBottomColor: colors.bgStroke,
     },
-    list: {
-        gap: 12,
+    tabsContainer: {
+        paddingHorizontal: 20,
+        gap: 16,
+        height: 32, // Controlled height for consistent alignment
     },
-    pairRow: {
+    tabButton: {
+        height: '100%',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingBottom: 6, // Space for indicator
+    },
+    tabLabel: {
+        fontFamily: 'Manrope-SemiBold',
+        fontSize: 12,
+    },
+    activeIndicator: {
+        position: 'absolute',
+        bottom: 0,
+        height: 1,
+        width: '100%',
+        backgroundColor: colors.primaryCTA,
+    },
+    listContainer: {
+        width: 353,
+        paddingTop: 8,
+    },
+    pairItem: {
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingVertical: 4,
+        gap: 10,
+        paddingVertical: 10,
+        width: '100%',
     },
-    pairLeft: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12,
-    },
-    tokenLogo: {
+    pairLogo: {
         width: 32,
         height: 32,
         borderRadius: 16,
     },
-    pairSymbol: {
-        fontFamily: 'Manrope-Bold',
+    pairInfo: {
+        flex: 1,
+        justifyContent: 'center',
+    },
+    symbolRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+    },
+    baseSymbol: {
+        fontFamily: 'Manrope-SemiBold',
         fontSize: 14,
         color: colors.titleText,
     },
-    leverage: {
+    quoteSymbol: {
+        fontFamily: 'Manrope-Medium',
+        fontSize: 14,
+        color: colors.bodyText,
+    },
+    leverageBadge: {
+        backgroundColor: colors.bgStroke,
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 6,
+    },
+    leverageText: {
+        fontFamily: 'Manrope-Medium',
+        fontSize: 10,
+        color: colors.bodyText,
+    },
+    volumeText: {
         fontFamily: 'Manrope-Medium',
         fontSize: 12,
-        color: colors.mutedText,
+        color: colors.bodyText,
         marginTop: 2,
     },
-    pairRight: {
+    priceContainer: {
         alignItems: 'flex-end',
+        justifyContent: 'center',
     },
-    price: {
-        fontFamily: 'Manrope-Bold',
+    priceText: {
+        fontFamily: 'Manrope-SemiBold',
         fontSize: 14,
         color: colors.titleText,
     },
-    change: {
+    changeText: {
         fontFamily: 'Manrope-Medium',
         fontSize: 12,
         marginTop: 2,
     },
-    pairRowSkeleton: {
-        flexDirection: 'row',
+    viewAllButton: {
+        backgroundColor: colors.bgShade20,
+        height: 48,
+        borderRadius: 999,
         alignItems: 'center',
-        justifyContent: 'space-between',
+        justifyContent: 'center',
+        marginTop: 12,
+        width: '100%',
     },
-    pairInfoSkeleton: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12,
+    viewAllText: {
+        fontFamily: 'Manrope-Medium',
+        fontSize: 14,
+        color: colors.titleText,
     },
 });

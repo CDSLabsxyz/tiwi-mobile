@@ -32,6 +32,7 @@ export const NewsfeedSection: React.FC<NewsfeedSectionProps> = ({
         if (items.length <= 1) return;
 
         const startAutoScroll = () => {
+            // @ts-ignore
             autoScrollTimerRef.current = setInterval(() => {
                 if (isUserScrollingRef.current) return;
 

@@ -1,6 +1,7 @@
 import { StyleSheet, Text, type TextProps } from 'react-native';
 
 import { useThemeColor } from '@/hooks/use-theme-color';
+import { Fonts } from '@/theme';
 
 export type ThemedTextProps = TextProps & {
   lightColor?: string;
@@ -33,7 +34,6 @@ export function ThemedText({
   );
 }
 
-import { Fonts } from '@/theme';
 
 const styles = StyleSheet.create({
   default: {

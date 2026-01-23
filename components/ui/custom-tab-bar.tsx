@@ -2,15 +2,13 @@ import { colors } from '@/constants/colors';
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { Image } from 'expo-image';
 import React from 'react';
-import { Dimensions, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 /**
  * Custom Tab Bar Component
  * Matches Figma design exactly (node-id: 286-685)
- * Dimensions: 393px x 76px
+ * Dimensions: 393px × 76px
  */
 export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
     const { bottom } = useSafeAreaInsets();
@@ -39,30 +37,57 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
     ];
 
     return (
-        <View style={[styles.container, { paddingBottom: Math.max(bottom, 16) }]}>
-            <View style={styles.navContent}>
-                {/* Left Side Group */}
-                <View style={styles.group}>
+        <View
+            style={[
+                styles.container,
+                {
+                    paddingBottom: (bottom || 16),
+                }
+            ]}
+        >
+            <View
+                style={styles.navContent}
+            >
+                {/* Left Side - Home and Market */}
+                <View
+                    style={styles.group}
+                >
                     {navItems.slice(0, 2).map((item) => {
-                        const route = state.routes.find((r) => r.name === item.id);
-                        if (!route) return null;
-                        const isFocused = state.index === state.routes.findIndex((r) => r.name === item.id);
+                        const isFocused = state.index === state.routes.findIndex(r => r.name === item.id);
+                        const route = state.routes.find(r => r.name === item.id);
 
                         return (
                             <TouchableOpacity
                                 key={item.id}
-                                onPress={() => onTabPress(route, isFocused)}
+                                onPress={() => route && onTabPress(route, isFocused)}
                                 style={styles.tabItem}
                                 activeOpacity={0.7}
+
                             >
-                                <View style={styles.iconContainer}>
+                                <View
+                                    style={styles.iconWrapper}
+                                >
                                     <Image
                                         source={item.icon}
-                                        style={[styles.icon, { tintColor: isFocused ? colors.primaryCTA : colors.mutedText }]}
+                                        style={[
+                                            styles.icon,
+                                            {
+                                                tintColor: isFocused
+                                                    ? item.id === 'index' ? undefined : colors.primaryCTA
+                                                    : colors.mutedText
+                                            }
+                                        ]}
                                         contentFit="contain"
                                     />
                                 </View>
-                                <Text style={[styles.tabLabel, { color: isFocused ? colors.primaryCTA : colors.mutedText }]}>
+                                <Text
+                                    style={[
+                                        styles.tabLabel,
+                                        {
+                                            color: isFocused ? colors.primaryCTA : colors.mutedText,
+                                        }
+                                    ]}
+                                >
                                     {item.label}
                                 </Text>
                             </TouchableOpacity>
@@ -70,28 +95,38 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
                     })}
                 </View>
 
-                {/* Right Side Group */}
-                <View style={styles.group}>
+                {/* Right Side - Earn and Wallet */}
+                <View
+                    style={styles.group}
+                >
                     {navItems.slice(2).map((item) => {
-                        const route = state.routes.find((r) => r.name === item.id);
-                        if (!route) return null;
-                        const isFocused = state.index === state.routes.findIndex((r) => r.name === item.id);
+                        const isFocused = state.index === state.routes.findIndex(r => r.name === item.id);
+                        const route = state.routes.find(r => r.name === item.id);
 
                         return (
                             <TouchableOpacity
                                 key={item.id}
-                                onPress={() => onTabPress(route, isFocused)}
+                                onPress={() => route && onTabPress(route, isFocused)}
                                 style={styles.tabItem}
                                 activeOpacity={0.7}
                             >
-                                <View style={styles.iconContainer}>
+                                <View
+                                    style={styles.iconWrapper}
+                                >
                                     <Image
                                         source={item.icon}
                                         style={[styles.icon, { tintColor: isFocused ? colors.primaryCTA : colors.mutedText }]}
                                         contentFit="contain"
                                     />
                                 </View>
-                                <Text style={[styles.tabLabel, { color: isFocused ? colors.primaryCTA : colors.mutedText }]}>
+                                <Text
+                                    style={[
+                                        styles.tabLabel,
+                                        {
+                                            color: isFocused ? colors.primaryCTA : colors.mutedText,
+                                        }
+                                    ]}
+                                >
                                     {item.label}
                                 </Text>
                             </TouchableOpacity>
@@ -100,17 +135,21 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
                 </View>
             </View>
 
-            {/* Center Button - Swap (Exactly positioned) */}
-            <View style={styles.swapButtonWrapper}>
+            {/* Center Button - Swap (main comp.svg) */}
+            <View
+                style={styles.swapButtonWrapper}
+            >
                 <TouchableOpacity
                     onPress={onSwapPress}
                     activeOpacity={0.8}
-                    style={styles.swapButtonContainer}
+                    style={styles.swapButtonTouch}
                 >
-                    <View style={styles.swapIconInset}>
+                    <View
+                        style={styles.swapIconContainer}
+                    >
                         <Image
                             source={require('../../assets/home/main comp.svg')}
-                            style={styles.swapIcon}
+                            style={styles.icon}
                             contentFit="contain"
                         />
                     </View>
@@ -143,18 +182,18 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         width: '100%',
-        gap: 64, // Gap between groups
+        gap: 64, // Gap between left and right groups
     },
     group: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 8, // Gap between items
+        gap: 8, // Gap between items in groups
     },
     tabItem: {
         alignItems: 'center',
         width: 70,
     },
-    iconContainer: {
+    iconWrapper: {
         width: 24,
         height: 24,
         alignItems: 'center',
@@ -165,32 +204,28 @@ const styles = StyleSheet.create({
         height: '100%',
     },
     tabLabel: {
+        textAlign: 'center',
+        marginTop: 4,
         fontFamily: 'Manrope-Medium',
         fontSize: 12,
-        marginTop: 4,
-        textAlign: 'center',
     },
     swapButtonWrapper: {
         position: 'absolute',
-        left: 167.53, // Precise Figma value
-        top: -18.97,  // Precise Figma value
+        left: 167.53,
+        top: -18.97,
         width: 57.941,
         height: 57.941,
         overflow: 'visible',
     },
-    swapButtonContainer: {
+    swapButtonTouch: {
         width: '100%',
         height: '100%',
     },
-    swapIconInset: {
+    swapIconContainer: {
         position: 'absolute',
         left: -57.941 * 0.1381,
         top: -57.941 * 0.1726,
         right: -57.941 * 0.1381,
         bottom: -57.941 * 0.1036,
-    },
-    swapIcon: {
-        width: '100%',
-        height: '100%',
     },
 });

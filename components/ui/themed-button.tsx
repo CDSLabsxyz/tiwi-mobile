@@ -19,7 +19,6 @@ export function ThemedButton({
 }: ThemedButtonProps) {
     const primaryColor = useThemeColor({ light: lightColor, dark: darkColor }, 'primary');
     const secondaryColor = useThemeColor({ light: lightColor, dark: darkColor }, 'secondary');
-    const textColor = useThemeColor({}, 'text');
     const backgroundColor = variant === 'primary' ? primaryColor : variant === 'secondary' ? secondaryColor : 'transparent';
     const borderColor = variant === 'outline' ? primaryColor : 'transparent';
     const buttonTextColor = variant === 'outline' ? primaryColor : '#FFFFFF';
