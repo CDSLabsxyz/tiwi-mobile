@@ -1,12 +1,142 @@
-import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { StyleSheet } from 'react-native';
+import { SettingsHeader } from '@/components/ui/settings-header';
+import { SettingsItem } from '@/components/ui/settings-item';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useEffect } from 'react';
+import { BackHandler, ScrollView, StyleSheet, View } from 'react-native';
+
+// Settings Icons
+const imgUserCircle = require('../../assets/settings/user-circle.svg');
+const imgSecurityLock = require('../../assets/settings/security-lock.svg');
+const imgPhoneDeveloperMode = require('../../assets/settings/phone-developer-mode.svg');
+const imgLanguageSkill = require('../../assets/settings/language-skill.svg');
+const imgNotification02 = require('../../assets/settings/notification-02.svg');
+const imgDownload03 = require('../../assets/settings/download-03.svg');
+const imgCustomerSupport = require('../../assets/settings/customer-support.svg');
+const imgAddSquare = require('../../assets/settings/add-square.svg');
+const imgCloudDownload = require('../../assets/settings/cloud-download.svg');
+
+interface SettingsSection {
+    id: string;
+    title: string;
+    icon: any;
+    route?: string;
+    onPress?: () => void;
+}
+
+const settingsSections: SettingsSection[] = [
+    {
+        id: 'account-details',
+        title: 'Account Details',
+        icon: imgUserCircle,
+        route: '/settings/accounts',
+    },
+    {
+        id: 'security',
+        title: 'Security',
+        icon: imgSecurityLock,
+        route: '/settings/security',
+    },
+    {
+        id: 'connected-devices',
+        title: 'Connected Devices',
+        icon: imgPhoneDeveloperMode,
+        route: '/settings/connected-devices',
+    },
+    {
+        id: 'language-region',
+        title: 'Language & Region',
+        icon: imgLanguageSkill,
+        route: '/settings/language-region',
+    },
+    {
+        id: 'notifications',
+        title: 'Notifications',
+        icon: imgNotification02,
+        route: '/settings/notifications',
+    },
+    {
+        id: 'app-updates-cache',
+        title: 'App Updates & Cache',
+        icon: imgDownload03,
+        route: '/settings/app-updates-cache',
+    },
+    {
+        id: 'support',
+        title: 'Support',
+        icon: imgCustomerSupport,
+        route: '/settings/support',
+    },
+    {
+        id: 'add-new-wallet',
+        title: 'Add New Wallet',
+        icon: imgAddSquare,
+        route: '/settings/add-new-wallet',
+    },
+    {
+        id: 'import-wallet',
+        title: 'Import Wallet',
+        icon: imgCloudDownload,
+        onPress: () => {
+            console.log('Import Wallet pressed');
+        },
+    },
+];
 
 export default function SettingsScreen() {
+    const router = useRouter();
+    const params = useLocalSearchParams<{ returnTo?: string }>();
+
+    // Handle phone back button
+    useEffect(() => {
+        const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+            handleBackPress();
+            return true;
+        });
+
+        return () => backHandler.remove();
+    }, [params.returnTo]);
+
+    const handleBackPress = () => {
+        if (params.returnTo) {
+            router.push(params.returnTo as any);
+        } else if (router.canGoBack()) {
+            router.back();
+        } else {
+            router.replace('/' as any);
+        }
+    };
+
+    const handleSectionPress = (section: SettingsSection) => {
+        if (section.onPress) {
+            section.onPress();
+        } else if (section.route) {
+            const returnRoute = params.returnTo || '/settings';
+            router.push(`${section.route}?returnTo=${encodeURIComponent(returnRoute)}` as any);
+        }
+    };
+
     return (
         <ThemedView style={styles.container}>
-            <ThemedText type="title">Settings</ThemedText>
-            <ThemedText>App settings and configuration.</ThemedText>
+            <SettingsHeader title="Settings" onBack={handleBackPress} showBack={false} />
+
+            <ScrollView
+                style={styles.scrollView}
+                contentContainerStyle={styles.scrollContent}
+                showsVerticalScrollIndicator={false}
+                alwaysBounceVertical={true}
+            >
+                <View style={styles.sectionsWrapper}>
+                    {settingsSections.map((section) => (
+                        <SettingsItem
+                            key={section.id}
+                            label={section.title}
+                            icon={section.icon}
+                            onPress={() => handleSectionPress(section)}
+                        />
+                    ))}
+                </View>
+            </ScrollView>
         </ThemedView>
     );
 }
@@ -14,7 +144,18 @@ export default function SettingsScreen() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
+    },
+    scrollView: {
+        flex: 1,
+    },
+    scrollContent: {
+        flexGrow: 1,
+        paddingTop: 24,
+        paddingHorizontal: 18,
+        paddingBottom: 120, // Increased to clear the absolute tab bar
+    },
+    sectionsWrapper: {
+        width: '100%',
+        gap: 16,
     },
 });

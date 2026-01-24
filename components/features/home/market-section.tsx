@@ -13,7 +13,7 @@ interface MarketSectionProps {
 const tabs = [
     { id: 'favourite', label: 'Favourite' },
     { id: 'top', label: 'Top' },
-    { id: 'spotlight', label: 'Spotlight' },
+    // { id: 'spotlight', label: 'Spotlight' },
     { id: 'new', label: 'New' },
     { id: 'gainers', label: 'Gainers' },
     { id: 'losers', label: 'Losers' },
@@ -173,7 +173,6 @@ const styles = StyleSheet.create({
         gap: 8,
     },
     titleContainer: {
-        paddingHorizontal: 20,
         width: '100%',
     },
     title: {
@@ -186,7 +185,6 @@ const styles = StyleSheet.create({
         borderBottomColor: colors.bgStroke,
     },
     tabsContainer: {
-        paddingHorizontal: 20,
         gap: 16,
         height: 32, // Controlled height for consistent alignment
     },
@@ -208,7 +206,7 @@ const styles = StyleSheet.create({
         backgroundColor: colors.primaryCTA,
     },
     listContainer: {
-        width: 353,
+        width: '100%',
         paddingTop: 8,
     },
     pairItem: {

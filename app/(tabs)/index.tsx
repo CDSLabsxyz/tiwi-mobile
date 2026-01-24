@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ThemedView } from '@/components/themed-view';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { Header } from '@/components/ui/header';
+import { WalletModal } from '@/components/ui/wallet-modal';
 import { colors } from '@/constants/colors';
 
 import { MarketSection } from '@/components/features/home/market-section';
@@ -40,8 +41,37 @@ export default function HomeScreen() {
     isLoading: true,
   });
 
+  // ... existing hooks
   const { bottom } = useSafeAreaInsets();
   const router = useRouter();
+
+  // Wallet Modal State
+  const [isWalletModalVisible, setIsWalletModalVisible] = useState(false);
+
+  const handleOpenWallet = () => {
+    setIsWalletModalVisible(true);
+  };
+
+  const handleCloseWallet = () => {
+    setIsWalletModalVisible(false);
+  };
+
+  const handleWalletHistory = () => {
+    setIsWalletModalVisible(false);
+    router.push('/wallet' as any);
+  };
+
+  const handleWalletSettings = () => {
+    setIsWalletModalVisible(false);
+    // You might want to navigate to settings or handle this differently
+    router.push('/settings' as any);
+  };
+
+  const handleDisconnect = () => {
+    setIsWalletModalVisible(false);
+    // Implement disconnect logic
+    console.log('Disconnect pressed');
+  };
 
   useEffect(() => {
     const loadData = async () => {
@@ -55,6 +85,7 @@ export default function HomeScreen() {
   const translateY = useSharedValue(0);
   const context = useSharedValue({ x: 0, y: 0 });
 
+  // ... gesture definition ...
   const gesture = Gesture.Pan()
     .onStart(() => {
       context.value = { x: translateX.value, y: translateY.value };
@@ -96,13 +127,24 @@ export default function HomeScreen() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemedView style={styles.container}>
         <CustomStatusBar />
-        <Header />
+        <Header
+          onWalletPress={handleOpenWallet}
+          onSettingsPress={() => router.push('/settings' as any)}
+        />
+
+        <WalletModal
+          visible={isWalletModalVisible}
+          onClose={handleCloseWallet}
+          onHistoryPress={handleWalletHistory}
+          onSettingsPress={handleWalletSettings}
+          onDisconnectPress={handleDisconnect}
+        />
 
         <ScrollView
           style={styles.scrollView}
           contentContainerStyle={[
             styles.scrollContent,
-            { paddingBottom: (bottom || 16) + 76 + 24 } // Nav height + padding
+            { paddingBottom: (bottom || 16) + 76 + 24, paddingHorizontal: 20 } // Nav height + padding
           ]}
           showsVerticalScrollIndicator={false}
         >

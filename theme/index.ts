@@ -2,8 +2,8 @@ import { colors } from '@/constants/colors';
 
 export const Colors = {
   light: {
-    text: colors.bg,
-    background: colors.titleText,
+    text: colors.titleText,
+    background: colors.bg,
     tint: colors.primaryCTA,
     icon: colors.mutedText,
     tabIconDefault: colors.mutedText,

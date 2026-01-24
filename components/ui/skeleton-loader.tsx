@@ -1,6 +1,6 @@
 import { colors } from "@/constants/colors";
 import React, { useEffect, useRef } from "react";
-import { Animated, DimensionValue, ViewStyle } from "react-native";
+import { Animated, DimensionValue, View, ViewStyle } from "react-native";
 
 interface SkeletonLoaderProps {
     width?: DimensionValue;
@@ -56,3 +56,48 @@ export const SkeletonLoader: React.FC<SkeletonLoaderProps> = ({
         />
     );
 };
+
+
+/**
+ * Token List Skeleton - for token selection loading
+ */
+export const TokenListSkeleton: React.FC = () => {
+  return (
+    <View style={{ gap: 12 }}>
+      {[1, 2, 3, 4].map((i) => (
+        <View
+          key={i}
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 82,
+            paddingVertical: 12,
+          }}
+        >
+          {/* Left: Token Info Skeleton */}
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 9,
+            }}
+          >
+            <SkeletonLoader width={57} height={57} borderRadius={57 / 2} />
+            <View style={{ gap: 4 }}>
+              <SkeletonLoader width={60} height={16} borderRadius={4} />
+              <SkeletonLoader width={100} height={12} borderRadius={4} />
+            </View>
+          </View>
+
+          {/* Right: Balance Skeleton */}
+          <View style={{ gap: 4, width: 75, alignItems: "flex-end" }}>
+            <SkeletonLoader width={60} height={18} borderRadius={4} />
+            <SkeletonLoader width={50} height={12} borderRadius={4} />
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+};
+

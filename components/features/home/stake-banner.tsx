@@ -13,7 +13,8 @@ export const StakeBanner: React.FC = () => {
     const router = useRouter();
 
     const handlePress = () => {
-        router.push('/stake' as any);
+        // Navigating to Earn as it's the relevant section for staking
+        router.push('/earn' as any);
     };
 
     return (
@@ -25,11 +26,13 @@ export const StakeBanner: React.FC = () => {
             {/* Background Layer with Bottom Glow */}
             <View style={styles.glowContainer}>
                 <LinearGradient
-                    colors={['rgba(31, 38, 30, 0)', 'rgba(177, 241, 40, 0.4)', 'rgba(31, 38, 30, 0)']}
+                    colors={['transparent', 'rgba(177, 241, 40, 0.6)', 'transparent']}
                     start={{ x: 0, y: 0.5 }}
                     end={{ x: 1, y: 0.5 }}
                     style={styles.glowEffect}
                 />
+                {/* Secondary stronger highlight at the very bottom */}
+                <View style={styles.bottomBar} />
             </View>
 
             {/* Inner Content Section */}
@@ -63,7 +66,7 @@ export const StakeBanner: React.FC = () => {
 
 const styles = StyleSheet.create({
     container: {
-        width: 353,
+        width: "100%",
         height: 40,
         borderRadius: 16,
         backgroundColor: '#0F110F',
@@ -84,6 +87,18 @@ const styles = StyleSheet.create({
         bottom: -18,
         position: 'absolute',
         borderRadius: 100,
+        opacity: 0.8,
+    },
+    bottomBar: {
+        width: 60,
+        height: 1,
+        backgroundColor: '#B1F128',
+        bottom: 0,
+        position: 'absolute',
+        shadowColor: '#B1F128',
+        shadowOffset: { width: 0, height: -2 },
+        shadowOpacity: 0.8,
+        shadowRadius: 4,
     },
     content: {
         flexDirection: 'row',
@@ -94,7 +109,7 @@ const styles = StyleSheet.create({
     leftGroup: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 4,
+        gap: 6,
     },
     stakeIcon: {
         width: 18,
@@ -103,6 +118,7 @@ const styles = StyleSheet.create({
     label: {
         fontFamily: 'Manrope-Medium',
         fontSize: 14,
+        includeFontPadding: false,
     },
     labelMuted: {
         color: '#b5b5b5',

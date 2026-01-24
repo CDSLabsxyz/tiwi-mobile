@@ -180,18 +180,19 @@ const styles = StyleSheet.create({
     navContent: {
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'center',
         width: '100%',
-        gap: 64, // Gap between left and right groups
+        paddingHorizontal: 8,
+        gap: 48, // Responsive gap for the center button
     },
     group: {
+        flex: 1,
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 8, // Gap between items in groups
     },
     tabItem: {
+        flex: 1,
         alignItems: 'center',
-        width: 70,
+        justifyContent: 'center',
     },
     iconWrapper: {
         width: 24,
@@ -211,21 +212,22 @@ const styles = StyleSheet.create({
     },
     swapButtonWrapper: {
         position: 'absolute',
-        left: 167.53,
-        top: -18.97,
-        width: 57.941,
-        height: 57.941,
-        overflow: 'visible',
+        top: -19,
+        left: 0,
+        right: 0,
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 10,
     },
     swapButtonTouch: {
-        width: '100%',
-        height: '100%',
+        width: 58,
+        height: 58,
     },
     swapIconContainer: {
         position: 'absolute',
-        left: -57.941 * 0.1381,
-        top: -57.941 * 0.1726,
-        right: -57.941 * 0.1381,
-        bottom: -57.941 * 0.1036,
+        left: -58 * 0.1381,
+        top: -58 * 0.1726,
+        right: -58 * 0.1381,
+        bottom: -58 * 0.1036,
     },
 });

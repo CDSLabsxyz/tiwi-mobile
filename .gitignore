@@ -42,6 +42,5 @@ app-example
 /ios
 /android
 
-
-# development folders
+# development
 /.dev

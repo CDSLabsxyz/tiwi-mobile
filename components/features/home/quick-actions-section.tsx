@@ -22,7 +22,7 @@ const actions: QuickAction[] = [
         id: 'stake',
         label: 'Stake',
         icon: require('../../../assets/home/stake-1.svg'),
-        route: '/stake',
+        route: '/earn',
     },
     {
         id: 'pool',
@@ -81,7 +81,7 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        width: 353,
+        width: "100%",
     },
     actionButton: {
         alignItems: 'center',

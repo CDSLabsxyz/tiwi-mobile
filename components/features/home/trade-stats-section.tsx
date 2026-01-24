@@ -166,7 +166,7 @@ export const TradeStatsSection: React.FC<TradeStatsSectionProps> = ({
 
 const styles = StyleSheet.create({
     container: {
-        width: SECTION_WIDTH,
+        width: "100%",
         gap: 12,
     },
     title: {

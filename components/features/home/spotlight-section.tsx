@@ -95,7 +95,7 @@ export const SpotlightSection: React.FC<SpotlightSectionProps> = ({
 
 const styles = StyleSheet.create({
     container: {
-        width: 353,
+        width: "100%",
         gap: 8, // matches gap-2 in tailwind (8px)
     },
     header: {

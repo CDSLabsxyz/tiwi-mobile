@@ -28,12 +28,6 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="swap"
-        options={{
-          title: 'Swap',
-        }}
-      />
-      <Tabs.Screen
         name="earn"
         options={{
           title: 'Earn',

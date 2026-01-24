@@ -174,7 +174,7 @@ export const NewsfeedSection: React.FC<NewsfeedSectionProps> = ({
 
 const styles = StyleSheet.create({
     container: {
-        width: BANNER_WIDTH,
+        width: "100%",
         gap: 8,
     },
     bannerWrapper: {
