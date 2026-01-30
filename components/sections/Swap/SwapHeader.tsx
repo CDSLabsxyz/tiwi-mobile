@@ -14,6 +14,8 @@ interface SwapHeaderProps {
     onWalletPress?: () => void;
 }
 
+import { useWalletStore } from '@/store/walletStore';
+
 /**
  * Swap Header
  * Aligned with Figma design (centered title and back button)
@@ -23,8 +25,9 @@ export const SwapHeader: React.FC<SwapHeaderProps> = ({
     onWalletPress,
 }) => {
     const router = useRouter();
+    const { address } = useWalletStore();
 
-    const fullAddress = walletAddress || WALLET_ADDRESS;
+    const fullAddress = walletAddress || address || WALLET_ADDRESS;
     const displayAddress = truncateAddress(fullAddress);
 
     const handleBack = () => {

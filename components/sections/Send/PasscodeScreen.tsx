@@ -5,9 +5,12 @@
  * Matches Figma design exactly (node-id: 3279-119940)
  */
 
-import React, { useState, useEffect, useRef } from "react";
-import { View, Text, TextInput, TouchableOpacity, Keyboard } from "react-native";
 import { colors } from "@/constants";
+import { useSecurityStore } from "@/store/securityStore";
+import * as Haptics from "expo-haptics";
+import React, { useEffect, useRef, useState } from "react";
+import { Keyboard, Text, TextInput, TouchableOpacity, View } from "react-native";
+import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 
 interface PasscodeScreenProps {
   onSuccess: () => void;
@@ -19,11 +22,28 @@ export const PasscodeScreen: React.FC<PasscodeScreenProps> = ({ onSuccess }) => 
   const [passcode, setPasscode] = useState<string[]>(Array(6).fill(""));
   const [focusedIndex, setFocusedIndex] = useState<number>(0);
   const [validationState, setValidationState] = useState<ValidationState>("idle");
+  const verifyPasscode = useSecurityStore((state) => state.verifyPasscode);
   const inputRefs = useRef<(TextInput | null)[]>([]);
+
+  const shake = useSharedValue(0);
+  const shakeStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: shake.value }],
+  }));
+
+  const triggerShake = () => {
+    shake.value = withTiming(-10, { duration: 50 }, () => {
+      shake.value = withTiming(10, { duration: 50 }, () => {
+        shake.value = withTiming(-10, { duration: 50 }, () => {
+          shake.value = withTiming(10, { duration: 50 }, () => {
+            shake.value = withTiming(0, { duration: 50 });
+          });
+        });
+      });
+    });
+  };
 
   // Auto-focus first input on mount
   useEffect(() => {
-    // Small delay to ensure component is mounted
     setTimeout(() => {
       inputRefs.current[0]?.focus();
     }, 100);
@@ -33,67 +53,55 @@ export const PasscodeScreen: React.FC<PasscodeScreenProps> = ({ onSuccess }) => 
   useEffect(() => {
     const isComplete = passcode.every((digit) => digit !== "") && passcode.length === 6;
     if (isComplete && validationState === "idle") {
-      // Validate passcode with backend
-      Keyboard.dismiss();
-      const fullPasscode = passcode.join("");
-      
-      setValidationState("validating");
-      
-      // Backend validation (mock for now)
-      const validatePasscode = async (code: string) => {
-        try {
-          // TODO: Replace with actual backend API call
-          // const response = await fetch('/api/validate-passcode', {
-          //   method: 'POST',
-          //   body: JSON.stringify({ passcode: code }),
-          // });
-          // const result = await response.json();
-          
-          // Mock validation - in production, use actual backend
-          await new Promise(resolve => setTimeout(resolve, 500));
-          
-          // Mock: accept "123456" as valid, reject others
-          const isValid = code === "123456";
-          
-          if (isValid) {
-            setValidationState("valid");
-            // Initiate transaction via wallet provider
-            // TODO: await walletProvider.initiateTransaction(transactionData)
-            setTimeout(() => {
-              onSuccess();
-            }, 500);
-          } else {
-            setValidationState("invalid");
-            // Reset passcode after showing error
-            setTimeout(() => {
-              setPasscode(Array(6).fill(""));
-              setFocusedIndex(0);
-              setValidationState("idle");
-              inputRefs.current[0]?.focus();
-            }, 2000);
-          }
-        } catch (error) {
-          console.error("Passcode validation error:", error);
-          setValidationState("invalid");
-          setTimeout(() => {
-            setPasscode(Array(6).fill(""));
-            setFocusedIndex(0);
-            setValidationState("idle");
-            inputRefs.current[0]?.focus();
-          }, 2000);
-        }
-      };
-      
-      validatePasscode(fullPasscode);
+      handleVerify();
     }
-  }, [passcode, validationState, onSuccess]);
+  }, [passcode, validationState]);
+
+  const handleVerify = async () => {
+    Keyboard.dismiss();
+    const fullPasscode = passcode.join("");
+    setValidationState("validating");
+
+    try {
+      const isValid = await verifyPasscode(fullPasscode);
+
+      if (isValid) {
+        setValidationState("valid");
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        setTimeout(() => {
+          onSuccess();
+        }, 500);
+      } else {
+        setValidationState("invalid");
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        triggerShake();
+
+        // Reset passcode after showing error
+        setTimeout(() => {
+          setPasscode(Array(6).fill(""));
+          setFocusedIndex(0);
+          setValidationState("idle");
+          inputRefs.current[0]?.focus();
+        }, 1500);
+      }
+    } catch (error) {
+      console.error("Passcode validation error:", error);
+      setValidationState("invalid");
+      setTimeout(() => {
+        setPasscode(Array(6).fill(""));
+        setFocusedIndex(0);
+        setValidationState("idle");
+        inputRefs.current[0]?.focus();
+      }, 1500);
+    }
+  };
 
   const handleTextChange = (text: string, index: number) => {
     // Only allow single digit
     if (text.length > 1) {
       text = text.slice(-1);
     }
-    
+
     // Only allow numbers (0-9)
     if (text && !/^[0-9]$/.test(text)) {
       return;
@@ -154,15 +162,15 @@ export const PasscodeScreen: React.FC<PasscodeScreenProps> = ({ onSuccess }) => 
   };
 
   return (
-    <View
-      style={{
+    <Animated.View
+      style={[{
         width: "100%",
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
         paddingTop: 40,
         paddingBottom: 20,
-      }}
+      }, shakeStyle]}
     >
       {/* Title */}
       <Text
@@ -198,61 +206,69 @@ export const PasscodeScreen: React.FC<PasscodeScreenProps> = ({ onSuccess }) => 
           } else if (focusedIndex === index) {
             borderColor = colors.primaryCTA;
           }
-          
+
           return (
-          <TouchableOpacity
-            key={index}
-            activeOpacity={0.8}
-            onPress={() => handleBoxPress(index)}
-            style={{
-              width: 50,
-              height: 50,
-              borderRadius: 8,
-              borderWidth: 1,
-              borderColor: borderColor as any,
-              backgroundColor: colors.bgSemi,
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            {/* Hidden TextInput for keyboard - uses native numeric keyboard */}
-            <TextInput
-              ref={(ref) => {
-                inputRefs.current[index] = ref;
-              }}
-              value={passcode[index]}
-              onChangeText={(text) => handleTextChange(text, index)}
-              onKeyPress={(e) => handleKeyPress(e, index)}
-              onFocus={() => handleFocus(index)}
-              onBlur={handleBlur}
-              keyboardType="number-pad"
-              maxLength={1}
-              returnKeyType="next"
+            <TouchableOpacity
+              key={index}
+              activeOpacity={0.8}
+              onPress={() => handleBoxPress(index)}
               style={{
-                position: "absolute",
-                width: 1,
-                height: 1,
-                opacity: 0,
+                width: 50,
+                height: 50,
+                borderRadius: 8,
+                borderWidth: 1.5,
+                borderColor: borderColor as any,
+                backgroundColor: colors.bgSemi,
+                alignItems: "center",
+                justifyContent: "center",
               }}
-              autoFocus={index === 0}
-              secureTextEntry={false}
-            />
-            
-            {/* Visual indicator (dot) - shows when digit is entered */}
-            {passcode[index] ? (
-              <View
-                style={{
-                  width: 12,
-                  height: 12,
-                  borderRadius: 6,
-                  backgroundColor: colors.titleText,
+            >
+              {/* Hidden TextInput for keyboard - uses native numeric keyboard */}
+              <TextInput
+                ref={(ref) => {
+                  inputRefs.current[index] = ref;
                 }}
+                value={passcode[index]}
+                onChangeText={(text) => handleTextChange(text, index)}
+                onKeyPress={(e) => handleKeyPress(e, index)}
+                onFocus={() => handleFocus(index)}
+                onBlur={handleBlur}
+                keyboardType="number-pad"
+                maxLength={1}
+                numberOfLines={1}
+                returnKeyType="next"
+                style={{
+                  position: "absolute",
+                  width: 1,
+                  height: 1,
+                  opacity: 0,
+                }}
+                autoFocus={index === 0}
+                secureTextEntry={false}
+                editable={validationState !== "validating" && validationState !== "valid"}
               />
-            ) : null}
-          </TouchableOpacity>
+
+              {/* Visual indicator (dot) - shows when digit is entered */}
+              {passcode[index] ? (
+                <View
+                  style={{
+                    width: 12,
+                    height: 12,
+                    borderRadius: 6,
+                    backgroundColor: validationState === "invalid" ? "#EF4444" : colors.titleText,
+                  }}
+                />
+              ) : null}
+            </TouchableOpacity>
           );
         })}
       </View>
+
+      {validationState === "invalid" && (
+        <Text style={{ color: "#EF4444", marginBottom: 16, fontFamily: "Manrope-Medium" }}>
+          Incorrect passcode
+        </Text>
+      )}
 
       {/* Helper Text */}
       <Text
@@ -267,6 +283,6 @@ export const PasscodeScreen: React.FC<PasscodeScreenProps> = ({ onSuccess }) => 
       >
         Enter your 6-digit passcode to confirm the transaction
       </Text>
-    </View>
+    </Animated.View>
   );
 };

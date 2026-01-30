@@ -1,19 +1,24 @@
 import { Skeleton } from '@/components/ui/skeleton';
 import { colors } from '@/constants/colors';
+import { MarketCategory, useMarketPairs } from '@/hooks/useMarketPairs';
+import { apiClient, MarketTokenPair, TokenMetadata } from '@/services/apiClient';
+import { useMarketStore } from '@/store/marketStore';
 import { TradingPair } from '@/types';
+import { formatNumber, formatPercentageChange, formatUSDPrice } from '@/utils/formatting';
 import { Image } from 'expo-image';
-import React, { useState } from 'react';
+import { useRouter } from 'expo-router';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 interface MarketSectionProps {
-    pairs: TradingPair[];
+    // pairs prop is now ignored as we fetch internally, but kept for compatibility
+    pairs?: TradingPair[];
     isLoading?: boolean;
 }
 
-const tabs = [
+const tabs: { id: MarketCategory | 'favourite'; label: string }[] = [
     { id: 'favourite', label: 'Favourite' },
-    { id: 'top', label: 'Top' },
-    // { id: 'spotlight', label: 'Spotlight' },
+    { id: 'hot', label: 'Top' },
     { id: 'new', label: 'New' },
     { id: 'gainers', label: 'Gainers' },
     { id: 'losers', label: 'Losers' },
@@ -22,20 +27,98 @@ const tabs = [
 /**
  * Market Section
  * Tabbed interface with trading pairs list
- * Matches Figma design exactly
  */
 export const MarketSection: React.FC<MarketSectionProps> = ({
-    pairs,
-    isLoading = false,
+    isLoading: initialLoading = false,
 }) => {
-    const [activeTab, setActiveTab] = useState('top');
+    const router = useRouter();
+    const [activeTab, setActiveTab] = useState<MarketCategory | 'favourite'>('hot');
+    const { favorites, toggleFavorite, isFavorite } = useMarketStore();
 
-    if (isLoading) {
+    // Fetch categories (Hot, New, Gainers, Losers)
+    const {
+        data: marketPairs,
+        isLoading: isPairsLoading,
+        refetch: refetchPairs
+    } = useMarketPairs({
+        category: activeTab === 'favourite' ? 'hot' : activeTab as MarketCategory,
+        limit: 5, // Display top 5 on home screen
+        enabled: activeTab !== 'favourite'
+    });
+
+    // Fetch favorites
+    const [favoriteTokens, setFavoriteTokens] = useState<MarketTokenPair[]>([]);
+    const [isFavLoading, setIsFavLoading] = useState(false);
+
+    useEffect(() => {
+        if (activeTab !== 'favourite') return;
+
+        const loadFavs = async () => {
+            if (favorites.length === 0) {
+                setFavoriteTokens([]);
+                return;
+            }
+
+            setIsFavLoading(true);
+            try {
+                // Fetch each favorite metadata
+                // Note: The API currently returns single tokens for /tokens, 
+                // but market pairs for /market-pairs. 
+                // For simplicity, we'll fetch them as tokens and adapt them.
+                const promises = favorites.map(async (id) => {
+                    const [chainId, address] = id.split('-');
+                    try {
+                        const tokens = await apiClient.getTokens({
+                            address,
+                            chains: [parseInt(chainId)],
+                            limit: 1
+                        });
+                        return tokens[0];
+                    } catch (e) {
+                        return null;
+                    }
+                });
+
+                const results = await Promise.all(promises);
+                const validResults = results.filter((t): t is TokenMetadata => !!t && !!t.address);
+
+                // Map TokenMetadata to the flat MarketTokenPair structure
+                const mappedFavs: MarketTokenPair[] = validResults.map(t => ({
+                    ...t,
+                    logoURI: t.logoURI || '',
+                    priceChange24h: t.priceChange24h ? parseFloat(t.priceChange24h) : 0,
+                    volume24h: t.volume24h || 0,
+                    marketCap: t.marketCap || 0,
+                    holders: t.holders || 0,
+                    transactionCount: t.transactionCount || 0,
+                }));
+
+                setFavoriteTokens(mappedFavs);
+            } catch (error) {
+                console.error('[MarketSection] Error loading favorites:', error);
+            } finally {
+                setIsFavLoading(false);
+            }
+        };
+
+        loadFavs();
+    }, [activeTab, favorites]);
+
+    // Derive display data based on tab
+    const displayData = useMemo(() => {
+        if (activeTab === 'favourite') {
+            return favoriteTokens;
+        }
+        return marketPairs || [];
+    }, [activeTab, favoriteTokens, marketPairs]);
+    const isLoading = activeTab === 'favourite' ? isFavLoading : isPairsLoading;
+
+    if (isLoading && displayData.length === 0) {
         return (
             <View style={styles.loadingContainer}>
                 <Skeleton width={54} height={22} borderRadius={4} />
                 <View style={styles.loadingTabs}>
-                    {[1, 2, 3, 4, 5, 6].map((i) => (
+                    {[1, 2, 3, 4, 5].map((i) => (
                         <Skeleton key={i} width={50} height={16} borderRadius={4} />
                     ))}
                 </View>
@@ -47,15 +130,6 @@ export const MarketSection: React.FC<MarketSectionProps> = ({
             </View>
         );
     }
-
-    const getChangeColor = (change: number) => {
-        return change >= 0 ? colors.success : colors.error;
-    };
-
-    const formatChange = (change: number) => {
-        const sign = change >= 0 ? '+' : '';
-        return `${sign}${change.toFixed(2)}%`;
-    };
 
     return (
         <View style={styles.container}>
@@ -77,7 +151,7 @@ export const MarketSection: React.FC<MarketSectionProps> = ({
                         return (
                             <TouchableOpacity
                                 key={tab.id}
-                                onPress={() => setActiveTab(tab.id)}
+                                onPress={() => setActiveTab(tab.id as any)}
                                 style={styles.tabButton}
                                 activeOpacity={0.7}
                             >
@@ -96,54 +170,101 @@ export const MarketSection: React.FC<MarketSectionProps> = ({
                 </ScrollView>
             </View>
 
-            {/* Trading Pairs List */}
             <View style={styles.listContainer}>
-                {pairs.map((pair) => (
-                    <TouchableOpacity
-                        key={pair.id}
-                        style={styles.pairItem}
-                        activeOpacity={0.7}
-                    >
-                        {/* Logo */}
-                        <Image
-                            source={pair.logo}
-                            style={styles.pairLogo}
-                            contentFit="cover"
-                        />
+                {displayData.map((token: MarketTokenPair) => {
+                    if (!token || !token.address) return null;
 
-                        {/* Info */}
-                        <View style={styles.pairInfo}>
-                            <View style={styles.symbolRow}>
-                                <Text style={styles.baseSymbol}>{pair.baseSymbol}</Text>
-                                <Text style={styles.quoteSymbol}>/{pair.quoteSymbol}</Text>
-                                <View style={styles.leverageBadge}>
-                                    <Text style={styles.leverageText}>{pair.leverage}</Text>
-                                </View>
+                    const tokenId = `${token.chainId}-${token.address.toLowerCase()}`;
+                    const favorited = isFavorite(tokenId);
+
+                    return (
+                        <TouchableOpacity
+                            key={`${token.chainId}-${token.address}`}
+                            style={styles.pairItem}
+                            activeOpacity={0.7}
+                            onPress={() => {
+                                const symbolParam = token.symbol.toLowerCase();
+                                router.push({
+                                    pathname: `/market/spot/${symbolParam}` as any,
+                                    params: {
+                                        address: token.address,
+                                        chainId: token.chainId,
+                                        symbol: token.symbol
+                                    }
+                                });
+                            }}
+                        >
+                            {/* Logo & Favorite */}
+                            <View style={styles.logoAndStar}>
+                                <TouchableOpacity
+                                    onPress={() => toggleFavorite(tokenId)}
+                                    style={styles.starButton}
+                                >
+                                    <Image
+                                        source={favorited
+                                            ? require('@/assets/home/star-18.svg')
+                                            : require('@/assets/home/star.svg')
+                                        }
+                                        style={styles.starIcon}
+                                    />
+                                </TouchableOpacity>
+                                <Image
+                                    source={token.logoURI}
+                                    style={styles.pairLogo}
+                                    contentFit="cover"
+                                />
                             </View>
-                            <Text style={styles.volumeText}>{pair.volume}</Text>
-                        </View>
 
-                        {/* Price and Change */}
-                        <View style={styles.priceContainer}>
-                            <Text style={styles.priceText}>{pair.price}</Text>
-                            <Text
-                                style={[
-                                    styles.changeText,
-                                    { color: getChangeColor(pair.change24h) }
-                                ]}
-                            >
-                                {formatChange(pair.change24h)}
-                            </Text>
-                        </View>
-                    </TouchableOpacity>
-                ))}
+                            {/* Info */}
+                            <View style={styles.pairInfo}>
+                                <View style={styles.symbolRow}>
+                                    <Text
+                                        style={styles.baseSymbol}
+                                        numberOfLines={1}
+                                        ellipsizeMode="tail"
+                                    >
+                                        {token.symbol}
+                                    </Text>
+                                    <Text style={styles.quoteSymbol}>/USDT</Text>
+                                    {token.marketCapRank && (
+                                        <View style={styles.leverageBadge}>
+                                            <Text style={styles.leverageText}>#{token.marketCapRank}</Text>
+                                        </View>
+                                    )}
+                                </View>
+                                <Text style={styles.volumeText} numberOfLines={1}>Vol {formatNumber(token.volume24h || 0)}</Text>
+                            </View>
+
+                            {/* Price and Change */}
+                            <View style={styles.priceContainer}>
+                                <Text style={styles.priceText}>
+                                    {formatUSDPrice(token.priceUSD)}
+                                </Text>
+                                <Text
+                                    style={[
+                                        styles.changeText,
+                                        { color: (token.priceChange24h || 0) >= 0 ? colors.success : colors.error }
+                                    ]}
+                                >
+                                    {formatPercentageChange(token.priceChange24h || 0).formatted}
+                                </Text>
+                            </View>
+                        </TouchableOpacity>
+                    );
+                })}
+
+                {activeTab === 'favourite' && favorites.length === 0 && (
+                    <View style={styles.emptyContainer}>
+                        <Text style={styles.emptyText}>No favorite tokens yet.</Text>
+                    </View>
+                )}
 
                 {/* View All Button */}
                 <TouchableOpacity
                     style={styles.viewAllButton}
-                    activeOpacity={0.8}
+                    onPress={() => router.push(`/market?category=${activeTab}` as any)}
                 >
-                    <Text style={styles.viewAllText}>View all</Text>
+                    <Text style={styles.viewAllText}>View All</Text>
                 </TouchableOpacity>
             </View>
         </View>
@@ -157,7 +278,7 @@ const styles = StyleSheet.create({
         paddingVertical: 8,
     },
     loadingContainer: {
-        width: 353,
+        width: '100%',
         gap: 12,
         paddingHorizontal: 20,
     },
@@ -216,6 +337,18 @@ const styles = StyleSheet.create({
         paddingVertical: 10,
         width: '100%',
     },
+    logoAndStar: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    starButton: {
+        padding: 4,
+    },
+    starIcon: {
+        width: 16,
+        height: 16,
+    },
     pairLogo: {
         width: 32,
         height: 32,
@@ -234,6 +367,7 @@ const styles = StyleSheet.create({
         fontFamily: 'Manrope-SemiBold',
         fontSize: 14,
         color: colors.titleText,
+        flexShrink: 1,
     },
     quoteSymbol: {
         fontFamily: 'Manrope-Medium',
@@ -270,6 +404,16 @@ const styles = StyleSheet.create({
         fontFamily: 'Manrope-Medium',
         fontSize: 12,
         marginTop: 2,
+    },
+    emptyContainer: {
+        paddingVertical: 40,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    emptyText: {
+        fontFamily: 'Manrope-Medium',
+        fontSize: 14,
+        color: colors.bodyText,
     },
     viewAllButton: {
         backgroundColor: colors.bgShade20,

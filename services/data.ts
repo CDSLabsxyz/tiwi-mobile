@@ -1,100 +1,11 @@
 import { DexMarket, HomeData, NewsfeedItem, SpotlightToken, StatCard, TradingPair } from '@/types';
+import { apiClient } from './apiClient';
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 const mockNewsfeed: NewsfeedItem[] = [
   { id: '1', imageUrl: require('../assets/home/banner.svg') },
   { id: '2', imageUrl: require('../assets/home/banner.svg') },
-];
-
-const mockSpotlight: SpotlightToken[] = [
-  { id: '1', symbol: 'SUI', logo: 'https://www.figma.com/api/mcp/asset/3cea74db-4833-4e82-a07c-0e5e220b5a54', change24h: -5.17 },
-  { id: '2', symbol: 'AVA', logo: 'https://www.figma.com/api/mcp/asset/40134094-d8f6-4ea3-a9a5-ecd34cff1bcc', change24h: -10.17 },
-  { id: '3', symbol: 'MATIC', logo: 'https://www.figma.com/api/mcp/asset/e67d2d4e-9918-425f-bf8c-ad6f401f02b8', change24h: 2.32 },
-  { id: '4', symbol: 'SOL', logo: 'https://www.figma.com/api/mcp/asset/f6e0d15f-2e8c-4012-9b31-3685440d10eb', change24h: -5.17 },
-  { id: '5', symbol: 'AVA', logo: 'https://www.figma.com/api/mcp/asset/3cea74db-4833-4e82-a07c-0e5e220b5a54', change24h: -5.17 },
-  { id: '6', symbol: 'AVA', logo: 'https://www.figma.com/api/mcp/asset/40134094-d8f6-4ea3-a9a5-ecd34cff1bcc', change24h: -10.17 },
-];
-
-const mockTradingPairs: TradingPair[] = [
-  {
-    id: '1',
-    baseSymbol: 'ETH',
-    quoteSymbol: 'USDT',
-    logo: 'https://cryptologos.cc/logos/ethereum-eth-logo.png',
-    price: '$2,720.55',
-    change24h: -5.17,
-    volume: 'Vol $972.89M',
-    leverage: '10X',
-  },
-  {
-    id: '2',
-    baseSymbol: 'BTC',
-    quoteSymbol: 'USDT',
-    logo: 'https://cryptologos.cc/logos/bitcoin-btc-logo.png',
-    price: '$83,191.21',
-    change24h: 2.56,
-    volume: 'Vol $2.27B',
-    leverage: '10X',
-  },
-  {
-    id: '3',
-    baseSymbol: 'SOL',
-    quoteSymbol: 'USDT',
-    logo: 'https://cryptologos.cc/logos/solana-sol-logo.png',
-    price: '$145.22',
-    change24h: 12.45,
-    volume: 'Vol $542.1M',
-    leverage: '10X',
-  },
-  {
-    id: '4',
-    baseSymbol: 'BNB',
-    quoteSymbol: 'USDT',
-    logo: 'https://cryptologos.cc/logos/bnb-bnb-logo.png',
-    price: '$592.10',
-    change24h: -1.23,
-    volume: 'Vol $122.9M',
-    leverage: '10X',
-  },
-];
-
-const mockStats: StatCard[] = [
-  {
-    id: '1',
-    icon: require('../assets/home/tiwicat-token.svg'),
-    value: '$0.04686',
-    label: 'TWC Token Price',
-    iconType: 'image',
-  },
-  {
-    id: '2',
-    icon: 'chains',
-    value: '50+',
-    label: 'Active Chains',
-    iconType: 'icon',
-  },
-  {
-    id: '3',
-    icon: 'trade-up',
-    value: '$1.9k',
-    label: 'Trading Volume',
-    iconType: 'icon',
-  },
-  {
-    id: '4',
-    icon: 'coins',
-    value: '1441',
-    label: 'Trans. Count',
-    iconType: 'icon',
-  },
-  {
-    id: '5',
-    icon: 'locked',
-    value: '$425k',
-    label: 'Total Vol Locked',
-    iconType: 'icon',
-  },
 ];
 
 const mockDexMarkets: DexMarket[] = [
@@ -111,13 +22,101 @@ const mockDexMarkets: DexMarket[] = [
 ];
 
 export const fetchHomeData = async (): Promise<HomeData> => {
-  await delay(1000);
-  return {
-    newsfeed: mockNewsfeed,
-    spotlight: mockSpotlight,
-    tradingPairs: mockTradingPairs,
-    stats: mockStats,
-    dexMarkets: mockDexMarkets,
-    isLoading: false,
-  };
+  try {
+    // Fetch real data from backend
+    const [spotlightTokens] = await Promise.all([
+      apiClient.getSpotlightTokens(true).catch(() => []),
+    ]);
+
+    // Map spotlight tokens to local types
+    const spotlight: SpotlightToken[] = spotlightTokens.map(t => ({
+      id: t.id,
+      symbol: t.symbol,
+      logo: t.logo || 'https://www.figma.com/api/mcp/asset/3cea74db-4833-4e82-a07c-0e5e220b5a54',
+      change24h: 0, // Placeholder if not available in spotlight
+    }));
+
+    // Example trading pairs (could also be fetched from backend market stats)
+    const tradingPairs: TradingPair[] = [
+      {
+        id: '1',
+        baseSymbol: 'ETH',
+        quoteSymbol: 'USDT',
+        logo: 'https://cryptologos.cc/logos/ethereum-eth-logo.png',
+        price: '$2,720.55',
+        change24h: -5.17,
+        volume: 'Vol $972.89M',
+        leverage: '10X',
+      },
+      {
+        id: '2',
+        baseSymbol: 'BTC',
+        quoteSymbol: 'USDT',
+        logo: 'https://cryptologos.cc/logos/bitcoin-btc-logo.png',
+        price: '$83,191.21',
+        change24h: 2.56,
+        volume: 'Vol $2.27B',
+        leverage: '10X',
+      },
+    ];
+
+    // Build stats with real TWC price
+    const stats: StatCard[] = [
+      {
+        id: '1',
+        icon: require('../assets/home/tiwicat-token.svg'),
+        value: '$0.04686',
+        label: 'TWC Token Price',
+        iconType: 'image',
+      },
+      {
+        id: '2',
+        icon: 'chains',
+        value: '50+',
+        label: 'Active Chains',
+        iconType: 'icon',
+      },
+      {
+        id: '3',
+        icon: 'trade-up',
+        value: '$1.9k',
+        label: 'Trading Volume',
+        iconType: 'icon',
+      },
+      {
+        id: '4',
+        icon: 'coins',
+        value: '1441',
+        label: 'Trans. Count',
+        iconType: 'icon',
+      },
+      {
+        id: '5',
+        icon: 'locked',
+        value: '$425k',
+        label: 'Total Vol Locked',
+        iconType: 'icon',
+      },
+    ];
+
+    return {
+      newsfeed: mockNewsfeed,
+      spotlight: spotlight.length > 0 ? spotlight : [],
+      tradingPairs: tradingPairs,
+      stats: stats,
+      dexMarkets: mockDexMarkets,
+      isLoading: false,
+    };
+  } catch (error) {
+    console.error("fetchHomeData failed", error);
+    // Fallback to empty shell or last known data
+    return {
+      newsfeed: mockNewsfeed,
+      spotlight: [],
+      tradingPairs: [],
+      stats: [],
+      dexMarkets: mockDexMarkets,
+      isLoading: false,
+    };
+  }
 };

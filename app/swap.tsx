@@ -4,6 +4,7 @@ import {
     ChainSelectSheet,
     ExpiresOption,
     ExpiresSection,
+    LimitAssetSheet,
     LimitWhenPriceCard,
     SwapConfirmButton,
     SwapDetailsCard,
@@ -15,12 +16,15 @@ import {
     SwapTabs,
     SwapTokenCard,
     TokenOption,
-    TokenSelectSheet,
+    TokenSelectSheet
 } from '@/components/sections/Swap';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { WalletModal } from '@/components/ui/wallet-modal';
 import { colors } from '@/constants/colors';
+import { useChains } from '@/hooks/useChains';
+import { useTokenPrefetch } from '@/hooks/useTokenPrefetch';
 import { executeSwap, fetchSwapQuote, SwapQuote } from '@/services/swap';
+import { useWalletStore } from '@/store/walletStore';
 import { usePathname, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -31,61 +35,115 @@ export default function SwapScreen() {
     const router = useRouter();
     const pathname = usePathname();
 
+    // Prefetch top chain tokens
+    useTokenPrefetch();
+
+    const { data: chains } = useChains();
+
     // --- State Management ---
     const [activeTab, setActiveTab] = useState<SwapTabKey>('swap');
     const [fromChain, setFromChain] = useState<ChainOption | null>({
-        id: 'ethereum',
-        name: 'Ethereum',
-        icon: require('@/assets/home/chains/ethereum.svg'),
+        id: 56, // BNB Chain as default (matching web app preference)
+        name: 'BNB Chain',
+        icon: require('@/assets/home/tiwicat-token.svg'),
     });
     const [toChain, setToChain] = useState<ChainOption | null>(null);
     const [fromToken, setFromToken] = useState<TokenOption | null>({
-        id: 'twc',
+        id: '0xDA1060158F7D593667cCE0a15DB346BB3FfB3596', // Real TWC address
         symbol: 'TWC',
-        name: 'TWC',
+        name: 'TIWI CAT',
         icon: require('@/assets/home/tiwicat-token.svg'),
-        tvl: '$1,000,000',
+        tvl: '$0',
         balanceFiat: '$0',
         balanceToken: '0.00 TWC',
+        address: '0xDA1060158F7D593667cCE0a15DB346BB3FfB3596',
+        chainId: 56,
+        decimals: 9
     });
     const [toToken, setToToken] = useState<TokenOption | null>(null);
     const [fromAmount, setFromAmount] = useState('');
     const [toAmount, setToAmount] = useState('');
     const [toFiatAmount, setToFiatAmount] = useState('$0.00');
 
+    // Sync real chain icons when fetched
+    useEffect(() => {
+        if (chains) {
+            if (fromChain && !fromChain.icon?.uri) {
+                const real = chains.find(c => c.id === fromChain.id);
+                if (real?.logoURI) {
+                    setFromChain(prev => prev ? { ...prev, icon: real.logoURI } : null);
+                }
+            }
+            if (toChain && !toChain.icon?.uri) {
+                const real = chains.find(c => c.id === toChain.id);
+                if (real?.logoURI) {
+                    setToChain(prev => prev ? { ...prev, icon: real.logoURI } : null);
+                }
+            }
+        }
+    }, [chains, fromChain?.id, toChain?.id]);
+
     // Limit specific state
     const [whenPrice, setWhenPrice] = useState('');
-    const [whenPriceToken, setWhenPriceToken] = useState<TokenOption | null>(null);
     const [expiresOption, setExpiresOption] = useState<ExpiresOption>('never');
 
     // UI state
     const [isWalletModalVisible, setIsWalletModalVisible] = useState(false);
-    const [chainSheetTarget, setChainSheetTarget] = useState<'from' | 'to' | 'whenPrice' | null>(null);
-    const [tokenSheetTarget, setTokenSheetTarget] = useState<'from' | 'to' | 'whenPrice' | null>(null);
+    const [chainSheetTarget, setChainSheetTarget] = useState<'from' | 'to' | null>(null);
+    const [tokenSheetTarget, setTokenSheetTarget] = useState<'from' | 'to' | null>(null);
+    const [isLimitAssetSheetVisible, setIsLimitAssetSheetVisible] = useState(false);
+    const [whenPriceTarget, setWhenPriceTarget] = useState<'from' | 'to'>('to');
+
     const [isLoadingQuote, setIsLoadingQuote] = useState(false);
     const [isLoadingSwap, setIsLoadingSwap] = useState(false);
     const [isSuccessModalVisible, setIsSuccessModalVisible] = useState(false);
     const [swapQuote, setSwapQuote] = useState<SwapQuote | null>(null);
 
-    // --- Handlers ---
-    const handleOpenChainSheet = (target: 'from' | 'to') => setChainSheetTarget(target);
+    const { address } = useWalletStore();
+
+    const handleOpenTokenSheet = (target: 'from' | 'to') => {
+        // Enforce flow: Select Chain first, THEN Token selection sheet will open
+        setChainSheetTarget(target);
+    };
+
     const handleCloseChainSheet = () => setChainSheetTarget(null);
 
-    const handleOpenTokenSheet = (target: 'from' | 'to' | 'whenPrice') => setTokenSheetTarget(target);
-    const handleCloseTokenSheet = () => setTokenSheetTarget(null);
+    const handleCloseTokenSheet = () => {
+        setTokenSheetTarget(null);
+        setChainSheetTarget(null);
+    };
+
+    const handleLimitAssetSelect = (target: 'from' | 'to') => {
+        setWhenPriceTarget(target);
+        setIsLimitAssetSheetVisible(false);
+    };
 
     const handleChainSelect = (option: ChainOption) => {
-        if (chainSheetTarget === 'from') setFromChain(option);
-        else if (chainSheetTarget === 'to') setToChain(option);
+        if (chainSheetTarget === 'from') {
+            setFromChain(option);
+            if (fromToken?.chainId !== option.id) {
+                setFromToken(null);
+            }
+        } else if (chainSheetTarget === 'to') {
+            setToChain(option);
+            if (toToken?.chainId !== option.id) {
+                setToToken(null);
+            }
+        }
 
+        // Move to the next step: show token selection for this chain
+        const currentTarget = chainSheetTarget;
         handleCloseChainSheet();
-        setTimeout(() => setTokenSheetTarget(chainSheetTarget), 300);
+
+        // Use a small timeout to allow the previous sheet to close cleanly
+        setTimeout(() => {
+            if (currentTarget) setTokenSheetTarget(currentTarget);
+        }, 300);
     };
 
     const handleTokenSelect = (token: TokenOption) => {
         if (tokenSheetTarget === 'from') setFromToken(token);
         else if (tokenSheetTarget === 'to') setToToken(token);
-        else if (tokenSheetTarget === 'whenPrice') setWhenPriceToken(token);
 
         handleCloseTokenSheet();
     };
@@ -114,7 +172,7 @@ export default function SwapScreen() {
 
         setIsLoadingQuote(true);
         try {
-            const quote = await fetchSwapQuote(fromAmount, fromToken.id, toToken.id);
+            const quote = await fetchSwapQuote(fromAmount, fromToken, toToken, address || undefined);
             setSwapQuote(quote);
             setToAmount(quote.toAmount);
             setToFiatAmount(quote.fiatAmount);
@@ -123,7 +181,7 @@ export default function SwapScreen() {
         } finally {
             setIsLoadingQuote(false);
         }
-    }, [fromAmount, fromToken, toToken]);
+    }, [fromAmount, fromToken, toToken, address]);
 
     useEffect(() => {
         const timer = setTimeout(() => {
@@ -133,11 +191,29 @@ export default function SwapScreen() {
     }, [fromAmount, fromToken, toToken, updateQuote]);
 
     const handleConfirmSwap = async () => {
-        if (!fromAmount || !fromToken || !toToken) return;
+        if (!fromAmount || !fromToken || !toToken || !address) return;
 
         setIsLoadingSwap(true);
         try {
-            await executeSwap(fromAmount, fromToken.id, toToken.id);
+            const result = await executeSwap(fromAmount, fromToken, toToken, address);
+
+            // Log transaction to backend
+            const { apiClient } = require('@/services/apiClient');
+            await apiClient.logTransaction({
+                walletAddress: address,
+                transactionHash: result?.txHash || `mock-hash-${Date.now()}`,
+                chainId: typeof fromChain?.id === 'number' ? fromChain.id : 56,
+                type: activeTab === 'limit' ? 'limit_order' : 'swap',
+                fromTokenAddress: fromToken.address,
+                fromTokenSymbol: fromToken.symbol,
+                toTokenAddress: toToken.address,
+                toTokenSymbol: toToken.symbol,
+                amount: fromAmount,
+                amountFormatted: `${fromAmount} ${fromToken.symbol}`,
+                usdValue: parseFloat(toFiatAmount.replace('$', '').replace(',', '')),
+                routerName: swapQuote?.source?.[0] || 'Tiwi Router',
+            });
+
             setIsLoadingSwap(false);
             setIsSuccessModalVisible(true);
         } catch (error) {
@@ -188,16 +264,27 @@ export default function SwapScreen() {
                     visible={!!tokenSheetTarget}
                     chainId={
                         tokenSheetTarget === 'from' ? fromChain?.id || null :
-                            tokenSheetTarget === 'to' ? toChain?.id || null :
-                                fromChain?.id || null
+                            tokenSheetTarget === 'to' ? toChain?.id || null : null
                     }
                     selectedTokenId={
                         tokenSheetTarget === 'from' ? fromToken?.id || null :
-                            tokenSheetTarget === 'to' ? toToken?.id || null :
-                                whenPriceToken?.id || null
+                            tokenSheetTarget === 'to' ? toToken?.id || null : null
                     }
                     onSelect={handleTokenSelect}
                     onClose={handleCloseTokenSheet}
+                />
+
+                <LimitAssetSheet
+                    visible={isLimitAssetSheetVisible}
+                    fromToken={fromToken}
+                    toToken={toToken}
+                    fromChainName={fromChain?.name}
+                    toChainName={toChain?.name}
+                    fromChainIcon={fromChain?.icon}
+                    toChainIcon={toChain?.icon}
+                    selectedTarget={whenPriceTarget}
+                    onClose={() => setIsLimitAssetSheetVisible(false)}
+                    onSelect={handleLimitAssetSelect}
                 />
 
                 <SwapLoadingOverlay visible={isLoadingSwap} />
@@ -226,7 +313,7 @@ export default function SwapScreen() {
                         <ChainSelectorCard
                             chainName={fromChain?.name || 'Select Chain'}
                             chainIcon={fromChain?.icon || require('@/assets/home/chains/ethereum.svg')}
-                            onPress={() => handleOpenChainSheet('from')}
+                        // onPress={() => handleOpenChainSheet('from')}
                         />
 
                         <View style={styles.sectionLabelWrapper}>
@@ -242,11 +329,14 @@ export default function SwapScreen() {
                                 tokenIcon={fromToken?.icon}
                                 chainBadgeIcon={fromChain?.icon}
                                 amount={fromAmount}
-                                fiatAmount="$0.00"
-                                balanceText={fromToken?.balanceToken || '0.00 TWC'}
+                                fiatAmount={fromToken?.balanceFiat || "$0.00"}
+                                balanceText={fromToken?.balanceToken || '0.00'}
                                 onAmountChange={setFromAmount}
                                 onTokenPress={() => handleOpenTokenSheet('from')}
-                                onMaxPress={() => setFromAmount('100.00')}
+                                onMaxPress={() => {
+                                    const bal = fromToken?.balanceToken?.split(' ')[0] || '0';
+                                    setFromAmount(bal);
+                                }}
                             />
 
                             <View style={styles.toCardWrapper}>
@@ -271,14 +361,15 @@ export default function SwapScreen() {
                         {activeTab === 'limit' && (
                             <View style={styles.limitExtraWrapper}>
                                 <LimitWhenPriceCard
-                                    tokenSymbol={whenPriceToken?.symbol}
-                                    tokenSelected={!!whenPriceToken}
-                                    tokenIcon={whenPriceToken?.icon}
+                                    tokenSymbol={whenPriceTarget === 'from' ? fromToken?.symbol : toToken?.symbol}
+                                    tokenSelected={whenPriceTarget === 'from' ? !!fromToken : !!toToken}
+                                    tokenIcon={whenPriceTarget === 'from' ? fromToken?.icon : toToken?.icon}
+                                    chainBadgeIcon={whenPriceTarget === 'from' ? fromChain?.icon : toChain?.icon}
                                     amount={whenPrice}
                                     fiatAmount="$0.00"
-                                    balanceText={whenPriceToken ? '0.00' : '0.00'}
+                                    balanceText={whenPriceTarget === 'from' ? (fromToken?.balanceToken || '0.00') : (toToken?.balanceToken || '0.00')}
                                     onAmountChange={setWhenPrice}
-                                    onTokenPress={() => handleOpenTokenSheet('whenPrice')}
+                                    onTokenPress={() => setIsLimitAssetSheetVisible(true)}
                                 />
                             </View>
                         )}

@@ -2,6 +2,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { SettingsHeader } from '@/components/ui/settings-header';
 import { colors } from '@/constants/colors';
+import { useSecurityStore } from '@/store/securityStore';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import React, { useState } from 'react';
@@ -63,14 +64,29 @@ const RadioButton: React.FC<RadioButtonProps> = ({ selected, onPress, label }) =
     );
 };
 
+const TIMEOUT_MAPPING: Record<AutoLockOption, number> = {
+    'Immediately': 0,
+    '30 seconds': 30000,
+    '1 Minute': 60000,
+    '5 Minutes': 300000,
+    '10 Minutes': 600000,
+    'Never': 2147483647, // Max int for practical "Never"
+};
+
+const REVERSE_MAPPING: Record<number, AutoLockOption> = Object.entries(TIMEOUT_MAPPING).reduce(
+    (acc, [key, value]) => ({ ...acc, [value]: key as AutoLockOption }),
+    {} as Record<number, AutoLockOption>
+);
+
 export default function AutoLockTimerScreen() {
     const { bottom } = useSafeAreaInsets();
-    const [selectedOption, setSelectedOption] = useState<AutoLockOption>('Immediately');
+    const { autoLockTimeout, setAutoLockTimeout } = useSecurityStore();
+    const selectedOption = REVERSE_MAPPING[autoLockTimeout] || '30 seconds';
     const [isModalVisible, setIsModalVisible] = useState(false);
 
     const handleOptionSelect = (option: AutoLockOption) => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        setSelectedOption(option);
+        setAutoLockTimeout(TIMEOUT_MAPPING[option]);
         setIsModalVisible(false);
     };
 

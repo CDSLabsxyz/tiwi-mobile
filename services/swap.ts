@@ -1,3 +1,5 @@
+import { apiClient, FetchRouteParams } from './apiClient';
+
 /**
  * Swap service - handles swap-related API calls
  */
@@ -13,76 +15,92 @@ export interface SwapQuote {
     source: string[];
 }
 
-const TOKEN_PRICES: Record<string, number> = {
-    twc: 1.0,
-    usdc: 1.0,
-    tether: 1.0,
-    bnb: 600.0,
-    eth: 2700.0,
-};
-
-const EXCHANGE_RATES: Record<string, Record<string, number>> = {
-    twc: { usdc: 0.95, tether: 0.94, bnb: 0.00167, eth: 0.00037 },
-    usdc: { twc: 1.05, tether: 0.999, bnb: 0.00167, eth: 0.00037 },
-    tether: { twc: 1.06, usdc: 1.001, bnb: 0.00167, eth: 0.00037 },
-    bnb: { twc: 600.0, usdc: 600.0, tether: 600.0, eth: 0.22 },
-    eth: { twc: 2700.0, usdc: 2700.0, bnb: 4.5, tether: 2700.0 },
-};
+interface TokenMinimal {
+    address: string;
+    chainId: number;
+    symbol: string;
+    decimals: number;
+}
 
 export async function fetchSwapQuote(
     fromAmount: string,
-    fromTokenId: string,
-    toTokenId: string
+    fromToken: TokenMinimal,
+    toToken: TokenMinimal,
+    fromAddress?: string
 ): Promise<SwapQuote> {
-    await new Promise((resolve) => setTimeout(resolve, 500));
-
     const amount = parseFloat(fromAmount);
     if (isNaN(amount) || amount <= 0) {
         throw new Error('Invalid amount');
     }
 
-    const fromId = fromTokenId.toLowerCase();
-    const toId = toTokenId.toLowerCase();
+    try {
+        const params: FetchRouteParams = {
+            fromToken: {
+                address: fromToken.address,
+                chainId: fromToken.chainId,
+                symbol: fromToken.symbol,
+                decimals: fromToken.decimals,
+            },
+            toToken: {
+                address: toToken.address,
+                chainId: toToken.chainId,
+                symbol: toToken.symbol,
+                decimals: toToken.decimals,
+            },
+            fromAmount: fromAmount,
+            fromAddress: fromAddress,
+            order: 'RECOMMENDED',
+        };
 
-    let rate: number;
-    if (fromId === toId) {
-        rate = 1.0;
-    } else if (EXCHANGE_RATES[fromId] && EXCHANGE_RATES[fromId][toId]) {
-        rate = EXCHANGE_RATES[fromId][toId];
-    } else {
-        const fromPrice = TOKEN_PRICES[fromId] || 1.0;
-        const toPrice = TOKEN_PRICES[toId] || 1.0;
-        rate = fromPrice / toPrice;
+        const response = await apiClient.fetchRoute(params);
+        const route = response.route;
+
+        // Calculate rate
+        const rate = parseFloat(route.toToken.amount) / parseFloat(route.fromToken.amount);
+
+        // Extract USD values
+        const toFiat = route.toToken.amountUSD ? `$${parseFloat(route.toToken.amountUSD).toFixed(2)}` : `$${(parseFloat(route.toToken.amount) * 1).toFixed(2)}`;
+        const gasFee = route.fees?.gasUSD ? `$${parseFloat(route.fees.gasUSD).toFixed(2)}` : '0.001%';
+
+        return {
+            toAmount: route.toToken.amount,
+            fiatAmount: toFiat,
+            rate,
+            slippage: route.slippage ? parseFloat(route.slippage) : 0.5,
+            gasEstimate: route.fees?.gas || '0.001',
+            gasFee: gasFee,
+            twcFee: '0.40%',
+            source: [route.router || 'Best', 'Tiwi Router'],
+        };
+    } catch (error) {
+        console.error('[SwapService] fetchSwapQuote failed, using fallback:', error);
+        // Fallback to simple calculation if API fails
+        return {
+            toAmount: (amount * 1).toString(),
+            fiatAmount: `$${(amount * 1).toFixed(2)}`,
+            rate: 1,
+            slippage: 0.5,
+            gasEstimate: '0.001',
+            gasFee: '0.001%',
+            twcFee: '0.40%',
+            source: ['Fallback', 'Tiwi'],
+        };
     }
-
-    const toAmountValue = amount * rate;
-    let toAmount = toAmountValue > 1 ? toAmountValue.toFixed(4) : toAmountValue.toFixed(6);
-    toAmount = parseFloat(toAmount).toString();
-
-    const toPrice = TOKEN_PRICES[toId] || 1.0;
-    const fiatValue = toAmountValue * toPrice;
-    const fiatAmount = `$${fiatValue.toFixed(2)}`;
-
-    return {
-        toAmount,
-        fiatAmount,
-        rate,
-        slippage: 0.5,
-        gasEstimate: '0.001',
-        gasFee: '0.001%',
-        twcFee: '0.40%',
-        source: ['Best', 'TWC'],
-    };
 }
 
 export async function executeSwap(
     fromAmount: string,
-    fromTokenId: string,
-    toTokenId: string
+    fromToken: TokenMinimal,
+    toToken: TokenMinimal,
+    fromAddress: string
 ): Promise<{ txHash: string }> {
+    // In a real app, this would trigger the wallet signature
+    // For now, we simulate the delay and log it
     await new Promise((resolve) => setTimeout(resolve, 2000));
+
     const txHash = `0x${Array.from({ length: 64 }, () =>
         Math.floor(Math.random() * 16).toString(16)
     ).join('')}`;
+
     return { txHash };
 }

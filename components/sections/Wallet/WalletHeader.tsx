@@ -110,18 +110,18 @@ export const WalletHeader: React.FC<WalletHeaderProps> = ({
 
                 {/* Settings Icon */}
                 {!showBackButton && (
-                <TouchableOpacity
-                    activeOpacity={0.8}
-                    onPress={onSettingsPress}
-                    style={styles.iconButton}
-                >
-                    <Image
-                        source={SettingsIcon}
-                        style={styles.iconFull}
-                        contentFit="contain"
-                    />
-                </TouchableOpacity>
-            )}
+                    <TouchableOpacity
+                        activeOpacity={0.8}
+                        onPress={onSettingsPress}
+                        style={styles.iconButton}
+                    >
+                        <Image
+                            source={SettingsIcon}
+                            style={styles.iconFull}
+                            contentFit="contain"
+                        />
+                    </TouchableOpacity>
+                )}
             </View>
         </View>
     );

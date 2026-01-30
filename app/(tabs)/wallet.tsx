@@ -1,9 +1,3 @@
-/**
- * Wallet Screen
- * Main wallet screen displaying balance, quick actions, and asset portfolio
- * Converted from Tailwind to StyleSheet - matches reference implementation exactly
- */
-
 import {
     AssetListItem,
     AssetsTabSwitcher,
@@ -16,24 +10,38 @@ import {
 } from '@/components/sections/Wallet';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { colors } from '@/constants/colors';
+import { useWalletBalances } from '@/hooks/useWalletBalances';
 import {
     fetchNFTs,
-    fetchWalletData,
     type NFTItem,
-    type WalletData,
 } from '@/services/walletService';
 import { useFilterStore } from '@/store/filterStore';
+import { useWalletStore } from '@/store/walletStore';
 import { applyFilters } from '@/utils/assetFilters';
-import { WALLET_ADDRESS } from '@/utils/wallet';
+import { useQueryClient } from '@tanstack/react-query';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function WalletScreen() {
     const { top, bottom } = useSafeAreaInsets();
     const router = useRouter();
     const params = useLocalSearchParams<{ tab?: string }>();
+    const queryClient = useQueryClient();
+
+    // Store data (connected wallets)
+    const { address, connectedWallets } = useWalletStore();
+
+    // TanStack Query for Balances
+    const {
+        data: balanceData,
+        isLoading: isLoadingBalances,
+        isRefetching: isRefetchingBalances
+    } = useWalletBalances();
+
+    const tokens = balanceData?.tokens || [];
+    const totalNetWorthUsd = balanceData?.totalNetWorthUsd || '0.00';
 
     // Subscribe to filter store values for reactivity
     const sortBy = useFilterStore((state) => state.sortBy);
@@ -41,48 +49,37 @@ export default function WalletScreen() {
     const chains = useFilterStore((state) => state.chains);
 
     // State
-    const [walletData, setWalletData] = useState<WalletData | null>(null);
     const [nfts, setNfts] = useState<NFTItem[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
     const [isLoadingNFTs, setIsLoadingNFTs] = useState(false);
     const [isBalanceVisible, setIsBalanceVisible] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
 
     // Initialize activeTab from URL params or default to "assets"
     const [activeTab, setActiveTab] = useState<WalletTabKey>(
         (params.tab === 'nfts' ? 'nfts' : 'assets') as WalletTabKey
     );
 
-    // Update activeTab when URL params change (e.g., when navigating back)
+    // Update activeTab when URL params change
     useEffect(() => {
         if (params.tab === 'nfts' || params.tab === 'assets') {
             setActiveTab(params.tab as WalletTabKey);
         }
     }, [params.tab]);
 
-    // Fetch wallet data
-    useEffect(() => {
-        const loadWalletData = async () => {
-            setIsLoading(true);
-            try {
-                const data = await fetchWalletData(WALLET_ADDRESS);
-                setWalletData(data);
-            } catch (error) {
-                console.error('Failed to fetch wallet data:', error);
-            } finally {
-                setIsLoading(false);
-            }
-        };
-
-        loadWalletData();
-    }, []);
+    const onRefresh = useCallback(async () => {
+        setRefreshing(true);
+        await queryClient.invalidateQueries({ queryKey: ['walletBalances'] });
+        setRefreshing(false);
+    }, [queryClient]);
 
     // Fetch NFTs when NFT tab is active
     useEffect(() => {
-        if (activeTab === 'nfts' && nfts.length === 0) {
+        const activeAddress = address || (connectedWallets.length > 0 ? connectedWallets[0].address : null);
+        if (activeTab === 'nfts' && nfts.length === 0 && activeAddress) {
             const loadNFTs = async () => {
                 setIsLoadingNFTs(true);
                 try {
-                    const data = await fetchNFTs(WALLET_ADDRESS);
+                    const data = await fetchNFTs(activeAddress);
                     setNfts(data);
                 } catch (error) {
                     console.error('Failed to fetch NFTs:', error);
@@ -93,7 +90,7 @@ export default function WalletScreen() {
 
             loadNFTs();
         }
-    }, [activeTab, nfts.length]);
+    }, [activeTab, nfts.length, address, connectedWallets]);
 
     // Handlers
     const handleToggleVisibility = () => {
@@ -140,17 +137,30 @@ export default function WalletScreen() {
         console.log('Today pressed');
     };
 
-    // Apply filters to assets - reactive to filter changes
+    // Map APIToken to PortfolioItem expected by AssetListItem
+    const portfolioItems = useMemo(() => {
+        return tokens.map(t => ({
+            id: `${t.chainId}-${t.address}`,
+            symbol: t.symbol,
+            name: t.name,
+            logo: t.logoURI || 'https://cryptologos.cc/logos/ethereum-eth-logo.png',
+            balance: t.balanceFormatted,
+            usdValue: t.usdValue ? `$${parseFloat(t.usdValue).toFixed(2)}` : '$0.00',
+            change24h: t.priceChange24h ? parseFloat(t.priceChange24h) : 0,
+            chainId: t.chainId === 7565164 ? 'aegis' : (t.chainId === 56 ? 'apex' : 'ethereum'), // Map to local chain keys
+        }));
+    }, [tokens]);
+
+    // Apply filters to assets
     const filteredAssets = useMemo(() => {
-        if (!walletData) return [];
         return applyFilters(
-            walletData.portfolio,
+            portfolioItems as any,
             sortBy,
             tokenCategories,
             chains
         );
     }, [
-        walletData,
+        portfolioItems,
         sortBy,
         Array.from(tokenCategories).join(','),
         Array.from(chains).join(','),
@@ -160,14 +170,8 @@ export default function WalletScreen() {
         console.log('NFT pressed:', nft.id);
     };
 
-    if (isLoading || !walletData) {
-        return (
-            <View style={[styles.container, { backgroundColor: colors.bg }]}>
-                <CustomStatusBar />
-                <View style={styles.loadingContainer} />
-            </View>
-        );
-    }
+    // If no wallets connected, we might want to show a placeholder or prompt
+    const displayAddress = address || (connectedWallets.length > 0 ? connectedWallets[0].address : '0x...');
 
     return (
         <View style={[styles.container, { backgroundColor: colors.bg }]}>
@@ -176,7 +180,7 @@ export default function WalletScreen() {
             {/* Sticky Header */}
             <View style={[styles.header, { paddingTop: top || 0 }]}>
                 <WalletHeader
-                    walletAddress={walletData.address}
+                    walletAddress={displayAddress}
                     onIrisScanPress={handleIrisScanPress}
                     onSettingsPress={handleSettingsPress}
                 />
@@ -190,17 +194,29 @@ export default function WalletScreen() {
                     { paddingBottom: (bottom || 16) + 76 + 24 }
                 ]}
                 showsVerticalScrollIndicator={false}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={refreshing}
+                        onRefresh={onRefresh}
+                        tintColor={colors.primaryCTA}
+                        colors={[colors.primaryCTA]}
+                        progressViewOffset={0}
+                    />
+                }
             >
-                {/* Main Content Container (356px width from Figma, centered) */}
+                {/* Main Content Container */}
                 <View style={styles.mainContent}>
                     {/* Top Section: Balance + Quick Actions + Rewards */}
                     <View style={styles.topSection}>
-                        {/* Balance + Quick Actions Container */}
                         <View style={styles.balanceActionsContainer}>
                             {/* Total Balance Card */}
                             <TotalBalanceCard
-                                totalBalance={walletData.totalBalance}
-                                portfolioChange={walletData.portfolioChange}
+                                totalBalance={`$${totalNetWorthUsd}`}
+                                portfolioChange={{
+                                    amount: "+$0.00",
+                                    percent: "+0.00%",
+                                    period: "today"
+                                }}
                                 isBalanceVisible={isBalanceVisible}
                                 onToggleVisibility={handleToggleVisibility}
                                 onTodayPress={handleTodayPress}
@@ -217,7 +233,7 @@ export default function WalletScreen() {
 
                         {/* Claimable Rewards Card */}
                         <ClaimableRewardsCard
-                            amount={walletData.claimableRewards}
+                            amount="$0.00"
                             onPress={handleRewardsPress}
                         />
                     </View>
@@ -237,7 +253,7 @@ export default function WalletScreen() {
                                 {filteredAssets.map((asset) => (
                                     <AssetListItem
                                         key={asset.id}
-                                        asset={asset}
+                                        asset={asset as any}
                                         onPress={() => {
                                             console.log('Asset pressed:', asset.id);
                                         }}
@@ -279,7 +295,7 @@ const styles = StyleSheet.create({
         gap: 24,
     },
     mainContent: {
-        width: 356,
+        width: "100%",
         maxWidth: '100%',
         flexDirection: 'column',
         alignItems: 'center',

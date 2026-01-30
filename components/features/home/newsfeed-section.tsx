@@ -3,15 +3,16 @@ import { colors } from '@/constants/colors';
 import { NewsfeedItem } from '@/types';
 import { Image } from 'expo-image';
 import React, { useEffect, useRef, useState } from 'react';
-import { FlatList, NativeScrollEvent, NativeSyntheticEvent, StyleSheet, View } from 'react-native';
 
 interface NewsfeedSectionProps {
     items: NewsfeedItem[];
     isLoading?: boolean;
 }
 
-const BANNER_WIDTH = 353;
-const BANNER_HEIGHT = 114;
+import { Dimensions, FlatList, NativeScrollEvent, NativeSyntheticEvent, StyleSheet, View } from 'react-native';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const BANNER_HEIGHT = 160; // Increased height significantly for better presence
 const AUTO_SCROLL_INTERVAL = 5000;
 
 /**
@@ -59,7 +60,7 @@ export const NewsfeedSection: React.FC<NewsfeedSectionProps> = ({
     if (isLoading) {
         return (
             <View style={styles.container}>
-                <Skeleton width={BANNER_WIDTH} height={BANNER_HEIGHT} borderRadius={16} />
+                <Skeleton width={SCREEN_WIDTH} height={BANNER_HEIGHT} borderRadius={16} style={{ paddingHorizontal: 16 }} />
                 <View style={styles.indicatorContainer}>
                     <Skeleton width={8} height={4} borderRadius={100} />
                     <Skeleton width={24} height={4} borderRadius={100} />
@@ -89,7 +90,7 @@ export const NewsfeedSection: React.FC<NewsfeedSectionProps> = ({
     const onScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
         isUserScrollingRef.current = true;
         const scrollPosition = event.nativeEvent.contentOffset.x;
-        const index = Math.round(scrollPosition / BANNER_WIDTH);
+        const index = Math.round(scrollPosition / SCREEN_WIDTH);
         if (index !== activeIndex && index >= 0 && index < items.length) {
             setActiveIndex(index);
         }
@@ -133,12 +134,12 @@ export const NewsfeedSection: React.FC<NewsfeedSectionProps> = ({
                 showsHorizontalScrollIndicator={false}
                 onScroll={onScroll}
                 scrollEventThrottle={16}
-                snapToInterval={BANNER_WIDTH}
+                snapToInterval={SCREEN_WIDTH}
                 decelerationRate="fast"
                 onScrollToIndexFailed={onScrollToIndexFailed}
                 getItemLayout={(_, index) => ({
-                    length: BANNER_WIDTH,
-                    offset: BANNER_WIDTH * index,
+                    length: SCREEN_WIDTH,
+                    offset: SCREEN_WIDTH * index,
                     index,
                 })}
             />
@@ -178,11 +179,11 @@ const styles = StyleSheet.create({
         gap: 8,
     },
     bannerWrapper: {
-        width: BANNER_WIDTH,
+        width: SCREEN_WIDTH,
         height: BANNER_HEIGHT,
-        borderRadius: 16,
         overflow: 'hidden',
-        backgroundColor: colors.bgCards,
+        backgroundColor: colors.bg, // Match background for contain
+        paddingHorizontal: 16,
     },
     image: {
         width: '100%',

@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { safeJsonParse, safeJsonStringify } from '@walletconnect/safe-json';
 import { Storage } from '@reown/appkit-react-native';
+import { safeJsonParse, safeJsonStringify } from '@walletconnect/safe-json';
 
 export const storage: Storage = {
   getKeys: async () => {

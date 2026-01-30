@@ -1,14 +1,13 @@
 import { colors } from '@/constants/colors';
+import { useTokens } from '@/hooks/useTokens';
+import { useWalletBalances } from '@/hooks/useWalletBalances';
+import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import React from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useState } from 'react';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import type { ChainId } from './ChainSelectSheet';
 import { SelectionBottomSheet } from './SelectionBottomSheet';
 
-const TWCIcon = require('@/assets/home/tiwicat-token.svg');
-const USDCIcon = require('@/assets/home/coins-02.svg');
-const TetherIcon = require('@/assets/home/coins-02-1.svg');
-const BNBIcon = require('@/assets/home/coins-01.svg');
 const CheckmarkIcon = require('@/assets/swap/checkmark-circle-01.svg');
 
 export interface TokenOption {
@@ -19,46 +18,10 @@ export interface TokenOption {
     tvl: string;
     balanceFiat: string;
     balanceToken: string;
+    address: string;
+    chainId: number;
+    decimals: number;
 }
-
-const TOKEN_OPTIONS: TokenOption[] = [
-    {
-        id: 'twc',
-        symbol: 'TWC',
-        name: 'TWC',
-        icon: TWCIcon,
-        tvl: '$1,000,000',
-        balanceFiat: '$0',
-        balanceToken: '0 TIWI',
-    },
-    {
-        id: 'usdc',
-        symbol: 'USDC',
-        name: 'USDC',
-        icon: USDCIcon,
-        tvl: '$1,000,000',
-        balanceFiat: '$0',
-        balanceToken: '0 USC',
-    },
-    {
-        id: 'tether',
-        symbol: 'Tether',
-        name: 'Tether',
-        icon: TetherIcon,
-        tvl: '$1,000,000',
-        balanceFiat: '$0',
-        balanceToken: '0 TET',
-    },
-    {
-        id: 'bnb',
-        symbol: 'BNB',
-        name: 'BNB',
-        icon: BNBIcon,
-        tvl: '$1,000,000',
-        balanceFiat: '$0',
-        balanceToken: '0 BSC',
-    },
-];
 
 interface TokenSelectSheetProps {
     visible: boolean;
@@ -69,8 +32,7 @@ interface TokenSelectSheetProps {
 }
 
 /**
- * Token selection bottom sheet
- * Matches Figma token dropdown
+ * Token selection bottom sheet with real-time search support and wallet balances
  */
 export const TokenSelectSheet: React.FC<TokenSelectSheetProps> = ({
     visible,
@@ -79,70 +41,150 @@ export const TokenSelectSheet: React.FC<TokenSelectSheetProps> = ({
     onClose,
     onSelect,
 }) => {
+    const [searchQuery, setSearchQuery] = useState('');
+    const { data: balanceData } = useWalletBalances();
+    const { data: tokens, isLoading } = useTokens({
+        query: searchQuery,
+        // Ensure chainId is a number for filtering
+        chains: typeof chainId === 'number' ? [chainId] : undefined,
+    });
+
+    const options: TokenOption[] = React.useMemo(() => {
+        if (!tokens) return [];
+        return tokens.map(t => {
+            // Find if this token has a balance in our wallet
+            const walletToken = balanceData?.tokens.find(
+                wt => wt.address.toLowerCase() === t.address.toLowerCase() && wt.chainId === t.chainId
+            );
+
+            return {
+                id: `${t.chainId}-${t.address}`,
+                symbol: t.symbol,
+                name: t.name,
+                icon: t.logoURI || require('@/assets/home/tiwicat-token.svg'),
+                tvl: t.liquidity ? `$${t.liquidity.toLocaleString()}` : 'N/A',
+                balanceFiat: walletToken?.usdValue ? `$${parseFloat(walletToken.usdValue).toFixed(2)}` : '$0.00',
+                balanceToken: walletToken?.balanceFormatted || `0.00 ${t.symbol}`,
+                address: t.address,
+                chainId: t.chainId,
+                decimals: t.decimals,
+            };
+        });
+    }, [tokens, balanceData]);
+
     return (
         <SelectionBottomSheet
             visible={visible}
             title="Token Selection"
             onClose={onClose}
         >
-            <ScrollView
-                style={styles.container}
-                contentContainerStyle={styles.scrollContent}
-                showsVerticalScrollIndicator={false}
-            >
-                {TOKEN_OPTIONS.map((token) => {
-                    const isActive = token.id === selectedTokenId;
+            <View style={styles.content}>
+                {/* Search Bar */}
+                <View style={styles.searchContainer}>
+                    <Ionicons name="search" size={20} color={colors.mutedText} />
+                    <TextInput
+                        style={styles.searchInput}
+                        placeholder="Search by name or address"
+                        placeholderTextColor={colors.mutedText}
+                        value={searchQuery}
+                        onChangeText={setSearchQuery}
+                        autoCapitalize="none"
+                    />
+                </View>
 
-                    return (
-                        <TouchableOpacity
-                            key={token.id}
-                            activeOpacity={0.9}
-                            onPress={() => onSelect(token)}
-                            style={[
-                                styles.optionItem,
-                                isActive && styles.activeItem
-                            ]}
-                        >
-                            <View style={styles.optionContent}>
-                                {/* Left: icon + symbol + TVL */}
-                                <View style={styles.leftInfo}>
-                                    <View style={styles.iconWrapper}>
-                                        <Image source={token.icon} style={styles.fullSize} contentFit="contain" />
-                                    </View>
-                                    <View style={styles.textColumn}>
-                                        <Text style={styles.symbol}>{token.symbol}</Text>
-                                        <Text style={styles.tvl}>{token.tvl}</Text>
-                                    </View>
-                                </View>
+                {isLoading ? (
+                    <View style={styles.loaderContainer}>
+                        <ActivityIndicator color={colors.primaryCTA} />
+                    </View>
+                ) : (
+                    <ScrollView
+                        style={styles.container}
+                        contentContainerStyle={styles.scrollContent}
+                        showsVerticalScrollIndicator={false}
+                    >
+                        {options.map((token) => {
+                            const isActive = token.id === selectedTokenId;
 
-                                {/* Right: balances + checkmark */}
-                                <View style={styles.rightInfo}>
-                                    <View style={styles.balanceColumn}>
-                                        <Text style={styles.fiatBalance}>{token.balanceFiat}</Text>
-                                        <Text style={styles.tokenBalance}>{token.balanceToken}</Text>
-                                    </View>
-
-                                    {isActive && (
-                                        <View style={styles.checkWrapper}>
-                                            <Image source={CheckmarkIcon} style={styles.fullSize} contentFit="contain" />
+                            return (
+                                <TouchableOpacity
+                                    key={token.id}
+                                    activeOpacity={0.9}
+                                    onPress={() => onSelect(token)}
+                                    style={[
+                                        styles.optionItem,
+                                        isActive && styles.activeItem
+                                    ]}
+                                >
+                                    <View style={styles.optionContent}>
+                                        {/* Left: icon + symbol + TVL */}
+                                        <View style={styles.leftInfo}>
+                                            <View style={styles.iconWrapper}>
+                                                <Image source={token.icon} style={styles.fullSize} contentFit="contain" />
+                                            </View>
+                                            <View style={styles.textColumn}>
+                                                <Text style={styles.symbol}>{token.symbol}</Text>
+                                                <Text style={styles.tvl}>{token.tvl}</Text>
+                                            </View>
                                         </View>
-                                    )}
-                                </View>
-                            </View>
-                        </TouchableOpacity>
-                    );
-                })}
-            </ScrollView>
+
+                                        {/* Right: balances + checkmark */}
+                                        <View style={styles.rightInfo}>
+                                            <View style={styles.balanceColumn}>
+                                                <Text style={styles.fiatBalance}>{token.balanceFiat}</Text>
+                                                <Text style={styles.tokenBalance}>{token.balanceToken}</Text>
+                                            </View>
+
+                                            {isActive && (
+                                                <View style={styles.checkWrapper}>
+                                                    <Image source={CheckmarkIcon} style={styles.fullSize} contentFit="contain" />
+                                                </View>
+                                            )}
+                                        </View>
+                                    </View>
+                                </TouchableOpacity>
+                            );
+                        })}
+                    </ScrollView>
+                )}
+            </View>
         </SelectionBottomSheet>
     );
 };
 
 const styles = StyleSheet.create({
+    content: {
+        flex: 1,
+        paddingTop: 8,
+    },
+    searchContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: colors.bgCards,
+        borderRadius: 12,
+        paddingHorizontal: 12,
+        height: 48,
+        marginHorizontal: 16,
+        marginBottom: 16,
+        borderWidth: 1,
+        borderColor: colors.bgStroke,
+    },
+    searchInput: {
+        flex: 1,
+        marginLeft: 8,
+        fontFamily: 'Manrope-Medium',
+        fontSize: 14,
+        color: colors.titleText,
+    },
+    loaderContainer: {
+        height: 200,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
     container: {
         flex: 1,
     },
     scrollContent: {
-        paddingTop: 8,
+        paddingHorizontal: 16,
         paddingBottom: 24,
         gap: 16,
     },
@@ -170,6 +212,9 @@ const styles = StyleSheet.create({
     iconWrapper: {
         width: 40,
         height: 40,
+        borderRadius: 999, // Full circular rounding
+        overflow: 'hidden',
+        backgroundColor: colors.bgSemi,
     },
     fullSize: {
         width: '100%',

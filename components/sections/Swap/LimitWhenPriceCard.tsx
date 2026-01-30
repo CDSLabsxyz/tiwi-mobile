@@ -1,7 +1,7 @@
 import { colors } from '@/constants/colors';
 import { Image } from 'expo-image';
 import React, { useMemo } from 'react';
-import { Dimensions, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 const WalletIcon = require('@/assets/home/wallet-03.svg');
 const ArrowDown01 = require('@/assets/home/arrow-down-01.svg');
@@ -11,6 +11,7 @@ interface LimitWhenPriceCardProps {
     tokenSymbol?: string;
     tokenSelected: boolean;
     tokenIcon?: any;
+    chainBadgeIcon?: any;
     amount: string;
     fiatAmount: string;
     balanceText: string;
@@ -26,15 +27,14 @@ export const LimitWhenPriceCard: React.FC<LimitWhenPriceCardProps> = ({
     tokenSymbol,
     tokenSelected,
     tokenIcon,
+    chainBadgeIcon,
     amount,
     fiatAmount,
     balanceText,
     onAmountChange,
     onTokenPress,
 }) => {
-    const { width: SCREEN_WIDTH } = Dimensions.get('window');
-    const cardWidth = Math.min(353, SCREEN_WIDTH - 40);
-
+    // ... logic ...
     const handleAmountChange = (value: string) => {
         let sanitized = value.replace(/[^0-9.]/g, '');
         const parts = sanitized.split('.');
@@ -54,7 +54,7 @@ export const LimitWhenPriceCard: React.FC<LimitWhenPriceCardProps> = ({
     const displayTokenSymbol = useMemo(() => tokenSymbol ?? 'Tether', [tokenSymbol]);
 
     return (
-        <View style={[styles.container, { width: cardWidth }]}>
+        <View style={[styles.container, { width: '100%' }]}>
             <View style={styles.content}>
                 {/* Left: Token selector */}
                 <View style={styles.leftSection}>
@@ -64,6 +64,11 @@ export const LimitWhenPriceCard: React.FC<LimitWhenPriceCardProps> = ({
                         <TouchableOpacity activeOpacity={0.8} onPress={onTokenPress} style={styles.tokenPill}>
                             <View style={styles.iconContainer}>
                                 <Image source={displayTokenIcon} style={styles.fullSize} contentFit="cover" />
+                                {chainBadgeIcon && (
+                                    <View style={styles.chainBadgeWrapper}>
+                                        <Image source={chainBadgeIcon} style={styles.fullSize} contentFit="contain" />
+                                    </View>
+                                )}
                             </View>
                             <Text style={styles.tokenSymbol}>{displayTokenSymbol}</Text>
                         </TouchableOpacity>
@@ -191,6 +196,17 @@ const styles = StyleSheet.create({
     fullSize: {
         width: '100%',
         height: '100%',
-        borderRadius: 16,
+        borderRadius: 999,
+    },
+    chainBadgeWrapper: {
+        position: 'absolute',
+        bottom: -2,
+        right: -2,
+        width: 14,
+        height: 14,
+        backgroundColor: colors.bgCards,
+        borderRadius: 999,
+        padding: 1,
+        overflow: 'hidden',
     },
 });

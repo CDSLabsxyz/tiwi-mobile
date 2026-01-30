@@ -16,12 +16,13 @@ import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { colors } from '@/constants/colors';
 import { fetchWalletData } from '@/services/walletService';
 import { useSendStore } from '@/store/sendStore';
+import { useWalletStore } from '@/store/walletStore';
 import { validateAddress, validateAddresses, validateAmount } from '@/utils/addressValidation';
 import { mapAssetToChainOption, mapAssetToTokenOption } from '@/utils/assetMapping';
 import { WALLET_ADDRESS } from '@/utils/wallet';
 import { useLocalSearchParams, usePathname, useRouter } from 'expo-router';
 import React, { useEffect } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function SendScreen() {
@@ -70,6 +71,8 @@ export default function SendScreen() {
         }
     }, [params.assetId]);
 
+    const { address } = useWalletStore();
+
     // Handlers
     const handleBackPress = () => {
         if (currentStep === 'select-asset') {
@@ -104,13 +107,12 @@ export default function SendScreen() {
         } else {
             // Fallback: Get chain info from wallet data
             try {
-                const walletData = await fetchWalletData(WALLET_ADDRESS);
-                const asset = walletData.portfolio.find((a) => {
-                    const mappedToken = mapAssetToTokenOption(a, a.balance, a.usdValue);
-                    return mappedToken?.id === token.id;
-                });
+                const { apiClient } = require('@/services/apiClient');
+                const res = await apiClient.getWalletBalances(address || WALLET_ADDRESS);
+                const asset = res.balances.find((a: any) => a.symbol === token.symbol);
                 if (asset) {
-                    const chainOption = mapAssetToChainOption(asset);
+                    const { getChainOptionWithFallback } = require('@/utils/chainUtils');
+                    const chainOption = getChainOptionWithFallback(asset.chainId.toString());
                     if (chainOption) {
                         sendStore.setSelectedChain(chainOption);
                     }
@@ -138,8 +140,46 @@ export default function SendScreen() {
         setCurrentStep('passcode');
     };
 
-    const handlePasscodeSuccess = () => {
+    const handlePasscodeSuccess = async () => {
         console.log('Transaction confirmed!');
+
+        if (address) {
+            const { apiClient } = require('@/services/apiClient');
+            try {
+                // Log the send transaction(s)
+                if (activeTab === 'send-to-one') {
+                    await apiClient.logTransaction({
+                        walletAddress: address,
+                        transactionHash: `send-hash-${Date.now()}`,
+                        chainId: parseInt(sendStore.selectedChain?.id || '1'),
+                        type: 'send',
+                        fromTokenAddress: sendStore.selectedToken?.id,
+                        fromTokenSymbol: sendStore.selectedToken?.symbol,
+                        amount: sendStore.amount,
+                        amountFormatted: `${sendStore.amount} ${sendStore.selectedToken?.symbol}`,
+                        toTokenAddress: sendStore.recipientAddress, // Recipient as target address
+                    });
+                } else {
+                    // Multi-send: Log each recipient
+                    for (const recipient of sendStore.recipients) {
+                        await apiClient.logTransaction({
+                            walletAddress: address,
+                            transactionHash: `multisend-hash-${Date.now()}`,
+                            chainId: parseInt(sendStore.selectedChain?.id || '1'),
+                            type: 'multi_send',
+                            fromTokenAddress: sendStore.selectedToken?.id,
+                            fromTokenSymbol: sendStore.selectedToken?.symbol,
+                            amount: sendStore.amountPerRecipient,
+                            amountFormatted: `${sendStore.amountPerRecipient} ${sendStore.selectedToken?.symbol}`,
+                            toTokenAddress: recipient.address,
+                        });
+                    }
+                }
+            } catch (e) {
+                console.error('Failed to log transaction', e);
+            }
+        }
+
         router.push('/wallet' as any);
     };
 
@@ -250,62 +290,62 @@ export default function SendScreen() {
                 style={styles.keyboardView}
                 keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
             > */}
-                <View style={styles.contentWrapper}>
-                    <ScrollView
-                        style={styles.scrollView}
-                        contentContainerStyle={[
-                            styles.scrollContent,
-                            {
-                                paddingBottom: currentStep === 'select-asset' || currentStep === 'review' ? 100 : 80,
-                            }
-                        ]}
-                        showsVerticalScrollIndicator={false}
-                        keyboardShouldPersistTaps="handled"
-                    >
-                        {renderContent()}
-                    </ScrollView>
+            <View style={styles.contentWrapper}>
+                <ScrollView
+                    style={styles.scrollView}
+                    contentContainerStyle={[
+                        styles.scrollContent,
+                        {
+                            paddingBottom: currentStep === 'select-asset' || currentStep === 'review' ? 100 : 80,
+                        }
+                    ]}
+                    showsVerticalScrollIndicator={false}
+                    keyboardShouldPersistTaps="handled"
+                >
+                    {renderContent()}
+                </ScrollView>
 
-                    {/* Fixed Next Button at Bottom - show on select-asset and enter-details steps */}
-                    {(currentStep === 'select-asset' || currentStep === 'enter-details') && (
-                        <View style={[styles.buttonContainer, { bottom: (bottom || 16) + 32 }]}>
-                            <TouchableOpacity
-                                activeOpacity={0.8}
-                                onPress={currentStep === 'select-asset' ? handleNextFromSelect : handleNextFromForm}
-                                disabled={!isNextButtonEnabled()}
-                                style={[
-                                    styles.nextButton,
-                                    {
-                                        backgroundColor: isNextButtonEnabled() ? colors.primaryCTA : colors.bgCards,
-                                    }
-                                ]}
-                            >
-                                <Text style={[
-                                    styles.nextButtonText,
-                                    {
-                                        color: isNextButtonEnabled() ? colors.bg : colors.bodyText,
-                                    }
-                                ]}>
-                                    Next
-                                </Text>
-                            </TouchableOpacity>
-                        </View>
-                    )}
+                {/* Fixed Next Button at Bottom - show on select-asset and enter-details steps */}
+                {(currentStep === 'select-asset' || currentStep === 'enter-details') && (
+                    <View style={[styles.buttonContainer, { bottom: (bottom || 16) + 32 }]}>
+                        <TouchableOpacity
+                            activeOpacity={0.8}
+                            onPress={currentStep === 'select-asset' ? handleNextFromSelect : handleNextFromForm}
+                            disabled={!isNextButtonEnabled()}
+                            style={[
+                                styles.nextButton,
+                                {
+                                    backgroundColor: isNextButtonEnabled() ? colors.primaryCTA : colors.bgCards,
+                                }
+                            ]}
+                        >
+                            <Text style={[
+                                styles.nextButtonText,
+                                {
+                                    color: isNextButtonEnabled() ? colors.bg : colors.bodyText,
+                                }
+                            ]}>
+                                Next
+                            </Text>
+                        </TouchableOpacity>
+                    </View>
+                )}
 
-                    {/* Fixed Confirm Button at Bottom - show on review step */}
-                    {currentStep === 'review' && (
-                        <View style={[styles.buttonContainer, { bottom: (bottom || 16) + 32 }]}>
-                            <TouchableOpacity
-                                activeOpacity={0.8}
-                                onPress={handleConfirmFromReview}
-                                style={[styles.nextButton, { backgroundColor: colors.primaryCTA }]}
-                            >
-                                <Text style={[styles.nextButtonText, { color: colors.bg }]}>
-                                    {activeTab === 'send-to-one' ? 'Confirm' : 'Confirm Multi-Send'}
-                                </Text>
-                            </TouchableOpacity>
-                        </View>
-                    )}
-                </View>
+                {/* Fixed Confirm Button at Bottom - show on review step */}
+                {currentStep === 'review' && (
+                    <View style={[styles.buttonContainer, { bottom: (bottom || 16) + 32 }]}>
+                        <TouchableOpacity
+                            activeOpacity={0.8}
+                            onPress={handleConfirmFromReview}
+                            style={[styles.nextButton, { backgroundColor: colors.primaryCTA }]}
+                        >
+                            <Text style={[styles.nextButtonText, { color: colors.bg }]}>
+                                {activeTab === 'send-to-one' ? 'Confirm' : 'Confirm Multi-Send'}
+                            </Text>
+                        </TouchableOpacity>
+                    </View>
+                )}
+            </View>
             {/* </KeyboardAvoidingView> */}
 
             {/* Token Selection Sheet */}

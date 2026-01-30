@@ -14,6 +14,9 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useWalletBalances } from '@/hooks/useWalletBalances';
+import { useWalletStore } from '@/store/walletStore';
+
 interface WalletModalProps {
     visible: boolean;
     onClose: () => void;
@@ -45,13 +48,18 @@ export const WalletModal: React.FC<WalletModalProps> = ({
     onSettingsPress,
     onDisconnectPress,
 }) => {
-    // Use provided address or default to main wallet address
-    const fullAddress = walletAddress || WALLET_ADDRESS;
+    const { address: storeAddress, walletIcon } = useWalletStore();
+    const { data: balanceData } = useWalletBalances();
+    const totalNetWorthUsd = balanceData?.totalNetWorthUsd || '0.00';
+
+    // Use provider icon if available, otherwise fallback to TiwiCat
+    const displayIcon = walletIcon ? { uri: walletIcon } : TiwiCat;
+
+    // Use provided address or store address or fallback
+    const fullAddress = walletAddress || storeAddress || WALLET_ADDRESS;
     const displayAddress = truncateAddress(fullAddress);
 
-    const [totalBalance, setTotalBalance] = useState(initialBalance || '$0.00');
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const [isLoadingBalance, setIsLoadingBalance] = useState(false);
+    const [totalBalance, setTotalBalance] = useState(initialBalance || `$${totalNetWorthUsd}`);
     const { bottom } = useSafeAreaInsets();
 
     // Modal height from Figma: 441px
@@ -60,28 +68,12 @@ export const WalletModal: React.FC<WalletModalProps> = ({
     const opacity = useSharedValue(0);
     const [copied, setCopied] = useState(false);
 
-    // Fetch wallet balance when modal opens
+    // Sync total balance from hook if not provided as prop
     useEffect(() => {
-        if (visible) {
-            const loadBalance = async () => {
-                setIsLoadingBalance(true);
-                try {
-                    // Assuming fetchHomeData or similar might have this, 
-                    // or we use a mock balance service if fetchWalletBalance isn't exported from data service
-                    // For now, using a placeholder or connecting to `fetchHomeData` if applicable.
-                    // The reference used `fetchWalletBalance` from `@/services/walletService`.
-                    // We will just mock it or skip if not available, conserving the structure.
-                    setTotalBalance('$12,450.00'); // Mocked for UI fidelity as per design
-                } catch (error) {
-                    console.error('Failed to fetch wallet balance:', error);
-                    setTotalBalance('$0.00');
-                } finally {
-                    setIsLoadingBalance(false);
-                }
-            };
-            loadBalance();
+        if (!initialBalance) {
+            setTotalBalance(`$${totalNetWorthUsd}`);
         }
-    }, [visible, fullAddress]);
+    }, [totalNetWorthUsd, initialBalance]);
 
     useEffect(() => {
         if (visible) {
@@ -186,7 +178,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                                             {/* Tiwicat Avatar */}
                                             <View style={styles.avatarContainer}>
                                                 <Image
-                                                    source={TiwiCat}
+                                                    source={displayIcon}
                                                     style={styles.avatar}
                                                     contentFit="cover"
                                                 />

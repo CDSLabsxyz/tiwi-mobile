@@ -1,7 +1,6 @@
 /**
  * Claimable Rewards Card Component
  * Displays claimable rewards amount with expandable arrow
- * Converted from Tailwind to StyleSheet
  */
 
 import { colors } from '@/constants/colors';
@@ -9,8 +8,8 @@ import { Image } from 'expo-image';
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-const StarIcon = require('../../../assets/home/star-18.svg');
-const ArrowDownIcon = require('../../../assets/home/arrow-down-01.svg');
+const StarIcon = require('@/assets/home/star-18.svg');
+const ArrowDownIcon = require('@/assets/home/arrow-down-01.svg');
 
 interface ClaimableRewardsCardProps {
     amount: string;
@@ -30,44 +29,41 @@ export const ClaimableRewardsCard: React.FC<ClaimableRewardsCardProps> = ({
             onPress={onPress}
             style={styles.container}
         >
-            {/* Gradient bottom border effect */}
-            <View style={styles.gradientBorder} />
+            {/* Background Gradient Line (Simulated with View) */}
+            <View style={styles.gradientLine} />
 
             {/* Left: Star Icon + Text */}
             <View style={styles.leftSection}>
-                <View style={styles.starIcon}>
+                <View style={styles.starIconWrapper}>
                     <Image
                         source={StarIcon}
-                        style={styles.iconFull}
+                        style={styles.fullSize}
                         contentFit="contain"
                     />
                 </View>
-                <Text style={styles.text}>
-                    <Text>Claimable Rewards: </Text>
-                    <Text style={styles.amountText}>
-                        {amount}
-                    </Text>
+                <Text style={styles.labelText}>
+                    Claimable Rewards:{' '}
+                    <Text style={styles.amountText}>{amount}</Text>
                 </Text>
             </View>
 
             {/* Right: Arrow Icon (rotated) */}
-            <View style={styles.arrowContainer}>
+            <View style={styles.arrowIconWrapper}>
                 <Image
                     source={ArrowDownIcon}
-                    style={styles.iconFull}
+                    style={styles.fullSize}
                     contentFit="contain"
                 />
             </View>
 
-            {/* Glow effect */}
-            <View style={styles.glowEffect} />
+            {/* Decorative Glow (Simulated with View) */}
+            <View style={styles.glow} />
         </TouchableOpacity>
     );
 };
 
 const styles = StyleSheet.create({
     container: {
-        position: 'relative',
         width: 353,
         borderWidth: 1,
         borderColor: colors.bgStroke,
@@ -79,55 +75,53 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         overflow: 'hidden',
         backgroundColor: 'transparent',
+        position: 'relative',
     },
-    gradientBorder: {
+    gradientLine: {
         position: 'absolute',
+        bottom: 0,
         left: 16,
         right: 16,
-        bottom: 0,
-        height: 0.5,
-        borderRadius: 100,
-        backgroundColor: 'rgba(177, 241, 40, 0.95)',
-        opacity: 0.5,
+        height: 1,
+        backgroundColor: colors.primaryCTA,
+        opacity: 0.3,
+        borderRadius: 999,
     },
     leftSection: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 4,
     },
-    starIcon: {
+    starIconWrapper: {
         width: 18,
         height: 18,
     },
-    text: {
+    labelText: {
         fontFamily: 'Manrope-Medium',
         fontSize: 14,
         color: colors.bodyText,
-        textAlign: 'center',
     },
     amountText: {
         fontFamily: 'Manrope-SemiBold',
         color: colors.titleText,
     },
-    arrowContainer: {
+    arrowIconWrapper: {
         width: 16,
         height: 16,
-        alignItems: 'center',
-        justifyContent: 'center',
-        transform: [{ rotate: '90deg' }, { scaleY: -1 }],
+        transform: [{ rotate: '270deg' }], // Pointing right/rotated
     },
-    glowEffect: {
+    fullSize: {
+        width: '100%',
+        height: '100%',
+    },
+    glow: {
         position: 'absolute',
         width: 144,
         height: 36,
         left: 91,
         top: 39,
-        backgroundColor: 'rgba(177, 241, 40, 0.2)',
-        borderRadius: 100,
-        opacity: 0.3,
-    },
-    iconFull: {
-        width: '100%',
-        height: '100%',
+        backgroundColor: colors.primaryCTA,
+        opacity: 0.05,
+        borderRadius: 72,
     },
 });

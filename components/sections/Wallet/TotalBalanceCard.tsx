@@ -8,6 +8,7 @@ import { colors } from '@/constants/colors';
 import { Image } from 'expo-image';
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import AntDesign from '@expo/vector-icons/AntDesign';
 
 const ViewIcon = require('../../../assets/wallet/view.svg');
 
@@ -46,11 +47,11 @@ export const TotalBalanceCard: React.FC<TotalBalanceCardProps> = ({
                         onPress={onToggleVisibility}
                         style={styles.viewIcon}
                     >
-                        <Image
+                        {isBalanceVisible ? <Image
                             source={ViewIcon}
                             style={styles.iconFull}
                             contentFit="contain"
-                        />
+                        /> : <AntDesign name="eye-invisible" size={16} color={colors.bodyText} />}
                     </TouchableOpacity>
                 </View>
 
@@ -103,8 +104,8 @@ const styles = StyleSheet.create({
         color: colors.bodyText,
     },
     viewIcon: {
-        width: 14,
-        height: 14,
+        width: 18,
+        height: 18,
     },
     balanceRow: {
         flexDirection: 'row',

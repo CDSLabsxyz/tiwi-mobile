@@ -4,26 +4,42 @@
  * Matches Figma design (node-id: 3279-113003)
  */
 
-import { ConnectWalletSheet } from '@/components/sections/Auth/ConnectWalletSheet';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
+import { SuccessModal } from '@/components/ui/SuccessModal';
 import { colors } from '@/constants/colors';
+import { useAppKit } from '@reown/appkit-react-native';
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useAccount } from 'wagmi';
 
-export default function WelcomeScreen() {
+function WelcomeScreen() {
     const { top, bottom } = useSafeAreaInsets();
     const router = useRouter();
-    const [isConnectSheetVisible, setIsConnectSheetVisible] = useState(false);
+    const { open } = useAppKit();
+    const { isConnected } = useAccount();
+    const [isSuccess, setIsSuccess] = useState(false);
 
-    const handleConnectWallet = () => {
-        setIsConnectSheetVisible(true);
+    // Watch for connection from AppKit
+    useEffect(() => {
+        if (isConnected) {
+            setIsSuccess(true);
+        }
+    }, [isConnected]);
+
+    const handleConnectWallet = async () => {
+        await open();
     };
 
     const handleCreateWallet = () => {
-        // TODO: Implement create in-app wallet flow (Smart Accounts/MPC)
-        console.log('Create wallet pressed');
+        router.push('/wallet' as any);
+    };
+
+    const handleSuccessDone = () => {
+        setIsSuccess(false);
+        router.push('/security' as any);
     };
 
     return (
@@ -31,22 +47,29 @@ export default function WelcomeScreen() {
             <CustomStatusBar />
 
             {/* Shapes (Absolute Positioned for Branded Look) */}
-            <View style={styles.triangleContainer}>
+            {/* <View style={styles.triangleContainer}>
                 <View style={[styles.mockTriangle, { borderBottomColor: colors.primaryCTA }]} />
             </View>
 
             <View style={styles.starContainer}>
                 <View style={[styles.mockStar, { backgroundColor: colors.primaryCTA }]} />
-            </View>
+            </View> */}
+
 
             {/* Header Actions - Removed Skip as per protocol requirements (Wallet required for entry) */}
-            <View style={[styles.header, { paddingTop: top + 10 }]} />
+            <View style={styles.imageContainer}>
+                <Image
+                    source={require('@/assets/onboarding/wallet-onboarding.png')}
+                    style={styles.image}
+                    contentFit="contain" // Changed to cover to fill width
+                    transition={1000}
+                />
+            </View>
+            <View style={[styles.header, { paddingTop: top * 5 }]} />
+
 
             {/* Bottom Content */}
             <View style={[styles.bottomContent, { paddingBottom: bottom + 20 }]}>
-                {/* Brand Tagline or Main Hub UI could be here */}
-
-                {/* Buttons Group */}
                 <View style={styles.buttonGroup}>
                     <TouchableOpacity
                         activeOpacity={0.8}
@@ -61,7 +84,7 @@ export default function WelcomeScreen() {
                         onPress={handleCreateWallet}
                         style={[styles.button, styles.secondaryButton]}
                     >
-                        <Text style={styles.secondaryButtonText}>Create in-app wallet</Text>
+                        <Text style={styles.secondaryButtonText}>Connect in-app wallet</Text>
                     </TouchableOpacity>
                 </View>
 
@@ -72,13 +95,18 @@ export default function WelcomeScreen() {
             </View>
 
             {/* Wallet Selection Sheet */}
-            <ConnectWalletSheet
-                visible={isConnectSheetVisible}
-                onClose={() => setIsConnectSheetVisible(false)}
+            {/* Wallet Selection Sheet - Replaced by Reown AppKit Modal */
+            /*  managed via useAppKit hook */}
+
+            <SuccessModal
+                isVisible={isSuccess}
+                type="connected"
+                onDone={handleSuccessDone}
             />
         </View>
     );
 }
+
 
 const styles = StyleSheet.create({
     container: {
@@ -139,6 +167,16 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
     },
+    imageContainer: {
+        flex: 1,
+        width: '100%',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    image: {
+        width: '100%',
+        height: '100%', // Takes up all available space in container
+    },
     primaryButton: {
         backgroundColor: colors.primaryCTA,
     },
@@ -169,3 +207,5 @@ const styles = StyleSheet.create({
         textDecorationLine: 'underline',
     },
 });
+
+export default WelcomeScreen;

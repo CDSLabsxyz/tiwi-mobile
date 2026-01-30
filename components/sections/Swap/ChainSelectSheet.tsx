@@ -1,31 +1,19 @@
 import { colors } from '@/constants/colors';
+import { useChains } from '@/hooks/useChains';
 import { Image } from 'expo-image';
 import React from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SelectionBottomSheet } from './SelectionBottomSheet';
 
-const EthereumIcon = require('@/assets/home/chains/ethereum.svg');
-const ApexIcon = require('@/assets/home/chains/near.svg');
-const VerdantIcon = require('@/assets/home/chains/polygon.svg');
-const AegisIcon = require('@/assets/home/chains/solana.svg');
-const CortexIcon = require('@/assets/home/chains/avalanche.svg');
 const CheckmarkIcon = require('@/assets/swap/checkmark-circle-01.svg');
 
-export type ChainId = 'ethereum' | 'apex' | 'verdant' | 'aegis' | 'cortex';
+export type ChainId = number | string;
 
 export interface ChainOption {
     id: ChainId;
     name: string;
     icon: any;
 }
-
-const CHAIN_OPTIONS: ChainOption[] = [
-    { id: 'ethereum', name: 'Ethereum', icon: EthereumIcon },
-    { id: 'apex', name: 'Apex Network', icon: ApexIcon },
-    { id: 'verdant', name: 'Verdant Protocol', icon: VerdantIcon },
-    { id: 'aegis', name: 'Aegis Core', icon: AegisIcon },
-    { id: 'cortex', name: 'Cortex Chain', icon: CortexIcon },
-];
 
 interface ChainSelectSheetProps {
     visible: boolean;
@@ -34,58 +22,71 @@ interface ChainSelectSheetProps {
     onClose: () => void;
 }
 
-/**
- * Chain selection bottom sheet
- * Matches Figma chain dropdown menu
- */
 export const ChainSelectSheet: React.FC<ChainSelectSheetProps> = ({
     visible,
     selectedChainId,
     onSelect,
     onClose,
 }) => {
+    const { data: chains, isLoading } = useChains();
+
+    const options: ChainOption[] = React.useMemo(() => {
+        if (!chains) return [];
+        return chains.map(c => ({
+            id: c.id,
+            name: c.name,
+            icon: c.logoURI || c.logo || require('@/assets/home/chains/ethereum.svg'), // Priority to logoURI
+        }));
+    }, [chains]);
+
     return (
         <SelectionBottomSheet
             visible={visible}
             title="Chain Selection"
             onClose={onClose}
         >
-            <ScrollView
-                style={styles.container}
-                contentContainerStyle={styles.scrollContent}
-                showsVerticalScrollIndicator={false}
-            >
-                {CHAIN_OPTIONS.map((option) => {
-                    const isActive = selectedChainId !== null && option.id === selectedChainId;
+            {isLoading ? (
+                <View style={styles.loaderContainer}>
+                    <ActivityIndicator color={colors.primaryCTA} />
+                </View>
+            ) : (
+                <ScrollView
+                    style={styles.container}
+                    contentContainerStyle={styles.scrollContent}
+                    showsVerticalScrollIndicator={false}
+                >
+                    {options.map((option) => {
+                        const isActive = selectedChainId !== null && option.id === selectedChainId;
 
-                    return (
-                        <TouchableOpacity
-                            key={option.id}
-                            activeOpacity={0.9}
-                            onPress={() => onSelect(option)}
-                            style={[
-                                styles.optionItem,
-                                isActive && styles.activeItem
-                            ]}
-                        >
-                            <View style={styles.optionContent}>
-                                <View style={styles.chainInfo}>
-                                    <View style={styles.iconWrapper}>
-                                        <Image source={option.icon} style={styles.fullSize} contentFit="contain" />
+                        return (
+                            <TouchableOpacity
+                                key={option.id}
+                                activeOpacity={0.9}
+                                onPress={() => onSelect(option)}
+                                style={[
+                                    styles.optionItem,
+                                    isActive && styles.activeItem
+                                ]}
+                            >
+                                <View style={styles.optionContent}>
+                                    <View style={styles.chainInfo}>
+                                        <View style={styles.iconWrapper}>
+                                            <Image source={option.icon} style={styles.fullSize} contentFit="contain" />
+                                        </View>
+                                        <Text style={styles.optionName}>{option.name}</Text>
                                     </View>
-                                    <Text style={styles.optionName}>{option.name}</Text>
+
+                                    {isActive && (
+                                        <View style={styles.checkWrapper}>
+                                            <Image source={CheckmarkIcon} style={styles.fullSize} contentFit="contain" />
+                                        </View>
+                                    )}
                                 </View>
-
-                                {isActive && (
-                                    <View style={styles.checkWrapper}>
-                                        <Image source={CheckmarkIcon} style={styles.fullSize} contentFit="contain" />
-                                    </View>
-                                )}
-                            </View>
-                        </TouchableOpacity>
-                    );
-                })}
-            </ScrollView>
+                            </TouchableOpacity>
+                        );
+                    })}
+                </ScrollView>
+            )}
         </SelectionBottomSheet>
     );
 };
@@ -127,6 +128,7 @@ const styles = StyleSheet.create({
     fullSize: {
         width: '100%',
         height: '100%',
+        borderRadius: 100
     },
     optionName: {
         fontFamily: 'Manrope-Medium',
@@ -136,5 +138,10 @@ const styles = StyleSheet.create({
     checkWrapper: {
         width: 24,
         height: 24,
+    },
+    loaderContainer: {
+        height: 200,
+        justifyContent: 'center',
+        alignItems: 'center',
     },
 });

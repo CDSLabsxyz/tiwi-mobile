@@ -6,6 +6,7 @@
 export { AssetListItem } from './AssetListItem';
 export { AssetsTabSwitcher, type WalletTabKey } from './AssetsTabSwitcher';
 export { ClaimableRewardsCard } from './ClaimableRewardsCard';
+
 export { NFTList } from './NFTList';
 export { NFTListItem } from './NFTListItem';
 export { QuickActions } from './QuickActions';

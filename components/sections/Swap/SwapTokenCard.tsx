@@ -227,7 +227,7 @@ const styles = StyleSheet.create({
     tokenIcon: {
         width: 32,
         height: 32,
-        borderRadius: 16,
+        borderRadius: 999,
     },
     chainBadgeWrapper: {
         position: 'absolute',
@@ -236,12 +236,14 @@ const styles = StyleSheet.create({
         width: 14,
         height: 14,
         backgroundColor: colors.bgCards,
-        borderRadius: 7,
+        borderRadius: 999,
         padding: 1,
+        overflow: 'hidden',
     },
     chainBadge: {
         width: '100%',
         height: '100%',
+        borderRadius: 999,
     },
     tokenTextInfo: {
         justifyContent: 'center',

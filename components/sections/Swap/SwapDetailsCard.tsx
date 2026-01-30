@@ -70,7 +70,7 @@ export const SwapDetailsCard: React.FC<SwapDetailsCardProps> = ({
         const animatedHeight = interpolate(height.value, [0, 1], [collapsedHeight, expandedHeight], Extrapolate.CLAMP);
         const opacity = interpolate(height.value, [0, 0.3, 1], [0, 0, 1], Extrapolate.CLAMP);
         return {
-            height: animatedHeight,
+            height: animatedHeight + 12,
             opacity: opacity,
             overflow: 'hidden',
         };
@@ -158,7 +158,7 @@ export const SwapDetailsCard: React.FC<SwapDetailsCardProps> = ({
 
 const styles = StyleSheet.create({
     container: {
-        width: 353,
+        width: "100%",
         alignSelf: 'center',
         marginTop: 12,
         gap: 12,

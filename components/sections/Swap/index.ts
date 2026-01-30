@@ -1,6 +1,7 @@
 export * from './ChainSelectorCard';
 export * from './ChainSelectSheet';
 export * from './ExpiresSection';
+export * from './LimitAssetSheet';
 export * from './LimitWhenPriceCard';
 export * from './SelectionBottomSheet';
 export * from './SwapConfirmButton';

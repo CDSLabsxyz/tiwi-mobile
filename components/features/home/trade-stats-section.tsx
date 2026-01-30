@@ -1,5 +1,6 @@
 import { Skeleton } from '@/components/ui/skeleton';
 import { colors } from '@/constants/colors';
+import { Chain } from '@/services/apiClient';
 import { StatCard } from '@/types';
 import { Image } from 'expo-image';
 import React, { useEffect } from 'react';
@@ -18,6 +19,7 @@ const SECTION_WIDTH = 353;
 
 interface TradeStatsSectionProps {
     stats: StatCard[];
+    chains?: Chain[];
     isLoading?: boolean;
 }
 
@@ -27,7 +29,7 @@ const iconMap: Record<string, any> = {
     'locked': require('../../../assets/home/locked.svg'),
 };
 
-const chainLogos = [
+const localChainLogos = [
     require('../../../assets/home/chains/ethereum.svg'),
     require('../../../assets/home/chains/solana.svg'),
     require('../../../assets/home/chains/polygon.svg'),
@@ -42,31 +44,41 @@ const chainLogos = [
  * ChainMarquee Component
  * Animates the overlapping chain logos in one direction
  */
-const ChainMarquee = () => {
+const ChainMarquee = ({ chains = [] }: { chains?: Chain[] }) => {
     const translateX = useSharedValue(0);
     const itemWidth = 34; // 24 (icon) + 10 (gap)
-    const totalContentWidth = chainLogos.length * itemWidth;
+
+    // Use dynamic logos from API if available, otherwise fallback to local icons
+    const logos = chains.length > 0
+        ? chains.map(c => c.logo).filter(Boolean)
+        : localChainLogos;
+
+    const totalContentWidth = logos.length * itemWidth;
 
     useEffect(() => {
+        if (logos.length === 0) return;
+
         translateX.value = withRepeat(
             withTiming(-totalContentWidth, {
-                duration: 15000,
+                duration: Math.max(logos.length * 1500, 5000), // Adjust speed based on item count
                 easing: Easing.linear,
             }),
             -1,
             false
         );
         return () => cancelAnimation(translateX);
-    }, [totalContentWidth, translateX]);
+    }, [totalContentWidth, translateX, logos.length]);
 
     const animatedStyle = useAnimatedStyle(() => ({
         transform: [{ translateX: translateX.value }],
     }));
 
+    if (logos.length === 0) return <View style={styles.chainMarqueeContainer} />;
+
     return (
         <View style={styles.chainMarqueeContainer}>
             <Animated.View style={[styles.chainMarqueeInner, animatedStyle]}>
-                {[...chainLogos, ...chainLogos].map((logo, index) => (
+                {[...logos, ...logos].map((logo, index) => (
                     <Image
                         key={index}
                         source={logo}
@@ -81,6 +93,7 @@ const ChainMarquee = () => {
 
 export const TradeStatsSection: React.FC<TradeStatsSectionProps> = ({
     stats,
+    chains = [],
     isLoading = false,
 }) => {
     if (isLoading) {
@@ -100,8 +113,12 @@ export const TradeStatsSection: React.FC<TradeStatsSectionProps> = ({
         );
     }
 
+    // Layout logic: 2 cards in first row, up to 3 in subsequent rows
     const firstRow = stats.slice(0, 2);
-    const secondRow = stats.slice(2);
+    const otherRows = [];
+    for (let i = 2; i < stats.length; i += 3) {
+        otherRows.push(stats.slice(i, i + 3));
+    }
 
     return (
         <View style={styles.container}>
@@ -111,9 +128,9 @@ export const TradeStatsSection: React.FC<TradeStatsSectionProps> = ({
             <View style={styles.row}>
                 {firstRow.map((stat) => (
                     <View key={stat.id} style={styles.largeCard}>
-                        {stat.id === '2' ? (
+                        {stat.id === 'chain-count' ? (
                             <View style={styles.statContent}>
-                                <ChainMarquee />
+                                <ChainMarquee chains={chains} />
                                 <View style={styles.labelsContainer}>
                                     <Text style={styles.statValue}>{stat.value}</Text>
                                     <Text style={styles.statLabel}>{stat.label}</Text>
@@ -129,7 +146,7 @@ export const TradeStatsSection: React.FC<TradeStatsSectionProps> = ({
                                     />
                                 )}
                                 <View style={styles.labelsContainer}>
-                                    <Text style={[styles.statValue, { fontSize: stat.id === '1' ? 18 : 16 }]}>
+                                    <Text numberOfLines={1} style={[styles.statValue, { fontSize: stat.id === 'twc-price' ? 18 : 16 }]}>
                                         {stat.value}
                                     </Text>
                                     <Text style={styles.statLabel}>{stat.label}</Text>
@@ -140,26 +157,32 @@ export const TradeStatsSection: React.FC<TradeStatsSectionProps> = ({
                 ))}
             </View>
 
-            {/* Second Row: 3 Cards */}
-            <View style={styles.row}>
-                {secondRow.map((stat) => (
-                    <View key={stat.id} style={styles.smallCard}>
-                        <View style={styles.statContent}>
-                            {stat.icon && iconMap[stat.icon] && (
-                                <Image
-                                    source={iconMap[stat.icon]}
-                                    style={styles.iconSmall}
-                                    contentFit="contain"
-                                />
-                            )}
-                            <View style={styles.labelsContainer}>
-                                <Text style={styles.statValueSmall}>{stat.value}</Text>
-                                <Text style={styles.statLabel}>{stat.label}</Text>
+            {/* Subsequent Rows: 3 Cards each */}
+            {otherRows.map((row, rowIndex) => (
+                <View key={rowIndex} style={styles.row}>
+                    {row.map((stat) => (
+                        <View key={stat.id} style={styles.smallCard}>
+                            <View style={styles.statContent}>
+                                {stat.icon && iconMap[stat.icon] && (
+                                    <Image
+                                        source={iconMap[stat.icon]}
+                                        style={styles.iconSmall}
+                                        contentFit="contain"
+                                    />
+                                )}
+                                <View style={styles.labelsContainer}>
+                                    <Text numberOfLines={1} style={styles.statValueSmall}>{stat.value}</Text>
+                                    <Text style={styles.statLabel}>{stat.label}</Text>
+                                </View>
                             </View>
                         </View>
-                    </View>
-                ))}
-            </View>
+                    ))}
+                    {/* Fill remaining space if row has less than 3 cards */}
+                    {row.length < 3 && Array(3 - row.length).fill(0).map((_, i) => (
+                        <View key={`empty-${i}`} style={[styles.smallCard, { backgroundColor: 'transparent' }]} />
+                    ))}
+                </View>
+            ))}
         </View>
     );
 };

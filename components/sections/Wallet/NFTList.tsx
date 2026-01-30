@@ -1,7 +1,6 @@
 /**
  * NFT List Component
  * Displays grid of NFT items
- * Converted from Tailwind to StyleSheet - matches Figma exactly
  */
 
 import type { NFTItem } from '@/services/walletService';
@@ -16,7 +15,7 @@ interface NFTListProps {
 
 /**
  * NFT List - Grid layout for NFT items
- * 2 columns, 6px gap between items
+ * 2 columns with spacing
  */
 export const NFTList: React.FC<NFTListProps> = ({ nfts, onNFTPress }) => {
     // Group NFTs into rows of 2
@@ -36,8 +35,8 @@ export const NFTList: React.FC<NFTListProps> = ({ nfts, onNFTPress }) => {
                             onPress={() => onNFTPress?.(nft)}
                         />
                     ))}
-                    {/* Fill empty space if odd number of items */}
-                    {row.length === 1 && <View style={styles.spacer} />}
+                    {/* Placeholder for empty slot in odd-numbered rows */}
+                    {row.length === 1 && <View style={styles.placeholder} />}
                 </View>
             ))}
         </View>
@@ -48,15 +47,16 @@ const styles = StyleSheet.create({
     container: {
         width: '100%',
         flexDirection: 'column',
-        gap: 6,
+        gap: 12,
+        paddingHorizontal: 8,
     },
     row: {
         width: '100%',
         flexDirection: 'row',
         justifyContent: 'space-between',
-        gap: 6,
+        alignItems: 'center',
     },
-    spacer: {
+    placeholder: {
         width: 175,
     },
 });

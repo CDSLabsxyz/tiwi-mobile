@@ -1,56 +1,51 @@
-/**
- * Reown Web3 Configuration
- * Initializes AppKit and Wagmi adapters for the TIWI Protocol
- */
+// /**
+//  * Web3 Configuration
+//  * Configures Wagmi with WalletConnect Universal Provider (Headless)
+//  */
 
-import { createAppKit } from '@reown/appkit-react-native';
-import { WagmiAdapter } from '@reown/appkit-wagmi-react-native';
-import { arbitrum, base, mainnet, optimism, polygon, bsc, avalanche, hyperliquid, lisk } from 'wagmi/chains';
-import '@walletconnect/react-native-compat';
-import * as Clipboard from 'expo-clipboard';
-import { storage } from '@/utils/appkitStorage';
+// import '@/utils/polyfills';
+// import { createConfig, http } from 'wagmi';
+// import { arbitrum, avalanche, base, bsc, lisk, mainnet, optimism, polygon } from 'wagmi/chains';
+// import { walletConnect } from 'wagmi/connectors';
+// import { WALLETCONNECT_PROJECT_ID } from './walletConnectClient';
 
-// Project ID from Reown Dashboard
-export const projectId = 'bc29e183924433ef00ed4e54088f1d5f';
+// // Metadata for the TIWI dApp
+// const metadata = {
+//   name: 'Tiwi Protocol',
+//   description: 'Multichain DEX',
+//   url: 'https://app.tiwiprotocol.xyz',
+//   icons: ['https://tiwi-protocol.vercel.app/images/logo.svg'],
+//   redirect: {
+//     native: 'tiwi://',
+//     universal: 'https://app.tiwiprotocol.xyz',
+//   },
+// };
 
-// Define the networks we want to support
-export const networks = [mainnet, polygon, arbitrum, base, optimism, bsc, avalanche, hyperliquid, lisk] as [any, ...any[]];
+// export const chains = [mainnet, polygon, arbitrum, base, optimism, bsc, avalanche, lisk] as const;
 
-// 1. Create Wagmi Adapter
-export const wagmiAdapter = new WagmiAdapter({
-  projectId,
-  networks,
-});
-
-// 2. Create AppKit Instance
-export const appKit = createAppKit({
-  projectId,
-  networks,
-  adapters: [wagmiAdapter],
-  defaultNetwork: mainnet,
-  storage,
-  // themeMode: 'dark',
-  metadata: {
-    name: 'Tiwi Protocol',
-    description: 'The Super App for the Web3 Generation',
-    url: 'https://app.tiwiprotocol.xyz',
-    icons: ['https://tiwi-protocol.vercel.app/images/logo.svg'],
-    redirect: {
-      native: 'tiwi://',
-      universal: 'https://app.tiwiprotocol.xyz',
-    },
-  },
-  // Provide clipboard client for copy-to-clipboard functionality
-  clipboardClient: {
-    setString: async (value: string) => {
-      await Clipboard.setStringAsync(value);
-    },
-  },
-  // Modern AppKit features enabled by default
-  features: {
-
-    // analytics: true,
-    swaps: true,
-    onramp: true,
-  }
-});
+// /**
+//  * Configure Wagmi
+//  * We use the standard walletConnect connector but set showQrModal to false
+//  * because TIWI handles the UI and deep-linking headlessly.
+//  */
+// export const config = createConfig({
+//   chains,
+//   syncConnectedChain: true,
+//   connectors: [
+//     walletConnect({ 
+//       projectId: WALLETCONNECT_PROJECT_ID, 
+//       metadata,
+//       showQrModal: false 
+//     }),
+//   ],
+//   transports: {
+//     [mainnet.id]: http(),
+//     [polygon.id]: http(),
+//     [arbitrum.id]: http(),
+//     [base.id]: http(),
+//     [optimism.id]: http(),
+//     [bsc.id]: http(),
+//     [avalanche.id]: http(),
+//     [lisk.id]: http(),
+//   },
+// });

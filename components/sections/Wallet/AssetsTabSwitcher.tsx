@@ -1,7 +1,6 @@
 /**
  * Assets/NFTs Tab Switcher Component
  * Segmented control for switching between Assets and NFTs views
- * Converted from Tailwind to StyleSheet
  */
 
 import { colors } from '@/constants/colors';
@@ -9,7 +8,7 @@ import { Image } from 'expo-image';
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-const FilterIcon = require('../../../assets/home/filter-horizontal.svg');
+const FilterIcon = require('@/assets/home/filter-horizontal.svg');
 
 export type WalletTabKey = 'assets' | 'nfts';
 
@@ -36,15 +35,17 @@ export const AssetsTabSwitcher: React.FC<AssetsTabSwitcherProps> = ({
                     activeOpacity={0.8}
                     onPress={() => onTabChange('assets')}
                     style={[
-                        styles.tab,
-                        styles.assetsTab,
+                        styles.tabButton,
+                        { width: 94 },
                         activeTab === 'assets' && styles.activeTab
                     ]}
                 >
-                    <Text style={[
-                        styles.tabText,
-                        { color: activeTab === 'assets' ? colors.bg : colors.bodyText }
-                    ]}>
+                    <Text
+                        style={[
+                            styles.tabText,
+                            { color: activeTab === 'assets' ? colors.bg : colors.bodyText }
+                        ]}
+                    >
                         Assets
                     </Text>
                 </TouchableOpacity>
@@ -54,15 +55,17 @@ export const AssetsTabSwitcher: React.FC<AssetsTabSwitcherProps> = ({
                     activeOpacity={0.8}
                     onPress={() => onTabChange('nfts')}
                     style={[
-                        styles.tab,
-                        styles.nftsTab,
+                        styles.tabButton,
+                        { width: 82 },
                         activeTab === 'nfts' && styles.activeTab
                     ]}
                 >
-                    <Text style={[
-                        styles.tabText,
-                        { color: activeTab === 'nfts' ? colors.bg : colors.bodyText }
-                    ]}>
+                    <Text
+                        style={[
+                            styles.tabText,
+                            { color: activeTab === 'nfts' ? colors.bg : colors.bodyText }
+                        ]}
+                    >
                         NFTs
                     </Text>
                 </TouchableOpacity>
@@ -74,10 +77,10 @@ export const AssetsTabSwitcher: React.FC<AssetsTabSwitcherProps> = ({
                 onPress={onFilterPress}
                 style={styles.filterButton}
             >
-                <View style={styles.filterIconContainer}>
+                <View style={styles.filterIconWrapper}>
                     <Image
                         source={FilterIcon}
-                        style={styles.iconFull}
+                        style={styles.fullSize}
                         contentFit="contain"
                     />
                 </View>
@@ -92,6 +95,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'space-between',
         width: '100%',
+        paddingHorizontal: 16,
     },
     segmentedControl: {
         backgroundColor: '#1B1B1B',
@@ -99,21 +103,14 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         gap: 4,
         borderRadius: 50,
-        padding: 0,
+        padding: 4,
     },
-    tab: {
+    tabButton: {
         height: 35,
-        paddingHorizontal: 10,
-        paddingVertical: 10,
         borderRadius: 50,
+        backgroundColor: 'transparent',
         alignItems: 'center',
         justifyContent: 'center',
-    },
-    assetsTab: {
-        width: 94,
-    },
-    nftsTab: {
-        width: 82,
     },
     activeTab: {
         backgroundColor: colors.primaryCTA,
@@ -132,11 +129,11 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
     },
-    filterIconContainer: {
+    filterIconWrapper: {
         width: 24,
         height: 24,
     },
-    iconFull: {
+    fullSize: {
         width: '100%',
         height: '100%',
     },

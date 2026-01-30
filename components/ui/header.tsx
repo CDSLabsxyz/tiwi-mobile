@@ -16,6 +16,8 @@ const ArrowDown01 = require('../../assets/home/arrow-down-01.svg');
 const Scan = require('../../assets/home/iris-scan.svg');
 const Settings = require('../../assets/home/settings-03.svg');
 
+import { useWalletStore } from '@/store/walletStore';
+
 /**
  * Header Component
  * Matches Figma design exactly
@@ -26,8 +28,13 @@ export const Header: React.FC<HeaderProps> = ({
     onScanPress,
     onSettingsPress,
 }) => {
-    const fullAddress = walletAddress || WALLET_ADDRESS;
+    const { address, walletIcon } = useWalletStore();
+    console.log("🚀 ~ Header ~ walletIcon:", walletIcon)
+    const fullAddress = walletAddress || address || WALLET_ADDRESS;
     const displayAddress = truncateAddress(fullAddress);
+
+    // Use provider icon if available, otherwise fallback to TiwiCat
+    const displayIcon = walletIcon ? { uri: walletIcon } : TiwiCat;
 
     return (
         <View style={styles.container}>
@@ -35,7 +42,7 @@ export const Header: React.FC<HeaderProps> = ({
             <View style={styles.leftSection}>
                 <View style={styles.logoContainer}>
                     <Image
-                        source={TiwiCat}
+                        source={displayIcon}
                         style={styles.logo}
                         contentFit="cover"
                     />

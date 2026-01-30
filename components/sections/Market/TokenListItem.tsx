@@ -1,16 +1,18 @@
 import { colors } from '@/constants/colors';
-import { MarketToken } from '@/types/market';
+import { MarketTokenPair } from '@/services/apiClient';
+import { formatNumber, formatPercentageChange, formatUSDPrice } from '@/utils/formatting';
+import { Image } from 'expo-image';
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 interface TokenListItemProps {
-    token: MarketToken;
+    token: MarketTokenPair;
     onPress: () => void;
 }
 
 export const TokenListItem: React.FC<TokenListItemProps> = ({ token, onPress }) => {
-    const isPositive = token.priceChange >= 0;
-    const priceChangeColor = isPositive ? colors.success : colors.error;
+    const change = formatPercentageChange(token.priceChange24h || 0);
+    const priceChangeColor = change.isPositive ? colors.success : colors.error;
 
     return (
         <TouchableOpacity
@@ -20,26 +22,39 @@ export const TokenListItem: React.FC<TokenListItemProps> = ({ token, onPress }) 
         >
             {/* Left Side - Token Info */}
             <View style={styles.tokenInfoLeft}>
+                <Image
+                    source={token.logoURI}
+                    style={styles.tokenLogo}
+                    contentFit="cover"
+                />
                 <View style={{ flex: 1 }}>
                     {/* Token Pair */}
                     <View style={styles.tokenPairRow}>
-                        <Text style={styles.tokenSymbol}>{token.symbol}</Text>
+                        <Text
+                            style={styles.tokenSymbol}
+                            numberOfLines={1}
+                            ellipsizeMode="tail"
+                        >
+                            {token.symbol}
+                        </Text>
                         <Text style={styles.tokenQuote}>/USDT</Text>
-                        {/* Leverage Badge */}
-                        <View style={styles.leverageBadge}>
-                            <Text style={styles.leverageText}>{token.leverage}X</Text>
-                        </View>
+                        {/* Rank Badge */}
+                        {token.marketCapRank && (
+                            <View style={styles.leverageBadge}>
+                                <Text style={styles.leverageText}>#{token.marketCapRank}</Text>
+                            </View>
+                        )}
                     </View>
                     {/* Volume */}
-                    <Text style={styles.tokenVolume}>Vol {token.volume}</Text>
+                    <Text style={styles.tokenVolume} numberOfLines={1}>Vol {formatNumber(token.volume24h || 0)}</Text>
                 </View>
             </View>
 
             {/* Right Side - Price and Change */}
             <View style={styles.tokenInfoRight}>
-                <Text style={styles.tokenPrice}>{token.price}</Text>
+                <Text style={styles.tokenPrice}>{formatUSDPrice(token.priceUSD)}</Text>
                 <Text style={[styles.tokenChange, { color: priceChangeColor }]}>
-                    {token.priceChangePercent}
+                    {change.formatted}
                 </Text>
             </View>
         </TouchableOpacity>
@@ -72,6 +87,7 @@ const styles = StyleSheet.create({
         fontSize: 14,
         lineHeight: 20,
         color: colors.titleText,
+        flexShrink: 1,
     },
     tokenQuote: {
         fontFamily: 'Manrope-Medium',
@@ -96,6 +112,11 @@ const styles = StyleSheet.create({
         fontSize: 12,
         lineHeight: 16,
         color: colors.bodyText,
+    },
+    tokenLogo: {
+        width: 32,
+        height: 32,
+        borderRadius: 16,
     },
     tokenInfoRight: {
         alignItems: 'flex-end',

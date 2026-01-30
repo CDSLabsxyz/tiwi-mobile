@@ -405,7 +405,7 @@ const styles = StyleSheet.create({
     actionItem: {
         alignItems: 'center',
         gap: 8,
-        width: 64,
+        width: 70,
     },
     emptyAction: {
         width: 64,

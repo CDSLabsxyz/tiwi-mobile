@@ -1,7 +1,6 @@
 /**
  * NFT List Item Component
  * Displays individual NFT card in the grid view
- * Converted from Tailwind to StyleSheet - matches Figma exactly
  */
 
 import { colors } from '@/constants/colors';
@@ -10,7 +9,7 @@ import { Image } from 'expo-image';
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-const ArrowIcon = require('../../../assets/settings/arrow-right-01.svg');
+const ArrowRightIcon = require('@/assets/home/arrow-right-01.svg');
 
 interface NFTListItemProps {
     nft: NFTItem;
@@ -19,7 +18,6 @@ interface NFTListItemProps {
 
 /**
  * NFT List Item - Individual NFT card in the grid
- * Dimensions: 175px × 210px
  */
 export const NFTListItem: React.FC<NFTListItemProps> = ({
     nft,
@@ -35,7 +33,7 @@ export const NFTListItem: React.FC<NFTListItemProps> = ({
             <View style={styles.imageContainer}>
                 <Image
                     source={{ uri: nft.mediaUrl }}
-                    style={styles.image}
+                    style={styles.fullSize}
                     contentFit="cover"
                 />
             </View>
@@ -44,23 +42,21 @@ export const NFTListItem: React.FC<NFTListItemProps> = ({
             <View style={styles.overlay}>
                 {/* Left: Name and Floor Price */}
                 <View style={styles.infoContainer}>
-                    {/* NFT Name */}
-                    <Text style={styles.name} numberOfLines={1}>
+                    <Text style={styles.nftName} numberOfLines={1}>
                         {nft.name}
                     </Text>
-
-                    {/* Floor Price */}
                     <Text style={styles.floorPrice}>
                         Floor: {nft.floorPrice}
                     </Text>
                 </View>
 
                 {/* Right: Arrow Icon */}
-                <View style={styles.arrowContainer}>
+                <View style={styles.arrowIconWrapper}>
                     <Image
-                        source={ArrowIcon}
-                        style={styles.arrowIcon}
+                        source={ArrowRightIcon}
+                        style={styles.fullSize}
                         contentFit="contain"
+                        tintColor="#FFFFFF"
                     />
                 </View>
             </View>
@@ -82,7 +78,7 @@ const styles = StyleSheet.create({
         width: '100%',
         height: '100%',
     },
-    image: {
+    fullSize: {
         width: '100%',
         height: '100%',
     },
@@ -91,8 +87,9 @@ const styles = StyleSheet.create({
         bottom: 0,
         left: 0,
         right: 0,
-        height: 45,
-        backgroundColor: 'rgba(27, 27, 27, 0.25)',
+        height: 52,
+        backgroundColor: 'rgba(18, 23, 18, 0.6)',
+        backdropFilter: 'blur(10px)',
         borderBottomLeftRadius: 16,
         borderBottomRightRadius: 16,
         paddingHorizontal: 12,
@@ -105,28 +102,19 @@ const styles = StyleSheet.create({
         flexDirection: 'column',
         alignItems: 'flex-start',
         justifyContent: 'center',
-        gap: 0,
     },
-    name: {
+    nftName: {
         fontFamily: 'Manrope-Medium',
         fontSize: 14,
-        lineHeight: 18,
         color: colors.titleText,
     },
     floorPrice: {
         fontFamily: 'Manrope-Regular',
         fontSize: 12,
-        lineHeight: 16,
         color: 'rgba(255, 255, 255, 0.75)',
     },
-    arrowContainer: {
-        width: 24,
-        height: 24,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    arrowIcon: {
-        width: 24,
-        height: 24,
+    arrowIconWrapper: {
+        width: 16,
+        height: 16,
     },
 });

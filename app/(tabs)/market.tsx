@@ -1,16 +1,14 @@
-/**
- * Market Screen
- * Displays Spot and Perp trading markets with filtering and search
- * Matches Figma designs exactly (node-id: 3279-113358, 3279-113736, 3279-113554)
- */
-
+import { TokenListItem } from '@/components/sections/Market/TokenListItem';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
+import { Skeleton } from '@/components/ui/skeleton';
 import { colors } from '@/constants/colors';
-import { fetchMarketData, filterTokensBySubTab, searchTokens } from '@/services/marketService';
-import { MarketSubTab, MarketToken, MarketType } from '@/types/market';
+import { MarketCategory, useMarketPairs } from '@/hooks/useMarketPairs';
+import { apiClient, MarketTokenPair, TokenMetadata } from '@/services/apiClient';
+import { useMarketStore } from '@/store/marketStore';
+import { useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
-import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Dimensions, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -26,61 +24,220 @@ const ArrowLeftIcon = require('../../assets/swap/arrow-left-02.svg');
 const imgLine327 = 'https://www.figma.com/api/mcp/asset/2040f48a-ef4a-465d-85f9-1bc8eb6c0987';
 const imgLine340 = 'https://www.figma.com/api/mcp/asset/a1a2844d-92df-45f5-9b95-980536c19b61';
 
-const subTabs: { id: MarketSubTab; label: string }[] = [
-    { id: 'favorite', label: 'Favourite' },
-    { id: 'top', label: 'Top' },
-    { id: 'spotlight', label: 'Spotlight' },
+const subTabs: { id: MarketCategory | 'favourite'; label: string }[] = [
+    { id: 'favourite', label: 'Favourite' },
+    { id: 'hot', label: 'Top' },
     { id: 'new', label: 'New' },
     { id: 'gainers', label: 'Gainers' },
     { id: 'losers', label: 'Losers' },
 ];
 
-import { TokenListItem } from '@/components/sections/Market/TokenListItem';
+const MarketListItemSkeleton = () => (
+    <View style={skeletonStyles.container}>
+        <View style={skeletonStyles.left}>
+            <Skeleton width={32} height={32} borderRadius={16} />
+            <View style={skeletonStyles.info}>
+                <Skeleton width={80} height={16} borderRadius={4} style={{ marginBottom: 6 }} />
+                <Skeleton width={120} height={12} borderRadius={4} />
+            </View>
+        </View>
+        <View style={skeletonStyles.right}>
+            <Skeleton width={70} height={16} borderRadius={4} style={{ marginBottom: 6 }} />
+            <Skeleton width={45} height={12} borderRadius={4} />
+        </View>
+    </View>
+);
 
 export default function MarketScreen() {
     const { top, bottom } = useSafeAreaInsets();
     const router = useRouter();
-    const [marketType, setMarketType] = useState<MarketType>('spot');
-    const [activeSubTab, setActiveSubTab] = useState<MarketSubTab>('top');
-    const [searchQuery, setSearchQuery] = useState('');
-    const [isSearchVisible, setIsSearchVisible] = useState(false);
-    const [marketData, setMarketData] = useState<{ spot: MarketToken[]; perp: MarketToken[] }>({
-        spot: [],
-        perp: [],
-    });
-    const [isLoading, setIsLoading] = useState(true);
+    const params = useLocalSearchParams<{ category?: string }>();
 
-    // Load market data
+    const [marketType, setMarketType] = useState<'spot' | 'perp'>('spot');
+    const [activeSubTab, setActiveSubTab] = useState<MarketCategory | 'favourite'>(
+        (params.category as any) || 'hot'
+    );
+    const [searchQuery, setSearchQuery] = useState('');
+    const [searchResults, setSearchResults] = useState<MarketTokenPair[]>([]);
+    const [isSearching, setIsSearching] = useState(false);
+    const [isSearchVisible, setIsSearchVisible] = useState(false);
+
+    const { favorites, toggleFavorite, isFavorite } = useMarketStore();
+
+    // Reset tab if category param changes
     useEffect(() => {
-        const loadData = async () => {
-            setIsLoading(true);
-            try {
-                const data = await fetchMarketData();
-                setMarketData(data);
-            } catch (error) {
-                console.error('Failed to load market data:', error);
-            } finally {
-                setIsLoading(false);
+        if (params.category) {
+            setActiveSubTab(params.category as any);
+        }
+    }, [params.category]);
+
+    const {
+        data: marketPairs,
+        isLoading: isPairsLoading,
+    } = useMarketPairs({
+        category: activeSubTab === 'favourite' ? 'hot' : activeSubTab as MarketCategory,
+        limit: 40,
+        enabled: activeSubTab !== 'favourite'
+    });
+    console.log("🚀 ~ MarketScreen ~ marketPairs:", marketPairs)
+
+    // Staggered Prefetching
+    const queryClient = useQueryClient();
+    useEffect(() => {
+        const categories: MarketCategory[] = ['hot', 'new', 'gainers', 'losers'];
+
+        // Priority: current tab first (handled by useMarketPairs), then others
+        const toPrefetch = categories.filter(c => c !== activeSubTab);
+
+        const prefetch = async () => {
+            for (const category of toPrefetch) {
+                // Delay each prefetch to avoid parallel network burst
+                await new Promise(resolve => setTimeout(resolve, 500));
+                queryClient.prefetchQuery({
+                    queryKey: ['marketPairs', category, 40],
+                    queryFn: () => apiClient.getMarketPairs({ category, limit: 40 })
+                });
             }
         };
-        loadData();
-    }, []);
 
-    // Get current tokens based on market type
-    const currentTokens = marketType === 'spot' ? marketData.spot : marketData.perp;
+        prefetch();
+    }, [queryClient, activeSubTab]);
 
-    // Filter tokens by sub-tab and search
-    const filteredTokens = React.useMemo(() => {
-        let tokens = filterTokensBySubTab(currentTokens, activeSubTab);
-        if (searchQuery.trim()) {
-            tokens = searchTokens(tokens, searchQuery);
+    // Fetch favorites
+    const [favoriteTokens, setFavoriteTokens] = useState<MarketTokenPair[]>([]);
+    const [isFavLoading, setIsFavLoading] = useState(false);
+
+    useEffect(() => {
+        if (activeSubTab !== 'favourite') return;
+
+        const loadFavs = async () => {
+            if (favorites.length === 0) {
+                setFavoriteTokens([]);
+                return;
+            }
+
+            setIsFavLoading(true);
+            try {
+                const promises = favorites.map(async (id) => {
+                    const [chainId, address] = id.split('-');
+                    try {
+                        const tokens = await apiClient.getTokens({
+                            address,
+                            chains: [parseInt(chainId)],
+                            limit: 1
+                        });
+                        return tokens[0];
+                    } catch (e) {
+                        return null;
+                    }
+                });
+
+                const results = await Promise.all(promises);
+                const validResults = results.filter((t): t is TokenMetadata => !!t && !!t.address);
+
+                const mappedFavs: MarketTokenPair[] = validResults.map(t => ({
+                    ...t,
+                    logoURI: t.logoURI || '',
+                    priceUSD: t.priceUSD || '0',
+                    verified: t.verified || false,
+                    priceChange24h: t.priceChange24h || 0,
+                    volume24h: t.volume24h || 0,
+                    marketCap: t.marketCap || 0,
+                    holders: t.holders || 0,
+                    transactionCount: t.transactionCount || 0,
+                }));
+
+                setFavoriteTokens(mappedFavs);
+            } catch (error) {
+                console.error('[MarketScreen] Error loading favorites:', error);
+            } finally {
+                setIsFavLoading(false);
+            }
+        };
+
+        loadFavs();
+    }, [activeSubTab, favorites]);
+
+    // Backend Search Logic
+    useEffect(() => {
+        if (!searchQuery.trim() || searchQuery.length < 2) {
+            setSearchResults([]);
+            return;
         }
-        return tokens;
-    }, [currentTokens, activeSubTab, searchQuery]);
 
-    const handleTokenPress = (token: MarketToken) => {
+        const delayDebounceFn = setTimeout(async () => {
+            setIsSearching(true);
+            try {
+                const results = await apiClient.getTokens({
+                    query: searchQuery,
+                    limit: 20
+                });
+
+                const mappedResults: MarketTokenPair[] = results.map(t => ({
+                    ...t,
+                    logoURI: t.logoURI || '',
+                    priceUSD: t.priceUSD || '0',
+                    verified: t.verified || false,
+                    priceChange24h: t.priceChange24h || 0,
+                    volume24h: t.volume24h || 0,
+                    marketCap: t.marketCap || 0,
+                }));
+
+                setSearchResults(mappedResults);
+            } catch (error) {
+                console.error('[MarketScreen] Search error:', error);
+            } finally {
+                setIsSearching(false);
+            }
+        }, 500);
+
+        return () => clearTimeout(delayDebounceFn);
+    }, [searchQuery]);
+
+    // Derive display data based on tab
+    const displayData = useMemo(() => {
+        let tokens = activeSubTab === 'favourite' ? favoriteTokens : marketPairs || [];
+
+        if (searchQuery.trim()) {
+            const q = searchQuery.toLowerCase();
+            // Local filter
+            const localResults = tokens.filter(t =>
+                t.symbol.toLowerCase().includes(q) ||
+                t.name.toLowerCase().includes(q)
+            );
+
+            // Merge with backend results, avoiding duplicates
+            const seen = new Set(localResults.map(t => `${t.chainId}-${t.address}`));
+            const merged = [...localResults];
+
+            searchResults.forEach(t => {
+                const key = `${t.chainId}-${t.address}`;
+                if (!seen.has(key)) {
+                    merged.push(t);
+                    seen.add(key);
+                }
+            });
+
+            return merged;
+        }
+
+        return tokens;
+    }, [activeSubTab, favoriteTokens, marketPairs, searchQuery, searchResults]);
+
+    const isLoading = activeSubTab === 'favourite' ? isFavLoading : isPairsLoading;
+
+    const handleTokenPress = (token: MarketTokenPair) => {
         const symbolParam = token.symbol.toLowerCase();
-        router.push(`/market/${symbolParam}` as any);
+        const route = marketType === 'spot' ? `/market/spot/${symbolParam}` : `/market/futures/${symbolParam}`;
+
+        router.push({
+            pathname: route as any,
+            params: {
+                address: token.address,
+                chainId: token.chainId,
+                symbol: token.symbol
+            }
+        });
     };
 
     const handleSearchPress = () => {
@@ -136,27 +293,37 @@ export default function MarketScreen() {
                     </View>
                 </View>
 
-                {/* Token List */}
                 <ScrollView
                     style={styles.scrollView}
                     contentContainerStyle={[
                         styles.scrollContent,
-                        { paddingBottom: bottom + 20 }
+                        { paddingBottom: bottom + 100 }
                     ]}
                     showsVerticalScrollIndicator={false}
                 >
-                    <View style={{ width: CONTENT_WIDTH, maxWidth: '100%' }}>
-                        {filteredTokens.map((token) => (
-                            <TokenListItem
-                                key={token.id}
-                                token={token}
-                                onPress={() => handleTokenPress(token)}
-                            />
-                        ))}
-                        {filteredTokens.length === 0 && (
-                            <View style={styles.emptyState}>
-                                <Text style={styles.emptyText}>No tokens found</Text>
+                    <View style={{ width: "100%", maxWidth: '100%' }}>
+                        {isSearching && searchQuery.length > 0 && displayData.length === 0 ? (
+                            <View style={{ width: '100%' }}>
+                                {[1, 2, 3, 4, 5].map((i) => (
+                                    <MarketListItemSkeleton key={i} />
+                                ))}
                             </View>
+                        ) : (
+                            <>
+                                {displayData.map((token: MarketTokenPair) => (
+                                    <TokenListItem
+                                        key={`${token.chainId}-${token.address}`}
+                                        token={token}
+                                        onPress={() => handleTokenPress(token)}
+                                    />
+                                ))}
+                                {isSearching && <MarketListItemSkeleton />}
+                                {!isSearching && displayData.length === 0 && (
+                                    <View style={styles.emptyState}>
+                                        <Text style={styles.emptyText}>No tokens found</Text>
+                                    </View>
+                                )}
+                            </>
                         )}
                     </View>
                 </ScrollView>
@@ -232,6 +399,7 @@ export default function MarketScreen() {
                             source={SearchIcon}
                             style={styles.iconFull}
                             contentFit="contain"
+                        // tintColor={colors.bodyText}
                         />
                     </TouchableOpacity>
                 </View>
@@ -279,21 +447,23 @@ export default function MarketScreen() {
                 ]}
                 showsVerticalScrollIndicator={false}
             >
-                <View style={{ width: CONTENT_WIDTH, maxWidth: '100%' }}>
+                <View style={{ width: "100%", maxWidth: '100%' }}>
                     {isLoading ? (
-                        <View style={styles.emptyState}>
-                            <Text style={styles.emptyText}>Loading...</Text>
+                        <View style={{ width: '100%' }}>
+                            {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+                                <MarketListItemSkeleton key={i} />
+                            ))}
                         </View>
                     ) : (
-                        filteredTokens.map((token) => (
+                        displayData.map((token: MarketTokenPair) => (
                             <TokenListItem
-                                key={token.id}
+                                key={`${token.chainId}-${token.address}`}
                                 token={token}
                                 onPress={() => handleTokenPress(token)}
                             />
                         ))
                     )}
-                    {!isLoading && filteredTokens.length === 0 && (
+                    {!isLoading && displayData.length === 0 && (
                         <View style={styles.emptyState}>
                             <Text style={styles.emptyText}>No tokens found</Text>
                         </View>
@@ -367,9 +537,10 @@ const styles = StyleSheet.create({
     },
     scrollView: {
         flex: 1,
+        paddingHorizontal: 20,
     },
     scrollContent: {
-        paddingHorizontal: Math.max(20, (SCREEN_WIDTH - CONTENT_WIDTH) / 2),
+        // paddingHorizontal: Math.max(20, (SCREEN_WIDTH - CONTENT_WIDTH) / 2),
         paddingTop: 0,
         alignItems: 'center',
     },
@@ -431,4 +602,26 @@ const styles = StyleSheet.create({
         lineHeight: 16,
         letterSpacing: 0.012,
     },
+});
+
+const skeletonStyles = StyleSheet.create({
+    container: {
+        width: '100%',
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingVertical: 10,
+    },
+    left: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+        flex: 1,
+    },
+    info: {
+        flex: 1,
+    },
+    right: {
+        alignItems: 'flex-end',
+    }
 });

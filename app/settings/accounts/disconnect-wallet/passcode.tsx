@@ -2,6 +2,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { colors } from '@/constants/colors';
+import { useSecurityStore } from '@/store/securityStore';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
@@ -16,6 +17,7 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
+import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const ChevronLeftIcon = require('../../../../assets/swap/arrow-left-02.svg');
@@ -27,7 +29,26 @@ export default function DisconnectWalletPasscodeScreen() {
     const params = useLocalSearchParams<{ returnTo?: string }>();
     const [passcode, setPasscode] = useState<string[]>(Array(6).fill(''));
     const [focusedIndex, setFocusedIndex] = useState<number>(0);
+    const [isError, setIsError] = useState(false);
+    const verifyPasscode = useSecurityStore((state) => state.verifyPasscode);
     const inputRefs = useRef<(TextInput | null)[]>([]);
+
+    const shake = useSharedValue(0);
+    const shakeStyle = useAnimatedStyle(() => ({
+        transform: [{ translateX: shake.value }],
+    }));
+
+    const triggerShake = () => {
+        shake.value = withTiming(-10, { duration: 50 }, () => {
+            shake.value = withTiming(10, { duration: 50 }, () => {
+                shake.value = withTiming(-10, { duration: 50 }, () => {
+                    shake.value = withTiming(10, { duration: 50 }, () => {
+                        shake.value = withTiming(0, { duration: 50 });
+                    });
+                });
+            });
+        });
+    };
 
     useEffect(() => {
         const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -47,12 +68,31 @@ export default function DisconnectWalletPasscodeScreen() {
     useEffect(() => {
         const isComplete = passcode.every((digit) => digit !== '') && passcode.length === 6;
         if (isComplete) {
-            Keyboard.dismiss();
+            handleVerify();
+        }
+    }, [passcode]);
+
+    const handleVerify = async () => {
+        Keyboard.dismiss();
+        const codeString = passcode.join('');
+        const isValid = await verifyPasscode(codeString);
+
+        if (isValid) {
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             // In production: disconnect wallet here
             router.replace('/settings/accounts' as any);
+        } else {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+            setIsError(true);
+            triggerShake();
+            setTimeout(() => {
+                setIsError(false);
+                setPasscode(Array(6).fill(''));
+                setFocusedIndex(0);
+                inputRefs.current[0]?.focus();
+            }, 1500);
         }
-    }, [passcode, router]);
+    };
 
     const handleBackPress = () => {
         if (router.canGoBack()) {
@@ -143,7 +183,7 @@ export default function DisconnectWalletPasscodeScreen() {
             </View>
 
             {/* PIN Entry Boxes */}
-            <View style={styles.pinSection}>
+            <Animated.View style={[styles.pinSection, shakeStyle]}>
                 <View style={styles.pinContainer}>
                     {Array.from({ length: 6 }).map((_, index) => {
                         const hasValue = passcode[index] !== '';
@@ -153,10 +193,14 @@ export default function DisconnectWalletPasscodeScreen() {
                                 key={`pin-${index}`}
                                 activeOpacity={0.7}
                                 onPress={() => {
+                                    if (isError) return;
                                     setFocusedIndex(index);
                                     inputRefs.current[index]?.focus();
                                 }}
-                                style={styles.pinBox}
+                                style={[
+                                    styles.pinBox,
+                                    isError && { borderColor: colors.error, borderWidth: 1.5 }
+                                ]}
                             >
                                 <TextInput
                                     ref={(ref) => {
@@ -171,24 +215,30 @@ export default function DisconnectWalletPasscodeScreen() {
                                     style={styles.hiddenInput}
                                     autoFocus={index === 0}
                                     showSoftInputOnFocus={false}
+                                    editable={!isError}
                                 />
 
-                                {hasValue && <View style={styles.pinDot} />}
+                                {hasValue && <View style={[styles.pinDot, isError && { backgroundColor: colors.error }]} />}
                             </TouchableOpacity>
                         );
                     })}
                 </View>
-
-                {/* Biometric Placeholder */}
-                <TouchableOpacity
-                    activeOpacity={0.8}
-                    style={styles.biometricButton}
-                >
-                    <ThemedText style={styles.biometricText}>
-                        Use Biometric Authentication
+                {isError && (
+                    <ThemedText style={styles.errorText}>
+                        Incorrect passcode. Please try again.
                     </ThemedText>
-                </TouchableOpacity>
-            </View>
+                )}
+            </Animated.View>
+
+            {/* Biometric Placeholder */}
+            <TouchableOpacity
+                activeOpacity={0.8}
+                style={styles.biometricButton}
+            >
+                <ThemedText style={styles.biometricText}>
+                    Use Biometric Authentication
+                </ThemedText>
+            </TouchableOpacity>
 
             {/* Numeric Keyboard */}
             <BlurView
@@ -308,6 +358,12 @@ const styles = StyleSheet.create({
         height: 12,
         borderRadius: 6,
         backgroundColor: colors.titleText,
+    },
+    errorText: {
+        color: colors.error,
+        fontFamily: 'Manrope-Medium',
+        fontSize: 14,
+        marginTop: 20,
     },
     biometricButton: {
         marginTop: 24,
