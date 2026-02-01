@@ -1,16 +1,17 @@
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { SettingsHeader } from '@/components/ui/settings-header';
+import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { colors } from '@/constants/colors';
 import { useSecurityStore } from '@/store/securityStore';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
-import React, { useState } from 'react';
+import { useRouter } from 'expo-router';
+import React, { useEffect, useState } from 'react';
 import {
+    BackHandler,
     Dimensions,
     Modal,
     Pressable,
     StyleSheet,
+    Text,
     TouchableOpacity,
     View,
 } from 'react-native';
@@ -24,19 +25,24 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+const ChevronLeftIcon = require('../../../assets/swap/arrow-left-02.svg');
 const ArrowDownIcon = require('../../../assets/home/arrow-down-01.svg');
 
-type AutoLockOption = 'Immediately' | '30 seconds' | '1 Minute' | '5 Minutes' | '10 Minutes' | 'Never';
+type AutoLockOption = {
+    label: string;
+    value: number;
+};
 
-const AUTO_LOCK_OPTIONS: AutoLockOption[] = [
-    'Immediately',
-    '30 seconds',
-    '1 Minute',
-    '5 Minutes',
-    '10 Minutes',
-    'Never',
+const TIMER_OPTIONS: AutoLockOption[] = [
+    { label: 'Immediately', value: 0 },
+    { label: '30 seconds', value: 30000 },
+    { label: '1 Minute', value: 60000 },
+    { label: '5 Minutes', value: 300000 },
+    { label: '10 Minutes', value: 600000 },
+    { label: 'Never', value: -1 },
 ];
 
+// Radio Button Component
 interface RadioButtonProps {
     selected: boolean;
     onPress: () => void;
@@ -48,81 +54,75 @@ const RadioButton: React.FC<RadioButtonProps> = ({ selected, onPress, label }) =
         <TouchableOpacity
             activeOpacity={0.8}
             onPress={onPress}
-            style={styles.radioButton}
+            style={styles.radioItem}
         >
-            <View style={styles.radioOuter}>
+            <View style={styles.radioShell}>
                 {selected ? (
-                    <View style={styles.radioSelectedOuter}>
-                        <View style={styles.radioSelectedInner} />
+                    <View style={styles.radioOuterSelected}>
+                        <View style={styles.radioInnerSelected} />
                     </View>
                 ) : (
                     <View style={styles.radioUnselected} />
                 )}
             </View>
-            <ThemedText style={styles.radioLabel}>{label}</ThemedText>
+            <Text style={styles.radioLabel}>
+                {label}
+            </Text>
         </TouchableOpacity>
     );
 };
 
-const TIMEOUT_MAPPING: Record<AutoLockOption, number> = {
-    'Immediately': 0,
-    '30 seconds': 30000,
-    '1 Minute': 60000,
-    '5 Minutes': 300000,
-    '10 Minutes': 600000,
-    'Never': 2147483647, // Max int for practical "Never"
-};
-
-const REVERSE_MAPPING: Record<number, AutoLockOption> = Object.entries(TIMEOUT_MAPPING).reduce(
-    (acc, [key, value]) => ({ ...acc, [value]: key as AutoLockOption }),
-    {} as Record<number, AutoLockOption>
-);
-
 export default function AutoLockTimerScreen() {
-    const { bottom } = useSafeAreaInsets();
+    const { top, bottom } = useSafeAreaInsets();
+    const router = useRouter();
     const { autoLockTimeout, setAutoLockTimeout } = useSecurityStore();
-    const selectedOption = REVERSE_MAPPING[autoLockTimeout] || '30 seconds';
     const [isModalVisible, setIsModalVisible] = useState(false);
+
+    // Get current label based on timeout
+    const currentOption = TIMER_OPTIONS.find(o => o.value === autoLockTimeout) || TIMER_OPTIONS[0];
+
+    // Handle phone back button
+    useEffect(() => {
+        const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+            if (isModalVisible) {
+                setIsModalVisible(false);
+                return true;
+            }
+            handleBackPress();
+            return true;
+        });
+
+        return () => backHandler.remove();
+    }, [isModalVisible]);
+
+    const handleBackPress = () => {
+        router.back();
+    };
 
     const handleOptionSelect = (option: AutoLockOption) => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        setAutoLockTimeout(TIMEOUT_MAPPING[option]);
+        setAutoLockTimeout(option.value);
         setIsModalVisible(false);
     };
 
+    // Bottom sheet animation
     const { height: screenHeight } = Dimensions.get('window');
-    const sheetHeight = Math.min(AUTO_LOCK_OPTIONS.length * 60 + 100, screenHeight * 0.6);
+    const sheetHeight = 450;
     const translateY = useSharedValue(sheetHeight);
     const backdropOpacity = useSharedValue(0);
 
-    const openSheet = () => {
-        setIsModalVisible(true);
-        translateY.value = withSpring(0, { damping: 20, stiffness: 90 });
-        backdropOpacity.value = withTiming(1, { duration: 250 });
-    };
-
-    const closeSheet = () => {
-        translateY.value = withTiming(sheetHeight, { duration: 250 }, (finished) => {
-            if (finished) runOnJS(setIsModalVisible)(false);
-        });
-        backdropOpacity.value = withTiming(0, { duration: 250 });
-    };
-
-    const context = useSharedValue({ y: 0 });
-    const panGesture = Gesture.Pan()
-        .onStart(() => {
-            context.value = { y: translateY.value };
-        })
-        .onUpdate((event) => {
-            translateY.value = Math.max(0, context.value.y + event.translationY);
-        })
-        .onEnd((event) => {
-            if (event.translationY > 80) {
-                runOnJS(closeSheet)();
-            } else {
-                translateY.value = withSpring(0, { damping: 20, stiffness: 90 });
-            }
-        });
+    useEffect(() => {
+        if (isModalVisible) {
+            translateY.value = withSpring(0, {
+                damping: 20,
+                stiffness: 90,
+            });
+            backdropOpacity.value = withTiming(1, { duration: 250 });
+        } else {
+            translateY.value = withTiming(sheetHeight, { duration: 250 });
+            backdropOpacity.value = withTiming(0, { duration: 250 });
+        }
+    }, [isModalVisible, sheetHeight]);
 
     const sheetStyle = useAnimatedStyle(() => ({
         transform: [{ translateY: translateY.value }],
@@ -132,34 +132,90 @@ export default function AutoLockTimerScreen() {
         opacity: backdropOpacity.value,
     }));
 
-    return (
-        <ThemedView style={styles.container}>
-            <SettingsHeader title="Autolock Timer" />
+    const closeSheet = () => {
+        setIsModalVisible(false);
+    };
 
-            <View style={styles.content}>
-                <View style={styles.inputGroup}>
-                    <ThemedText style={styles.label}>
-                        Auto-lock will engage after
-                    </ThemedText>
+    const startY = useSharedValue(0);
+
+    const panGesture = Gesture.Pan()
+        .onStart(() => {
+            startY.value = translateY.value;
+        })
+        .onUpdate((event) => {
+            const next = startY.value + event.translationY;
+            translateY.value = Math.max(0, Math.min(sheetHeight, next));
+        })
+        .onEnd((event) => {
+            if (event.translationY > 80) {
+                translateY.value = withTiming(
+                    sheetHeight,
+                    { duration: 250 },
+                    (finished) => {
+                        if (finished) {
+                            runOnJS(closeSheet)();
+                        }
+                    }
+                );
+                backdropOpacity.value = withTiming(0, { duration: 250 });
+            } else {
+                translateY.value = withSpring(0, {
+                    damping: 20,
+                    stiffness: 90,
+                });
+            }
+        });
+
+    return (
+        <View style={styles.container}>
+            <CustomStatusBar />
+
+            {/* Header */}
+            <View style={[styles.header, { paddingTop: top || 0 }]}>
+                <View style={styles.headerContent}>
                     <TouchableOpacity
                         activeOpacity={0.8}
-                        onPress={openSheet}
-                        style={styles.selector}
+                        onPress={handleBackPress}
+                        style={styles.backButton}
                     >
-                        <ThemedText style={styles.selectorText}>
-                            {selectedOption}
-                        </ThemedText>
-                        <View style={styles.icon24}>
-                            <Image
-                                source={ArrowDownIcon}
-                                style={styles.fullSize}
-                                contentFit="contain"
-                            />
-                        </View>
+                        <Image
+                            source={ChevronLeftIcon}
+                            style={styles.fullSize}
+                            contentFit="contain"
+                        />
+                    </TouchableOpacity>
+
+                    <Text style={styles.headerTitle}>
+                        Autolock Timer
+                    </Text>
+                    <View style={styles.placeholder} />
+                </View>
+            </View>
+
+            {/* Content */}
+            <View style={styles.content}>
+                <View style={styles.selectorGroup}>
+                    <Text style={styles.selectorLabel}>
+                        Auto-lock will engage after
+                    </Text>
+                    <TouchableOpacity
+                        activeOpacity={0.8}
+                        onPress={() => setIsModalVisible(true)}
+                        style={styles.selectorButton}
+                    >
+                        <Text style={styles.selectorText}>
+                            {currentOption.label}
+                        </Text>
+                        <Image
+                            source={ArrowDownIcon}
+                            style={styles.arrowIcon}
+                            contentFit="contain"
+                        />
                     </TouchableOpacity>
                 </View>
             </View>
 
+            {/* Bottom Sheet Modal */}
             <Modal
                 visible={isModalVisible}
                 transparent
@@ -167,27 +223,24 @@ export default function AutoLockTimerScreen() {
                 onRequestClose={closeSheet}
                 statusBarTranslucent
             >
-                <View style={styles.modalRoot}>
-                    <Pressable style={StyleSheet.absoluteFill} onPress={closeSheet}>
+                <View style={styles.modalOverlay}>
+                    {/* Backdrop */}
+                    <Pressable style={styles.backdropPressable} onPress={closeSheet}>
                         <Animated.View style={[styles.backdrop, backdropStyle]} />
                     </Pressable>
 
+                    {/* Bottom Sheet */}
                     <GestureDetector gesture={panGesture}>
-                        <Animated.View
-                            style={[
-                                styles.sheet,
-                                { paddingBottom: (bottom || 24) + 24, height: sheetHeight },
-                                sheetStyle,
-                            ]}
-                        >
-                            <Pressable onPress={(e) => e.stopPropagation()} style={{ flex: 1 }}>
-                                <View style={styles.sheetContent}>
-                                    {AUTO_LOCK_OPTIONS.map((option) => (
+                        <Animated.View style={[styles.bottomSheet, sheetStyle, { paddingBottom: (bottom || 24) + 24 }]}>
+                            <Pressable onPress={(e) => e.stopPropagation()} style={styles.sheetContent}>
+                                <View style={styles.sheetHandle} />
+                                <View style={styles.radioList}>
+                                    {TIMER_OPTIONS.map((option) => (
                                         <RadioButton
-                                            key={option}
-                                            selected={selectedOption === option}
+                                            key={option.value}
+                                            selected={autoLockTimeout === option.value}
                                             onPress={() => handleOptionSelect(option)}
-                                            label={option}
+                                            label={option.label}
                                         />
                                     ))}
                                 </View>
@@ -196,55 +249,83 @@ export default function AutoLockTimerScreen() {
                     </GestureDetector>
                 </View>
             </Modal>
-        </ThemedView>
+        </View>
     );
 }
 
 const styles = StyleSheet.create({
     container: {
         flex: 1,
+        backgroundColor: '#050201',
+    },
+    header: {
+        backgroundColor: '#050201',
+        paddingHorizontal: 20,
+    },
+    headerContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 10,
+    },
+    backButton: {
+        width: 24,
+        height: 24,
+    },
+    headerTitle: {
+        fontFamily: 'Manrope-Medium',
+        fontSize: 20,
+        lineHeight: 20,
+        color: '#FFFFFF',
+        flex: 1,
+        textAlign: 'center',
+    },
+    placeholder: {
+        width: 24,
     },
     content: {
         flex: 1,
         paddingHorizontal: 18,
-        paddingTop: 100,
+        paddingTop: 80,
     },
-    inputGroup: {
-        gap: 8,
+    selectorGroup: {
+        gap: 12,
+        width: '100%',
     },
-    label: {
+    selectorLabel: {
+        fontFamily: 'Manrope-Regular',
         fontSize: 16,
-        opacity: 0.8,
+        color: 'rgba(255, 255, 255, 0.7)',
     },
-    selector: {
+    selectorButton: {
         height: 56,
         backgroundColor: 'rgba(255, 255, 255, 0.05)',
         borderRadius: 16,
-        paddingHorizontal: 16,
+        paddingHorizontal: 17,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
     },
     selectorText: {
+        fontFamily: 'Manrope-Medium',
         fontSize: 16,
-        color: colors.mutedText,
+        color: '#FFFFFF',
+        flex: 1,
     },
-    icon24: {
+    arrowIcon: {
         width: 24,
         height: 24,
     },
-    fullSize: {
-        width: '100%',
-        height: '100%',
-    },
-    modalRoot: {
+    modalOverlay: {
         flex: 1,
+    },
+    backdropPressable: {
+        ...StyleSheet.absoluteFillObject,
     },
     backdrop: {
         flex: 1,
         backgroundColor: 'rgba(1,5,1,0.7)',
     },
-    sheet: {
+    bottomSheet: {
         position: 'absolute',
         left: 0,
         right: 0,
@@ -252,45 +333,66 @@ const styles = StyleSheet.create({
         backgroundColor: '#1b1b1b',
         borderTopLeftRadius: 40,
         borderTopRightRadius: 40,
-        paddingTop: 32,
-        paddingHorizontal: 20,
+        paddingTop: 16,
+        paddingHorizontal: 17,
+    },
+    sheetHandle: {
+        width: 40,
+        height: 4,
+        backgroundColor: 'rgba(255, 255, 255, 0.2)',
+        borderRadius: 2,
+        alignSelf: 'center',
+        marginBottom: 20,
     },
     sheetContent: {
+        flex: 1,
+    },
+    radioList: {
         gap: 4,
     },
-    radioButton: {
+    radioItem: {
         height: 56,
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 12,
+        paddingHorizontal: 17,
+        borderRadius: 16,
     },
-    radioOuter: {
+    radioShell: {
         width: 24,
         height: 24,
+        marginRight: 12,
     },
-    radioSelectedOuter: {
+    radioOuterSelected: {
         width: 24,
         height: 24,
         borderRadius: 12,
         borderWidth: 1.5,
-        borderColor: '#FFFFFF',
+        borderColor: '#B4FF3B',
         alignItems: 'center',
         justifyContent: 'center',
     },
-    radioSelectedInner: {
+    radioInnerSelected: {
         width: 10,
         height: 10,
-        borderRadius: 5,
-        backgroundColor: '#FFFFFF',
+        borderRadius: 6,
+        borderWidth: 1.5,
+        borderColor: '#B4FF3B',
     },
     radioUnselected: {
         width: 24,
         height: 24,
         borderRadius: 12,
         borderWidth: 1.5,
-        borderColor: '#b5b5b5',
+        borderColor: 'rgba(255, 255, 255, 0.3)',
     },
     radioLabel: {
+        fontFamily: 'Manrope-Medium',
         fontSize: 16,
+        color: '#FFFFFF',
+        flex: 1,
+    },
+    fullSize: {
+        width: '100%',
+        height: '100%',
     },
 });

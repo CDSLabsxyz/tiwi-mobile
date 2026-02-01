@@ -3,6 +3,7 @@ import { ThemedView } from '@/components/themed-view';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { colors } from '@/constants/colors';
 import { useSecurityStore } from '@/store/securityStore';
+import { useWalletStore } from '@/store/walletStore';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
@@ -26,11 +27,12 @@ const DeleteIcon = require('../../../../assets/settings/Union.svg');
 export default function DisconnectWalletPasscodeScreen() {
     const { top } = useSafeAreaInsets();
     const router = useRouter();
+    const { disconnect } = useWalletStore();
     const params = useLocalSearchParams<{ returnTo?: string }>();
     const [passcode, setPasscode] = useState<string[]>(Array(6).fill(''));
     const [focusedIndex, setFocusedIndex] = useState<number>(0);
     const [isError, setIsError] = useState(false);
-    const verifyPasscode = useSecurityStore((state) => state.verifyPasscode);
+    const { verifyPasscode, authenticateBiometrics, isBiometricsEnabled } = useSecurityStore();
     const inputRefs = useRef<(TextInput | null)[]>([]);
 
     const shake = useSharedValue(0);
@@ -58,13 +60,32 @@ export default function DisconnectWalletPasscodeScreen() {
         return () => backHandler.remove();
     }, [params.returnTo]);
 
+    // Handle Biometrics and Auto-focus
     useEffect(() => {
-        const timer = setTimeout(() => {
-            inputRefs.current[0]?.focus();
-        }, 100);
-        return () => clearTimeout(timer);
-    }, []);
+        const initAuth = async () => {
+            if (isBiometricsEnabled) {
+                // Small delay to ensure UI is ready
+                setTimeout(async () => {
+                    const success = await authenticateBiometrics('Verify your identity to disconnect wallet');
+                    if (success) {
+                        handleAuthSuccess();
+                    } else {
+                        // Fallback to passcode input
+                        inputRefs.current[0]?.focus();
+                    }
+                }, 500);
+            } else {
+                const timer = setTimeout(() => {
+                    inputRefs.current[0]?.focus();
+                }, 100);
+                return () => clearTimeout(timer);
+            }
+        };
 
+        initAuth();
+    }, [isBiometricsEnabled]);
+
+    // Handle passcode completion
     useEffect(() => {
         const isComplete = passcode.every((digit) => digit !== '') && passcode.length === 6;
         if (isComplete) {
@@ -72,15 +93,19 @@ export default function DisconnectWalletPasscodeScreen() {
         }
     }, [passcode]);
 
+    const handleAuthSuccess = () => {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        disconnect();
+        router.push('/settings' as any);
+    };
+
     const handleVerify = async () => {
         Keyboard.dismiss();
         const codeString = passcode.join('');
         const isValid = await verifyPasscode(codeString);
 
         if (isValid) {
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            // In production: disconnect wallet here
-            router.replace('/settings/accounts' as any);
+            handleAuthSuccess();
         } else {
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
             setIsError(true);
@@ -91,6 +116,13 @@ export default function DisconnectWalletPasscodeScreen() {
                 setFocusedIndex(0);
                 inputRefs.current[0]?.focus();
             }, 1500);
+        }
+    };
+
+    const handleBiometricPress = async () => {
+        const success = await authenticateBiometrics('Verify your identity to disconnect wallet');
+        if (success) {
+            handleAuthSuccess();
         }
     };
 
@@ -231,14 +263,17 @@ export default function DisconnectWalletPasscodeScreen() {
             </Animated.View>
 
             {/* Biometric Placeholder */}
-            <TouchableOpacity
-                activeOpacity={0.8}
-                style={styles.biometricButton}
-            >
-                <ThemedText style={styles.biometricText}>
-                    Use Biometric Authentication
-                </ThemedText>
-            </TouchableOpacity>
+            {isBiometricsEnabled && (
+                <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={handleBiometricPress}
+                    style={styles.biometricButton}
+                >
+                    <ThemedText style={styles.biometricText}>
+                        Use Biometric Authentication
+                    </ThemedText>
+                </TouchableOpacity>
+            )}
 
             {/* Numeric Keyboard */}
             <BlurView

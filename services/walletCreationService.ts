@@ -19,6 +19,7 @@ export interface CreatedWallet {
 }
 
 const SECURE_STORE_PREFIX = 'tiwi_wallet_priv_';
+const MNEMONIC_PREFIX = 'tiwi_wallet_mnem_';
 
 /**
  * Generate a new wallet with a 12-word mnemonic phrase.
@@ -49,7 +50,7 @@ export function generateNewWallet(): CreatedWallet {
 export function derivePrivateKeyFromMnemonic(
     mnemonic: string,
     derivationPath = "m/44'/60'/0'/0/0"
-): `0x${string}` {
+): string {
     const seed = mnemonicToSeedSync(mnemonic);
     const hd = HDKey.fromMasterSeed(seed);
     const child = hd.derive(derivationPath);
@@ -62,7 +63,7 @@ export function derivePrivateKeyFromMnemonic(
         .map((b) => b.toString(16).padStart(2, '0'))
         .join('');
 
-    return `0x${hex}`;
+    return hex;
 }
 
 /**
@@ -93,6 +94,25 @@ export async function getSecurePrivateKey(address: string): Promise<string | nul
 }
 
 /**
+ * Save mnemonic securely
+ */
+export async function saveSecureMnemonic(address: string, mnemonic: string): Promise<void> {
+    if (!address || !mnemonic) return;
+    const key = `${MNEMONIC_PREFIX}${address.toLowerCase()}`;
+    await SecureStore.setItemAsync(key, mnemonic, {
+        keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
+    });
+}
+
+/**
+ * Retrieve mnemonic securely
+ */
+export async function getSecureMnemonic(address: string): Promise<string | null> {
+    const key = `${MNEMONIC_PREFIX}${address.toLowerCase()}`;
+    return await SecureStore.getItemAsync(key);
+}
+
+/**
  * Validate a mnemonic phrase
  */
 export function validateMnemonic(mnemonic: string): boolean {
@@ -117,33 +137,33 @@ export function validateMnemonic(mnemonic: string): boolean {
  * Validate if a string is a valid ETH private key
  */
 export function validatePrivateKey(key: string): boolean {
-  const cleanKey = key.startsWith('0x') ? key.slice(2) : key;
-  return /^[0-9a-fA-F]{64}$/.test(cleanKey);
+    const cleanKey = key.startsWith('0x') ? key.slice(2) : key;
+    return /^[0-9a-fA-F]{64}$/.test(cleanKey);
 }
 
 /**
  * Import wallet using mnemonic
  */
 export async function importWalletByMnemonic(mnemonic: string): Promise<string> {
-  if (!validateMnemonic(mnemonic)) throw new Error('Invalid mnemonic');
-  
-  const account = mnemonicToAccount(mnemonic);
-  const privateKey = derivePrivateKeyFromMnemonic(mnemonic);
-  
-  await saveSecureWallet(account.address, privateKey);
-  return account.address;
+    if (!validateMnemonic(mnemonic)) throw new Error('Invalid mnemonic');
+
+    const account = mnemonicToAccount(mnemonic);
+    const privateKey = derivePrivateKeyFromMnemonic(mnemonic);
+
+    await saveSecureWallet(account.address, privateKey);
+    return account.address;
 }
 
 /**
  * Import wallet using private key
  */
 export async function importWalletByPrivateKey(privateKey: string): Promise<string> {
-  if (!validatePrivateKey(privateKey)) throw new Error('Invalid private key');
-  
-  const hex = privateKey.startsWith('0x') ? (privateKey as `0x${string}`) : (`0x${privateKey}` as `0x${string}`);
-  const { privateKeyToAccount } = await import('viem/accounts');
-  const account = privateKeyToAccount(hex);
-  
-  await saveSecureWallet(account.address, hex);
-  return account.address;
+    if (!validatePrivateKey(privateKey)) throw new Error('Invalid private key');
+
+    const hex = privateKey.startsWith('0x') ? (privateKey as `0x${string}`) : (`0x${privateKey}` as `0x${string}`);
+    const { privateKeyToAccount } = await import('viem/accounts');
+    const account = privateKeyToAccount(hex);
+
+    await saveSecureWallet(account.address, hex);
+    return account.address;
 }

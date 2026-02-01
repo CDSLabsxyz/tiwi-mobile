@@ -5,10 +5,13 @@
  */
 
 import { colors } from '@/constants/colors';
+import AntDesign from '@expo/vector-icons/AntDesign';
 import { Image } from 'expo-image';
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import AntDesign from '@expo/vector-icons/AntDesign';
+
+import { TokenPrice } from '@/components/ui/TokenPrice';
+import { useTranslation } from '@/hooks/useLocalization';
 
 const ViewIcon = require('../../../assets/wallet/view.svg');
 
@@ -34,13 +37,15 @@ export const TotalBalanceCard: React.FC<TotalBalanceCardProps> = ({
     onToggleVisibility,
     onTodayPress,
 }) => {
+    const { t } = useTranslation();
+
     return (
         <View style={styles.container}>
             <View style={styles.content}>
                 {/* Label + View Icon */}
                 <View style={styles.labelRow}>
                     <Text style={styles.label}>
-                        Total Balance
+                        {t('home.total_balance')}
                     </Text>
                     <TouchableOpacity
                         activeOpacity={0.8}
@@ -57,9 +62,14 @@ export const TotalBalanceCard: React.FC<TotalBalanceCardProps> = ({
 
                 {/* Balance Amount */}
                 <View style={styles.balanceRow}>
-                    <Text style={styles.balanceText}>
-                        {isBalanceVisible ? totalBalance : '****'}
-                    </Text>
+                    {isBalanceVisible ? (
+                        <TokenPrice
+                            amount={totalBalance}
+                            style={styles.balanceText}
+                        />
+                    ) : (
+                        <Text style={styles.balanceText}>****</Text>
+                    )}
                 </View>
 
                 {/* Portfolio Change */}

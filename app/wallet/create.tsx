@@ -55,11 +55,12 @@ export default function CreateWalletScreen() {
             setIsLoading(true);
             try {
                 // 1. Derive Private Key
-                const { derivePrivateKeyFromMnemonic, saveSecureWallet } = await import('@/services/walletCreationService');
-                const privateKey = derivePrivateKeyFromMnemonic(wallet.mnemonic);
+                const { derivePrivateKeyFromMnemonic, saveSecureWallet, saveSecureMnemonic } = await import('@/services/walletCreationService');
+                const privateKey = `0x${derivePrivateKeyFromMnemonic(wallet.mnemonic)}`;
 
                 // 2. Save Securely
                 await saveSecureWallet(wallet.address, privateKey);
+                await saveSecureMnemonic(wallet.address, wallet.mnemonic);
 
                 // 3. Move to finalize
                 setStep('finalize');
@@ -77,6 +78,7 @@ export default function CreateWalletScreen() {
                 address: wallet.address,
                 chainId: 1,
                 isConnected: true,
+                source: 'internal',
             });
             setIsSuccess(true);
         }

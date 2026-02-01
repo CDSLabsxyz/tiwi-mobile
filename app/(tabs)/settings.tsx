@@ -4,6 +4,7 @@ import { SettingsItem } from '@/components/ui/settings-item';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect } from 'react';
 import { BackHandler, ScrollView, StyleSheet, View } from 'react-native';
+import { useTranslation } from '../../hooks/useLocalization';
 
 // Settings Icons
 const imgUserCircle = require('../../assets/settings/user-circle.svg');
@@ -86,6 +87,66 @@ const settingsSections: SettingsSection[] = [
 export default function SettingsScreen() {
     const router = useRouter();
     const params = useLocalSearchParams<{ returnTo?: string }>();
+    const { t } = useTranslation();
+
+    const translatedSections: SettingsSection[] = [
+        {
+            id: 'account-details',
+            title: t('settings.account_details'),
+            icon: imgUserCircle,
+            route: '/settings/accounts',
+        },
+        {
+            id: 'security',
+            title: t('settings.security'),
+            icon: imgSecurityLock,
+            route: '/settings/security',
+        },
+        {
+            id: 'connected-devices',
+            title: t('settings.connected_devices'),
+            icon: imgPhoneDeveloperMode,
+            route: '/settings/connected-devices',
+        },
+        {
+            id: 'language-region',
+            title: t('settings.language_region'),
+            icon: imgLanguageSkill,
+            route: '/settings/language-region',
+        },
+        {
+            id: 'notifications',
+            title: t('settings.notifications'),
+            icon: imgNotification02,
+            route: '/settings/notifications',
+        },
+        {
+            id: 'app-updates-cache',
+            title: t('settings.app_updates_cache'),
+            icon: imgDownload03,
+            route: '/settings/app-updates-cache',
+        },
+        {
+            id: 'support',
+            title: t('settings.support'),
+            icon: imgCustomerSupport,
+            route: '/settings/support',
+        },
+        {
+            id: 'add-new-wallet',
+            title: t('settings.add_new_wallet'),
+            icon: imgAddSquare,
+            route: '/settings/add-new-wallet',
+        },
+        {
+            id: 'import-wallet',
+            title: t('settings.import_wallet'),
+            icon: imgCloudDownload,
+            onPress: () => {
+                console.log('Import Wallet pressed');
+            },
+        }
+    ];
 
     // Handle phone back button
     useEffect(() => {
@@ -118,7 +179,7 @@ export default function SettingsScreen() {
 
     return (
         <ThemedView style={styles.container}>
-            <SettingsHeader title="Settings" onBack={handleBackPress} showBack={false} />
+            <SettingsHeader title={t('settings.title')} onBack={handleBackPress} showBack={false} />
 
             <ScrollView
                 style={styles.scrollView}
@@ -127,7 +188,7 @@ export default function SettingsScreen() {
                 alwaysBounceVertical={true}
             >
                 <View style={styles.sectionsWrapper}>
-                    {settingsSections.map((section) => (
+                    {translatedSections.map((section) => (
                         <SettingsItem
                             key={section.id}
                             label={section.title}

@@ -2,6 +2,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { colors } from '@/constants/colors';
+import { useWalletStore } from '@/store/walletStore';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -23,7 +24,8 @@ export default function EditWalletNameScreen() {
     const { top, bottom } = useSafeAreaInsets();
     const router = useRouter();
     const params = useLocalSearchParams<{ returnTo?: string }>();
-    const [walletName, setWalletName] = useState('');
+    const { name, updateWalletName } = useWalletStore();
+    const [walletName, setWalletName] = useState(name || '');
     const [isSaving, setIsSaving] = useState(false);
 
     // Handle phone back button
@@ -54,7 +56,7 @@ export default function EditWalletNameScreen() {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
         try {
-            // Removed artificial delay for speed
+            updateWalletName(walletName.trim());
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
             // Navigate back

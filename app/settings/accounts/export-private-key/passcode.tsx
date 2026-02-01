@@ -29,7 +29,7 @@ export default function ExportPrivateKeyPasscodeScreen() {
     const [passcode, setPasscode] = useState<string[]>(Array(6).fill(''));
     const [focusedIndex, setFocusedIndex] = useState<number>(0);
     const [isError, setIsError] = useState(false);
-    const verifyPasscode = useSecurityStore((state) => state.verifyPasscode);
+    const { verifyPasscode, authenticateBiometrics, isBiometricsEnabled } = useSecurityStore();
     const inputRefs = useRef<(TextInput | null)[]>([]);
 
     const shake = useSharedValue(0);
@@ -59,13 +59,30 @@ export default function ExportPrivateKeyPasscodeScreen() {
         return () => backHandler.remove();
     }, [params.returnTo]);
 
-    // Auto-focus first input on mount
+    // Handle Biometrics and Auto-focus
     useEffect(() => {
-        const timer = setTimeout(() => {
-            inputRefs.current[0]?.focus();
-        }, 100);
-        return () => clearTimeout(timer);
-    }, []);
+        const initAuth = async () => {
+            if (isBiometricsEnabled) {
+                // Small delay to ensure UI is ready
+                setTimeout(async () => {
+                    const success = await authenticateBiometrics('Verify your identity to export private key');
+                    if (success) {
+                        handleAuthSuccess();
+                    } else {
+                        // Fallback to passcode input
+                        inputRefs.current[0]?.focus();
+                    }
+                }, 500);
+            } else {
+                const timer = setTimeout(() => {
+                    inputRefs.current[0]?.focus();
+                }, 100);
+                return () => clearTimeout(timer);
+            }
+        };
+
+        initAuth();
+    }, [isBiometricsEnabled]);
 
     // Handle passcode completion
     useEffect(() => {
@@ -75,14 +92,18 @@ export default function ExportPrivateKeyPasscodeScreen() {
         }
     }, [passcode]);
 
+    const handleAuthSuccess = () => {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        router.push('/settings/accounts/export-private-key/display' as any);
+    };
+
     const handleVerify = async () => {
         Keyboard.dismiss();
         const codeString = passcode.join('');
         const isValid = await verifyPasscode(codeString);
 
         if (isValid) {
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            router.push('/settings/accounts/export-private-key/display' as any);
+            handleAuthSuccess();
         } else {
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
             setIsError(true);

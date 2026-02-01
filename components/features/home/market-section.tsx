@@ -1,10 +1,12 @@
 import { Skeleton } from '@/components/ui/skeleton';
+import { TokenPrice } from '@/components/ui/TokenPrice';
 import { colors } from '@/constants/colors';
+import { useTranslation } from '@/hooks/useLocalization';
 import { MarketCategory, useMarketPairs } from '@/hooks/useMarketPairs';
 import { apiClient, MarketTokenPair, TokenMetadata } from '@/services/apiClient';
 import { useMarketStore } from '@/store/marketStore';
 import { TradingPair } from '@/types';
-import { formatNumber, formatPercentageChange, formatUSDPrice } from '@/utils/formatting';
+import { formatNumber, formatPercentageChange } from '@/utils/formatting';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
@@ -32,14 +34,22 @@ export const MarketSection: React.FC<MarketSectionProps> = ({
     isLoading: initialLoading = false,
 }) => {
     const router = useRouter();
+    const { t } = useTranslation();
     const [activeTab, setActiveTab] = useState<MarketCategory | 'favourite'>('hot');
     const { favorites, toggleFavorite, isFavorite } = useMarketStore();
+
+    const tabs: { id: MarketCategory | 'favourite'; label: string }[] = useMemo(() => [
+        { id: 'favourite', label: t('home.favourite') },
+        { id: 'hot', label: t('home.top') },
+        { id: 'new', label: t('home.new') },
+        { id: 'gainers', label: t('home.gainers') },
+        { id: 'losers', label: t('home.losers') },
+    ], [t]);
 
     // Fetch categories (Hot, New, Gainers, Losers)
     const {
         data: marketPairs,
         isLoading: isPairsLoading,
-        refetch: refetchPairs
     } = useMarketPairs({
         category: activeTab === 'favourite' ? 'hot' : activeTab as MarketCategory,
         limit: 5, // Display top 5 on home screen
@@ -61,10 +71,6 @@ export const MarketSection: React.FC<MarketSectionProps> = ({
 
             setIsFavLoading(true);
             try {
-                // Fetch each favorite metadata
-                // Note: The API currently returns single tokens for /tokens, 
-                // but market pairs for /market-pairs. 
-                // For simplicity, we'll fetch them as tokens and adapt them.
                 const promises = favorites.map(async (id) => {
                     const [chainId, address] = id.split('-');
                     try {
@@ -82,15 +88,21 @@ export const MarketSection: React.FC<MarketSectionProps> = ({
                 const results = await Promise.all(promises);
                 const validResults = results.filter((t): t is TokenMetadata => !!t && !!t.address);
 
-                // Map TokenMetadata to the flat MarketTokenPair structure
                 const mappedFavs: MarketTokenPair[] = validResults.map(t => ({
                     ...t,
+                    address: t.address,
+                    symbol: t.symbol,
+                    name: t.name,
+                    chainId: t.chainId,
+                    decimals: t.decimals || 18,
+                    priceUSD: t.priceUSD || '0',
                     logoURI: t.logoURI || '',
-                    priceChange24h: t.priceChange24h ? parseFloat(t.priceChange24h) : 0,
-                    volume24h: t.volume24h || 0,
-                    marketCap: t.marketCap || 0,
-                    holders: t.holders || 0,
-                    transactionCount: t.transactionCount || 0,
+                    verified: !!t.verified,
+                    priceChange24h: t.priceChange24h ? parseFloat(String(t.priceChange24h)) : 0,
+                    volume24h: typeof t.volume24h === 'number' ? t.volume24h : parseFloat(String(t.volume24h || '0')),
+                    marketCap: typeof t.marketCap === 'number' ? t.marketCap : parseFloat(String(t.marketCap || '0')),
+                    holders: typeof t.holders === 'number' ? t.holders : parseInt(String(t.holders || '0')),
+                    transactionCount: typeof t.transactionCount === 'number' ? t.transactionCount : parseInt(String(t.transactionCount || '0')),
                 }));
 
                 setFavoriteTokens(mappedFavs);
@@ -104,7 +116,6 @@ export const MarketSection: React.FC<MarketSectionProps> = ({
         loadFavs();
     }, [activeTab, favorites]);
 
-    // Derive display data based on tab
     const displayData = useMemo(() => {
         if (activeTab === 'favourite') {
             return favoriteTokens;
@@ -136,7 +147,7 @@ export const MarketSection: React.FC<MarketSectionProps> = ({
             {/* Header */}
             <View style={styles.header}>
                 <View style={styles.titleContainer}>
-                    <Text style={styles.title}>Market</Text>
+                    <Text style={styles.title}>{t('home.market')}</Text>
                 </View>
 
                 {/* Tabs */}
@@ -232,14 +243,17 @@ export const MarketSection: React.FC<MarketSectionProps> = ({
                                         </View>
                                     )}
                                 </View>
-                                <Text style={styles.volumeText} numberOfLines={1}>Vol {formatNumber(token.volume24h || 0)}</Text>
+                                <Text style={styles.volumeText} numberOfLines={1}>
+                                    {t('home.vol')} {formatNumber(token.volume24h || 0)}
+                                </Text>
                             </View>
 
                             {/* Price and Change */}
                             <View style={styles.priceContainer}>
-                                <Text style={styles.priceText}>
-                                    {formatUSDPrice(token.priceUSD)}
-                                </Text>
+                                <TokenPrice
+                                    amount={token.priceUSD}
+                                    style={styles.priceText}
+                                />
                                 <Text
                                     style={[
                                         styles.changeText,
@@ -255,7 +269,7 @@ export const MarketSection: React.FC<MarketSectionProps> = ({
 
                 {activeTab === 'favourite' && favorites.length === 0 && (
                     <View style={styles.emptyContainer}>
-                        <Text style={styles.emptyText}>No favorite tokens yet.</Text>
+                        <Text style={styles.emptyText}>{t('home.no_favorites')}</Text>
                     </View>
                 )}
 
@@ -264,7 +278,7 @@ export const MarketSection: React.FC<MarketSectionProps> = ({
                     style={styles.viewAllButton}
                     onPress={() => router.push(`/market?category=${activeTab}` as any)}
                 >
-                    <Text style={styles.viewAllText}>View All</Text>
+                    <Text style={styles.viewAllText}>{t('home.view_all')}</Text>
                 </TouchableOpacity>
             </View>
         </View>

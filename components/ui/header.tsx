@@ -1,5 +1,6 @@
 import { colors } from '@/constants/colors';
 import { WALLET_ADDRESS, truncateAddress } from '@/utils/wallet';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -16,7 +17,9 @@ const ArrowDown01 = require('../../assets/home/arrow-down-01.svg');
 const Scan = require('../../assets/home/iris-scan.svg');
 const Settings = require('../../assets/home/settings-03.svg');
 
+import { useNotifications } from '@/hooks/useNotifications';
 import { useWalletStore } from '@/store/walletStore';
+import { useRouter } from 'expo-router';
 
 /**
  * Header Component
@@ -28,8 +31,9 @@ export const Header: React.FC<HeaderProps> = ({
     onScanPress,
     onSettingsPress,
 }) => {
+    const router = useRouter();
     const { address, walletIcon } = useWalletStore();
-    console.log("🚀 ~ Header ~ walletIcon:", walletIcon)
+    const { unreadCount } = useNotifications();
     const fullAddress = walletAddress || address || WALLET_ADDRESS;
     const displayAddress = truncateAddress(fullAddress);
 
@@ -66,12 +70,13 @@ export const Header: React.FC<HeaderProps> = ({
 
             {/* Right Side - Icons */}
             <View style={styles.rightSection}>
-                <TouchableOpacity onPress={onScanPress} style={styles.iconButton} activeOpacity={0.7}>
-                    <Image
-                        source={Scan}
-                        style={styles.icon}
-                        contentFit="contain"
-                    />
+                <TouchableOpacity onPress={() => router.push('/notifications' as any)} style={styles.iconButton} activeOpacity={0.7}>
+                    <Ionicons name="notifications-outline" size={24} color={colors.bodyText} />
+                    {unreadCount > 0 && (
+                        <View style={styles.unreadBadge}>
+                            <Text style={styles.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+                        </View>
+                    )}
                 </TouchableOpacity>
                 <TouchableOpacity onPress={onSettingsPress} style={styles.iconButton} activeOpacity={0.7}>
                     <Image
@@ -79,6 +84,9 @@ export const Header: React.FC<HeaderProps> = ({
                         style={styles.icon}
                         contentFit="contain"
                     />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={onScanPress} style={styles.iconButton} activeOpacity={0.7}>
+                    <Ionicons name="scan-outline" size={24} color={colors.bodyText} />
                 </TouchableOpacity>
             </View>
         </View>
@@ -134,6 +142,27 @@ const styles = StyleSheet.create({
     iconButton: {
         width: 24, // w-6
         height: 24,
+        position: 'relative',
+    },
+    unreadBadge: {
+        position: 'absolute',
+        top: -4,
+        right: -4,
+        minWidth: 16,
+        height: 16,
+        borderRadius: 8,
+        backgroundColor: colors.error || '#FF4D4D',
+        borderWidth: 1.5,
+        borderColor: colors.bg,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: 2,
+    },
+    badgeText: {
+        color: '#FFFFFF',
+        fontSize: 9,
+        fontFamily: 'Manrope-Bold',
+        textAlign: 'center',
     },
     icon: {
         width: '100%',

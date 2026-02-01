@@ -1,5 +1,6 @@
 import { Skeleton } from '@/components/ui/skeleton';
 import { colors } from '@/constants/colors';
+import { useTranslation } from '@/hooks/useLocalization';
 import { SpotlightToken } from '@/types';
 import { Image } from 'expo-image';
 import React from 'react';
@@ -19,6 +20,8 @@ export const SpotlightSection: React.FC<SpotlightSectionProps> = ({
     tokens,
     isLoading = false,
 }) => {
+    const { t } = useTranslation();
+
     if (isLoading) {
         return (
             <View style={styles.container}>
@@ -52,7 +55,7 @@ export const SpotlightSection: React.FC<SpotlightSectionProps> = ({
         <View style={styles.container}>
             {/* Header */}
             <View style={styles.header}>
-                <Text style={styles.title}>Spotlight</Text>
+                <Text style={styles.title}>{t('home.spotlight')}</Text>
                 <TouchableOpacity activeOpacity={0.7}>
                     <Image
                         source={require('../../../assets/home/arrow-right-01.svg')}

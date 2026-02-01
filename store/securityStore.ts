@@ -6,11 +6,18 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Crypto from 'expo-crypto';
+import * as LocalAuthentication from 'expo-local-authentication';
 import * as SecureStore from 'expo-secure-store';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 const PASSCODE_KEY = 'tiwi_user_passcode_hash';
+
+export interface WhitelistedAddress {
+    address: string;
+    name: string;
+    addedAt: number;
+}
 
 interface SecurityState {
     hasPasscode: boolean;
@@ -21,16 +28,37 @@ interface SecurityState {
     lastActive: number;
     autoLockTimeout: number; // in milliseconds
 
+    // Fraud Protection Settings
+    isSuspiciousActivityEnabled: boolean;
+    isTransactionRiskEnabled: boolean;
+    isFlaggedAddressEnabled: boolean;
+    isStrictModeEnabled: boolean;
+
+    // Whitelist Addresses
+    whitelistedAddresses: WhitelistedAddress[];
+
     setSetupComplete: (complete: boolean) => void;
     updateLastActive: () => void;
     setAutoLockTimeout: (timeoutMs: number) => void;
 
     setPasscode: (code: string, state: boolean) => Promise<void>;
     verifyPasscode: (code: string) => Promise<boolean>;
+    authenticateBiometrics: (promptMessage?: string) => Promise<boolean>;
     enableBiometrics: (enabled: boolean) => void;
     enableNotifications: (enabled: boolean) => void;
+
+    setSuspiciousActivity: (enabled: boolean) => void;
+    setTransactionRisk: (enabled: boolean) => void;
+    setFlaggedAddress: (enabled: boolean) => void;
+    setStrictMode: (enabled: boolean) => void;
+
     lockApp: () => void;
     unlockApp: () => void;
+
+    // Whitelist Actions
+    addWhitelistedAddress: (address: string, name: string) => void;
+    removeWhitelistedAddress: (address: string) => void;
+
     resetSecurity: () => Promise<void>;
 }
 
@@ -44,6 +72,13 @@ export const useSecurityStore = create<SecurityState>()(
             isSetupComplete: false,
             lastActive: Date.now(),
             autoLockTimeout: 30000, // Default 30s as requested
+
+            isSuspiciousActivityEnabled: true,
+            isTransactionRiskEnabled: true,
+            isFlaggedAddressEnabled: true,
+            isStrictModeEnabled: false,
+
+            whitelistedAddresses: [],
 
             setSetupComplete: (complete) => set({ isSetupComplete: complete }),
             updateLastActive: () => set({ lastActive: Date.now() }),
@@ -69,10 +104,59 @@ export const useSecurityStore = create<SecurityState>()(
                 return inputHash === storedHash;
             },
 
+            authenticateBiometrics: async (promptMessage = 'Authenticate to continue') => {
+                const { isBiometricsEnabled } = get();
+                if (!isBiometricsEnabled) return false;
+
+                try {
+                    const hasHardware = await LocalAuthentication.hasHardwareAsync();
+                    const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+
+                    if (!hasHardware || !isEnrolled) return false;
+
+                    const result = await LocalAuthentication.authenticateAsync({
+                        promptMessage,
+                        fallbackLabel: 'Use Passcode',
+                        disableDeviceFallback: false,
+                    });
+
+                    return result.success;
+                } catch (error) {
+                    console.error('Biometric authentication error:', error);
+                    return false;
+                }
+            },
+
             enableBiometrics: (enabled) => set({ isBiometricsEnabled: enabled }),
             enableNotifications: (enabled) => set({ isNotificationsEnabled: enabled }),
+
+            setSuspiciousActivity: (enabled) => set({ isSuspiciousActivityEnabled: enabled }),
+            setTransactionRisk: (enabled) => set({ isTransactionRiskEnabled: enabled }),
+            setFlaggedAddress: (enabled) => set({ isFlaggedAddressEnabled: enabled }),
+            setStrictMode: (enabled) => set({ isStrictModeEnabled: enabled }),
+
             lockApp: () => set({ isLocked: true }),
             unlockApp: () => set({ isLocked: false }),
+
+            addWhitelistedAddress: (address, name) => {
+                const { whitelistedAddresses } = get();
+                const exists = whitelistedAddresses.some(a => a.address.toLowerCase() === address.toLowerCase());
+                if (exists) return;
+
+                set({
+                    whitelistedAddresses: [
+                        ...whitelistedAddresses,
+                        { address, name, addedAt: Date.now() }
+                    ]
+                });
+            },
+
+            removeWhitelistedAddress: (address) => {
+                const { whitelistedAddresses } = get();
+                set({
+                    whitelistedAddresses: whitelistedAddresses.filter(a => a.address.toLowerCase() !== address.toLowerCase())
+                });
+            },
 
             resetSecurity: async () => {
                 await SecureStore.deleteItemAsync(PASSCODE_KEY);
@@ -80,6 +164,11 @@ export const useSecurityStore = create<SecurityState>()(
                     hasPasscode: false,
                     isBiometricsEnabled: false,
                     isNotificationsEnabled: false,
+                    isSuspiciousActivityEnabled: true,
+                    isTransactionRiskEnabled: true,
+                    isFlaggedAddressEnabled: true,
+                    isStrictModeEnabled: false,
+                    whitelistedAddresses: [],
                     isLocked: false
                 });
             },

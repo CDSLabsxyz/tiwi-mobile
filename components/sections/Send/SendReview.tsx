@@ -4,15 +4,17 @@
  * Matches Figma design (node-id: 3279-119877)
  */
 
-import React from "react";
-import { View, Text, TouchableOpacity } from "react-native";
-import { Image } from "expo-image";
 import { colors } from "@/constants";
+import { RiskCheckResult, securityGuard } from "@/services/securityGuard";
+import { useSecurityStore } from "@/store/securityStore";
 import { useSendStore } from "@/store/sendStore";
-import { truncateAddress } from "@/utils/wallet";
-import { WALLET_ADDRESS } from "@/utils/wallet";
+import { truncateAddress, WALLET_ADDRESS } from "@/utils/wallet";
+import { Image } from "expo-image";
+import React, { useEffect, useState } from "react";
+import { StyleSheet, Text, View } from "react-native";
 
 const AlertIcon = require("@/assets/wallet/alert-square.svg");
+const CheckmarkIcon = require("@/assets/swap/checkmark-circle-01.svg");
 
 interface SendReviewProps {
   onConfirm: () => void;
@@ -20,271 +22,240 @@ interface SendReviewProps {
 
 export const SendReview: React.FC<SendReviewProps> = ({ onConfirm }) => {
   const { selectedToken, selectedChain, recipientAddress, amount, usdValue, networkFee, networkFeeUSD } = useSendStore();
+  const { isFlaggedAddressEnabled, isTransactionRiskEnabled } = useSecurityStore();
+
+  const [riskResult, setRiskResult] = useState<RiskCheckResult | null>(null);
+  const [isScanning, setIsScanning] = useState(false);
+
+  useEffect(() => {
+    const runSecurityCheck = async () => {
+      if (!isFlaggedAddressEnabled && !isTransactionRiskEnabled) return;
+
+      setIsScanning(true);
+      const chainIdStr = selectedChain?.id ? String(selectedChain.id) : '1';
+      const result = await securityGuard.checkAddressRisk(recipientAddress, chainIdStr);
+      setRiskResult(result);
+      setIsScanning(false);
+    };
+
+    runSecurityCheck();
+  }, [recipientAddress, selectedChain?.id, isFlaggedAddressEnabled, isTransactionRiskEnabled]);
 
   return (
-    <View
-      style={{
-        width: "100%",
-        flexDirection: "column",
-        gap: 12,
-        paddingTop: 20,
-      }}
-    >
+    <View style={styles.container}>
       {/* Amount Display */}
-      <View
-        style={{
-          flexDirection: "column",
-          alignItems: "center",
-          gap: 30,
-        }}
-      >
-        <Text
-          style={{
-            fontFamily: "Manrope-SemiBold",
-            fontSize: 20,
-            lineHeight: 20,
-            color: colors.titleText,
-            textTransform: "capitalize",
-          }}
-        >
-          Confirm
-        </Text>
-        <View
-          style={{
-            flexDirection: "column",
-            alignItems: "center",
-            gap: 0,
-          }}
-        >
-          <Text
-            style={{
-              fontFamily: "Manrope-Medium",
-              fontSize: 36,
-              color: colors.titleText,
-            }}
-          >
-            {amount} {selectedToken?.symbol || ""}
-          </Text>
-          <Text
-            style={{
-              fontFamily: "Manrope-Regular",
-              fontSize: 12,
-              color: colors.bodyText,
-              textAlign: "center",
-            }}
-          >
-            {usdValue}
-          </Text>
+      <View style={styles.amountDisplay}>
+        <Text style={styles.confirmTitle}>Confirm</Text>
+        <View style={styles.amountWrapper}>
+          <Text style={styles.amountText}>{amount} {selectedToken?.symbol || ""}</Text>
+          <Text style={styles.usdText}>{usdValue}</Text>
         </View>
       </View>
 
       {/* Transaction Details */}
-      <View
-        style={{
-          backgroundColor: colors.bgSemi,
-          borderRadius: 16,
-          paddingHorizontal: 17,
-          paddingVertical: 10,
-          flexDirection: "column",
-          gap: 12,
-        }}
-      >
+      <View style={styles.detailsCard}>
         {/* From */}
-        <View
-          style={{
-            flexDirection: "column",
-            gap: 3,
-          }}
-        >
-          <Text
-            style={{
-              fontFamily: "Manrope-Regular",
-              fontSize: 12,
-              color: colors.bodyText,
-            }}
-          >
-            From
-          </Text>
-          <Text
-            style={{
-              fontFamily: "Manrope-Medium",
-              fontSize: 16,
-              color: colors.bodyText,
-            }}
-          >
-            {truncateAddress(WALLET_ADDRESS)}
-          </Text>
+        <View style={styles.detailItem}>
+          <Text style={styles.detailLabel}>From</Text>
+          <Text style={styles.detailValue}>{truncateAddress(WALLET_ADDRESS)}</Text>
         </View>
 
         {/* To and Network */}
-        <View
-          style={{
-            flexDirection: "row",
-            alignItems: "flex-start",
-            gap: 10,
-          }}
-        >
-          <View
-            style={{
-              flex: 1,
-              flexDirection: "column",
-              gap: 3,
-            }}
-          >
-            <Text
-              style={{
-                fontFamily: "Manrope-Regular",
-                fontSize: 12,
-                color: colors.bodyText,
-              }}
-            >
-              To
-            </Text>
-            <Text
-              style={{
-                fontFamily: "Manrope-Medium",
-                fontSize: 14,
-                color: colors.bodyText,
-              }}
-            >
-              {truncateAddress(recipientAddress)}
-            </Text>
+        <View style={styles.row}>
+          <View style={[styles.detailItem, { flex: 1 }]}>
+            <Text style={styles.detailLabel}>To</Text>
+            <Text style={styles.detailValueSmall}>{truncateAddress(recipientAddress)}</Text>
           </View>
-          <View
-            style={{
-              // flex:1,
-              flexDirection: "column",
-              // justifyContent: "flex-end",
-              // alignItems: "flex-end",              
-              // marginLeft: 'auto',
-              gap: 3,
-            }}
-          >
-            <Text
-              style={{
-                fontFamily: "Manrope-Regular",
-                fontSize: 12,
-                color: colors.bodyText,
-              }}
-            >
-              Networkkkkkkkkkkkkkkkkkk
-            </Text>
-            <Text
-              style={{
-                fontFamily: "Manrope-Medium",
-                fontSize: 16,
-                color: colors.bodyText,
-              }}
-            >
-              {selectedChain?.name || "N/A"}
-            </Text>
+          <View style={styles.detailItem}>
+            <Text style={styles.detailLabel}>Network</Text>
+            <Text style={styles.detailValue}>{selectedChain?.name || "N/A"}</Text>
           </View>
         </View>
       </View>
 
       {/* Network Fee */}
-      <View
-        style={{
-          backgroundColor: colors.bgSemi,
-          borderRadius: 16,
-          paddingHorizontal: 20,
-          paddingVertical: 11,
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-        }}
-      >
-        <View
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 4,
-          }}
-        >
-          <Text
-            style={{
-              fontFamily: "Manrope-Regular",
-              fontSize: 12,
-              color: colors.bodyText,
-            }}
-          >
-            Network Fee
-          </Text>
-          <View
-            style={{
-              width: 18,
-              height: 18,
-            }}
-          >
-            <Image
-              source={AlertIcon}
-              className="w-full h-full"
-              contentFit="contain"
-            />
+      <View style={styles.feeCard}>
+        <View style={styles.feeLabelWrapper}>
+          <Text style={styles.detailLabel}>Network Fee</Text>
+          <View style={styles.infoIcon}>
+            <Image source={AlertIcon} style={styles.fullSize} contentFit="contain" />
           </View>
         </View>
-        <View
-          style={{
-            flexDirection: "column",
-            alignItems: "flex-end",
-            gap: 4,
-          }}
-        >
-          <Text
-            style={{
-              fontFamily: "Manrope-Medium",
-              fontSize: 14,
-              color: colors.bodyText,
-            }}
-          >
-            {networkFeeUSD}
-          </Text>
-          <Text
-            style={{
-              fontFamily: "Manrope-Regular",
-              fontSize: 12,
-              color: colors.bodyText,
-              textAlign: "right",
-            }}
-          >
-            {networkFeeUSD}
-          </Text>
+        <View style={styles.feeValueWrapper}>
+          <Text style={styles.detailValueSmall}>{networkFeeUSD}</Text>
+          <Text style={styles.feeDetail}>{networkFeeUSD}</Text>
         </View>
       </View>
 
-      {/* Confirm Button - Consistent positioning with white space below */}
-      {/* <View
-        style={{
-          marginTop: 48,
-          marginBottom: 32,
-          width: "100%",
-        }}
-      >
-        <TouchableOpacity
-          activeOpacity={0.8}
-          onPress={onConfirm}
-          style={{
-            width: "100%",
-            height: 54,
-            backgroundColor: colors.primaryCTA,
-            borderRadius: 100,
-            alignItems: "center",
-            justifyContent: "center",
-          }}
+      {/* Risk Assessment Indicator */}
+      {(isFlaggedAddressEnabled || isTransactionRiskEnabled) && (
+        <View
+          style={[
+            styles.riskCard,
+            {
+              backgroundColor: isScanning ? colors.bgSemi : (riskResult?.isSafe ? 'rgba(74, 222, 128, 0.05)' : 'rgba(239, 68, 68, 0.05)'),
+              borderColor: isScanning ? 'rgba(255, 255, 255, 0.1)' : (riskResult?.isSafe ? 'rgba(74, 222, 128, 0.2)' : 'rgba(239, 68, 68, 0.2)'),
+            }
+          ]}
         >
-          <Text
-            style={{
-              fontFamily: "Manrope-Medium",
-              fontSize: 16,
-              color: colors.bg,
-            }}
-          >
-            Confirm
-          </Text>
-        </TouchableOpacity>
-      </View> */}
+          <View style={styles.riskHeader}>
+            <View style={styles.riskIcon}>
+              <Image
+                source={riskResult?.isSafe ? CheckmarkIcon : AlertIcon}
+                style={styles.fullSize}
+                contentFit="contain"
+                tintColor={isScanning ? '#FFFFFF' : (riskResult?.isSafe ? '#4ADE80' : '#EF4444')}
+              />
+            </View>
+            <Text style={[
+              styles.riskTitle,
+              { color: isScanning ? '#FFFFFF' : (riskResult?.isSafe ? '#4ADE80' : '#EF4444') }
+            ]}>
+              {isScanning ? 'Scanning for security risks...' : (riskResult?.isSafe ? 'No security risks detected' : 'Security Warning detected')}
+            </Text>
+          </View>
+
+          {!isScanning && riskResult && riskResult.warnings.length > 0 && (
+            <View style={styles.warningsList}>
+              {riskResult.warnings.map((warning, idx) => (
+                <Text key={idx} style={styles.warningText}>
+                  • {warning}
+                </Text>
+              ))}
+            </View>
+          )}
+        </View>
+      )}
     </View>
   );
 };
 
-
+const styles = StyleSheet.create({
+  container: {
+    width: "100%",
+    flexDirection: "column",
+    gap: 12,
+    paddingTop: 20,
+  },
+  amountDisplay: {
+    flexDirection: "column",
+    alignItems: "center",
+    gap: 30,
+    marginBottom: 10,
+  },
+  confirmTitle: {
+    fontFamily: "Manrope-SemiBold",
+    fontSize: 20,
+    lineHeight: 20,
+    color: colors.titleText,
+    textTransform: "capitalize",
+  },
+  amountWrapper: {
+    flexDirection: "column",
+    alignItems: "center",
+  },
+  amountText: {
+    fontFamily: "Manrope-Medium",
+    fontSize: 36,
+    color: colors.titleText,
+  },
+  usdText: {
+    fontFamily: "Manrope-Regular",
+    fontSize: 12,
+    color: colors.bodyText,
+    textAlign: "center",
+  },
+  detailsCard: {
+    backgroundColor: colors.bgSemi,
+    borderRadius: 16,
+    paddingHorizontal: 17,
+    paddingVertical: 10,
+    flexDirection: "column",
+    gap: 12,
+  },
+  detailItem: {
+    flexDirection: "column",
+    gap: 3,
+  },
+  detailLabel: {
+    fontFamily: "Manrope-Regular",
+    fontSize: 12,
+    color: colors.bodyText,
+  },
+  detailValue: {
+    fontFamily: "Manrope-Medium",
+    fontSize: 16,
+    color: colors.bodyText,
+  },
+  detailValueSmall: {
+    fontFamily: "Manrope-Medium",
+    fontSize: 14,
+    color: colors.bodyText,
+  },
+  row: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+  },
+  feeCard: {
+    backgroundColor: colors.bgSemi,
+    borderRadius: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 11,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  feeLabelWrapper: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  infoIcon: {
+    width: 18,
+    height: 18,
+  },
+  feeValueWrapper: {
+    flexDirection: "column",
+    alignItems: "flex-end",
+    gap: 4,
+  },
+  feeDetail: {
+    fontFamily: "Manrope-Regular",
+    fontSize: 12,
+    color: colors.bodyText,
+    textAlign: "right",
+  },
+  riskCard: {
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    flexDirection: 'column',
+    gap: 8,
+  },
+  riskHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  riskIcon: {
+    width: 16,
+    height: 16,
+  },
+  riskTitle: {
+    fontFamily: 'Manrope-SemiBold',
+    fontSize: 14,
+  },
+  warningsList: {
+    gap: 4,
+  },
+  warningText: {
+    fontFamily: 'Manrope-Regular',
+    fontSize: 12,
+    color: '#EF4444',
+  },
+  fullSize: {
+    width: '100%',
+    height: '100%',
+  }
+});

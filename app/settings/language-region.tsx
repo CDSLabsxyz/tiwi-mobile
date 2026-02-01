@@ -1,21 +1,30 @@
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { SettingsHeader } from '@/components/ui/settings-header';
+/**
+ * Language & Region Settings Screen
+ * 
+ * Language and region settings page matching Figma design exactly (node-id: 3279-121043)
+ * Optimized with scrollable FlatList bottom sheets and improved animations.
+ */
+
+import { StatusBar } from '@/components/ui/StatusBar';
 import { colors } from '@/constants/colors';
-import * as Haptics from 'expo-haptics';
+import { useTranslation } from '@/hooks/useLocalization';
+import { useLocaleStore } from '@/store/localeStore';
 import { Image } from 'expo-image';
-import React, { useState } from 'react';
+import { useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
+    BackHandler,
     Dimensions,
+    FlatList,
     Modal,
     Pressable,
-    ScrollView,
     StyleSheet,
+    Text,
     TouchableOpacity,
-    View,
+    View
 } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
+    Easing,
     runOnJS,
     useAnimatedStyle,
     useSharedValue,
@@ -24,16 +33,10 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const ArrowDownIcon = require('../../assets/home/arrow-down-01.svg');
+const ChevronLeftIcon = require('@/assets/swap/arrow-left-02.svg');
+const ArrowDownIcon = require('@/assets/home/arrow-down-01.svg');
 
-type Language = 'English' | 'French' | 'Spanish' | 'Chinese' | 'Arabic' | 'Portuguese';
-type Currency = 'USD' | 'EUR' | 'NGN' | 'GBP' | 'CNY' | 'JPY';
-type RegionalFormat = 'MM/DD/YY' | 'DD/MM/YY' | 'YYYY-MM-DD';
-
-const LANGUAGES: Language[] = ['English', 'French', 'Spanish', 'Chinese', 'Arabic', 'Portuguese'];
-const CURRENCIES: Currency[] = ['USD', 'EUR', 'NGN', 'GBP', 'CNY', 'JPY'];
-const REGIONAL_FORMATS: RegionalFormat[] = ['MM/DD/YY', 'DD/MM/YY', 'YYYY-MM-DD'];
-
+// Radio Button Component
 interface RadioButtonProps {
     selected: boolean;
     onPress: () => void;
@@ -47,7 +50,7 @@ const RadioButton: React.FC<RadioButtonProps> = ({ selected, onPress, label }) =
             onPress={onPress}
             style={styles.radioButton}
         >
-            <View style={styles.radioOuter}>
+            <View style={styles.radioIndicatorWrapper}>
                 {selected ? (
                     <View style={styles.radioSelectedOuter}>
                         <View style={styles.radioSelectedInner} />
@@ -56,61 +59,62 @@ const RadioButton: React.FC<RadioButtonProps> = ({ selected, onPress, label }) =
                     <View style={styles.radioUnselected} />
                 )}
             </View>
-            <ThemedText style={styles.radioLabel}>{label}</ThemedText>
+            <Text style={styles.radioLabel}>{label}</Text>
         </TouchableOpacity>
     );
 };
 
-export default function LanguageRegionScreen() {
+// Bottom Sheet Component
+interface BottomSheetProps {
+    visible: boolean;
+    onClose: () => void;
+    options: { label: string; value: string }[];
+    selectedOption: string;
+    onSelect: (option: string) => void;
+    title: string;
+}
+
+const BottomSheet: React.FC<BottomSheetProps> = ({
+    visible,
+    onClose,
+    options,
+    selectedOption,
+    onSelect,
+    title
+}) => {
     const { bottom } = useSafeAreaInsets();
-    const [selectedLanguage, setSelectedLanguage] = useState<Language>('English');
-    const [selectedCurrency, setSelectedCurrency] = useState<Currency>('USD');
-    const [selectedFormat, setSelectedFormat] = useState<RegionalFormat>('MM/DD/YY');
-
-    const [activeModal, setActiveModal] = useState<'language' | 'currency' | 'format' | null>(null);
-
-    const handleSelect = (option: string) => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        if (activeModal === 'language') setSelectedLanguage(option as Language);
-        else if (activeModal === 'currency') setSelectedCurrency(option as Currency);
-        else if (activeModal === 'format') setSelectedFormat(option as RegionalFormat);
-
-        closeSheet();
-    };
-
     const { height: screenHeight } = Dimensions.get('window');
-    const sheetHeight = screenHeight * 0.5;
-    const translateY = useSharedValue(sheetHeight);
+
+    // Height logic: Max 70% of screen, min 300
+    const sheetHeight = Math.min(screenHeight * 0.7, Math.max(300, options.length * 60 + 100));
+
+    const translateY = useSharedValue(screenHeight);
     const backdropOpacity = useSharedValue(0);
 
-    const openSheet = (type: 'language' | 'currency' | 'format') => {
-        setActiveModal(type);
-        translateY.value = withSpring(0, { damping: 20, stiffness: 90 });
-        backdropOpacity.value = withTiming(1, { duration: 250 });
-    };
+    const [isRendering, setIsRendering] = useState(false);
 
-    const closeSheet = () => {
-        translateY.value = withTiming(sheetHeight, { duration: 250 }, (finished) => {
-            if (finished) runOnJS(setActiveModal)(null);
-        });
-        backdropOpacity.value = withTiming(0, { duration: 250 });
-    };
-
-    const context = useSharedValue({ y: 0 });
-    const panGesture = Gesture.Pan()
-        .onStart(() => {
-            context.value = { y: translateY.value };
-        })
-        .onUpdate((event) => {
-            translateY.value = Math.max(0, context.value.y + event.translationY);
-        })
-        .onEnd((event) => {
-            if (event.translationY > 80) {
-                runOnJS(closeSheet)();
-            } else {
-                translateY.value = withSpring(0, { damping: 20, stiffness: 90 });
-            }
-        });
+    useEffect(() => {
+        if (visible) {
+            setIsRendering(true);
+            // Slightly delayed animation to ensure Modal is mounted
+            translateY.value = withSpring(0, {
+                damping: 20,
+                stiffness: 90,
+                mass: 0.8
+            });
+            backdropOpacity.value = withTiming(1, { duration: 300 });
+        } else {
+            translateY.value = withTiming(screenHeight, {
+                duration: 250,
+                easing: Easing.bezier(0.25, 0.1, 0.25, 1)
+            }, (finished) => {
+                if (finished) {
+                    runOnJS(setIsRendering)(false);
+                }
+            });
+            backdropOpacity.value = withTiming(0, { duration: 250 });
+        }
+    }, [visible, screenHeight]);
 
     const sheetStyle = useAnimatedStyle(() => ({
         transform: [{ translateY: translateY.value }],
@@ -120,219 +124,266 @@ export default function LanguageRegionScreen() {
         opacity: backdropOpacity.value,
     }));
 
-    const getOptions = () => {
-        if (activeModal === 'language') return LANGUAGES;
-        if (activeModal === 'currency') return CURRENCIES;
-        if (activeModal === 'format') return REGIONAL_FORMATS;
-        return [];
+    const handleSelect = (option: string) => {
+        onSelect(option);
+        onClose();
     };
 
-    const getActiveOption = () => {
-        if (activeModal === 'language') return selectedLanguage;
-        if (activeModal === 'currency') return selectedCurrency;
-        if (activeModal === 'format') return selectedFormat;
-        return '';
-    };
+    if (!visible && !isRendering) return null;
 
     return (
-        <ThemedView style={styles.container}>
-            <SettingsHeader title="Language & Region" />
+        <Modal
+            visible={visible || isRendering}
+            transparent
+            animationType="none"
+            onRequestClose={onClose}
+            statusBarTranslucent
+        >
+            <View style={{ flex: 1 }}>
+                <Pressable style={styles.backdropPressable} onPress={onClose}>
+                    <Animated.View style={[styles.backdrop, backdropStyle]} />
+                </Pressable>
 
-            <ScrollView
-                style={styles.scrollView}
-                contentContainerStyle={[
-                    styles.scrollContent,
-                    { paddingBottom: (bottom || 16) + 24 }
-                ]}
-                showsVerticalScrollIndicator={false}
-                alwaysBounceVertical={true}
-            >
+                <Animated.View
+                    style={[
+                        styles.sheet,
+                        { paddingBottom: (bottom || 24) + 12, height: sheetHeight },
+                        sheetStyle,
+                    ]}
+                >
+                    <View style={styles.handle} />
+                    <Text style={styles.sheetTitle}>{title}</Text>
+
+                    <FlatList
+                        data={options}
+                        keyExtractor={(item) => item.value}
+                        showsVerticalScrollIndicator={false}
+                        contentContainerStyle={styles.flatListContent}
+                        renderItem={({ item }) => (
+                            <RadioButton
+                                selected={selectedOption === item.value}
+                                onPress={() => handleSelect(item.value)}
+                                label={item.label}
+                            />
+                        )}
+                    />
+                </Animated.View>
+            </View>
+        </Modal>
+    );
+};
+
+export default function LanguageRegionScreen() {
+    const { top } = useSafeAreaInsets();
+    const router = useRouter();
+    const { t } = useTranslation();
+
+    const {
+        language, setLanguage, languages,
+        currency, setCurrency, currencies,
+        dateFormat, setDateFormat
+    } = useLocaleStore();
+
+    const [modalConfig, setModalConfig] = useState<{
+        visible: boolean;
+        type: 'language' | 'currency' | 'format';
+        title: string;
+        options: { label: string; value: string }[];
+        selectedKey: string;
+        setter: (val: any) => void;
+    }>({
+        visible: false,
+        type: 'language',
+        title: '',
+        options: [],
+        selectedKey: '',
+        setter: () => { }
+    });
+
+    const handleBackPress = useCallback(() => {
+        if (modalConfig.visible) {
+            setModalConfig(prev => ({ ...prev, visible: false }));
+            return true;
+        }
+        if (router.canGoBack()) {
+            router.back();
+        } else {
+            router.replace('/(tabs)/settings' as any);
+        }
+        return true;
+    }, [modalConfig.visible]);
+
+    useEffect(() => {
+        const backHandler = BackHandler.addEventListener('hardwareBackPress', handleBackPress);
+        return () => backHandler.remove();
+    }, [handleBackPress]);
+
+    const openModal = (type: 'language' | 'currency' | 'format') => {
+        if (type === 'language') {
+            setModalConfig({
+                visible: true,
+                type: 'language',
+                title: t('locale.language'),
+                options: languages.map(l => ({ label: l.nativeName, value: l.code })),
+                selectedKey: language,
+                setter: setLanguage
+            });
+        } else if (type === 'currency') {
+            setModalConfig({
+                visible: true,
+                type: 'currency',
+                title: t('locale.currency'),
+                options: currencies.map(c => ({ label: `${c.code} (${c.symbol}) - ${c.name}`, value: c.code })),
+                selectedKey: currency,
+                setter: setCurrency
+            });
+        } else if (type === 'format') {
+            setModalConfig({
+                visible: true,
+                type: 'format',
+                title: t('locale.format'),
+                options: [
+                    { label: 'MM/DD/YYYY', value: 'MM/DD/YYYY' },
+                    { label: 'DD/MM/YYYY', value: 'DD/MM/YYYY' },
+                    { label: 'YYYY-MM-DD', value: 'YYYY-MM-DD' }
+                ],
+                selectedKey: dateFormat,
+                setter: setDateFormat
+            });
+        }
+    };
+
+    const currentLanguageName = languages.find(l => l.code === language)?.nativeName || 'English';
+
+    return (
+        <View style={[styles.container, { backgroundColor: colors.bg }]}>
+            <StatusBar />
+
+            {/* Header */}
+            <View style={[styles.header, { paddingTop: top || 0 }]}>
+                <View style={styles.headerContent}>
+                    <TouchableOpacity
+                        activeOpacity={0.8}
+                        onPress={handleBackPress}
+                        style={styles.backButton}
+                    >
+                        <Image
+                            source={ChevronLeftIcon}
+                            style={styles.fullImage}
+                            contentFit="contain"
+                        />
+                    </TouchableOpacity>
+
+                    <Text style={styles.headerTitle}>
+                        {t('locale.title')}
+                    </Text>
+                </View>
+            </View>
+
+            {/* Content */}
+            <View style={styles.content}>
                 <View style={styles.formContainer}>
-                    <View style={styles.inputGroup}>
-                        <ThemedText style={styles.inputLabel}>Application Language</ThemedText>
+                    {/* Application Language */}
+                    <View style={styles.fieldWrapper}>
+                        <Text style={styles.fieldLabel}>{t('locale.language')}</Text>
                         <TouchableOpacity
                             activeOpacity={0.8}
-                            onPress={() => openSheet('language')}
-                            style={styles.selector}
+                            onPress={() => openModal('language')}
+                            style={styles.selectTrigger}
                         >
-                            <ThemedText style={styles.selectorText}>{selectedLanguage}</ThemedText>
-                            <View style={styles.icon24}>
-                                <Image source={ArrowDownIcon} style={styles.fullSize} contentFit="contain" />
+                            <Text style={styles.selectValue}>{currentLanguageName}</Text>
+                            <View style={styles.arrowWrapper}>
+                                <Image source={ArrowDownIcon} style={styles.fullImage} contentFit="contain" />
                             </View>
                         </TouchableOpacity>
                     </View>
 
-                    <View style={styles.inputGroup}>
-                        <ThemedText style={styles.inputLabel}>Currency Display</ThemedText>
+                    {/* Currency Display */}
+                    <View style={styles.fieldWrapper}>
+                        <Text style={styles.fieldLabel}>{t('locale.currency')}</Text>
                         <TouchableOpacity
                             activeOpacity={0.8}
-                            onPress={() => openSheet('currency')}
-                            style={styles.selector}
+                            onPress={() => openModal('currency')}
+                            style={styles.selectTrigger}
                         >
-                            <ThemedText style={styles.selectorText}>{selectedCurrency}</ThemedText>
-                            <View style={styles.icon24}>
-                                <Image source={ArrowDownIcon} style={styles.fullSize} contentFit="contain" />
+                            <Text style={styles.selectValue}>{currency}</Text>
+                            <View style={styles.arrowWrapper}>
+                                <Image source={ArrowDownIcon} style={styles.fullImage} contentFit="contain" />
                             </View>
                         </TouchableOpacity>
                     </View>
 
-                    <View style={styles.inputGroup}>
-                        <ThemedText style={styles.inputLabel}>Regional Format</ThemedText>
+                    {/* Regional Format */}
+                    <View style={styles.fieldWrapper}>
+                        <Text style={styles.fieldLabel}>{t('locale.format')}</Text>
                         <TouchableOpacity
                             activeOpacity={0.8}
-                            onPress={() => openSheet('format')}
-                            style={styles.selector}
+                            onPress={() => openModal('format')}
+                            style={styles.selectTrigger}
                         >
-                            <ThemedText style={styles.selectorText}>{selectedFormat}</ThemedText>
-                            <View style={styles.icon24}>
-                                <Image source={ArrowDownIcon} style={styles.fullSize} contentFit="contain" />
+                            <Text style={styles.selectValue}>{dateFormat}</Text>
+                            <View style={styles.arrowWrapper}>
+                                <Image source={ArrowDownIcon} style={styles.fullImage} contentFit="contain" />
                             </View>
                         </TouchableOpacity>
                     </View>
                 </View>
-            </ScrollView>
+            </View>
 
-            <Modal
-                visible={!!activeModal}
-                transparent
-                animationType="none"
-                onRequestClose={closeSheet}
-                statusBarTranslucent
-            >
-                <View style={styles.modalRoot}>
-                    <Pressable style={StyleSheet.absoluteFill} onPress={closeSheet}>
-                        <Animated.View style={[styles.backdrop, backdropStyle]} />
-                    </Pressable>
-
-                    <GestureDetector gesture={panGesture}>
-                        <Animated.View
-                            style={[
-                                styles.sheet,
-                                { paddingBottom: (bottom || 24) + 24 },
-                                sheetStyle,
-                            ]}
-                        >
-                            <Pressable onPress={(e) => e.stopPropagation()} style={{ flex: 1 }}>
-                                <View style={styles.sheetContent}>
-                                    {getOptions().map((option) => (
-                                        <RadioButton
-                                            key={option}
-                                            selected={getActiveOption() === option}
-                                            onPress={() => handleSelect(option)}
-                                            label={option}
-                                        />
-                                    ))}
-                                </View>
-                            </Pressable>
-                        </Animated.View>
-                    </GestureDetector>
-                </View>
-            </Modal>
-        </ThemedView>
+            <BottomSheet
+                visible={modalConfig.visible}
+                onClose={() => setModalConfig(prev => ({ ...prev, visible: false }))}
+                title={modalConfig.title}
+                options={modalConfig.options}
+                selectedOption={modalConfig.selectedKey}
+                onSelect={(val) => modalConfig.setter(val)}
+            />
+        </View>
     );
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-    },
-    scrollView: {
-        flex: 1,
-    },
-    scrollContent: {
-        flexGrow: 1,
-        paddingHorizontal: 20,
-        paddingTop: 24,
-        alignItems: 'center',
-    },
-    formContainer: {
-        width: '100%',
-        maxWidth: 358,
-        gap: 20,
-    },
-    inputGroup: {
-        gap: 8,
-    },
-    inputLabel: {
-        fontSize: 16,
-        opacity: 0.8,
-    },
-    selector: {
+    container: { flex: 1 },
+    header: { paddingHorizontal: 21 },
+    headerContent: { flexDirection: 'row', alignItems: 'center', gap: 15, paddingVertical: 10 },
+    backButton: { width: 24, height: 24 },
+    fullImage: { width: '100%', height: '100%' },
+    headerTitle: { fontFamily: 'Manrope-Medium', fontSize: 20, color: colors.titleText, flex: 1, textAlign: 'center' },
+    content: { flex: 1, paddingHorizontal: 20, paddingTop: 40, alignItems: 'center' },
+    formContainer: { width: '100%', maxWidth: 358, gap: 24 },
+    fieldWrapper: { gap: 8 },
+    fieldLabel: { fontFamily: 'Manrope-Regular', fontSize: 16, color: colors.titleText },
+    selectTrigger: {
         height: 56,
-        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        backgroundColor: colors.bgCards,
         borderRadius: 16,
-        paddingHorizontal: 16,
+        paddingHorizontal: 17,
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'space-between',
+        justifyContent: 'space-between'
     },
-    selectorText: {
-        fontSize: 16,
-        color: colors.mutedText,
-    },
-    icon24: {
-        width: 24,
-        height: 24,
-    },
-    fullSize: {
-        width: '100%',
-        height: '100%',
-    },
-    modalRoot: {
-        flex: 1,
-    },
-    backdrop: {
-        flex: 1,
-        backgroundColor: 'rgba(1,5,1,0.7)',
-    },
+    selectValue: { fontFamily: 'Manrope-Medium', fontSize: 16, color: colors.mutedText, flex: 1 },
+    arrowWrapper: { width: 24, height: 24 },
+    radioButton: { height: 56, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 17 },
+    radioIndicatorWrapper: { width: 24, height: 24, marginRight: 12, alignItems: 'center', justifyContent: 'center' },
+    radioSelectedOuter: { width: 24, height: 24, borderRadius: 12, borderWidth: 1.5, borderColor: colors.primaryCTA, alignItems: 'center', justifyContent: 'center' },
+    radioSelectedInner: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.primaryCTA },
+    radioUnselected: { width: 24, height: 24, borderRadius: 12, borderWidth: 1.5, borderColor: '#444' },
+    radioLabel: { fontFamily: 'Manrope-Medium', fontSize: 16, color: colors.titleText, flex: 1 },
+    backdropPressable: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+    backdrop: { flex: 1, backgroundColor: 'rgba(1,5,1,0.85)' },
     sheet: {
         position: 'absolute',
         left: 0,
         right: 0,
         bottom: 0,
-        backgroundColor: '#1b1b1b',
-        borderTopLeftRadius: 40,
-        borderTopRightRadius: 40,
-        paddingTop: 32,
-        paddingHorizontal: 20,
-        minHeight: 300,
+        backgroundColor: '#1C1C1E',
+        borderTopLeftRadius: 32,
+        borderTopRightRadius: 32,
+        paddingTop: 12,
+        paddingHorizontal: 8
     },
-    sheetContent: {
-        gap: 4,
-    },
-    radioButton: {
-        height: 56,
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12,
-    },
-    radioOuter: {
-        width: 24,
-        height: 24,
-    },
-    radioSelectedOuter: {
-        width: 24,
-        height: 24,
-        borderRadius: 12,
-        borderWidth: 1.5,
-        borderColor: '#FFFFFF',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    radioSelectedInner: {
-        width: 10,
-        height: 10,
-        borderRadius: 5,
-        backgroundColor: '#FFFFFF',
-    },
-    radioUnselected: {
-        width: 24,
-        height: 24,
-        borderRadius: 12,
-        borderWidth: 1.5,
-        borderColor: '#b5b5b5',
-    },
-    radioLabel: {
-        fontSize: 16,
-    },
+    handle: { width: 40, height: 4, backgroundColor: '#444', borderRadius: 2, alignSelf: 'center', marginBottom: 16 },
+    sheetTitle: { fontFamily: 'Manrope-SemiBold', fontSize: 18, color: colors.titleText, textAlign: 'center', marginBottom: 20 },
+    flatListContent: { paddingBottom: 20 }
 });

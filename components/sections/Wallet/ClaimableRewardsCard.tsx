@@ -8,6 +8,9 @@ import { Image } from 'expo-image';
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
+import { TokenPrice } from '@/components/ui/TokenPrice';
+import { useTranslation } from '@/hooks/useLocalization';
+
 const StarIcon = require('@/assets/home/star-18.svg');
 const ArrowDownIcon = require('@/assets/home/arrow-down-01.svg');
 
@@ -23,6 +26,8 @@ export const ClaimableRewardsCard: React.FC<ClaimableRewardsCardProps> = ({
     amount,
     onPress,
 }) => {
+    const { t } = useTranslation();
+
     return (
         <TouchableOpacity
             activeOpacity={0.8}
@@ -42,8 +47,8 @@ export const ClaimableRewardsCard: React.FC<ClaimableRewardsCardProps> = ({
                     />
                 </View>
                 <Text style={styles.labelText}>
-                    Claimable Rewards:{' '}
-                    <Text style={styles.amountText}>{amount}</Text>
+                    {t('home.claimable_rewards')}:{' '}
+                    <TokenPrice amount={amount} style={styles.amountText} />
                 </Text>
             </View>
 

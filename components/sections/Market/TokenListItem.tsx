@@ -1,9 +1,12 @@
 import { colors } from '@/constants/colors';
 import { MarketTokenPair } from '@/services/apiClient';
-import { formatNumber, formatPercentageChange, formatUSDPrice } from '@/utils/formatting';
+import { formatNumber, formatPercentageChange } from '@/utils/formatting';
 import { Image } from 'expo-image';
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+
+import { TokenPrice } from '@/components/ui/TokenPrice';
+import { useTranslation } from '@/hooks/useLocalization';
 
 interface TokenListItemProps {
     token: MarketTokenPair;
@@ -11,6 +14,7 @@ interface TokenListItemProps {
 }
 
 export const TokenListItem: React.FC<TokenListItemProps> = ({ token, onPress }) => {
+    const { t } = useTranslation();
     const change = formatPercentageChange(token.priceChange24h || 0);
     const priceChangeColor = change.isPositive ? colors.success : colors.error;
 
@@ -46,13 +50,15 @@ export const TokenListItem: React.FC<TokenListItemProps> = ({ token, onPress }) 
                         )}
                     </View>
                     {/* Volume */}
-                    <Text style={styles.tokenVolume} numberOfLines={1}>Vol {formatNumber(token.volume24h || 0)}</Text>
+                    <Text style={styles.tokenVolume} numberOfLines={1}>
+                        {t('home.vol')} {formatNumber(token.volume24h || 0)}
+                    </Text>
                 </View>
             </View>
 
             {/* Right Side - Price and Change */}
             <View style={styles.tokenInfoRight}>
-                <Text style={styles.tokenPrice}>{formatUSDPrice(token.priceUSD)}</Text>
+                <TokenPrice amount={token.priceUSD} style={styles.tokenPrice} />
                 <Text style={[styles.tokenChange, { color: priceChangeColor }]}>
                     {change.formatted}
                 </Text>

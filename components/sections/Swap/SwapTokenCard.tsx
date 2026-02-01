@@ -1,4 +1,5 @@
 import { colors } from '@/constants/colors';
+import { getColorFromSeed } from '@/utils/formatting';
 import { Image } from 'expo-image';
 import React, { useMemo } from 'react';
 import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
@@ -66,7 +67,7 @@ export const SwapTokenCard: React.FC<SwapTokenCardProps> = ({
 
     const displayTokenSymbol = useMemo(() => tokenSymbol ?? (isFrom ? 'TWC' : ''), [tokenSymbol, isFrom]);
     const displayTokenChain = useMemo(() => tokenChain ?? (isFrom ? 'Ethereum' : ''), [tokenChain, isFrom]);
-    const displayTokenIcon = useMemo(() => tokenIcon ?? TiwicatToken, [tokenIcon]);
+    const displayTokenIcon = useMemo(() => tokenIcon, [tokenIcon]);
     const displayChainBadge = useMemo(() => chainBadgeIcon ?? ChainBadge, [chainBadgeIcon]);
 
     return (
@@ -98,7 +99,13 @@ export const SwapTokenCard: React.FC<SwapTokenCardProps> = ({
                             style={styles.tokenSelectorPill}
                         >
                             <View style={styles.tokenIconWrapper}>
-                                <Image source={displayTokenIcon} style={styles.tokenIcon} contentFit="cover" />
+                                {displayTokenIcon ? (
+                                    <Image source={displayTokenIcon} style={styles.tokenIcon} contentFit="cover" />
+                                ) : (
+                                    <View style={[styles.tokenIcon, styles.fallbackCircle, { backgroundColor: getColorFromSeed(displayTokenSymbol) }]}>
+                                        <Text style={styles.fallbackText}>{displayTokenSymbol.charAt(0).toUpperCase()}</Text>
+                                    </View>
+                                )}
                                 <View style={styles.chainBadgeWrapper}>
                                     <Image source={displayChainBadge} style={styles.chainBadge} contentFit="cover" />
                                 </View>
@@ -228,6 +235,15 @@ const styles = StyleSheet.create({
         width: 32,
         height: 32,
         borderRadius: 999,
+    },
+    fallbackCircle: {
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    fallbackText: {
+        fontFamily: 'Manrope-Bold',
+        fontSize: 14,
+        color: '#FFFFFF',
     },
     chainBadgeWrapper: {
         position: 'absolute',

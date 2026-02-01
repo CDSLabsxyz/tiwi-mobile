@@ -1,4 +1,5 @@
 import { colors } from '@/constants/colors';
+import { useTranslation } from '@/hooks/useLocalization';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import React from 'react';
@@ -11,49 +12,25 @@ interface QuickAction {
     route: string;
 }
 
-const actions: QuickAction[] = [
-    {
-        id: 'swap',
-        label: 'Swap',
-        icon: require('../../../assets/home/exchange-01.svg'),
-        route: '/swap',
-    },
-    {
-        id: 'stake',
-        label: 'Stake',
-        icon: require('../../../assets/home/stake-1.svg'),
-        route: '/earn',
-    },
-    {
-        id: 'pool',
-        label: 'Pool',
-        icon: require('../../../assets/home/coins-02-1.svg'),
-        route: '/pool',
-    },
-    {
-        id: 'history',
-        label: 'History',
-        icon: require('../../../assets/home/transaction-history.svg'),
-        route: '/history',
-    },
-    {
-        id: 'more',
-        label: 'More',
-        icon: require('../../../assets/home/dashboard-square-edit.svg'),
-        route: '/more',
-    },
-];
-
 /**
  * Quick Actions Section
  * Matches Figma design exactly
  */
 export const QuickActionsSection: React.FC = () => {
     const router = useRouter();
+    const { t } = useTranslation();
+
+    const localizedActions = [
+        { id: 'swap', label: t('nav.swap'), icon: require('../../../assets/home/exchange-01.svg'), route: '/swap' },
+        { id: 'stake', label: t('home.stake'), icon: require('../../../assets/home/stake-1.svg'), route: '/earn' },
+        { id: 'pool', label: 'Pool', icon: require('../../../assets/home/coins-02-1.svg'), route: '/pool' },
+        { id: 'history', label: 'History', icon: require('../../../assets/home/transaction-history.svg'), route: '/history' },
+        { id: 'more', label: 'More', icon: require('../../../assets/home/dashboard-square-edit.svg'), route: '/more' },
+    ];
 
     return (
         <View style={styles.container}>
-            {actions.map((action) => (
+            {localizedActions.map((action) => (
                 <TouchableOpacity
                     key={action.id}
                     onPress={() => router.push(action.route as any)}

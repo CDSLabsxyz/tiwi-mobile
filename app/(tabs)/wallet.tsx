@@ -10,6 +10,7 @@ import {
 } from '@/components/sections/Wallet';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { colors } from '@/constants/colors';
+import { useTranslation } from '@/hooks/useLocalization';
 import { useWalletBalances } from '@/hooks/useWalletBalances';
 import {
     fetchNFTs,
@@ -27,6 +28,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 export default function WalletScreen() {
     const { top, bottom } = useSafeAreaInsets();
     const router = useRouter();
+    const { t } = useTranslation();
     const params = useLocalSearchParams<{ tab?: string }>();
     const queryClient = useQueryClient();
 
@@ -145,7 +147,8 @@ export default function WalletScreen() {
             name: t.name,
             logo: t.logoURI || 'https://cryptologos.cc/logos/ethereum-eth-logo.png',
             balance: t.balanceFormatted,
-            usdValue: t.usdValue ? `$${parseFloat(t.usdValue).toFixed(2)}` : '$0.00',
+            priceUSD: t.priceUSD || '0',
+            usdValue: t.usdValue || '0',
             change24h: t.priceChange24h ? parseFloat(t.priceChange24h) : 0,
             chainId: t.chainId === 7565164 ? 'aegis' : (t.chainId === 56 ? 'apex' : 'ethereum'), // Map to local chain keys
         }));
@@ -211,7 +214,7 @@ export default function WalletScreen() {
                         <View style={styles.balanceActionsContainer}>
                             {/* Total Balance Card */}
                             <TotalBalanceCard
-                                totalBalance={`$${totalNetWorthUsd}`}
+                                totalBalance={totalNetWorthUsd}
                                 portfolioChange={{
                                     amount: "+$0.00",
                                     percent: "+0.00%",
@@ -233,7 +236,7 @@ export default function WalletScreen() {
 
                         {/* Claimable Rewards Card */}
                         <ClaimableRewardsCard
-                            amount="$0.00"
+                            amount="0.00"
                             onPress={handleRewardsPress}
                         />
                     </View>

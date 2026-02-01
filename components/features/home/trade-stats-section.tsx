@@ -1,5 +1,6 @@
 import { Skeleton } from '@/components/ui/skeleton';
 import { colors } from '@/constants/colors';
+import { useTranslation } from '@/hooks/useLocalization';
 import { Chain } from '@/services/apiClient';
 import { StatCard } from '@/types';
 import { Image } from 'expo-image';
@@ -96,6 +97,8 @@ export const TradeStatsSection: React.FC<TradeStatsSectionProps> = ({
     chains = [],
     isLoading = false,
 }) => {
+    const { t } = useTranslation();
+
     if (isLoading) {
         return (
             <View style={styles.container}>
@@ -122,7 +125,7 @@ export const TradeStatsSection: React.FC<TradeStatsSectionProps> = ({
 
     return (
         <View style={styles.container}>
-            <Text style={styles.title}>Trade Without Limits</Text>
+            <Text style={styles.title}>{t('home.trade_without_limits')}</Text>
 
             {/* First Row: 2 Cards */}
             <View style={styles.row}>

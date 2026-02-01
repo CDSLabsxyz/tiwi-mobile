@@ -4,6 +4,7 @@
  */
 
 import { colors } from '@/constants/colors';
+import { useTranslation } from '@/hooks/useLocalization';
 import { Image } from 'expo-image';
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -29,25 +30,27 @@ export const QuickActions: React.FC<QuickActionsProps> = ({
     onPayPress,
     onActivitiesPress,
 }) => {
+    const { t } = useTranslation();
+
     const actions = [
         {
             icon: SendIcon,
-            label: 'Send',
+            label: t('nav.send'),
             onPress: onSendPress,
         },
         {
             icon: ReceiveIcon,
-            label: 'Receive',
+            label: t('nav.receive'),
             onPress: onReceivePress,
         },
         {
             icon: PayIcon,
-            label: 'Pay',
+            label: t('nav.pay'),
             onPress: onPayPress,
         },
         {
             icon: ActivitiesIcon,
-            label: 'Activities',
+            label: t('nav.activities'),
             onPress: onActivitiesPress,
         },
     ];
@@ -61,7 +64,7 @@ export const QuickActions: React.FC<QuickActionsProps> = ({
                     onPress={action.onPress}
                     style={styles.actionItem}
                 >
-                {/* <Image
+                    {/* <Image
                                 source={action.icon}
                                 style={styles.fullSize}
                                 contentFit="contain"
@@ -74,7 +77,7 @@ export const QuickActions: React.FC<QuickActionsProps> = ({
                                 source={action.icon}
                                 style={styles.fullSize}
                                 contentFit="contain"
-                                // tintColor={colors.titleText}
+                            // tintColor={colors.titleText}
                             />
                         </View>
                     </View>

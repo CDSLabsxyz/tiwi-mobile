@@ -14,6 +14,7 @@ import { SendTokenSelectSheet } from '@/components/sections/Send/SendTokenSelect
 import { WalletHeader } from '@/components/sections/Wallet/WalletHeader';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { colors } from '@/constants/colors';
+import { activityService } from '@/services/activityService';
 import { fetchWalletData } from '@/services/walletService';
 import { useSendStore } from '@/store/sendStore';
 import { useWalletStore } from '@/store/walletStore';
@@ -148,9 +149,10 @@ export default function SendScreen() {
             try {
                 // Log the send transaction(s)
                 if (activeTab === 'send-to-one') {
+                    const txHash = `send-hash-${Date.now()}`;
                     await apiClient.logTransaction({
                         walletAddress: address,
-                        transactionHash: `send-hash-${Date.now()}`,
+                        transactionHash: txHash,
                         chainId: parseInt(sendStore.selectedChain?.id || '1'),
                         type: 'send',
                         fromTokenAddress: sendStore.selectedToken?.id,
@@ -159,12 +161,22 @@ export default function SendScreen() {
                         amountFormatted: `${sendStore.amount} ${sendStore.selectedToken?.symbol}`,
                         toTokenAddress: sendStore.recipientAddress, // Recipient as target address
                     });
+
+                    // Log activity
+                    await activityService.logTransaction(
+                        address,
+                        'transaction',
+                        'Sent Successfully',
+                        `You sent ${sendStore.amount} ${sendStore.selectedToken?.symbol} to ${sendStore.recipientAddress}`,
+                        txHash
+                    );
                 } else {
                     // Multi-send: Log each recipient
                     for (const recipient of sendStore.recipients) {
+                        const txHash = `multisend-hash-${Date.now()}`;
                         await apiClient.logTransaction({
                             walletAddress: address,
-                            transactionHash: `multisend-hash-${Date.now()}`,
+                            transactionHash: txHash,
                             chainId: parseInt(sendStore.selectedChain?.id || '1'),
                             type: 'multi_send',
                             fromTokenAddress: sendStore.selectedToken?.id,
@@ -173,6 +185,15 @@ export default function SendScreen() {
                             amountFormatted: `${sendStore.amountPerRecipient} ${sendStore.selectedToken?.symbol}`,
                             toTokenAddress: recipient.address,
                         });
+
+                        // Log activity for each (optional, or just one summary)
+                        await activityService.logTransaction(
+                            address,
+                            'transaction',
+                            'Multi-Send Success',
+                            `You sent ${sendStore.amountPerRecipient} ${sendStore.selectedToken?.symbol} to ${recipient.address}`,
+                            txHash
+                        );
                     }
                 }
             } catch (e) {

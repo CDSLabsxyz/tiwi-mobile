@@ -3,7 +3,7 @@ import { SettingsHeader } from '@/components/ui/settings-header';
 import { SettingsItem } from '@/components/ui/settings-item';
 import { ToggleSwitch } from '@/components/ui/toggle-switch';
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -14,17 +14,25 @@ const Timer02Icon = require('../../assets/settings/timer-02.svg');
 const AlertSquareIcon = require('../../assets/wallet/alert-square.svg');
 const AddressBookIcon = require('../../assets/settings/address-book.svg');
 
+import { useSecurityStore } from '@/store/securityStore';
+import * as Haptics from 'expo-haptics';
+
 export default function SecuritySettingsScreen() {
     const { bottom } = useSafeAreaInsets();
     const router = useRouter();
-    const [biometricsEnabled, setBiometricsEnabled] = useState(true);
+    const { isBiometricsEnabled, enableBiometrics } = useSecurityStore();
+
+    const handleToggleBiometrics = (value: boolean) => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        enableBiometrics(value);
+    };
 
     const securityItems = [
         { label: 'Change PIN', icon: ResetPasswordIcon, route: '/settings/security/change-pin' },
         {
             label: 'Enable/Disable Biometrics',
             icon: BiometricAccessIcon,
-            rightElement: <ToggleSwitch value={biometricsEnabled} onValueChange={setBiometricsEnabled} />,
+            rightElement: <ToggleSwitch value={isBiometricsEnabled} onValueChange={handleToggleBiometrics} />,
             showChevron: false
         },
         { label: 'Auto-Lock Timer', icon: Timer02Icon, route: '/settings/security/auto-lock-timer' },

@@ -8,7 +8,9 @@
  * - Transaction logging and activity
  */
 
-const BASE_URL = 'https://app.tiwiprotocol.xyz';
+// const BASE_URL = 'https://app.tiwiprotocol.xyz';
+// const BASE_URL = 'https://tiwi-super-app.vercel.app';
+const BASE_URL = 'https://fc49bc9b2d81.ngrok-free.app';
 
 // For local development, you can set this in your environment
 const API_URL = process.env.EXPO_PUBLIC_TIWI_BACKEND_URL || BASE_URL;
@@ -19,10 +21,11 @@ export interface APIWallet {
 }
 
 export interface Chain {
+    [x: string]: string;
     id: number;
     name: string;
     slug: string;
-    type: string;
+    type: string;                                                                   
     logo?: string;
     logoURI?: string;
     isMainnet: boolean;
@@ -358,7 +361,7 @@ class TiwiApiClient {
         return this.fetcher<RouteAPIResponse>('/api/v1/route', {
             method: 'POST',
             body: JSON.stringify(params),
-        });
+        });                                                                                                                                                     
     }
 }
 

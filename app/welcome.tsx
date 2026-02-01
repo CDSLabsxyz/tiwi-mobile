@@ -7,6 +7,7 @@
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { SuccessModal } from '@/components/ui/SuccessModal';
 import { colors } from '@/constants/colors';
+import { useTranslation } from '@/hooks/useLocalization';
 import { useAppKit } from '@reown/appkit-react-native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
@@ -20,6 +21,7 @@ function WelcomeScreen() {
     const router = useRouter();
     const { open } = useAppKit();
     const { isConnected } = useAccount();
+    const { t } = useTranslation();
     const [isSuccess, setIsSuccess] = useState(false);
 
     // Watch for connection from AppKit
@@ -46,27 +48,15 @@ function WelcomeScreen() {
         <View style={[styles.container, { backgroundColor: colors.bg }]}>
             <CustomStatusBar />
 
-            {/* Shapes (Absolute Positioned for Branded Look) */}
-            {/* <View style={styles.triangleContainer}>
-                <View style={[styles.mockTriangle, { borderBottomColor: colors.primaryCTA }]} />
-            </View>
-
-            <View style={styles.starContainer}>
-                <View style={[styles.mockStar, { backgroundColor: colors.primaryCTA }]} />
-            </View> */}
-
-
-            {/* Header Actions - Removed Skip as per protocol requirements (Wallet required for entry) */}
             <View style={styles.imageContainer}>
                 <Image
                     source={require('@/assets/onboarding/wallet-onboarding.png')}
                     style={styles.image}
-                    contentFit="contain" // Changed to cover to fill width
+                    contentFit="contain"
                     transition={1000}
                 />
             </View>
             <View style={[styles.header, { paddingTop: top * 5 }]} />
-
 
             {/* Bottom Content */}
             <View style={[styles.bottomContent, { paddingBottom: bottom + 20 }]}>
@@ -76,7 +66,7 @@ function WelcomeScreen() {
                         onPress={handleConnectWallet}
                         style={[styles.button, styles.primaryButton]}
                     >
-                        <Text style={styles.primaryButtonText}>Connect wallet</Text>
+                        <Text style={styles.primaryButtonText}>{t('welcome.connect_wallet')}</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
@@ -84,19 +74,15 @@ function WelcomeScreen() {
                         onPress={handleCreateWallet}
                         style={[styles.button, styles.secondaryButton]}
                     >
-                        <Text style={styles.secondaryButtonText}>Connect in-app wallet</Text>
+                        <Text style={styles.secondaryButtonText}>{t('welcome.connect_app_wallet')}</Text>
                     </TouchableOpacity>
                 </View>
 
                 {/* Legal & Terms */}
                 <Text style={styles.termsText}>
-                    By continuing, you agree to TIWI's <Text style={styles.linkText}>Terms of Service</Text> and <Text style={styles.linkText}>Privacy Policy</Text>
+                    {t('welcome.terms_prefix')} <Text style={styles.linkText}>{t('welcome.terms_service')}</Text> {t('welcome.terms_and')} <Text style={styles.linkText}>{t('welcome.privacy_policy')}</Text>
                 </Text>
             </View>
-
-            {/* Wallet Selection Sheet */}
-            {/* Wallet Selection Sheet - Replaced by Reown AppKit Modal */
-            /*  managed via useAppKit hook */}
 
             <SuccessModal
                 isVisible={isSuccess}
@@ -107,43 +93,10 @@ function WelcomeScreen() {
     );
 }
 
-
 const styles = StyleSheet.create({
     container: {
         flex: 1,
         position: 'relative',
-    },
-    triangleContainer: {
-        position: 'absolute',
-        top: 100,
-        left: 0,
-        width: 100,
-        height: 100,
-    },
-    starContainer: {
-        position: 'absolute',
-        top: '40%',
-        right: -50,
-        width: 200,
-        height: 200,
-        transform: [{ rotate: '15deg' }],
-    },
-    mockTriangle: {
-        width: 0,
-        height: 0,
-        backgroundColor: 'transparent',
-        borderStyle: 'solid',
-        borderLeftWidth: 50,
-        borderRightWidth: 0,
-        borderBottomWidth: 50,
-        borderLeftColor: 'transparent',
-        borderRightColor: 'transparent',
-        transform: [{ rotate: '180deg' }],
-    },
-    mockStar: {
-        width: 150,
-        height: 150,
-        borderRadius: 30,
     },
     header: {
         paddingHorizontal: 24,
@@ -175,7 +128,7 @@ const styles = StyleSheet.create({
     },
     image: {
         width: '100%',
-        height: '100%', // Takes up all available space in container
+        height: '100%',
     },
     primaryButton: {
         backgroundColor: colors.primaryCTA,

@@ -29,14 +29,14 @@ function digitsToSubscript(digits: string): string {
 export function formatPriceWithSubscript(
     price: number | string,
     options: {
-        prefix?: string;
+        symbol?: string;
         minDecimalsForSubscript?: number;
         maxDisplayDecimals?: number;
     } = {}
 ): string {
     const {
-        prefix = '',
-        minDecimalsForSubscript = 6,
+        symbol = '',
+        minDecimalsForSubscript = 5,
         maxDisplayDecimals = 4,
     } = options;
 
@@ -49,19 +49,23 @@ export function formatPriceWithSubscript(
     }
 
     if (isNaN(numPrice) || numPrice <= 0) {
-        return `${prefix}0.00`;
+        return `${symbol}0.00`;
     }
 
-    // If price is >= 0.000001, use normal formatting
-    if (numPrice >= 0.000001) {
-        if (numPrice < 0.01) {
-            return `${prefix}${numPrice.toFixed(6)}`;
-        } else if (numPrice < 1) {
-            return `${prefix}${numPrice.toFixed(4)}`;
+    // For "normal" prices, use standard rounding
+    if (numPrice >= 0.0001) {
+        if (numPrice < 1) {
+            return `${symbol}${numPrice.toLocaleString('en-US', {
+                minimumFractionDigits: 4,
+                maximumFractionDigits: 6,
+            })}`;
         } else if (numPrice < 1000) {
-            return `${prefix}${numPrice.toFixed(2)}`;
+            return `${symbol}${numPrice.toLocaleString('en-US', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 4,
+            })}`;
         } else {
-            return `${prefix}${numPrice.toLocaleString('en-US', {
+            return `${symbol}${numPrice.toLocaleString('en-US', {
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2,
             })}`;
@@ -69,11 +73,12 @@ export function formatPriceWithSubscript(
     }
 
     // For very small prices, use subscript notation
+    // Use toFixed(20) to avoid scientific notation
     const priceStr = numPrice.toFixed(20);
-    const [integerPart, decimalPart] = priceStr.split('.');
+    const [, decimalPart] = priceStr.split('.');
 
     if (!decimalPart) {
-        return `${prefix}${integerPart}`;
+        return `${symbol}0.00`;
     }
 
     let firstNonZeroIndex = -1;
@@ -85,22 +90,25 @@ export function formatPriceWithSubscript(
     }
 
     if (firstNonZeroIndex === -1) {
-        return `${prefix}0.00`;
+        return `${symbol}0.00`;
     }
 
     const leadingZeros = firstNonZeroIndex;
 
+    // If we have fewer leading zeros than the threshold, just show them
     if (leadingZeros < minDecimalsForSubscript) {
-        return `${prefix}${numPrice.toFixed(leadingZeros + maxDisplayDecimals + 1)}`;
+        return `${symbol}${numPrice.toFixed(leadingZeros + maxDisplayDecimals + 1)}`;
     }
 
+    // Subscript notation for many leading zeros
     const significantDigits = decimalPart.substring(firstNonZeroIndex);
     const displayDigits = significantDigits.substring(0, maxDisplayDecimals);
 
-    const remainingZeros = leadingZeros - 1;
-    const subscript = digitsToSubscript(remainingZeros.toString());
+    // Number of zeros to show in subscript is (leadingZeros)
+    // DexScreener/Binance style: 0.0{number_of_zeros}significant_digits
+    const subscript = digitsToSubscript(leadingZeros.toString());
 
-    return `${prefix}0.0${subscript}${displayDigits}`;
+    return `${symbol}0.0${subscript}${displayDigits}`;
 }
 
 /**
@@ -108,37 +116,55 @@ export function formatPriceWithSubscript(
  */
 export function formatUSDPrice(price: number | string): string {
     return formatPriceWithSubscript(price, {
-        prefix: '$',
-        minDecimalsForSubscript: 6,
+        symbol: '$',
+        minDecimalsForSubscript: 5,
         maxDisplayDecimals: 4,
     });
 }
 
-/**
- * Formats a number with K, M, B, T suffixes
- */
-export function formatNumber(value: number | undefined, decimals: number = 2): string {
+export function formatCompactNumber(value: number | undefined, options: { decimals?: number, symbol?: string } = {}): string {
+    const { decimals = 2, symbol = '' } = options;
     if (value === undefined || value === null || isNaN(value)) {
-        return '0';
+        return `${symbol}0`;
     }
 
     if (value === 0) {
-        return '0';
+        return `${symbol}0`;
     }
 
     const absValue = Math.abs(value);
+    let result = '';
+
+    const formatPart = (val: number, suffix: string) => {
+        const num = val.toFixed(decimals);
+        // Remove trailing zeros if they are all zeros after decimal
+        const trimmed = num.replace(/\.0+$/, '').replace(/(\.[0-9]*[1-9])0+$/, '$1');
+        return `${trimmed}${suffix}`;
+    };
 
     if (absValue >= 1e12) {
-        return `${(value / 1e12).toFixed(decimals)}T`;
+        result = formatPart(value / 1e12, 'T');
     } else if (absValue >= 1e9) {
-        return `${(value / 1e9).toFixed(decimals)}B`;
+        result = formatPart(value / 1e9, 'B');
     } else if (absValue >= 1e6) {
-        return `${(value / 1e6).toFixed(decimals)}M`;
+        result = formatPart(value / 1e6, 'M');
     } else if (absValue >= 1e3) {
-        return `${(value / 1e3).toFixed(decimals)}K`;
+        result = formatPart(value / 1e3, 'K');
     } else {
-        return value.toFixed(decimals);
+        result = value.toLocaleString('en-US', {
+            minimumFractionDigits: decimals,
+            maximumFractionDigits: decimals,
+        });
     }
+
+    return `${symbol}${result}`;
+}
+
+/**
+ * Legacy formatNumber (for backwards compatibility if needed, but updated)
+ */
+export function formatNumber(value: number | undefined, decimals: number = 2): string {
+    return formatCompactNumber(value, { decimals });
 }
 
 /**
@@ -166,4 +192,108 @@ export function formatPercentageChange(value: number | undefined): {
     const formatted = `${isPositive ? '+' : ''}${value.toFixed(2)}%`;
 
     return { formatted, isPositive };
+}
+
+/**
+ * Generates a consistent colorful hex code from a string (e.g., token symbol)
+ */
+export function getColorFromSeed(seed: string): string {
+    const palette = [
+        '#FF5C5C', // Red
+        '#3FEA9B', // Green
+        '#4EA1FF', // Blue
+        '#FFBD5C', // Orange
+        '#A15CFF', // Purple
+        '#5CFFE3', // Cyan
+        '#FF5C9D', // Pink
+        '#D0FB43', // Lime
+        '#FF8C5C', // Coral
+        '#5C74FF', // Indigo
+    ];
+    if (!seed) return palette[0];
+    let hash = 0;
+    for (let i = 0; i < seed.length; i++) {
+        hash = seed.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const index = Math.abs(hash) % palette.length;
+    return palette[index];
+}
+
+/**
+ * Smart formatting for token amounts (Uniswap style)
+ * - Large numbers (>1): Show 2-4 decimal places
+ * - Small numbers (<1): Show up to 6 significant digits
+ * - Very small numbers: Use subscript or scientific notation if needed (handled by formatPriceWithSubscript)
+ */
+export function formatTokenAmount(amount: string | number): string {
+    const val = typeof amount === 'string' ? parseFloat(amount) : amount;
+    if (isNaN(val) || val === 0) return '0';
+
+    if (val < 0.000001) {
+        return '< 0.000001';
+    }
+
+    if (val < 1) {
+        // Show up to 6 significant digits for precision
+        return val.toLocaleString('en-US', {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 6,
+        });
+    }
+
+    if (val < 10000) {
+        return val.toLocaleString('en-US', {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 4,
+        });
+    }
+
+    if (val < 1000000) {
+        return val.toLocaleString('en-US', {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 2,
+        });
+    }
+
+    // For very large numbers, use compact notation (1.2M)
+    return formatCompactNumber(val, { decimals: 2 });
+}
+
+/**
+ * Format fiat value with user's preferred locale and currency
+ */
+export function formatFiatValue(
+    amount: string | number,
+    locale: string = 'en-US',
+    currency: string = 'USD'
+): string {
+    const val = typeof amount === 'string' ? parseFloat(amount) : amount;
+    if (isNaN(val)) return formatCompactNumber(0, { symbol: '$' }); // Fallback
+
+    try {
+        return new Intl.NumberFormat(locale === 'US' ? 'en-US' : locale, { // Handle 'US' region code mapping
+            style: 'currency',
+            currency: currency,
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        }).format(val);
+    } catch (e) {
+        // Fallback if locale/currency code is invalid
+        return `$${val.toFixed(2)}`;
+    }
+}
+
+/**
+ * Format token balance for display (e.g. unified sheet, wallet balance)
+ * Max 8 decimal places
+ */
+export function formatTokenBalance(amount: string | number | undefined): string {
+    if (amount === undefined || amount === null) return '0';
+    const val = typeof amount === 'string' ? parseFloat(amount) : amount;
+    if (isNaN(val) || val === 0) return '0';
+
+    return val.toLocaleString('en-US', {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 8,
+    });
 }

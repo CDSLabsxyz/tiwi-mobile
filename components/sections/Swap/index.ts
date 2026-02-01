@@ -13,4 +13,5 @@ export * from './SwapSuccessModal';
 export * from './SwapTabs';
 export * from './SwapTokenCard';
 export * from './TokenSelectSheet';
+export * from './UnifiedAssetSelectSheet';
 

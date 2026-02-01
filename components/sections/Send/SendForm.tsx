@@ -4,15 +4,16 @@
  * Matches Figma design exactly (node-id: 3279-119800)
  */
 
-import React, { useState, useEffect } from "react";
-import { View, Text, TextInput, TouchableOpacity } from "react-native";
+import { colors } from "@/constants";
+import { useSecurityStore } from "@/store/securityStore";
+import { useSendStore } from "@/store/sendStore";
+import { validateAddress, validateAmount } from "@/utils/addressValidation";
 import * as Clipboard from "expo-clipboard";
 import { Image } from "expo-image";
-import { colors } from "@/constants";
-import { useSendStore } from "@/store/sendStore";
-import { SendTokenSelector } from "./SendTokenSelector";
-import { validateAddress, validateAmount } from "@/utils/addressValidation";
+import React, { useEffect, useState } from "react";
+import { Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { SendTokenSelector } from "./SendTokenSelector";
 
 const CopyIcon = require("@/assets/wallet/copy-01.svg");
 const CheckmarkIcon = require("@/assets/swap/checkmark-circle-01.svg");
@@ -24,6 +25,7 @@ interface SendFormProps {
 
 export const SendForm: React.FC<SendFormProps> = ({ onNext }) => {
   const sendStore = useSendStore();
+  const { isStrictModeEnabled, whitelistedAddresses } = useSecurityStore();
   const { selectedToken, selectedChain, recipientAddress, amount, usdValue, setRecipientAddress, setAmount, openTokenSheet } = sendStore;
 
   const [localAddress, setLocalAddress] = useState(recipientAddress);
@@ -36,12 +38,25 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext }) => {
   // Validate address when it changes
   useEffect(() => {
     if (localAddress.trim()) {
-      const result = validateAddress(localAddress, selectedChain?.id);
+      const chainIdStr = selectedChain?.id ? String(selectedChain.id) : undefined;
+      const result = validateAddress(localAddress, chainIdStr);
+
+      // Strict Mode Check
+      if (result.isValid && isStrictModeEnabled) {
+        const isWhitelisted = whitelistedAddresses.some(
+          (a) => a.address.toLowerCase() === localAddress.toLowerCase()
+        );
+        if (!isWhitelisted) {
+          setAddressError("Strict Mode: Recipient not in Whitelist");
+          return;
+        }
+      }
+
       setAddressError(result.isValid ? null : result.error || null);
     } else {
       setAddressError(null);
     }
-  }, [localAddress, selectedChain?.id]);
+  }, [localAddress, selectedChain?.id, isStrictModeEnabled, whitelistedAddresses]);
 
   // Validate amount when it changes
   useEffect(() => {
@@ -84,13 +99,13 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext }) => {
     }
   };
 
-  const addressValidation = validateAddress(localAddress, selectedChain?.id);
+  const addressValidation = validateAddress(localAddress, selectedChain?.id ? String(selectedChain.id) : undefined);
   const amountValidation = validateAmount(localAmount);
-  const isFormValid = 
-    addressValidation.isValid && 
-    amountValidation.isValid && 
-    localAddress.trim().length > 0 && 
-    parseFloat(localAmount) > 0 && 
+  const isFormValid =
+    addressValidation.isValid &&
+    amountValidation.isValid &&
+    localAddress.trim().length > 0 &&
+    parseFloat(localAmount) > 0 &&
     selectedToken;
 
   return (

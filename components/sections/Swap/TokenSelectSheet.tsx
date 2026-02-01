@@ -1,12 +1,14 @@
 import { colors } from '@/constants/colors';
 import { useTokens } from '@/hooks/useTokens';
 import { useWalletBalances } from '@/hooks/useWalletBalances';
+import { getColorFromSeed } from '@/utils/formatting';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import React, { useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import type { ChainId } from './ChainSelectSheet';
 import { SelectionBottomSheet } from './SelectionBottomSheet';
+import { truncateAddress } from '@/utils/wallet';
 
 const CheckmarkIcon = require('@/assets/swap/checkmark-circle-01.svg');
 
@@ -61,7 +63,7 @@ export const TokenSelectSheet: React.FC<TokenSelectSheetProps> = ({
                 id: `${t.chainId}-${t.address}`,
                 symbol: t.symbol,
                 name: t.name,
-                icon: t.logoURI || require('@/assets/home/tiwicat-token.svg'),
+                icon: t.logoURI,
                 tvl: t.liquidity ? `$${t.liquidity.toLocaleString()}` : 'N/A',
                 balanceFiat: walletToken?.usdValue ? `$${parseFloat(walletToken.usdValue).toFixed(2)}` : '$0.00',
                 balanceToken: walletToken?.balanceFormatted || `0.00 ${t.symbol}`,
@@ -119,11 +121,17 @@ export const TokenSelectSheet: React.FC<TokenSelectSheetProps> = ({
                                         {/* Left: icon + symbol + TVL */}
                                         <View style={styles.leftInfo}>
                                             <View style={styles.iconWrapper}>
-                                                <Image source={token.icon} style={styles.fullSize} contentFit="contain" />
+                                                {token.icon ? (
+                                                    <Image source={token.icon} style={styles.fullSize} contentFit="contain" />
+                                                ) : (
+                                                    <View style={[styles.fallbackCircle, { backgroundColor: getColorFromSeed(token.symbol) }]}>
+                                                        <Text style={styles.fallbackText}>{token.symbol.charAt(0).toUpperCase()}</Text>
+                                                    </View>
+                                                )}
                                             </View>
                                             <View style={styles.textColumn}>
                                                 <Text style={styles.symbol}>{token.symbol}</Text>
-                                                <Text style={styles.tvl}>{token.tvl}</Text>
+                                                <Text style={styles.tvl}>{truncateAddress(token.address )}</Text>
                                             </View>
                                         </View>
 
@@ -219,6 +227,17 @@ const styles = StyleSheet.create({
     fullSize: {
         width: '100%',
         height: '100%',
+    },
+    fallbackCircle: {
+        width: '100%',
+        height: '100%',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    fallbackText: {
+        fontFamily: 'Manrope-Bold',
+        fontSize: 18,
+        color: '#FFFFFF',
     },
     textColumn: {
         gap: 4,

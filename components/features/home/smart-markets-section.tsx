@@ -1,5 +1,6 @@
 import { Skeleton } from '@/components/ui/skeleton';
 import { colors } from '@/constants/colors';
+import { useTranslation } from '@/hooks/useLocalization';
 import { DexMarket } from '@/types';
 import { Image } from 'expo-image';
 import React, { useEffect } from 'react';
@@ -81,6 +82,8 @@ export const SmartMarketsSection: React.FC<SmartMarketsSectionProps> = ({
     markets,
     isLoading = false,
 }) => {
+    const { t } = useTranslation();
+
     if (isLoading) {
         return (
             <View style={styles.container}>
@@ -102,7 +105,7 @@ export const SmartMarketsSection: React.FC<SmartMarketsSectionProps> = ({
     return (
         <View style={styles.container}>
             <View style={styles.header}>
-                <Text style={styles.title}>Smart Markets</Text>
+                <Text style={styles.title}>{t('home.smart_markets')}</Text>
             </View>
 
             <View style={styles.rowsContainer}>

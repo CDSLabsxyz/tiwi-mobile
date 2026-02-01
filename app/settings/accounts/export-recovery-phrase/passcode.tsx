@@ -29,7 +29,7 @@ export default function ExportRecoveryPhrasePasscodeScreen() {
     const [passcode, setPasscode] = useState<string[]>(Array(6).fill(''));
     const [focusedIndex, setFocusedIndex] = useState<number>(0);
     const [isError, setIsError] = useState(false);
-    const verifyPasscode = useSecurityStore((state) => state.verifyPasscode);
+    const { verifyPasscode, authenticateBiometrics, isBiometricsEnabled } = useSecurityStore();
     const inputRefs = useRef<(TextInput | null)[]>([]);
 
     const shake = useSharedValue(0);
@@ -57,13 +57,32 @@ export default function ExportRecoveryPhrasePasscodeScreen() {
         return () => backHandler.remove();
     }, [params.returnTo]);
 
+    // Handle Biometrics and Auto-focus
     useEffect(() => {
-        const timer = setTimeout(() => {
-            inputRefs.current[0]?.focus();
-        }, 100);
-        return () => clearTimeout(timer);
-    }, []);
+        const initAuth = async () => {
+            if (isBiometricsEnabled) {
+                // Small delay to ensure UI is ready
+                setTimeout(async () => {
+                    const success = await authenticateBiometrics('Verify your identity to export recovery phrase');
+                    if (success) {
+                        handleAuthSuccess();
+                    } else {
+                        // Fallback to passcode input
+                        inputRefs.current[0]?.focus();
+                    }
+                }, 500);
+            } else {
+                const timer = setTimeout(() => {
+                    inputRefs.current[0]?.focus();
+                }, 100);
+                return () => clearTimeout(timer);
+            }
+        };
 
+        initAuth();
+    }, [isBiometricsEnabled]);
+
+    // Handle passcode completion
     useEffect(() => {
         const isComplete = passcode.every((digit) => digit !== '') && passcode.length === 6;
         if (isComplete) {
@@ -71,14 +90,18 @@ export default function ExportRecoveryPhrasePasscodeScreen() {
         }
     }, [passcode]);
 
+    const handleAuthSuccess = () => {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        router.push('/settings/accounts/export-recovery-phrase/reveal' as any);
+    };
+
     const handleVerify = async () => {
         Keyboard.dismiss();
         const codeString = passcode.join('');
         const isValid = await verifyPasscode(codeString);
 
         if (isValid) {
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            router.push('/settings/accounts/export-recovery-phrase/reveal' as any);
+            handleAuthSuccess();
         } else {
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
             setIsError(true);

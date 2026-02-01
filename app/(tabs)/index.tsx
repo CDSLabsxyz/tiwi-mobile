@@ -16,7 +16,7 @@ import { colors } from '@/constants/colors';
 import { useChains } from '@/hooks/useChains';
 import { useSpotlightTokens } from '@/hooks/useSpotlightTokens';
 import { useTWCToken } from '@/hooks/useTWCToken';
-import { formatNumber, formatUSDPrice } from '@/utils/formatting';
+import { formatNumber } from '@/utils/formatting';
 
 import { MarketSection } from '@/components/features/home/market-section';
 import { NewsfeedSection } from '@/components/features/home/newsfeed-section';
@@ -25,6 +25,7 @@ import { SmartMarketsSection } from '@/components/features/home/smart-markets-se
 import { SpotlightSection } from '@/components/features/home/spotlight-section';
 import { StakeBanner } from '@/components/features/home/stake-banner';
 import { TradeStatsSection } from '@/components/features/home/trade-stats-section';
+import { usePrice, useTranslation } from '@/hooks/useLocalization';
 import { apiClient } from '@/services/apiClient';
 import { useMarketStore } from '@/store/marketStore';
 import { useWalletStore } from '@/store/walletStore';
@@ -38,23 +39,17 @@ export default function HomeScreen() {
   const { top, bottom } = useSafeAreaInsets();
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { t } = useTranslation();
 
   const { isConnected, disconnect } = useWalletStore();
   const [isWalletModalVisible, setIsWalletModalVisible] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Queries
+  // Queries (Moved up so formatted variables can access them)
   const {
     data: spotlightTokens = [],
     isLoading: isLoadingSpotlight,
-    isRefetching: isRefetchingSpotlight
   } = useSpotlightTokens();
-
-  // const {
-  //   data: marketPrice,
-  //   isLoading: isLoadingMarket,
-  //   isRefetching: isRefetchingMarket
-  // } = useMarketPrice('TWC-USDT');
 
   const {
     data: chains = [],
@@ -66,34 +61,30 @@ export default function HomeScreen() {
     isLoading: isLoadingTWCToken,
   } = useTWCToken();
 
-  // Staggered Prefetching for Market Section
-  // Staggered Prefetching for Market Section
-  // const { favorites } = useWalletStore(); // Removed invalid property
+  // Formatting Hook
+  const formattedTWCPrice = usePrice(twcToken?.priceUSD || 0);
+  const formattedTWCMcap = usePrice(twcToken?.marketCap || 0);
+  const formattedTWCVol = usePrice(twcToken?.volume24h || 0);
+
   const { favorites: marketFavorites } = useMarketStore();
 
   React.useEffect(() => {
     const categories: ('hot' | 'new' | 'gainers' | 'losers')[] = ['hot', 'new', 'gainers', 'losers'];
-
-    // Prefetch each category in sequence to avoid overwhelming the network
     const prefetch = async () => {
-      // 1. Prefetch Spotlight (User explicitly asked for this on homepage)
       queryClient.prefetchQuery({
         queryKey: ['spotlightTokens', true],
         queryFn: () => apiClient.getSpotlightTokens(true),
       });
 
-      // 2. Prefetch Market Categories
       for (const category of categories) {
         queryClient.prefetchQuery({
           queryKey: ['tokens', category, 5, undefined],
           queryFn: () => apiClient.getMarketPairs({ category, limit: 5 }),
           staleTime: 60 * 1000,
         });
-        // Slight delay between prefetches
         await new Promise(resolve => setTimeout(resolve, 300));
       }
 
-      // 3. Prefetch Favorites if any
       if (marketFavorites.length > 0) {
         for (const id of marketFavorites) {
           const [chainId, address] = id.split('-');
@@ -105,7 +96,6 @@ export default function HomeScreen() {
         }
       }
     };
-
     prefetch();
   }, [queryClient, marketFavorites]);
 
@@ -122,9 +112,6 @@ export default function HomeScreen() {
     setRefreshing(false);
   }, [queryClient]);
 
-  const isGlobalLoading = isLoadingSpotlight;
-
-  // Combined data for sections (mocking newsfeed/smart markets for now)
   const homeData = useMemo(() => {
     return {
       newsfeed: [
@@ -137,52 +124,40 @@ export default function HomeScreen() {
         logo: t.logo || 'https://www.figma.com/api/mcp/asset/3cea74db-4833-4e82-a07c-0e5e220b5a54',
         change24h: 0,
       })),
-      tradingPairs: [
-        {
-          id: '1',
-          baseSymbol: 'ETH',
-          quoteSymbol: 'USDT',
-          logo: 'https://cryptologos.cc/logos/ethereum-eth-logo.png',
-          price: '$2,720.55',
-          change24h: -5.17,
-          volume: 'Vol $972.89M',
-          leverage: '10X',
-        },
-      ],
       stats: [
         {
           id: 'twc-price',
           icon: require('../../assets/home/tiwicat-token.svg'),
-          value: twcToken ? formatUSDPrice(twcToken.priceUSD || '0') : '$0.00',
-          label: 'TWC Token Price',
+          value: formattedTWCPrice,
+          label: t('home.twc_price'),
           iconType: 'image' as const,
         },
         {
           id: 'chain-count',
           icon: 'chains',
           value: `${chains.length > 0 ? chains.length : 50}+`,
-          label: 'Active Chains',
+          label: t('home.active_chains'),
           iconType: 'icon' as const,
         },
         {
           id: 'twc-mcap',
           icon: 'locked',
-          value: twcToken?.marketCap ? `$${formatNumber(twcToken.marketCap)}` : 'N/A',
-          label: 'Market Cap',
+          value: formattedTWCMcap,
+          label: t('home.market_cap'),
           iconType: 'icon' as const,
         },
         {
           id: 'twc-vol',
           icon: 'trade-up',
-          value: twcToken?.volume24h ? `$${formatNumber(twcToken.volume24h)}` : 'N/A',
-          label: '24h Volume',
+          value: formattedTWCVol,
+          label: t('home.volume_24h'),
           iconType: 'icon' as const,
         },
         {
           id: 'twc-holders',
           icon: 'coins',
           value: twcToken?.holders ? formatNumber(twcToken.holders, 0) : 'N/A',
-          label: 'Holders',
+          label: t('home.holders'),
           iconType: 'icon' as const,
         },
       ],
@@ -191,7 +166,7 @@ export default function HomeScreen() {
       ],
       isLoading: isLoadingSpotlight || isLoadingChains || isLoadingTWCToken,
     };
-  }, [spotlightTokens, isLoadingSpotlight, chains, twcToken, isLoadingChains, isLoadingTWCToken]);
+  }, [spotlightTokens, isLoadingSpotlight, chains, twcToken, isLoadingChains, isLoadingTWCToken, formattedTWCPrice, formattedTWCMcap, formattedTWCVol, t]);
 
   const handleOpenWallet = () => {
     setIsWalletModalVisible(true);

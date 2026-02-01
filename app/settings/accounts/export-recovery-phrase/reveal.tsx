@@ -2,27 +2,39 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { colors } from '@/constants/colors';
+import { getSecureMnemonic } from '@/services/walletCreationService';
+import { useWalletStore } from '@/store/walletStore';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { BackHandler, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, BackHandler, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const ChevronLeftIcon = require('../../../../assets/swap/arrow-left-02.svg');
 
-// Mock recovery phrase
-const MOCK_RECOVERY_PHRASE = [
-    'seed', 'seed', 'seed', 'seed', 'seed', 'seed',
-    'seed', 'seed', 'seed', 'seed', 'seed', 'seed',
-];
-
 export default function ExportRecoveryPhraseRevealScreen() {
     const { top } = useSafeAreaInsets();
     const router = useRouter();
+    const { address } = useWalletStore();
     const params = useLocalSearchParams<{ returnTo?: string }>();
+    const [mnemonic, setMnemonic] = useState<string[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
     const [isRevealed, setIsRevealed] = useState(false);
+
+    useEffect(() => {
+        const fetchMnemonic = async () => {
+            if (address) {
+                const phrase = await getSecureMnemonic(address);
+                if (phrase) {
+                    setMnemonic(phrase.split(/\s+/));
+                }
+            }
+            setIsLoading(false);
+        };
+        fetchMnemonic();
+    }, [address]);
 
     useEffect(() => {
         const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -43,13 +55,15 @@ export default function ExportRecoveryPhraseRevealScreen() {
 
     const handleContinue = () => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        router.push('/settings/accounts/export-recovery-phrase/confirm' as any);
+        router.push('/settings/accounts' as any); // Back to accounts for now
     };
 
     // Helper to chunk the phrase into rows of 3
     const rows = [];
-    for (let i = 0; i < MOCK_RECOVERY_PHRASE.length; i += 3) {
-        rows.push(MOCK_RECOVERY_PHRASE.slice(i, i + 3));
+    if (mnemonic.length > 0) {
+        for (let i = 0; i < mnemonic.length; i += 3) {
+            rows.push(mnemonic.slice(i, i + 3));
+        }
     }
 
     return (
@@ -79,53 +93,59 @@ export default function ExportRecoveryPhraseRevealScreen() {
 
             {/* Content */}
             <View style={styles.content}>
-                <View style={styles.gridContainer}>
-                    <View style={styles.phraseGrid}>
-                        {rows.map((row, rowIndex) => (
-                            <View key={rowIndex} style={styles.gridRow}>
-                                {row.map((word, wordIndex) => (
-                                    <View
-                                        key={wordIndex}
-                                        style={styles.wordBox}
-                                    >
-                                        <ThemedText style={styles.wordText}>
-                                            {word}
-                                        </ThemedText>
+                {isLoading ? (
+                    <ActivityIndicator size="large" color={colors.primaryCTA} />
+                ) : (
+                    <>
+                        <View style={styles.gridContainer}>
+                            <View style={styles.phraseGrid}>
+                                {rows.map((row, rowIndex) => (
+                                    <View key={rowIndex} style={styles.gridRow}>
+                                        {row.map((word, wordIndex) => (
+                                            <View
+                                                key={wordIndex}
+                                                style={styles.wordBox}
+                                            >
+                                                <ThemedText style={styles.wordText}>
+                                                    {mnemonic.indexOf(word) + 1}. {word}
+                                                </ThemedText>
+                                            </View>
+                                        ))}
                                     </View>
                                 ))}
                             </View>
-                        ))}
-                    </View>
 
-                    {!isRevealed && (
-                        <TouchableOpacity
-                            activeOpacity={1}
-                            onPress={handleReveal}
-                            style={styles.revealOverlay}
-                        >
-                            <BlurView
-                                intensity={100}
-                                tint="dark"
-                                style={styles.blurView}
+                            {!isRevealed && (
+                                <TouchableOpacity
+                                    activeOpacity={1}
+                                    onPress={handleReveal}
+                                    style={styles.revealOverlay}
+                                >
+                                    <BlurView
+                                        intensity={100}
+                                        tint="dark"
+                                        style={styles.blurView}
+                                    >
+                                        <ThemedText style={styles.revealText}>
+                                            Tap to reveal your Secret Recovery Phrase
+                                        </ThemedText>
+                                    </BlurView>
+                                </TouchableOpacity>
+                            )}
+                        </View>
+
+                        {isRevealed && (
+                            <TouchableOpacity
+                                activeOpacity={0.7}
+                                onPress={handleContinue}
+                                style={styles.continueButton}
                             >
-                                <ThemedText style={styles.revealText}>
-                                    Tap to reveal your Secret Recovery Phrase
+                                <ThemedText style={styles.continueText}>
+                                    Done
                                 </ThemedText>
-                            </BlurView>
-                        </TouchableOpacity>
-                    )}
-                </View>
-
-                {isRevealed && (
-                    <TouchableOpacity
-                        activeOpacity={0.7}
-                        onPress={handleContinue}
-                        style={styles.continueButton}
-                    >
-                        <ThemedText style={styles.continueText}>
-                            Continue
-                        </ThemedText>
-                    </TouchableOpacity>
+                            </TouchableOpacity>
+                        )}
+                    </>
                 )}
             </View>
         </ThemedView>

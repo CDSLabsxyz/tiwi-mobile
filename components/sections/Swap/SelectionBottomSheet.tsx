@@ -42,21 +42,17 @@ export const SelectionBottomSheet: React.FC<SelectionBottomSheetProps> = ({
     onBack,
     onSearch
 }) => {
-    // ... (existing animation logic stays same)
-    // Use 'screen' height to prevent layout shifts when keyboard opens (Android adjustResize)
+    // Use 'window' height for the actual visible area
+    const { height: windowHeight } = Dimensions.get('window');
     const { height: screenHeight } = Dimensions.get('screen');
     const SHEET_HEIGHT_RATIO = 694 / 852;
     const baseHeight = height ?? 694;
     const sheetHeight = Math.min(baseHeight, screenHeight * SHEET_HEIGHT_RATIO);
 
-    // Calculate the top position to pin the sheet
-    // This replaces bottom: 0 to ensure the sheet doesn't move up when the keyboard shrinks the window
-    const sheetTop = screenHeight - sheetHeight;
-
+    // Initial position: off-screen
     const translateY = useSharedValue(sheetHeight);
     const backdropOpacity = useSharedValue(0);
 
-    // ... existing hooks
     const [isSearching, setIsSearching] = React.useState(false);
     const [searchText, setSearchText] = React.useState('');
     const inputRef = React.useRef<TextInput>(null);
@@ -64,7 +60,7 @@ export const SelectionBottomSheet: React.FC<SelectionBottomSheetProps> = ({
     useEffect(() => {
         if (visible) {
             translateY.value = withSpring(0, {
-                damping: 12,
+                damping: 15,
                 stiffness: 100,
                 mass: 0.8,
             });
@@ -72,7 +68,6 @@ export const SelectionBottomSheet: React.FC<SelectionBottomSheetProps> = ({
         } else {
             translateY.value = withTiming(sheetHeight, { duration: 300 });
             backdropOpacity.value = withTiming(0, { duration: 300 });
-            // Reset search state when sheet closes
             if (isSearching) {
                 handleSearchCancel();
             }
@@ -104,14 +99,11 @@ export const SelectionBottomSheet: React.FC<SelectionBottomSheetProps> = ({
                 backdropOpacity.value = withTiming(0, { duration: 250 });
             } else {
                 translateY.value = withSpring(0, {
-                    damping: 12,
+                    damping: 15,
                     stiffness: 100,
-                    mass: 0.8,
                 });
             }
         });
-
-    // ... existing animations
 
     const handleSearchToggle = () => {
         if (!isSearching) {
@@ -140,7 +132,7 @@ export const SelectionBottomSheet: React.FC<SelectionBottomSheetProps> = ({
             return (
                 <Animated.View
                     style={styles.searchHeader}
-                    entering={FadeIn.duration(250)}
+                    entering={FadeIn.duration(200)}
                     exiting={FadeOut.duration(200)}
                 >
                     <View style={styles.searchInputContainer}>
@@ -153,10 +145,15 @@ export const SelectionBottomSheet: React.FC<SelectionBottomSheetProps> = ({
                             value={searchText}
                             onChangeText={handleTextChange}
                             returnKeyType="search"
+                            autoCorrect={false}
                         />
                         {searchText.length > 0 && (
-                            <Pressable onPress={() => handleTextChange('')}>
-                                <Feather name="x-circle" size={16} color="#999" />
+                            <Pressable
+                                onPress={() => handleTextChange('')}
+                                style={styles.clearButton}
+                                hitSlop={15}
+                            >
+                                <Feather name="x-circle" size={18} color={colors.primaryCTA} />
                             </Pressable>
                         )}
                     </View>
@@ -170,23 +167,19 @@ export const SelectionBottomSheet: React.FC<SelectionBottomSheetProps> = ({
         return (
             <Animated.View
                 style={styles.headerContent}
-                entering={FadeIn.duration(250)}
+                entering={FadeIn.duration(200)}
                 exiting={FadeOut.duration(200)}
             >
                 {onBack && (
-                    <View style={styles.backContainer}>
-                        <Pressable onPress={onBack} hitSlop={10}>
-                            <Image source={BackIcon} style={styles.icon} contentFit="contain" />
-                        </Pressable>
-                    </View>
+                    <Pressable onPress={onBack} hitSlop={15} style={styles.backButton}>
+                        <Image source={BackIcon} style={styles.backIcon} contentFit="contain" />
+                    </Pressable>
                 )}
                 <Text style={styles.title}>{title}</Text>
                 {showSearchIcon && (
-                    <View style={styles.searchContainer}>
-                        <Pressable onPress={handleSearchToggle} hitSlop={10}>
-                            <Image source={SearchIcon} style={styles.icon} contentFit="contain" />
-                        </Pressable>
-                    </View>
+                    <Pressable onPress={handleSearchToggle} hitSlop={15} style={styles.searchButton}>
+                        <Image source={SearchIcon} style={styles.icon} contentFit="contain" />
+                    </Pressable>
                 )}
             </Animated.View>
         );
@@ -200,54 +193,62 @@ export const SelectionBottomSheet: React.FC<SelectionBottomSheetProps> = ({
             onRequestClose={onClose}
             statusBarTranslucent
         >
-            <GestureHandlerRootView style={styles.container}>
+            <GestureHandlerRootView style={styles.fullContainer}>
                 <Pressable style={StyleSheet.absoluteFill} onPress={onClose}>
                     <Animated.View style={[styles.backdrop, backdropStyle]} />
                 </Pressable>
 
-                <Animated.View style={[styles.sheet, { height: sheetHeight }, sheetStyle]}>
-                    <GestureDetector gesture={panGesture}>
-                        <View style={{ width: '100%' }}>
-                            <View style={styles.handleWrapper}>
-                                <View style={styles.handle} />
-                            </View>
+                {/* Using absolute positioning with bottom: 0 and overflow: visible */}
+                {/* To ensure it stays grounded, we wrap it in a view that doesn't react to keyboard height on Android */}
+                <View style={styles.sheetWrapper} pointerEvents="box-none">
+                    <Animated.View style={[styles.sheet, { height: sheetHeight }, sheetStyle]}>
+                        <GestureDetector gesture={panGesture}>
+                            <View style={styles.headerColumn}>
+                                <View style={styles.handleWrapper}>
+                                    <View style={styles.handle} />
+                                </View>
 
-                            <View style={styles.header}>
-                                {renderHeader()}
+                                <View style={styles.header}>
+                                    {renderHeader()}
+                                </View>
                             </View>
+                        </GestureDetector>
+
+                        <View style={styles.content}>
+                            {children}
                         </View>
-                    </GestureDetector>
-
-                    <View style={styles.content}>
-                        {children}
-                    </View>
-                </Animated.View>
+                    </Animated.View>
+                </View>
             </GestureHandlerRootView>
         </Modal>
     );
 };
 
 const styles = StyleSheet.create({
-    container: {
+    fullContainer: {
         flex: 1,
     },
     backdrop: {
         flex: 1,
         backgroundColor: 'rgba(1, 5, 1, 0.7)',
     },
+    sheetWrapper: {
+        ...StyleSheet.absoluteFillObject,
+        justifyContent: 'flex-end',
+    },
     sheet: {
-        position: 'absolute',
-        left: 0,
-        right: 0,
-        bottom: 0,
+        width: '100%',
         borderTopLeftRadius: 40,
         borderTopRightRadius: 40,
         backgroundColor: '#1B1B1B',
         overflow: 'hidden',
     },
+    headerColumn: {
+        width: '100%',
+    },
     handleWrapper: {
-        marginTop: 16,
-        marginBottom: 16,
+        marginTop: 12,
+        marginBottom: 12,
         alignItems: 'center',
         width: '100%',
     },
@@ -255,41 +256,41 @@ const styles = StyleSheet.create({
         width: 48,
         height: 4,
         borderRadius: 100,
-        backgroundColor: colors.bodyText,
+        backgroundColor: 'rgba(255,255,255,0.2)',
     },
     header: {
         width: '100%',
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
         paddingHorizontal: 24,
         marginBottom: 16,
-        minHeight: 40,
+        minHeight: 48,
+        justifyContent: 'center',
     },
     headerContent: {
-        flex: 1,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
         width: '100%',
     },
+    backButton: {
+        position: 'absolute',
+        left: 0,
+        zIndex: 10,
+    },
+    backIcon: {
+        width: 24,
+        height: 24,
+        tintColor: colors.titleText,
+    },
+    searchButton: {
+        position: 'absolute',
+        right: 0,
+    },
     title: {
-        flex: 1,
-        textAlign: 'center',
-        fontFamily: 'Manrope-SemiBold',
-        fontSize: 16,
+        fontFamily: 'Manrope-Bold',
+        fontSize: 18,
         color: colors.titleText,
         textTransform: 'capitalize',
-        marginHorizontal: 40,
-    },
-    searchContainer: {
-        position: 'absolute',
-        right: 24,
-    },
-    backContainer: {
-        position: 'absolute',
-        left: 24,
-        zIndex: 10,
+        textAlign: 'center',
     },
     icon: {
         width: 24,
@@ -298,14 +299,12 @@ const styles = StyleSheet.create({
     content: {
         flex: 1,
         width: '100%',
-        paddingHorizontal: 20,
     },
-    // Search Header Styles
     searchHeader: {
-        flex: 1,
         flexDirection: 'row',
         alignItems: 'center',
         gap: 12,
+        width: '100%',
     },
     searchInputContainer: {
         flex: 1,
@@ -314,7 +313,7 @@ const styles = StyleSheet.create({
         backgroundColor: '#2A2A2A',
         borderRadius: 12,
         paddingHorizontal: 12,
-        height: 40,
+        height: 44,
         gap: 8,
     },
     searchInput: {
@@ -323,14 +322,16 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: '#FFF',
         height: '100%',
-        paddingVertical: 0, // Fix alignment on Android
+        paddingVertical: 0,
+    },
+    clearButton: {
+        padding: 4,
     },
     cancelButton: {
         paddingVertical: 8,
-        paddingLeft: 4,
     },
     cancelText: {
-        fontFamily: 'Manrope-Medium',
+        fontFamily: 'Manrope-SemiBold',
         fontSize: 14,
         color: colors.primaryCTA,
     },

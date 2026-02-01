@@ -2,6 +2,8 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { colors } from '@/constants/colors';
+import { getSecurePrivateKey } from '@/services/walletCreationService';
+import { useWalletStore } from '@/store/walletStore';
 import * as Clipboard from 'expo-clipboard';
 import { File, Paths } from 'expo-file-system';
 import * as Haptics from 'expo-haptics';
@@ -9,21 +11,32 @@ import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Sharing from 'expo-sharing';
 import React, { useEffect, useState } from 'react';
-import { Alert, BackHandler, Platform, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, BackHandler, Platform, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const ChevronLeftIcon = require('../../../../assets/swap/arrow-left-02.svg');
 const CopyIcon = require('../../../../assets/wallet/copy-01.svg');
 const DownloadIcon = require('../../../../assets/settings/download-03.svg');
 
-// Mock private key - in production, this should be retrieved securely after passcode validation
-const MOCK_PRIVATE_KEY = '0xdeadbeef1234567890abcdefdeadbeef1234567890abcdefdeadbeef1234567890ab';
-
 export default function ExportPrivateKeyDisplayScreen() {
     const { top } = useSafeAreaInsets();
     const router = useRouter();
     const params = useLocalSearchParams<{ returnTo?: string }>();
+    const { address } = useWalletStore();
+    const [privateKey, setPrivateKey] = useState<string | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
     const [copied, setCopied] = useState(false);
+
+    useEffect(() => {
+        const fetchKey = async () => {
+            if (address) {
+                const key = await getSecurePrivateKey(address);
+                setPrivateKey(key);
+            }
+            setIsLoading(false);
+        };
+        fetchKey();
+    }, [address]);
 
     // Handle phone back button
     useEffect(() => {
@@ -40,8 +53,9 @@ export default function ExportPrivateKeyDisplayScreen() {
     };
 
     const handleCopy = async () => {
+        if (!privateKey) return;
         try {
-            await Clipboard.setStringAsync(MOCK_PRIVATE_KEY);
+            await Clipboard.setStringAsync(privateKey);
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             setCopied(true);
             setTimeout(() => setCopied(false), 2000);
@@ -52,14 +66,15 @@ export default function ExportPrivateKeyDisplayScreen() {
     };
 
     const handleDownload = async () => {
+        if (!privateKey || !address) return;
         try {
             // No vibration on start, only on success/share trigger
             const fileContent = JSON.stringify({
                 version: 1,
                 id: Math.random().toString(36).substring(7),
-                address: '0x1234567890abcdef1234567890abcdef12345678',
+                address: address,
                 crypto: {
-                    ciphertext: MOCK_PRIVATE_KEY,
+                    ciphertext: privateKey,
                     cipher: 'plaintext-export', // In production, this would be encrypted
                     kdf: 'none',
                     mac: 'none'
@@ -138,55 +153,63 @@ export default function ExportPrivateKeyDisplayScreen() {
 
             {/* Content */}
             <View style={styles.content}>
-                {/* Private Key Display Box */}
-                <View style={styles.keyBox}>
-                    <ThemedText style={styles.keyText} selectable>
-                        {MOCK_PRIVATE_KEY}
-                    </ThemedText>
-                </View>
+                {isLoading ? (
+                    <ActivityIndicator size="large" color={colors.primaryCTA} style={{ marginTop: 50 }} />
+                ) : (
+                    <>
+                        {/* Private Key Display Box */}
+                        <View style={styles.keyBox}>
+                            <ThemedText style={styles.keyText} selectable>
+                                {privateKey || 'Error: Key not found'}
+                            </ThemedText>
+                        </View>
 
-                {/* Action Buttons */}
-                <View style={styles.actionRow}>
-                    {/* Copy Button */}
-                    <View style={styles.actionItem}>
-                        <TouchableOpacity
-                            activeOpacity={0.7}
-                            onPress={handleCopy}
-                            style={styles.actionButton}
-                        >
-                            <View style={styles.iconWrapper}>
-                                <Image
-                                    source={CopyIcon}
-                                    style={styles.fullSize}
-                                    contentFit="contain"
-                                />
+                        {/* Action Buttons */}
+                        <View style={styles.actionRow}>
+                            {/* Copy Button */}
+                            <View style={styles.actionItem}>
+                                <TouchableOpacity
+                                    activeOpacity={0.7}
+                                    onPress={handleCopy}
+                                    style={styles.actionButton}
+                                    disabled={!privateKey}
+                                >
+                                    <View style={styles.iconWrapper}>
+                                        <Image
+                                            source={CopyIcon}
+                                            style={styles.fullSize}
+                                            contentFit="contain"
+                                        />
+                                    </View>
+                                </TouchableOpacity>
+                                <ThemedText style={styles.actionLabel}>
+                                    {copied ? 'Copied!' : 'Copy'}
+                                </ThemedText>
                             </View>
-                        </TouchableOpacity>
-                        <ThemedText style={styles.actionLabel}>
-                            {copied ? 'Copied!' : 'Copy'}
-                        </ThemedText>
-                    </View>
 
-                    {/* Download Button */}
-                    <View style={styles.actionItem}>
-                        <TouchableOpacity
-                            activeOpacity={0.7}
-                            onPress={handleDownload}
-                            style={styles.actionButton}
-                        >
-                            <View style={styles.iconWrapper}>
-                                <Image
-                                    source={DownloadIcon}
-                                    style={styles.fullSize}
-                                    contentFit="contain"
-                                />
+                            {/* Download Button */}
+                            <View style={styles.actionItem}>
+                                <TouchableOpacity
+                                    activeOpacity={0.7}
+                                    onPress={handleDownload}
+                                    style={styles.actionButton}
+                                    disabled={!privateKey}
+                                >
+                                    <View style={styles.iconWrapper}>
+                                        <Image
+                                            source={DownloadIcon}
+                                            style={styles.fullSize}
+                                            contentFit="contain"
+                                        />
+                                    </View>
+                                </TouchableOpacity>
+                                <ThemedText style={styles.actionLabel}>
+                                    Download
+                                </ThemedText>
                             </View>
-                        </TouchableOpacity>
-                        <ThemedText style={styles.actionLabel}>
-                            Download
-                        </ThemedText>
-                    </View>
-                </View>
+                        </View>
+                    </>
+                )}
             </View>
         </ThemedView>
     );

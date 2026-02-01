@@ -3,6 +3,7 @@ import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image'; // Added import for Image
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 
 // Fallback logic for icons
 const BackspaceIcon = require('@/assets/security/delete-left.svg');
@@ -13,7 +14,7 @@ interface SecurityKeypadProps {
     onDelete: () => void;
     onBiometric?: () => void;
     showBiometric?: boolean;
-    biometricIcon?: any;
+    biometricIcon?: boolean;
     biometricLabel?: string;
 }
 
@@ -60,7 +61,7 @@ export const SecurityKeypad: React.FC<SecurityKeypadProps> = ({
                         {showBiometric && onBiometric && (
                             <TouchableOpacity style={[styles.utilityButton]} onPress={onBiometric}>
                                 {biometricIcon ? (
-                                    <Image source={biometricIcon} style={styles.biometricIcon} contentFit="contain" />
+                                    <MaterialIcons name="fingerprint" size={32} color="white" />
                                 ) : (
                                     <Text style={styles.utilityText}>{biometricLabel}</Text>
                                 )}

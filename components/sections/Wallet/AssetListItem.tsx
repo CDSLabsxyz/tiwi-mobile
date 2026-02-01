@@ -4,14 +4,17 @@
  * Converted from Tailwind to StyleSheet
  */
 
+import { TokenPrice } from '@/components/ui/TokenPrice';
 import { colors } from '@/constants/colors';
+import { useTranslation } from '@/hooks/useLocalization';
 import type { PortfolioItem } from '@/services/walletService';
+import { getColorFromSeed } from '@/utils/formatting';
 import { Image } from 'expo-image';
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 interface AssetListItemProps {
-    asset: PortfolioItem;
+    asset: PortfolioItem & { priceUSD?: string };
     onPress?: () => void;
 }
 
@@ -22,6 +25,8 @@ export const AssetListItem: React.FC<AssetListItemProps> = ({
     asset,
     onPress,
 }) => {
+    const { t } = useTranslation();
+
     return (
         <TouchableOpacity
             activeOpacity={0.8}
@@ -32,11 +37,17 @@ export const AssetListItem: React.FC<AssetListItemProps> = ({
             <View style={styles.leftSection}>
                 {/* Asset Icon */}
                 <View style={styles.iconContainer}>
-                    <Image
-                        source={asset.icon}
-                        style={styles.iconImage}
-                        contentFit="cover"
-                    />
+                    {asset.logo ? (
+                        <Image
+                            source={asset.logo}
+                            style={styles.iconImage}
+                            contentFit="cover"
+                        />
+                    ) : (
+                        <View style={[styles.iconImage, styles.fallbackCircle, { backgroundColor: getColorFromSeed(asset.symbol) }]}>
+                            <Text style={styles.fallbackText}>{asset.symbol.charAt(0).toUpperCase()}</Text>
+                        </View>
+                    )}
                 </View>
 
                 {/* Symbol + Name */}
@@ -100,9 +111,10 @@ export const AssetListItem: React.FC<AssetListItemProps> = ({
                 </Text>
 
                 {/* USD Value */}
-                <Text style={styles.usdValue}>
-                    {asset.usdValue}
-                </Text>
+                <TokenPrice
+                    amount={asset.usdValue}
+                    style={styles.usdValue}
+                />
             </View>
         </TouchableOpacity>
     );
@@ -134,6 +146,15 @@ const styles = StyleSheet.create({
     iconImage: {
         width: '100%',
         height: '100%',
+    },
+    fallbackCircle: {
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    fallbackText: {
+        fontFamily: 'Manrope-Bold',
+        fontSize: 14,
+        color: '#FFFFFF',
     },
     nameContainer: {
         flex: 1,

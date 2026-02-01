@@ -2,6 +2,7 @@ import { TokenListItem } from '@/components/sections/Market/TokenListItem';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { colors } from '@/constants/colors';
+import { useTranslation } from '@/hooks/useLocalization';
 import { MarketCategory, useMarketPairs } from '@/hooks/useMarketPairs';
 import { apiClient, MarketTokenPair, TokenMetadata } from '@/services/apiClient';
 import { useMarketStore } from '@/store/marketStore';
@@ -51,6 +52,7 @@ const MarketListItemSkeleton = () => (
 export default function MarketScreen() {
     const { top, bottom } = useSafeAreaInsets();
     const router = useRouter();
+    const { t } = useTranslation();
     const params = useLocalSearchParams<{ category?: string }>();
 
     const [marketType, setMarketType] = useState<'spot' | 'perp'>('spot');
@@ -63,6 +65,14 @@ export default function MarketScreen() {
     const [isSearchVisible, setIsSearchVisible] = useState(false);
 
     const { favorites, toggleFavorite, isFavorite } = useMarketStore();
+
+    const subTabs: { id: MarketCategory | 'favourite'; label: string }[] = useMemo(() => [
+        { id: 'favourite', label: t('home.favourite') },
+        { id: 'hot', label: t('home.top') },
+        { id: 'new', label: t('home.new') },
+        { id: 'gainers', label: t('home.gainers') },
+        { id: 'losers', label: t('home.losers') },
+    ], [t]);
 
     // Reset tab if category param changes
     useEffect(() => {
@@ -79,19 +89,15 @@ export default function MarketScreen() {
         limit: 40,
         enabled: activeSubTab !== 'favourite'
     });
-    console.log("🚀 ~ MarketScreen ~ marketPairs:", marketPairs)
 
     // Staggered Prefetching
     const queryClient = useQueryClient();
     useEffect(() => {
         const categories: MarketCategory[] = ['hot', 'new', 'gainers', 'losers'];
-
-        // Priority: current tab first (handled by useMarketPairs), then others
         const toPrefetch = categories.filter(c => c !== activeSubTab);
 
         const prefetch = async () => {
             for (const category of toPrefetch) {
-                // Delay each prefetch to avoid parallel network burst
                 await new Promise(resolve => setTimeout(resolve, 500));
                 queryClient.prefetchQuery({
                     queryKey: ['marketPairs', category, 40],
@@ -137,14 +143,19 @@ export default function MarketScreen() {
 
                 const mappedFavs: MarketTokenPair[] = validResults.map(t => ({
                     ...t,
-                    logoURI: t.logoURI || '',
+                    address: t.address,
+                    symbol: t.symbol,
+                    name: t.name,
+                    chainId: t.chainId,
+                    decimals: t.decimals || 18,
                     priceUSD: t.priceUSD || '0',
-                    verified: t.verified || false,
-                    priceChange24h: t.priceChange24h || 0,
-                    volume24h: t.volume24h || 0,
-                    marketCap: t.marketCap || 0,
-                    holders: t.holders || 0,
-                    transactionCount: t.transactionCount || 0,
+                    logoURI: t.logoURI || '',
+                    verified: !!t.verified,
+                    priceChange24h: t.priceChange24h ? parseFloat(String(t.priceChange24h)) : 0,
+                    volume24h: typeof t.volume24h === 'number' ? t.volume24h : parseFloat(String(t.volume24h || '0')),
+                    marketCap: typeof t.marketCap === 'number' ? t.marketCap : parseFloat(String(t.marketCap || '0')),
+                    holders: typeof t.holders === 'number' ? t.holders : parseInt(String(t.holders || '0')),
+                    transactionCount: typeof t.transactionCount === 'number' ? t.transactionCount : parseInt(String(t.transactionCount || '0')),
                 }));
 
                 setFavoriteTokens(mappedFavs);
@@ -175,12 +186,17 @@ export default function MarketScreen() {
 
                 const mappedResults: MarketTokenPair[] = results.map(t => ({
                     ...t,
-                    logoURI: t.logoURI || '',
+                    address: t.address,
+                    symbol: t.symbol,
+                    name: t.name,
+                    chainId: t.chainId,
+                    decimals: t.decimals || 18,
                     priceUSD: t.priceUSD || '0',
-                    verified: t.verified || false,
-                    priceChange24h: t.priceChange24h || 0,
-                    volume24h: t.volume24h || 0,
-                    marketCap: t.marketCap || 0,
+                    logoURI: t.logoURI || '',
+                    verified: !!t.verified,
+                    priceChange24h: t.priceChange24h ? parseFloat(String(t.priceChange24h)) : 0,
+                    volume24h: typeof t.volume24h === 'number' ? t.volume24h : parseFloat(String(t.volume24h || '0')),
+                    marketCap: typeof t.marketCap === 'number' ? t.marketCap : parseFloat(String(t.marketCap || '0')),
                 }));
 
                 setSearchResults(mappedResults);
@@ -200,13 +216,11 @@ export default function MarketScreen() {
 
         if (searchQuery.trim()) {
             const q = searchQuery.toLowerCase();
-            // Local filter
             const localResults = tokens.filter(t =>
                 t.symbol.toLowerCase().includes(q) ||
                 t.name.toLowerCase().includes(q)
             );
 
-            // Merge with backend results, avoiding duplicates
             const seen = new Set(localResults.map(t => `${t.chainId}-${t.address}`));
             const merged = [...localResults];
 
@@ -399,7 +413,6 @@ export default function MarketScreen() {
                             source={SearchIcon}
                             style={styles.iconFull}
                             contentFit="contain"
-                        // tintColor={colors.bodyText}
                         />
                     </TouchableOpacity>
                 </View>

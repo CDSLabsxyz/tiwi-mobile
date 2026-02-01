@@ -6,6 +6,7 @@
 
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { colors } from '@/constants/colors';
+import { useTranslation } from '@/hooks/useLocalization';
 import { useOnboardingStore } from '@/store/onboardingStore';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
@@ -24,33 +25,35 @@ interface OnboardingSlide {
     image: any;
 }
 
-const slides: OnboardingSlide[] = [
-    {
-        id: '1',
-        title: 'Trade Smarter',
-        description: 'One tap. Any chain. Best prices guaranteed.',
-        image: require('../assets/onboarding/trade-smarter.svg'),
-    },
-    {
-        id: '2',
-        title: 'Pay Like the Future Is Now',
-        description: 'Send and accept crypto payments instantly',
-        image: require('../assets/onboarding/pay-future.png'),
-    },
-    {
-        id: '3',
-        title: 'NFTs Unlocked',
-        description: 'Mint, trade, and unlock exclusive utilities seamlessly',
-        image: require('../assets/onboarding/nft-unlocked.png'),
-    },
-];
 
 export default function OnboardingScreen() {
     const { bottom } = useSafeAreaInsets();
     const router = useRouter();
+    const { t } = useTranslation();
     const flatListRef = useRef<FlatList>(null);
     const [currentIndex, setCurrentIndex] = useState(0);
     const { completeOnboarding } = useOnboardingStore();
+
+    const slides: OnboardingSlide[] = [
+        {
+            id: '1',
+            title: t('onboarding.slide1_title'),
+            description: t('onboarding.slide1_desc'),
+            image: require('../assets/onboarding/trade-smarter.svg'),
+        },
+        {
+            id: '2',
+            title: t('onboarding.slide2_title'),
+            description: t('onboarding.slide2_desc'),
+            image: require('../assets/onboarding/pay-future.png'),
+        },
+        {
+            id: '3',
+            title: t('onboarding.slide3_title'),
+            description: t('onboarding.slide3_desc'),
+            image: require('../assets/onboarding/nft-unlocked.png'),
+        },
+    ];
 
     const handleNext = () => {
         if (currentIndex < slides.length - 1) {

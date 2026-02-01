@@ -80,11 +80,11 @@ export default function ImportWalletScreen() {
                 address = await importWalletByPrivateKey(inputText.trim());
             }
 
-            // Set connection in store
             setConnection({
                 address,
                 chainId: 1,
                 isConnected: true,
+                source: 'imported',
             });
 
             setIsSuccess(true);
