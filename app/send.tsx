@@ -154,7 +154,7 @@ export default function SendScreen() {
                         walletAddress: address,
                         transactionHash: txHash,
                         chainId: parseInt(sendStore.selectedChain?.id || '1'),
-                        type: 'send',
+                        type: 'Sent',
                         fromTokenAddress: sendStore.selectedToken?.id,
                         fromTokenSymbol: sendStore.selectedToken?.symbol,
                         amount: sendStore.amount,
@@ -178,7 +178,7 @@ export default function SendScreen() {
                             walletAddress: address,
                             transactionHash: txHash,
                             chainId: parseInt(sendStore.selectedChain?.id || '1'),
-                            type: 'multi_send',
+                            type: 'Sent', // multi_send is not a valid type, mapping to Sent
                             fromTokenAddress: sendStore.selectedToken?.id,
                             fromTokenSymbol: sendStore.selectedToken?.symbol,
                             amount: sendStore.amountPerRecipient,

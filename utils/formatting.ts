@@ -282,18 +282,3 @@ export function formatFiatValue(
         return `$${val.toFixed(2)}`;
     }
 }
-
-/**
- * Format token balance for display (e.g. unified sheet, wallet balance)
- * Max 8 decimal places
- */
-export function formatTokenBalance(amount: string | number | undefined): string {
-    if (amount === undefined || amount === null) return '0';
-    const val = typeof amount === 'string' ? parseFloat(amount) : amount;
-    if (isNaN(val) || val === 0) return '0';
-
-    return val.toLocaleString('en-US', {
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 8,
-    });
-}

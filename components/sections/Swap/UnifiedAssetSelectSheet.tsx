@@ -3,7 +3,7 @@ import { colors } from '@/constants/colors';
 import { useChains } from '@/hooks/useChains';
 import { useTokens } from '@/hooks/useTokens';
 import { useWalletBalances } from '@/hooks/useWalletBalances';
-import { formatTokenBalance, getColorFromSeed, } from '@/utils/formatting';
+import { getColorFromSeed, } from '@/utils/formatting';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import React, { useEffect, useMemo, useState } from 'react';
@@ -102,7 +102,7 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
                 icon: t.logoURI,
                 tvl: t.liquidity ? `$${t.liquidity.toLocaleString()}` : 'N/A',
                 balanceFiat: walletToken?.usdValue ? `$${parseFloat(walletToken.usdValue).toFixed(2)}` : '$0.00',
-                balanceToken: walletToken?.balance ? `${formatTokenBalance(walletToken.balance)} ${t.symbol}` : `0 ${t.symbol}`,
+                balanceToken: walletToken?.balanceFormatted || `0.00 ${t.symbol}`,
                 address: t.address,
                 chainId: t.chainId,
                 decimals: t.decimals,

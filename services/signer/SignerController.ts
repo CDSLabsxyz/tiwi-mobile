@@ -31,7 +31,7 @@ export class SignerController {
 
             if (!isAuthorized && securityStore.hasPasscode) {
                 // Fallback to passcode would typically happen here or be handled by authenticateBiometrics
-                // For now, if unauthorized, we block.
+                // For now, if unauthorized, we block
                 throw new Error('User authentication failed');
             }
 

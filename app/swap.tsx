@@ -236,7 +236,7 @@ export default function SwapScreen() {
                 walletAddress: address,
                 transactionHash: txHash,
                 chainId: chainId,
-                type: activeTab === 'limit' ? 'limit_order' : 'swap',
+                type: 'Swap',
                 fromTokenAddress: fromToken.address,
                 fromTokenSymbol: fromToken.symbol,
                 toTokenAddress: toToken.address,

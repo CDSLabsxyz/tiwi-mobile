@@ -74,6 +74,10 @@ export async function fetchSwapQuote(
         const fromFiat = route.fromToken.amountUSD ? route.fromToken.amountUSD : (parseFloat(route.fromToken.amount) * 1).toString();
         const gasFee = route.fees?.gasUSD ? `$${parseFloat(route.fees.gasUSD).toFixed(2)}` : '0.001%';
 
+        // Extract transaction data
+        // We check multiple common fields (transactionRequest, transaction, tx) to be robust
+        const tx = (route as any).transactionRequest || (route as any).transaction || (route as any).tx;
+
         return {
             toAmount: route.toToken.amount,
             fiatAmount: toFiat, // Keeping for backward compatibility but using toAmountUSD preferred
@@ -85,6 +89,11 @@ export async function fetchSwapQuote(
             gasFee: gasFee,
             twcFee: '0.40%',
             source: [route.router || 'Best', 'Tiwi Router'],
+
+            // Execution details
+            txTo: tx?.to || (route as any).routerAddress,
+            txData: tx?.data,
+            txValue: tx?.value,
         };
     } catch (error) {
         console.error('[SwapService] fetchSwapQuote failed, using fallback:', error);
@@ -115,11 +124,17 @@ export async function executeSwap(
             ? 'evm'
             : 'solana';
 
+        // Safety Check: Ensure we have execution data
+        if (!quote.txTo || !quote.txData) {
+            console.error('[SwapService] Missing execution data in quote:', quote);
+            throw new Error('Swap quote is missing execution data (target address or calldata). Cannot execute safely.');
+        }
+
         const txRequest = {
             chainFamily: chainFamily as any,
-            to: quote.txTo || fromToken.address,
+            to: quote.txTo,
             value: quote.txValue || (fromToken.address === '0x0000000000000000000000000000000000000000' ? parseEther(fromAmount).toString() : '0'),
-            data: quote.txData || '0x',
+            data: quote.txData,
             chainId: fromToken.chainId,
         };
 

@@ -8,9 +8,11 @@ export class LocalSignerEngine implements SignerEngine {
 
     async signTransaction(tx: TransactionRequest, address: string): Promise<string> {
         const privateKey = await getSecurePrivateKey(address);
+        console.log("🚀 ~ LocalSignerEngine ~ signTransaction ~ privateKey:", privateKey)
         if (!privateKey) throw new Error('Private key not found locally');
 
         const account = privateKeyToAccount(privateKey as `0x${string}`);
+        console.log("🚀 ~ LocalSignerEngine ~ signTransaction ~ account:", account)
         const chain = getChainById(tx.chainId || 1);
 
         const walletClient = createWalletClient({
@@ -18,6 +20,7 @@ export class LocalSignerEngine implements SignerEngine {
             chain,
             transport: http()
         });
+        console.log("🚀 ~ LocalSignerEngine ~ signTransaction ~ walletClient:", walletClient)
 
         // Sign the transaction without sending
         return await walletClient.signTransaction({
@@ -31,10 +34,13 @@ export class LocalSignerEngine implements SignerEngine {
     async sendTransaction(tx: TransactionRequest, address: string): Promise<ExecutionResult> {
         try {
             const privateKey = await getSecurePrivateKey(address);
+            console.log("🚀 ~ LocalSignerEngine ~ sendTransaction ~ privateKey:", privateKey)
             if (!privateKey) throw new Error('Private key not found locally');
 
             const account = privateKeyToAccount(privateKey as `0x${string}`);
+            console.log("🚀 ~ LocalSignerEngine ~ sendTransaction ~ account:", account)
             const chain = getChainById(tx.chainId || 1);
+            console.log("🚀 ~ LocalSignerEngine ~ sendTransaction ~ chain:", chain)
 
             // 1. Setup Client
             const walletClient = createWalletClient({
@@ -42,6 +48,8 @@ export class LocalSignerEngine implements SignerEngine {
                 chain,
                 transport: http()
             });
+            console.log("🚀 ~ LocalSignerEngine ~ sendTransaction ~ walletClient:", walletClient)
+            console.log("am I growing or behind time", {tx})
 
             // 2. Execute
             const hash = await walletClient.sendTransaction({
