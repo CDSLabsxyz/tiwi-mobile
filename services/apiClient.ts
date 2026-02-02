@@ -294,7 +294,6 @@ class TiwiApiClient {
     async getWalletBalances(address: string, chains?: number[]): Promise<WalletBalancesResponse> {
         const chainsParam = chains ? `?chains=${chains.join(',')}` : '';
         const result = await this.fetcher<WalletBalancesResponse>(`/api/v1/wallet/balances?address=${address}${chainsParam ? `&${chainsParam.slice(1)}` : ''}`);
-        console.log("🚀 ~ TiwiApiClient ~ getWalletBalances ~ result:", result)
         return result;
     }
 

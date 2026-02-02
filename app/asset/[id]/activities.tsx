@@ -6,6 +6,7 @@
 
 import { WalletHeader } from "@/components/sections/Wallet";
 import { CustomStatusBar } from "@/components/ui/custom-status-bar";
+import { TokenPrice } from "@/components/ui/TokenPrice";
 import { colors } from "@/constants/colors";
 import {
     fetchAssetDetail,
@@ -219,7 +220,8 @@ export default function AssetActivitiesScreen() {
                                             >
                                                 {activity.amount}
                                             </Text>
-                                            <Text
+                                            <TokenPrice
+                                                amount={activity.usdAmount || activity.usdValue}
                                                 style={{
                                                     fontFamily: "Manrope-Medium",
                                                     fontSize: 12,
@@ -227,9 +229,7 @@ export default function AssetActivitiesScreen() {
                                                     color: colors.mutedText,
                                                     textAlign: "right",
                                                 }}
-                                            >
-                                                {activity.usdValue}
-                                            </Text>
+                                            />
                                         </View>
                                     </View>
                                 );

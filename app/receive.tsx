@@ -7,9 +7,9 @@
 import { WalletHeader } from '@/components/sections/Wallet/WalletHeader';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { colors } from '@/constants/colors';
+import { useChains } from '@/hooks/useChains';
 import { fetchWalletData, type PortfolioItem } from '@/services/walletService';
 import { mapAssetToTokenOption } from '@/utils/assetMapping';
-import { getChainOptionWithFallback } from '@/utils/chainUtils';
 import { WALLET_ADDRESS, truncateAddress } from '@/utils/wallet';
 import * as Clipboard from 'expo-clipboard';
 import { Image } from 'expo-image';
@@ -28,7 +28,7 @@ const ShareIcon = require('../assets/wallet/share-08.svg');
 interface TokenWithAddress {
     token: ReturnType<typeof mapAssetToTokenOption>;
     address: string;
-    chainId: string;
+    chainId: string | number;
     asset: PortfolioItem;
 }
 
@@ -37,6 +37,7 @@ export default function ReceiveScreen() {
     const router = useRouter();
     const pathname = usePathname();
     const params = useLocalSearchParams<{ tokenId?: string }>();
+    const { data: chains } = useChains();
 
     const [tokens, setTokens] = useState<TokenWithAddress[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
@@ -67,7 +68,7 @@ export default function ReceiveScreen() {
                 const token = mapAssetToTokenOption(asset, asset.balance, asset.usdValue);
                 // For now, use main wallet address. In production, this would be chain-specific
                 let address = WALLET_ADDRESS;
-                if (asset.chainId === 'aegis') {
+                if (String(asset.chainId) === 'aegis' || String(asset.chainId) === '1399811149') {
                     // Solana-like address format (mock)
                     address = 'Re9d3o52i092j9g9iu2ngmu0939i4ti938hT432';
                 }
@@ -171,7 +172,8 @@ export default function ReceiveScreen() {
 
     // If token is selected, show QR code view
     if (selectedToken) {
-        const chainOption = getChainOptionWithFallback(selectedToken.chainId as any);
+        const chain = chains?.find(c => String(c.id) === String(selectedToken.chainId));
+
 
         return (
             <View style={[styles.container, { backgroundColor: colors.bg }]}>
@@ -332,7 +334,8 @@ export default function ReceiveScreen() {
                     ) : (
                         <View style={styles.tokenList}>
                             {filteredTokens.map((item) => {
-                                const chain = getChainOptionWithFallback(item.chainId as any);
+                                const chain = chains?.find(c => String(c.id) === String(item.chainId));
+                                const chainLogo = chain?.logoURI || chain?.logo;
                                 const truncatedAddr = truncateAddress(item.address);
 
                                 return (
@@ -356,7 +359,7 @@ export default function ReceiveScreen() {
                                                 {/* Chain Badge */}
                                                 <View style={styles.chainBadge}>
                                                     <Image
-                                                        source={chain.icon}
+                                                        source={chainLogo || require('../assets/home/chains/ethereum.svg')}
                                                         style={styles.chainIcon}
                                                         contentFit="contain"
                                                     />

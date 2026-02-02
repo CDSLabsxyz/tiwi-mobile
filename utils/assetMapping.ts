@@ -4,20 +4,16 @@
  * Production-ready mapping that uses chainId from asset data
  */
 
-import type { TokenOption } from "@/components/sections/Swap/TokenSelectSheet";
 import type { ChainOption } from "@/components/sections/Swap/ChainSelectSheet";
-import type { PortfolioItem, AssetDetail } from "@/services/walletService";
-import { getChainOptionWithFallback } from "./chainUtils";
+import type { TokenOption } from "@/components/sections/Swap/TokenSelectSheet";
+import type { AssetDetail, PortfolioItem } from "@/services/walletService";
 
 const TWCIcon = require("@/assets/home/tiwicat-token.svg");
 const USDCIcon = require("@/assets/home/coins-02.svg");
 const TetherIcon = require("@/assets/home/coins-02-1.svg");
 const BNBIcon = require("@/assets/home/coins-01.svg");
 const EthereumIcon = require("@/assets/home/chains/ethereum.svg");
-const ApexIcon = require("@/assets/home/chains/near.svg");
-const VerdantIcon = require("@/assets/home/chains/polygon.svg");
 const AegisIcon = require("@/assets/home/chains/solana.svg");
-const CortexIcon = require("@/assets/home/chains/avalanche.svg");
 
 /**
  * Maps asset symbol to token option
@@ -101,55 +97,18 @@ export const mapAssetToTokenOption = (
 
 /**
  * Maps asset to chain option using chainId from asset data
- * Production-ready function that uses the chainId field from the asset
- * Falls back to inference if chainId is not available (for backward compatibility)
+ * Note: This returns a skeleton ChainOption that should be enriched by the UI
+ * using the live chains API.
  */
 export const mapAssetToChainOption = (
   asset: PortfolioItem | AssetDetail
-): ChainOption | null => {
-  // Priority 1: Use chainId from asset data (production-ready approach)
-  if ('chainId' in asset && asset.chainId) {
-    return getChainOptionWithFallback(asset.chainId);
-  }
+): ChainOption => {
+  const chainId = 'chainId' in asset && asset.chainId ? asset.chainId : 1; // Default to 1 (Ethereum)
 
-  // Priority 2: Fallback to inference (for backward compatibility)
-  // This should not be needed in production, but kept for safety
-  const name = asset.name.toLowerCase();
-  const symbol = asset.symbol.toLowerCase();
-
-  // Map asset names and symbols to chains (fallback only)
-  const chainMap: Record<string, ChainId> = {
-    bitcoin: "ethereum",
-    btc: "ethereum",
-    ethereum: "ethereum",
-    eth: "ethereum",
-    solana: "aegis",
-    sol: "aegis",
-    "bnb smart chain": "apex",
-    bnb: "apex",
-    usdc: "ethereum",
-    tether: "ethereum",
-    twc: "ethereum",
+  return {
+    id: chainId,
+    name: "Loading...",
+    icon: null,
   };
-
-  // Check symbol first (more specific)
-  if (chainMap[symbol]) {
-    return getChainOptionWithFallback(chainMap[symbol]);
-  }
-
-  // Check for exact name match
-  if (chainMap[name]) {
-    return getChainOptionWithFallback(chainMap[name]);
-  }
-
-  // Check for partial matches in name
-  for (const [key, chainId] of Object.entries(chainMap)) {
-    if (name.includes(key) || key.includes(name)) {
-      return getChainOptionWithFallback(chainId);
-    }
-  }
-
-  // Default to Ethereum
-  return getChainOptionWithFallback("ethereum");
 };
 

@@ -49,18 +49,18 @@ export default function EarnScreen() {
     };
 
     // Mock data - in production, fetch from API
-    const totalStaked = '213,111,612 TWC';
+    const totalStaked = '0 TWC';
     const stakingTokens = [
         {
             symbol: 'TWC',
             name: 'TIWI',
-            apy: '~12.5%',
+            apy: '~N/A%',
             icon: TWCIcon,
         },
     ];
 
-    const myStakes = [
-        { symbol: 'TWC', name: 'TIWI', apy: '~12.5%', icon: TWCIcon },
+    const myStakes:any[] = [
+        // { symbol: 'TWC', name: 'TIWI', apy: '~12.5%', icon: TWCIcon },
     ];
 
     return (

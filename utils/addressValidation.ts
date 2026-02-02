@@ -77,7 +77,7 @@ const validateCosmosAddress = (address: string): ValidationResult => {
 /**
  * Validates address based on chain type
  */
-export const validateAddress = (address: string, chainId: string | null | undefined): ValidationResult => {
+export const validateAddress = (address: string, chainId: ChainId | null | undefined): ValidationResult => {
   if (!chainId) {
     // If no chain selected, allow any format but still check basic format
     const trimmed = address.trim();
@@ -91,27 +91,25 @@ export const validateAddress = (address: string, chainId: string | null | undefi
     return { isValid: true };
   }
 
-  // Map chain IDs to validation functions
-  const chainValidationMap: Record<string, (addr: string) => ValidationResult> = {
-    // EVM chains (Ethereum, Polygon, Avalanche, etc.)
-    ethereum: validateEVMAddress,
-    verdant: validateEVMAddress, // Assuming Verdant is EVM-compatible
-    cortex: validateEVMAddress, // Assuming Cortex is EVM-compatible
-    
-    // Solana
-    aegis: validateSolanaAddress, // Aegis uses Solana icon, so likely Solana-based
-    
-    // SUI - if we have a SUI chain
-    // sui: validateSuiAddress,
-    
-    // Cosmos - if we have a Cosmos chain
-    // cosmos: validateCosmosAddress,
-    apex: validateCosmosAddress, // Apex might be Cosmos-based (or could be EVM, adjust as needed)
-  };
+  // Handle numeric chain IDs from the API
+  const chainIdStr = String(chainId);
 
-  const validator = chainValidationMap[chainId];
-  if (validator) {
-    return validator(address);
+  // Map chain IDs to validation logic
+  // EVM chains: 1 (Eth), 56 (BSC), 137 (Polygon), 43114 (Avalanche), 42161 (Arbitrum), 10 (Optimism)
+  const evmChains = ['1', '56', '137', '43114', '42161', '10', 'ethereum', 'verdant', 'cortex'];
+  if (evmChains.includes(chainIdStr)) {
+    return validateEVMAddress(address);
+  }
+
+  // Solana: 1399811149
+  if (chainIdStr === '1399811149' || chainIdStr === 'aegis') {
+    return validateSolanaAddress(address);
+  }
+
+  // Apex (Cosmos?): 56 was used in mock for Apex, but in API 56 is BSC. 
+  // If internal 'apex' is used, keep cosmos validation for now.
+  if (chainIdStr === 'apex') {
+    return validateCosmosAddress(address);
   }
 
   // Default to EVM validation for unknown chains
@@ -123,7 +121,7 @@ export const validateAddress = (address: string, chainId: string | null | undefi
  */
 export const validateAddresses = (
   addresses: string[],
-  chainId: string | null | undefined
+  chainId: ChainId | null | undefined
 ): { isValid: boolean; errors: string[] } => {
   const errors: string[] = [];
   let allValid = true;
@@ -147,22 +145,22 @@ export const validateAmount = (amount: string): ValidationResult => {
   if (!trimmed) {
     return { isValid: false, error: "Amount is required" };
   }
-  
+
   // Only allow numbers and one decimal point
   if (!/^\d*\.?\d*$/.test(trimmed)) {
     return { isValid: false, error: "Only numbers and decimals allowed" };
   }
-  
+
   // Check if it's a valid number
   const numValue = parseFloat(trimmed);
   if (isNaN(numValue)) {
     return { isValid: false, error: "Invalid number" };
   }
-  
+
   if (numValue <= 0) {
     return { isValid: false, error: "Amount must be greater than 0" };
   }
-  
+
   return { isValid: true };
 };
 

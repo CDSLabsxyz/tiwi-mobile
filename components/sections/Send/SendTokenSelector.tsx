@@ -4,11 +4,11 @@
  * Matches Figma design (node-id: 3279-118948)
  */
 
-import React from "react";
-import { View, Text, TouchableOpacity } from "react-native";
-import { Image } from "expo-image";
 import { colors } from "@/constants";
 import { useSendStore } from "@/store/sendStore";
+import { Image } from "expo-image";
+import React from "react";
+import { Text, TouchableOpacity, View } from "react-native";
 
 const ArrowDownIcon = require("@/assets/home/arrow-down-01.svg");
 
@@ -61,8 +61,6 @@ export const SendTokenSelector: React.FC<SendTokenSelectorProps> = ({ onTokenPre
             {/* Token Icon with Chain Badge */}
             <View
               style={{
-                // width: 57,
-                // height: 57,
                 position: "relative",
                 flexShrink: 0,
               }}
@@ -71,41 +69,49 @@ export const SendTokenSelector: React.FC<SendTokenSelectorProps> = ({ onTokenPre
                 style={{
                   width: 56,
                   height: 56,
-                  borderRadius: 50,
+                  borderRadius: 28,
                   backgroundColor: colors.bgStroke,
                   borderWidth: 1,
                   borderColor: colors.bodyText,
                   overflow: "hidden",
                   alignItems: "center",
                   justifyContent: "center",
-                  // marginTop: 10,
                 }}
               >
-                <Image
-                  source={selectedToken.icon}
-                  className="w-full h-full"
-                  contentFit="cover"
-                />
+                {selectedToken.icon ? (
+                  <Image
+                    source={typeof selectedToken.icon === 'string' ? { uri: selectedToken.icon } : selectedToken.icon}
+                    style={{ width: '100%', height: '100%' }}
+                    contentFit="cover"
+                  />
+                ) : (
+                  <View style={{ width: '100%', height: '100%', backgroundColor: '#2A2A2A', alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ color: colors.titleText, fontSize: 18, fontWeight: 'bold' }}>{selectedToken.symbol.charAt(0)}</Text>
+                  </View>
+                )}
               </View>
               {selectedChain && (
                 <View
                   style={{
                     position: "absolute",
-                    bottom: 0,
-                    right: 0,
+                    bottom: -2,
+                    right: -2,
                     width: 18,
                     height: 18,
                     borderRadius: 9,
-                    backgroundColor: colors.bgStroke,
-                    borderWidth: 1,
-                    borderColor: colors.bodyText,
+                    backgroundColor: colors.bg,
+                    borderWidth: 1.5,
+                    borderColor: colors.bg,
                     overflow: "hidden",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    zIndex: 2,
                   }}
                 >
                   <Image
-                    source={selectedChain.icon}
-                    className="w-full h-full"
-                    contentFit="cover"
+                    source={typeof selectedChain.icon === 'string' ? { uri: selectedChain.icon } : (selectedChain.icon || require('@/assets/home/chains/ethereum.svg'))}
+                    style={{ width: '100%', height: '100%' }}
+                    contentFit="contain"
                   />
                 </View>
               )}

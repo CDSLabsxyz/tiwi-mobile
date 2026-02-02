@@ -86,7 +86,7 @@ export const Header: React.FC<HeaderProps> = ({
             {/* Right Side - Icons */}
             <View style={styles.rightSection}>
                 <TouchableOpacity onPress={() => router.push('/notifications' as any)} style={styles.iconButton} activeOpacity={0.7}>
-                    <Ionicons name="notifications-outline" size={24} color={colors.bodyText} />
+                    <Ionicons name="notifications-outline" size={24} color={colors.titleText} />
                     {unreadCount > 0 && (
                         <View style={styles.unreadBadge}>
                             <Text style={styles.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
@@ -100,9 +100,9 @@ export const Header: React.FC<HeaderProps> = ({
                         contentFit="contain"
                     />
                 </TouchableOpacity>
-                <TouchableOpacity onPress={onScanPress} style={styles.iconButton} activeOpacity={0.7}>
+                {/* <TouchableOpacity onPress={onScanPress} style={styles.iconButton} activeOpacity={0.7}>
                     <Ionicons name="scan-outline" size={24} color={colors.bodyText} />
-                </TouchableOpacity>
+                </TouchableOpacity> */}
             </View>
         </View>
     );

@@ -120,11 +120,15 @@ export default function SwapScreen() {
 
     // Pre-populate from params if coming from asset detail
     useEffect(() => {
-        if (params.symbol && params.chainId) {
-            const { getChainOptionWithFallback } = require('@/utils/chainUtils');
-            const chainOption = getChainOptionWithFallback(params.chainId);
+        if (params.symbol && params.chainId && chains) {
+            const chain = chains.find(c => String(c.id) === params.chainId);
 
-            if (chainOption) {
+            if (chain) {
+                const chainOption = {
+                    id: chain.id,
+                    name: chain.name,
+                    icon: chain.logoURI || chain.logo
+                };
                 setFromChain(chainOption);
                 setFromToken({
                     id: params.assetId || params.symbol,
@@ -140,7 +144,7 @@ export default function SwapScreen() {
                 } as any);
             }
         }
-    }, [params.symbol, params.chainId]);
+    }, [params.symbol, params.chainId, chains]);
 
     const handleOpenAssetSheet = (target: 'from' | 'to') => {
         setAssetSheetTarget(target);

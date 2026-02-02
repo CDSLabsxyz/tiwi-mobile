@@ -1,3 +1,4 @@
+import { Image } from 'expo-image';
 /**
  * Send Screen
  * Main send page with two tabs: Send to One and Multi-Send
@@ -14,12 +15,14 @@ import { SendTokenSelectSheet } from '@/components/sections/Send/SendTokenSelect
 import { WalletHeader } from '@/components/sections/Wallet/WalletHeader';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { colors } from '@/constants/colors';
+import { useChains } from '@/hooks/useChains';
 import { activityService } from '@/services/activityService';
+import { apiClient } from '@/services/apiClient';
 import { fetchWalletData } from '@/services/walletService';
 import { useSendStore } from '@/store/sendStore';
 import { useWalletStore } from '@/store/walletStore';
 import { validateAddress, validateAddresses, validateAmount } from '@/utils/addressValidation';
-import { mapAssetToChainOption, mapAssetToTokenOption } from '@/utils/assetMapping';
+import { mapAssetToTokenOption } from '@/utils/assetMapping';
 import { WALLET_ADDRESS } from '@/utils/wallet';
 import { useLocalSearchParams, usePathname, useRouter } from 'expo-router';
 import React, { useEffect } from 'react';
@@ -55,8 +58,12 @@ export default function SendScreen() {
         prePopulateFromAsset,
     } = sendStore;
 
+    const { data: chains } = useChains();
+
     // Check if we're coming from asset detail page
     useEffect(() => {
+        if (!chains) return;
+
         if (params.symbol && params.chainId) {
             // Instant pre-population from params
             const tokenOption = {
@@ -68,10 +75,14 @@ export default function SendScreen() {
                 balanceFiat: params.usdValue || '$0',
                 priceUSD: params.priceUSD || '0',
             };
-            const { getChainOptionWithFallback } = require('@/utils/chainUtils');
-            const chainOption = getChainOptionWithFallback(params.chainId);
 
-            if (tokenOption && chainOption) {
+            const chain = chains.find(c => String(c.id) === params.chainId);
+            if (tokenOption && chain) {
+                const chainOption = {
+                    id: chain.id,
+                    name: chain.name,
+                    icon: chain.logoURI || chain.logo
+                };
                 prePopulateFromAsset(tokenOption as any, chainOption, params.balance || '0', params.usdValue || '$0');
                 return;
             }
@@ -85,8 +96,14 @@ export default function SendScreen() {
                     const asset = walletData.portfolio.find((a) => a.id === params.assetId);
                     if (asset) {
                         const tokenOption = mapAssetToTokenOption(asset, asset.balance, asset.usdValue);
-                        const chainOption = mapAssetToChainOption(asset);
-                        if (tokenOption && chainOption) {
+                        const chain = chains.find(c => c.id === asset.chainId);
+
+                        if (tokenOption && chain) {
+                            const chainOption = {
+                                id: chain.id,
+                                name: chain.name,
+                                icon: chain.logoURI || chain.logo
+                            };
                             prePopulateFromAsset(tokenOption, chainOption, asset.balance, asset.usdValue);
                         }
                     }
@@ -99,7 +116,7 @@ export default function SendScreen() {
             // Reset to initial state
             resetSendState();
         }
-    }, [params.assetId, params.symbol, params.chainId]);
+    }, [params.assetId, params.symbol, params.chainId, chains]);
 
     const { address } = useWalletStore();
 
@@ -128,23 +145,28 @@ export default function SendScreen() {
     const handleTokenSelect = async (token: any, chainId?: string) => {
         sendStore.setSelectedToken(token);
         // Set chain if provided
-        if (chainId) {
-            const { getChainOptionWithFallback } = require('@/utils/chainUtils');
-            const chainOption = getChainOptionWithFallback(chainId);
-            if (chainOption) {
-                sendStore.setSelectedChain(chainOption);
+        if (chainId && chains) {
+            const chain = chains.find(c => String(c.id) === chainId);
+            if (chain) {
+                sendStore.setSelectedChain({
+                    id: chain.id,
+                    name: chain.name,
+                    icon: chain.logoURI || chain.logo
+                });
             }
-        } else {
+        } else if (address && chains) {
             // Fallback: Get chain info from wallet data
             try {
-                const { apiClient } = require('@/services/apiClient');
                 const res = await apiClient.getWalletBalances(address || WALLET_ADDRESS);
                 const asset = res.balances.find((a: any) => a.symbol === token.symbol);
                 if (asset) {
-                    const { getChainOptionWithFallback } = require('@/utils/chainUtils');
-                    const chainOption = getChainOptionWithFallback(asset.chainId.toString());
-                    if (chainOption) {
-                        sendStore.setSelectedChain(chainOption);
+                    const chain = chains.find(c => c.id === asset.chainId);
+                    if (chain) {
+                        sendStore.setSelectedChain({
+                            id: chain.id,
+                            name: chain.name,
+                            icon: chain.logoURI || chain.logo
+                        });
                     }
                 }
             } catch (error) {
@@ -174,7 +196,6 @@ export default function SendScreen() {
         console.log('Transaction confirmed!');
 
         if (address) {
-            const { apiClient } = require('@/services/apiClient');
             try {
                 // Log the send transaction(s)
                 if (activeTab === 'send-to-one') {
@@ -182,7 +203,7 @@ export default function SendScreen() {
                     await apiClient.logTransaction({
                         walletAddress: address,
                         transactionHash: txHash,
-                        chainId: parseInt(sendStore.selectedChain?.id || '1'),
+                        chainId: parseInt(String(sendStore.selectedChain?.id || '1')),
                         type: 'Sent',
                         fromTokenAddress: sendStore.selectedToken?.id,
                         fromTokenSymbol: sendStore.selectedToken?.symbol,
@@ -206,8 +227,8 @@ export default function SendScreen() {
                         await apiClient.logTransaction({
                             walletAddress: address,
                             transactionHash: txHash,
-                            chainId: parseInt(sendStore.selectedChain?.id || '1'),
-                            type: 'Sent', // multi_send is not a valid type, mapping to Sent
+                            chainId: parseInt(String(sendStore.selectedChain?.id || '1')),
+                            type: 'Sent',
                             fromTokenAddress: sendStore.selectedToken?.id,
                             fromTokenSymbol: sendStore.selectedToken?.symbol,
                             amount: sendStore.amountPerRecipient,
@@ -215,7 +236,6 @@ export default function SendScreen() {
                             toTokenAddress: recipient.address,
                         });
 
-                        // Log activity for each (optional, or just one summary)
                         await activityService.logTransaction(
                             address,
                             'transaction',
@@ -230,6 +250,11 @@ export default function SendScreen() {
             }
         }
 
+        setCurrentStep('success');
+    };
+
+    const handleSuccessDone = () => {
+        resetSendState();
         router.push('/wallet' as any);
     };
 
@@ -290,6 +315,38 @@ export default function SendScreen() {
             }
         } else if (currentStep === 'passcode') {
             return <PasscodeScreen onSuccess={handlePasscodeSuccess} />;
+        } else if (currentStep === 'success') {
+            const CheckmarkIcon = require('@/assets/swap/checkmark-circle-01.svg');
+            const totalAmount = activeTab === 'send-to-one' ? sendStore.amount : (parseFloat(sendStore.amountPerRecipient) * sendStore.recipients.length).toString();
+
+            return (
+                <View style={styles.successContainer}>
+                    <View style={styles.successCard}>
+                        <View style={styles.iconCircle}>
+                            <Image source={CheckmarkIcon} style={{ width: 40, height: 40 }} contentFit="contain" />
+                        </View>
+                        <Text style={styles.successTitle}>Transaction Successful!</Text>
+                        <Text style={styles.successDescription}>
+                            Your transaction has been confirmed and the funds are on their way.
+                        </Text>
+
+                        <View style={styles.successDetails}>
+                            <View style={styles.successDetailItem}>
+                                <Text style={styles.successDetailLabel}>Amount</Text>
+                                <Text style={styles.successDetailValue}>{totalAmount} {selectedToken?.symbol}</Text>
+                            </View>
+                            <View style={styles.successDetailItem}>
+                                <Text style={styles.successDetailLabel}>Network</Text>
+                                <Text style={styles.successDetailValue}>{sendStore.selectedChain?.name}</Text>
+                            </View>
+                        </View>
+
+                        <TouchableOpacity activeOpacity={0.8} onPress={handleSuccessDone} style={styles.doneButton}>
+                            <Text style={styles.doneButtonText}>Done</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            );
         }
         return null;
     };
@@ -327,10 +384,11 @@ export default function SendScreen() {
             <View style={[styles.header, { paddingTop: top || 0 }]}>
                 <WalletHeader
                     walletAddress={WALLET_ADDRESS}
-                    onIrisScanPress={handleIrisScanPress}
                     onSettingsPress={handleSettingsPress}
                     showBackButton
                     onBackPress={handleBackPress}
+                    showIrisScan={false}
+                    showSettings={true}
                 />
             </View>
 
@@ -490,5 +548,76 @@ const styles = StyleSheet.create({
     nextButtonText: {
         fontFamily: 'Manrope-Medium',
         fontSize: 16,
+    },
+    // Success Screen Styles
+    successContainer: {
+        width: '100%',
+        alignItems: 'center',
+        paddingTop: 40,
+    },
+    successCard: {
+        width: '100%',
+        backgroundColor: colors.bgSemi,
+        borderRadius: 24,
+        padding: 24,
+        alignItems: 'center',
+        gap: 24,
+    },
+    iconCircle: {
+        width: 80,
+        height: 80,
+        borderRadius: 40,
+        backgroundColor: colors.primaryCTA,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    successTitle: {
+        fontFamily: 'Manrope-SemiBold',
+        fontSize: 20,
+        color: colors.titleText,
+        textAlign: 'center',
+    },
+    successDescription: {
+        fontFamily: 'Manrope-Medium',
+        fontSize: 14,
+        color: colors.bodyText,
+        textAlign: 'center',
+        lineHeight: 20,
+    },
+    successDetails: {
+        width: '100%',
+        backgroundColor: colors.bgCards,
+        borderRadius: 16,
+        padding: 16,
+        gap: 12,
+    },
+    successDetailItem: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    successDetailLabel: {
+        fontFamily: 'Manrope-Regular',
+        fontSize: 14,
+        color: colors.bodyText,
+    },
+    successDetailValue: {
+        fontFamily: 'Manrope-SemiBold',
+        fontSize: 14,
+        color: colors.titleText,
+    },
+    doneButton: {
+        width: '100%',
+        height: 56,
+        borderRadius: 100,
+        backgroundColor: colors.primaryCTA,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginTop: 8,
+    },
+    doneButtonText: {
+        fontFamily: 'Manrope-Medium',
+        fontSize: 16,
+        color: colors.bg,
     },
 });

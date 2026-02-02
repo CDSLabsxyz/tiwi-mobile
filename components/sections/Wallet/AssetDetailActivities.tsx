@@ -4,6 +4,7 @@
  * Matches Figma design exactly (node-id: 3279-120307)
  */
 
+import { TokenPrice } from "@/components/ui/TokenPrice";
 import { colors } from "@/constants/colors";
 import type { AssetActivity } from "@/services/walletService";
 import React from "react";
@@ -164,7 +165,8 @@ export const AssetDetailActivities: React.FC<AssetDetailActivitiesProps> = ({
                 >
                   {activity.amount}
                 </Text>
-                <Text
+                <TokenPrice
+                  amount={activity.usdAmount || activity.usdValue}
                   style={{
                     fontFamily: "Manrope-Medium",
                     fontSize: 10,
@@ -172,9 +174,7 @@ export const AssetDetailActivities: React.FC<AssetDetailActivitiesProps> = ({
                     color: colors.mutedText,
                     textAlign: "right",
                   }}
-                >
-                  {activity.usdValue}
-                </Text>
+                />
               </View>
             </View>
           );

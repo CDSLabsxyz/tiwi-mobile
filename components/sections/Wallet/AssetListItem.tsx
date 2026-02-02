@@ -42,6 +42,7 @@ export const AssetListItem: React.FC<AssetListItemProps> = ({
     asset,
     onPress,
 }) => {
+    console.log("🚀 ~ AssetListItem ~ asset:", asset)
     const { t } = useTranslation();
     const isPositive = asset.change24h >= 0;
     // Figma Colors: success #3FEA9B, primaryCTA #B1F128, negative #FB406E

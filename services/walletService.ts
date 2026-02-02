@@ -404,8 +404,9 @@ export interface AssetDetail {
 export interface AssetActivity {
   id: string;
   type: 'sent' | 'received' | 'swap' | 'stake' | 'unstake';
-  amount: string; // e.g., "0,017 ETH"
-  usdValue: string; // e.g., "$725.00"
+  amount: string; // e.g., "0.017 ETH"
+  usdValue: string; // Legacy field for static USD value
+  usdAmount?: number; // Numeric USD value for regional conversion
   timestamp: number;
   date: string; // Formatted date, e.g., "Jan 4, 2024"
 }
@@ -439,6 +440,7 @@ export const getAllAssetActivities = async (assetId: string): Promise<AssetActiv
         type: tx.type.toLowerCase() as any,
         amount: `${formatTokenAmount(tx.amountFormatted)} ${tx.tokenSymbol}`,
         usdValue: tx.usdValue,
+        usdAmount: parseFloat(tx.usdValue.replace(/[$,]/g, '')),
         timestamp: tx.timestamp,
         date: formatDate(tx.timestamp),
       }));

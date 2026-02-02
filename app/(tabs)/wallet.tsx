@@ -72,10 +72,10 @@ export default function WalletScreen() {
                 id: asset.address,
                 symbol: asset.symbol,
                 name: asset.name,
-                balance: asset.balance,
+                balance: asset.balanceFormatted, // USE formatted balance (not raw BigInt)
                 usdValue: asset.usdValue,
                 chainId: asset.chainId,
-                logo: asset.logo,
+                logo: asset.logoURI, // USE logoURI
                 priceUSD: asset.priceUSD,
                 change24h: asset.priceChange24h
             }

@@ -3,9 +3,9 @@
  * Similar to swap store, tracks token, amount, recipient, etc.
  */
 
-import { create } from "zustand";
 import type { ChainOption } from "@/components/sections/Swap/ChainSelectSheet";
 import type { TokenOption } from "@/components/sections/Swap/TokenSelectSheet";
+import { create } from "zustand";
 
 export type SendTab = "send-to-one" | "multi-send";
 
@@ -38,7 +38,7 @@ interface SendState {
 
   // UI state
   isTokenSheetVisible: boolean;
-  currentStep: "select-asset" | "enter-details" | "review" | "passcode";
+  currentStep: "select-asset" | "enter-details" | "review" | "passcode" | "success";
 
   // Actions
   setActiveTab: (tab: SendTab) => void;
@@ -85,12 +85,16 @@ export const useSendStore = create<SendState>((set, get) => ({
   setSelectedChain: (chain) => set({ selectedChain: chain }),
   setRecipientAddress: (address) => set({ recipientAddress: address }),
   setAmount: (amount) => {
+    const { selectedToken } = get();
     set({ amount });
-    // Calculate USD value (mock calculation)
+
+    // Calculate USD value using real price if available
     const numAmount = parseFloat(amount) || 0;
-    const usdValue = numAmount * 1000; // Mock price
-    set({ 
-      usdValue: `$${usdValue.toFixed(2)}`,
+    const price = parseFloat(selectedToken?.priceUSD || "0");
+    const usdValue = numAmount * price;
+
+    set({
+      usdValue: `$${usdValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
       // Calculate network fee (mock: ~0.0000446 ETH or equivalent)
       networkFee: "0.0000446",
       networkFeeUSD: "$0.04460",
@@ -98,7 +102,7 @@ export const useSendStore = create<SendState>((set, get) => ({
   },
   setUsdValue: (value) => set({ usdValue: value }),
   setRecipients: (recipients) => {
-    set({ 
+    set({
       recipients,
       totalRecipients: recipients.length,
     });

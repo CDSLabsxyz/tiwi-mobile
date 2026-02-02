@@ -7,10 +7,11 @@
 import { TokenPrice } from "@/components/ui/TokenPrice";
 import { colors } from "@/constants/colors";
 import type { AssetDetail } from "@/services/walletService";
-import { formatTokenAmount } from "@/utils/formatting";
+import { formatTokenAmount, getColorFromSeed } from "@/utils/formatting";
 import { Image } from "expo-image";
 import React from "react";
 import { Text, View } from "react-native";
+import Feather from '@expo/vector-icons/Feather';
 
 interface AssetDetailHeaderProps {
   asset: AssetDetail;
@@ -78,7 +79,21 @@ export const AssetDetailHeader: React.FC<AssetDetailHeaderProps> = ({
               contentFit="cover"
             />
           ) : (
-            <View style={{ width: '100%', height: '100%', backgroundColor: colors.bgShade20 }} />
+            <View style={{
+              width: '100%',
+              height: '100%',
+              backgroundColor: getColorFromSeed(asset.symbol),
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <Text style={{
+                fontFamily: 'Manrope-Bold',
+                fontSize: 10,
+                color: '#FFF'
+              }}>
+                {asset.symbol.charAt(0).toUpperCase()}
+              </Text>
+            </View>
           )}
         </View>
 
@@ -104,7 +119,7 @@ export const AssetDetailHeader: React.FC<AssetDetailHeaderProps> = ({
           color: colors.titleText,
         }}
       >
-        {formatTokenAmount(asset.balance)}
+        {formatTokenAmount(asset.balance)} {asset.symbol}
       </Text>
 
       {/* USD Value and Price Change */}
@@ -155,15 +170,13 @@ export const AssetDetailHeader: React.FC<AssetDetailHeaderProps> = ({
                 transform: [{ scaleY: isPositive ? -1 : 1 }],
               }}
             >
-              <Image
-                source={{
-                  uri: "https://www.figma.com/api/mcp/asset/e98ecbc4-eb56-454c-bc82-aabeaf730680",
-                }}
+              <Feather
+                name="arrow-up"
+                size={12}
+                color={isPositive ? "#34c759" : colors.error}
                 style={{
-                  width: 12,
-                  height: 12,
+                  transform: [{ scaleY: isPositive ? -1 : 1 }],
                 }}
-                contentFit="contain"
               />
             </View>
           </View>

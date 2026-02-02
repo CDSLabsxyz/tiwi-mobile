@@ -229,15 +229,22 @@ export function formatTokenQuantity(amount: string | number): string {
 
     const absVal = Math.abs(val);
 
+    // Scaling to Billions, Millions, or Thousands with exactly 4 decimal places rounded
     if (absVal >= 1e9) {
-        return (val / 1e9).toFixed(4).replace(/\.?0+$/, '') + 'B';
+        return (val / 1e9).toLocaleString('en-US', {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 4,
+        }) + ' B';
     } else if (absVal >= 1e6) {
-        return (val / 1e6).toFixed(4).replace(/\.?0+$/, '') + 'M';
-    } else if (absVal >= 1e3) {
-        // Only suffix K if it's quite large, e.g. > 100k, otherwise show full for precision
-        if (absVal >= 100000) {
-            return (val / 1e3).toFixed(2).replace(/\.?0+$/, '') + 'K';
-        }
+        return (val / 1e6).toLocaleString('en-US', {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 4,
+        }) + ' M';
+    } else if (absVal >= 100000) { // Suffix K for values over 100k
+        return (val / 1e3).toLocaleString('en-US', {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 4,
+        }) + ' K';
     }
 
     // Default to full amount with commas and max 4 decimals
@@ -256,26 +263,22 @@ export function formatFullAmount(amount: string | number): string {
     const val = typeof amount === 'string' ? parseFloat(amount) : amount;
     if (isNaN(val) || val === 0) return '0';
 
-    // ceiling/round to 4 decimal places for display
+    // ceiling/round to 4 decimal places for display with thousand separators
     return val.toLocaleString('en-US', {
         minimumFractionDigits: 0,
         maximumFractionDigits: 4,
-        useGrouping: true, // Use commas for thousands
+        useGrouping: true,
     });
 }
 
 /**
  * Smart formatting for token amounts (Uniswap style)
- * - Large numbers (>1): Show 2-4 decimal places
- * - Small numbers (<1): Show up to 6 significant digits
- * - Very small numbers: Use subscript or scientific notation if needed (handled by formatPriceWithSubscript)
+ * - Large numbers: Use compact notation (B, M, K) with 4 decimal rounding
+ * - Small numbers: Show full precision up to 4 decimal places
  */
 export function formatTokenAmount(amount: string | number): string {
-    const val = typeof amount === 'string' ? parseFloat(amount) : amount;
-    if (isNaN(val) || val === 0) return '0';
-
-    // User explicitly asked for NO COMPACT NOTATION and 4 decimal ceiling for display
-    return formatFullAmount(amount);
+    // Calling formatTokenQuantity which implements the B/M/K suffix logic and 4-decimal rounding
+    return formatTokenQuantity(amount);
 }
 
 /**

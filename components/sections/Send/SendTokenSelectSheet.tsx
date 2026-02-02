@@ -1,24 +1,20 @@
 /**
  * Send Token Select Sheet
  * Bottom sheet for selecting token to send
- * Shows user's wallet tokens
+ * Shows user's real wallet tokens
  */
 
-import React, { useState, useEffect } from "react";
-import { ScrollView, View, Text, TouchableOpacity, TextInput } from "react-native";
 import { SelectionBottomSheet } from "@/components/sections/Swap/SelectionBottomSheet";
 import type { TokenOption } from "@/components/sections/Swap/TokenSelectSheet";
-import { fetchWalletData } from "@/services/walletService";
-import { WALLET_ADDRESS } from "@/utils/wallet";
-import { mapAssetToTokenOption, mapAssetToChainOption } from "@/utils/assetMapping";
-import { TokenListSkeleton } from "@/components/ui/skeleton-loader";
-import { getChainOptionWithFallback } from "@/utils/chainUtils";
+import { TokenPrice } from "@/components/ui/TokenPrice";
+import { colors } from "@/constants/colors";
+import { useChains } from "@/hooks/useChains";
+import { useWalletBalances } from "@/hooks/useWalletBalances";
+import { formatTokenQuantity, getColorFromSeed } from "@/utils/formatting";
+import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import { colors } from "@/constants";
-import { ChainId } from "../Swap";
-
-const SearchIcon = require("@/assets/swap/search-01.svg");
-const CheckmarkIcon = require("@/assets/swap/checkmark-circle-01.svg");
+import React, { useMemo, useState } from "react";
+import { ScrollView, Text, TextInput, TouchableOpacity, View } from "react-native";
 
 interface SendTokenSelectSheetProps {
   visible: boolean;
@@ -31,44 +27,43 @@ export const SendTokenSelectSheet: React.FC<SendTokenSelectSheetProps> = ({
   onClose,
   onSelect,
 }) => {
-  const [tokens, setTokens] = useState<TokenOption[]>([]);
-  const [tokensWithChains, setTokensWithChains] = useState<Array<{ token: TokenOption; chainId?: string }>>([]);
   const [searchQuery, setSearchQuery] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
+  const { data: balanceData, isLoading: isLoadingBalances } = useWalletBalances();
+  const { data: chains, isLoading: isLoadingChains } = useChains();
 
-  useEffect(() => {
-    if (visible) {
-      loadTokens();
-    }
-  }, [visible]);
+  const isLoading = isLoadingBalances || isLoadingChains;
 
-  const loadTokens = async () => {
-    setIsLoading(true);
-    try {
-      const walletData = await fetchWalletData(WALLET_ADDRESS);
-      const tokensData = walletData.portfolio.map((asset) => {
-        const token = mapAssetToTokenOption(asset, asset.balance, asset.usdValue);
-        return { token, chainId: asset.chainId };
-      });
-      // @ts-ignore
-      setTokens(tokensData.map((t) => t.token));
-      // @ts-ignore
-      setTokensWithChains(tokensData);
-    } catch (error) {
-      console.error("Failed to load tokens:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const tokensWithChains = useMemo(() => {
+    if (!balanceData) return [];
 
-  const filteredTokens = tokensWithChains.filter(
-    (item) =>
-      item.token.symbol.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.token.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+    return balanceData.tokens.map(token => ({
+      token: {
+        id: `${token.chainId}-${token.address}`,
+        symbol: token.symbol,
+        name: token.name,
+        icon: token.logoURI,
+        tvl: "0", // Not used in this list
+        balanceFiat: `$${parseFloat(token.usdValue || '0').toFixed(2)}`,
+        balanceToken: token.balanceFormatted || "0",
+        address: token.address,
+        chainId: token.chainId,
+        decimals: token.decimals,
+        priceUSD: token.priceUSD,
+      } as TokenOption,
+      chainId: token.chainId,
+    }));
+  }, [balanceData]);
 
-  const handleSelect = (item: { token: TokenOption; chainId?: string }) => {
-    onSelect(item.token, item.chainId);
+  const filteredTokens = useMemo(() => {
+    return tokensWithChains.filter(
+      (item) =>
+        item.token.symbol.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        item.token.name.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [tokensWithChains, searchQuery]);
+
+  const handleSelect = (item: { token: TokenOption; chainId: number }) => {
+    onSelect(item.token, item.chainId.toString());
     setSearchQuery("");
   };
 
@@ -86,31 +81,23 @@ export const SendTokenSelectSheet: React.FC<SendTokenSelectSheetProps> = ({
           borderRadius: 20,
           flexDirection: "row",
           alignItems: "center",
-          paddingHorizontal: 24,
-          gap: 5,
+          paddingHorizontal: 16,
+          gap: 10,
           marginBottom: 21,
+          marginHorizontal: 4,
+          borderWidth: 1,
+          borderColor: colors.bgStroke,
         }}
       >
-        <View
-          style={{
-            width: 16,
-            height: 16,
-          }}
-        >
-          <Image
-            source={SearchIcon}
-            className="w-full h-full"
-            contentFit="contain"
-          />
-        </View>
+        <Ionicons name="search" size={18} color="rgba(255, 255, 255, 0.5)" />
         <TextInput
           placeholder="Search Assets"
-          placeholderTextColor="rgba(255, 255, 255, 0.7)"
+          placeholderTextColor="rgba(255, 255, 255, 0.5)"
           value={searchQuery}
           onChangeText={setSearchQuery}
           style={{
             flex: 1,
-            fontFamily: "Manrope-Regular",
+            fontFamily: "Manrope-Medium",
             fontSize: 14,
             color: colors.titleText,
           }}
@@ -122,11 +109,14 @@ export const SendTokenSelectSheet: React.FC<SendTokenSelectSheetProps> = ({
         style={{ flex: 1 }}
         contentContainerStyle={{
           gap: 12,
+          paddingBottom: 20,
         }}
         showsVerticalScrollIndicator={false}
       >
         {isLoading ? (
-          <TokenListSkeleton />
+          <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+            <Text style={{ color: colors.bodyText }}>Loading assets...</Text>
+          </View>
         ) : filteredTokens.length === 0 ? (
           <Text
             style={{
@@ -142,19 +132,20 @@ export const SendTokenSelectSheet: React.FC<SendTokenSelectSheetProps> = ({
         ) : (
           filteredTokens.map((item) => {
             const { token, chainId } = item;
-            const chain = chainId ? getChainOptionWithFallback(chainId as ChainId) : null;
-            
+            const chain = chains?.find(c => c.id === chainId);
+            const chainLogo = chain?.logoURI || chain?.logo;
+
             return (
               <TouchableOpacity
                 key={token.id}
-                activeOpacity={0.8}
+                activeOpacity={0.7}
                 onPress={() => handleSelect(item)}
                 style={{
                   flexDirection: "row",
                   alignItems: "center",
                   justifyContent: "space-between",
-                  gap: 82,
                   paddingVertical: 12,
+                  paddingHorizontal: 8,
                 }}
               >
                 {/* Left: Token Info */}
@@ -162,71 +153,74 @@ export const SendTokenSelectSheet: React.FC<SendTokenSelectSheetProps> = ({
                   style={{
                     flexDirection: "row",
                     alignItems: "center",
-                    gap: 9,
+                    gap: 16,
                   }}
                 >
-                  <View
-                    style={{
-                      width: 57,
-                      height: 57,
-                      position: "relative",
-                    }}
-                  >
+                  {/* Icon with Badge */}
+                  <View style={{ width: 48, height: 48, position: "relative" }}>
                     <View
                       style={{
-                        width: 57,
-                        height: 57,
-                        borderRadius: 57 / 2,
+                        width: 48,
+                        height: 48,
+                        borderRadius: 24,
                         backgroundColor: colors.bgStroke,
-                        borderWidth: 1,
-                        borderColor: colors.bodyText,
+                        overflow: "hidden",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      {token.icon ? (
+                        <Image
+                          source={{ uri: token.icon }}
+                          style={{ width: "100%", height: "100%" }}
+                          contentFit="cover"
+                        />
+                      ) : (
+                        <View style={{
+                          width: '100%',
+                          height: '100%',
+                          backgroundColor: getColorFromSeed(token.symbol),
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}>
+                          <Text style={{ fontFamily: 'Manrope-Bold', fontSize: 16, color: '#FFF' }}>
+                            {token.symbol.charAt(0).toUpperCase()}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+
+                    {/* Chain Badge */}
+                    <View
+                      style={{
+                        position: "absolute",
+                        bottom: -2,
+                        right: -2,
+                        width: 18,
+                        height: 18,
+                        borderRadius: 9,
+                        backgroundColor: colors.bg,
+                        borderWidth: 1.5,
+                        borderColor: colors.bg,
                         overflow: "hidden",
                         alignItems: "center",
                         justifyContent: "center",
                       }}
                     >
                       <Image
-                        source={token.icon}
-                        className="w-full h-full"
-                        contentFit="cover"
+                        source={chainLogo || require('@/assets/home/chains/ethereum.svg')}
+                        style={{ width: "100%", height: "100%" }}
+                        contentFit="contain"
                       />
                     </View>
-                    {/* Chain Badge */}
-                    {chain && (
-                      <View
-                        style={{
-                          position: "absolute",
-                          bottom: 0,
-                          right: 0,
-                          width: 18,
-                          height: 18,
-                          borderRadius: 9,
-                          backgroundColor: colors.bgStroke,
-                          borderWidth: 1,
-                          borderColor: colors.bodyText,
-                          overflow: "hidden",
-                        }}
-                      >
-                        <Image
-                          source={chain.icon}
-                          className="w-full h-full"
-                          contentFit="cover"
-                        />
-                      </View>
-                    )}
                   </View>
-                  <View
-                    style={{
-                      flexDirection: "column",
-                      alignItems: "flex-start",
-                      gap: 0,
-                    }}
-                  >
+
+                  <View style={{ gap: 2 }}>
                     <Text
                       style={{
-                        fontFamily: "Manrope-SemiBold",
+                        fontFamily: "Manrope-Bold",
                         fontSize: 16,
-                        color: colors.bodyText,
+                        color: colors.titleText,
                       }}
                     >
                       {token.symbol}
@@ -235,41 +229,33 @@ export const SendTokenSelectSheet: React.FC<SendTokenSelectSheetProps> = ({
                       style={{
                         fontFamily: "Manrope-Regular",
                         fontSize: 12,
-                        color: colors.bodyText,
+                        color: colors.mutedText,
                       }}
                     >
-                      {chain?.name || token.name}
+                      {chain?.name || "Unknown Chain"}
                     </Text>
                   </View>
                 </View>
 
                 {/* Right: Balance */}
-                <View
-                  style={{
-                    flexDirection: "column",
-                    alignItems: "flex-end",
-                    gap: 0,
-                    width: 75,
-                  }}
-                >
+                <View style={{ alignItems: "flex-end", gap: 2 }}>
                   <Text
                     style={{
-                      fontFamily: "Manrope-Medium",
-                      fontSize: 18,
-                      color: colors.bodyText,
+                      fontFamily: "Manrope-Bold",
+                      fontSize: 16,
+                      color: colors.titleText,
                     }}
                   >
-                    {token.balanceToken.split(" ")[0]}
+                    {formatTokenQuantity(token.balanceToken)}
                   </Text>
-                  <Text
+                  <TokenPrice
+                    amount={parseFloat(token.balanceFiat.replace(/[$,]/g, "")) || 0}
                     style={{
                       fontFamily: "Manrope-Medium",
                       fontSize: 12,
-                      color: colors.bodyText,
+                      color: colors.mutedText,
                     }}
-                  >
-                    {token.balanceFiat}
-                  </Text>
+                  />
                 </View>
               </TouchableOpacity>
             );

@@ -47,12 +47,31 @@ export function useWalletBalances() {
             const consolidatedTokens = allTokens.reduce((acc, token) => {
                 const key = `${token.chainId}-${token.address}`;
                 if (!acc[key]) {
-                    acc[key] = { ...token };
+                    // Start with a clone
+                    const tokenClone = { ...token };
+                    // Ensure we have a divided balance for the UI even if backend provided it differently
+                    const rawBalance = BigInt(token.balance || '0');
+                    const divisor = BigInt(10 ** token.decimals);
+                    
+                    // Calculation for the human-readable amount
+                    // We use Number conversion here because for UI display (rounding to 4 decimals), 
+                    // the precision loss of large Numbers is negligible compared to the total amount.
+                    const actualBalance = Number(rawBalance) / Number(divisor);
+                    tokenClone.balanceFormatted = actualBalance.toString();
+                    
+                    acc[key] = tokenClone;
                 } else {
                     // Add balances if same token on same chain
-                    acc[key].balance = (parseFloat(acc[key].balance) + parseFloat(token.balance)).toString();
+                    const currentRaw = BigInt(acc[key].balance || '0');
+                    const newRaw = BigInt(token.balance || '0');
+                    const totalRaw = currentRaw + newRaw;
+                    
+                    acc[key].balance = totalRaw.toString();
                     acc[key].usdValue = (parseFloat(acc[key].usdValue || '0') + parseFloat(token.usdValue || '0')).toString();
-                    acc[key].balanceFormatted = `${parseFloat(acc[key].balance).toFixed(4)} ${token.symbol}`;
+                    
+                    const divisor = BigInt(10 ** token.decimals);
+                    const actualBalance = Number(totalRaw) / Number(divisor);
+                    acc[key].balanceFormatted = actualBalance.toString();
                 }
                 return acc;
             }, {} as Record<string, APIToken>);
