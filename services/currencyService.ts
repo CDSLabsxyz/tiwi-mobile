@@ -111,9 +111,11 @@ class CurrencyService {
         // Default standard formatting
         const locale = language === 'en' ? 'en-US' : language;
         try {
-            const formattedNumber = new Intl.NumberFormat(locale, {
+            // We use 'en-US' for the number formatting part to ensure dots are used for decimals
+            // as requested by the user ("7.40 instead of 7,40").
+            const formattedNumber = new Intl.NumberFormat('en-US', {
                 minimumFractionDigits: 2,
-                maximumFractionDigits: (value < 10) ? 6 : 2, // More decimals for small non-subscripted values
+                maximumFractionDigits: (value < 10) ? 6 : 2,
             }).format(value);
 
             return `${symbol}${formattedNumber}`;

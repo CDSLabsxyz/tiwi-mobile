@@ -38,7 +38,7 @@ export const CustomTabBar: React.FC<BottomTabBarProps> = ({ state, descriptors, 
 
     // Filter visible routes
     const visibleRoutes = state.routes.filter(route => {
-        const { options } = descriptors[route.key];
+        const options = descriptors[route.key].options as any;
         return options.href !== null;
     });
 
@@ -47,7 +47,7 @@ export const CustomTabBar: React.FC<BottomTabBarProps> = ({ state, descriptors, 
 
     const renderTab = (route: any) => {
         const index = state.routes.findIndex(r => r.key === route.key);
-        const { options } = descriptors[route.key];
+        const options = descriptors[route.key].options as any;
         const isFocused = state.index === index;
 
         const onPress = () => {
@@ -83,6 +83,14 @@ export const CustomTabBar: React.FC<BottomTabBarProps> = ({ state, descriptors, 
             </TouchableOpacity>
         );
     };
+
+    // Check if tab bar should be hidden for the current screen
+    const focusedRouteKey = state.routes[state.index].key;
+    const focusedOptions = descriptors[focusedRouteKey].options as any;
+
+    if (focusedOptions.tabBarStyle?.display === 'none') {
+        return null;
+    }
 
     return (
         <View style={[styles.wrapper, { height: 72 + insets.bottom }]}>

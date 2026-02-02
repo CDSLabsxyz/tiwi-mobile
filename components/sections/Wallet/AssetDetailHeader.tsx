@@ -4,11 +4,13 @@
  * Matches Figma design exactly (node-id: 3279-120251)
  */
 
-import React from "react";
-import { View, Text } from "react-native";
-import { Image } from "expo-image";
+import { TokenPrice } from "@/components/ui/TokenPrice";
 import { colors } from "@/constants/colors";
 import type { AssetDetail } from "@/services/walletService";
+import { formatTokenAmount } from "@/utils/formatting";
+import { Image } from "expo-image";
+import React from "react";
+import { Text, View } from "react-native";
 
 interface AssetDetailHeaderProps {
   asset: AssetDetail;
@@ -22,6 +24,20 @@ export const AssetDetailHeader: React.FC<AssetDetailHeaderProps> = ({
 }) => {
   const isPositive = asset.change24h >= 0;
   const changeColor = isPositive ? "#34c759" : colors.error;
+
+  // Handle logo source safely
+  const logoSource = React.useMemo(() => {
+    if (!asset.logo) return null;
+    if (typeof asset.logo === 'number') return asset.logo;
+    if (typeof asset.logo === 'string' && asset.logo.startsWith('http')) {
+      return { uri: asset.logo };
+    }
+    // If it's a stringified number (from navigation params)
+    const num = parseInt(asset.logo);
+    if (!isNaN(num) && num > 100) return num; // Basic check for asset IDs vs resource numbers
+
+    return { uri: asset.logo };
+  }, [asset.logo]);
 
   return (
     <View
@@ -52,14 +68,18 @@ export const AssetDetailHeader: React.FC<AssetDetailHeaderProps> = ({
             justifyContent: "center",
           }}
         >
-          <Image
-            source={{ uri: asset.logo }}
-            style={{
-              width: "100%",
-              height: "100%",
-            }}
-            contentFit="cover"
-          />
+          {logoSource ? (
+            <Image
+              source={logoSource}
+              style={{
+                width: "100%",
+                height: "100%",
+              }}
+              contentFit="cover"
+            />
+          ) : (
+            <View style={{ width: '100%', height: '100%', backgroundColor: colors.bgShade20 }} />
+          )}
         </View>
 
         {/* Asset Name */}
@@ -79,13 +99,12 @@ export const AssetDetailHeader: React.FC<AssetDetailHeaderProps> = ({
       <Text
         style={{
           fontFamily: "Manrope-Medium",
-          fontSize: 24,
-          lineHeight: 28,
+          fontSize: 32,
+          lineHeight: 38,
           color: colors.titleText,
-          textTransform: "capitalize",
         }}
       >
-        {asset.balance}
+        {formatTokenAmount(asset.balance)}
       </Text>
 
       {/* USD Value and Price Change */}
@@ -98,16 +117,15 @@ export const AssetDetailHeader: React.FC<AssetDetailHeaderProps> = ({
         }}
       >
         {/* USD Value */}
-        <Text
+        <TokenPrice
+          amount={asset.usdValue}
           style={{
             fontFamily: "Manrope-Regular",
             fontSize: 16,
             lineHeight: 20,
             color: "#8A929A",
           }}
-        >
-          {asset.usdValue}
-        </Text>
+        />
 
         {/* Price Change */}
         <View

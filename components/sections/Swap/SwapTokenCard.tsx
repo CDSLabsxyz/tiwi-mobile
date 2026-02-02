@@ -2,7 +2,7 @@ import { colors } from '@/constants/colors';
 import { getColorFromSeed } from '@/utils/formatting';
 import { Image } from 'expo-image';
 import React, { useMemo } from 'react';
-import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 const WalletIcon = require('@/assets/home/wallet-03.svg');
 const ArrowDown01 = require('@/assets/home/arrow-down-01.svg');
@@ -133,24 +133,40 @@ export const SwapTokenCard: React.FC<SwapTokenCardProps> = ({
                 <View style={styles.rightSide}>
                     {isLoadingQuote ? (
                         <View style={styles.skeletonAmount} />
-                    ) : (
+                    ) : isFrom ? (
                         <TextInput
                             value={amount}
                             onChangeText={handleAmountChange}
-                            editable={isFrom}
+                            editable={true}
                             keyboardType="decimal-pad"
                             inputMode="decimal"
                             placeholder="0.0"
                             placeholderTextColor={colors.mutedText}
                             style={styles.amountInput}
                             textAlign="right"
+                            multiline={false}
+                            scrollEnabled={true}
                         />
+                    ) : (
+                        <View style={styles.toAmountContainer}>
+                            <ScrollView
+                                horizontal
+                                showsHorizontalScrollIndicator={false}
+                                contentContainerStyle={styles.amountScrollContent}
+                            >
+                                <Text style={styles.amountTextDisplay}>
+                                    {amount || '0.0'}
+                                </Text>
+                            </ScrollView>
+                        </View>
                     )}
                     <View style={styles.fiatContainer}>
                         {isLoadingQuote ? (
                             <View style={styles.skeletonFiat} />
                         ) : (
-                            <Text style={styles.fiatAmountText}>{fiatAmount}</Text>
+                            fiatAmount && fiatAmount !== '$0.00' && fiatAmount !== '0.00' && (
+                                <Text style={styles.fiatAmountText}>{fiatAmount}</Text>
+                            )
                         )}
                     </View>
                 </View>
@@ -308,6 +324,20 @@ const styles = StyleSheet.create({
         color: colors.titleText,
         width: '100%',
         padding: 0,
+    },
+    toAmountContainer: {
+        width: '100%',
+        alignItems: 'flex-end',
+    },
+    amountScrollContent: {
+        flexGrow: 1,
+        justifyContent: 'flex-end',
+    },
+    amountTextDisplay: {
+        fontFamily: 'Manrope-Bold',
+        fontSize: 24,
+        color: colors.titleText,
+        textAlign: 'right',
     },
     fiatContainer: {
         marginTop: 2,

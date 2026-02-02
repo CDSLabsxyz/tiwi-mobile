@@ -4,8 +4,10 @@
  * Production-ready structure with chain tracking
  */
 
-import { WALLET_ADDRESS } from '@/utils/wallet';
 import type { ChainId } from "@/components/sections/Swap/ChainSelectSheet";
+import { apiClient } from "@/services/apiClient";
+import { formatTokenAmount } from "@/utils/formatting";
+import { WALLET_ADDRESS } from "@/utils/wallet";
 
 // Simulate API delay
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -256,7 +258,7 @@ export interface NFTActivity {
  */
 export const fetchNFTs = async (address: string): Promise<NFTItem[]> => {
   await delay(400 + Math.random() * 600);
-  
+
   // Mock NFT data matching Figma design
   const mockNFTs: NFTItem[] = [
     {
@@ -311,7 +313,7 @@ export const fetchNFTs = async (address: string): Promise<NFTItem[]> => {
  */
 export const fetchNFTDetail = async (nftId: string): Promise<NFTDetail> => {
   await delay(400 + Math.random() * 600);
-  
+
   // Mock NFT detail data matching Figma design
   const mockNFTDetail: NFTDetail = {
     id: nftId,
@@ -392,6 +394,7 @@ export interface AssetDetail {
   change24h: number; // Percentage change (can be negative)
   change24hAmount: string; // e.g., "0,10%"
   chainId: ChainId; // The chain this token belongs to
+  priceUSD: string;
   chartData: {
     [key in ChartTimePeriod]: ChartDataPoint[];
   };
@@ -411,58 +414,65 @@ export interface AssetActivity {
  * Fetches all activities for an asset
  */
 export const getAllAssetActivities = async (assetId: string): Promise<AssetActivity[]> => {
-  await delay(400 + Math.random() * 600);
-  
-  // Get the asset detail to use the correct symbol
-  const assetDetail = await fetchAssetDetail(assetId);
-  const symbol = assetDetail.symbol;
-  
-  // Generate more diverse activities with different dates and types
-  const now = Date.now();
-  const oneDay = 24 * 60 * 60 * 1000;
-  const activityTypes: Array<'sent' | 'received' | 'swap' | 'stake' | 'unstake'> = ['sent', 'received', 'swap', 'stake', 'unstake'];
-  
-  const formatDate = (date: Date): string => {
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    return `${months[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
-  };
-  
-  const generateAmount = (type: string, index: number): string => {
-    const baseAmounts = [0.017, 0.025, 0.05, 0.1, 0.15, 0.2, 0.5, 1.0, 2.5, 5.0];
-    const amount = baseAmounts[index % baseAmounts.length];
-    return `${amount.toFixed(3)} ${symbol}`;
-  };
-  
-  const generateUSDValue = (amount: string): string => {
-    const numAmount = parseFloat(amount.split(' ')[0]);
-    const basePrice = 1000;
-    const usdValue = numAmount * basePrice * (0.8 + Math.random() * 0.4); // Vary price by ±20%
-    return `$${usdValue.toFixed(2)}`;
-  };
-  
-  // Mock all activities - more than what's shown in detail view (15-20 activities)
-  const mockActivities: AssetActivity[] = Array.from({ length: 18 }, (_, index) => {
-    const daysAgo = index * 2 + Math.floor(Math.random() * 3); // Spread over ~36 days
-    const timestamp = now - (daysAgo * oneDay);
-    const date = new Date(timestamp);
-    const type = activityTypes[index % activityTypes.length];
-    const amount = generateAmount(type, index);
-    const usdValue = generateUSDValue(amount);
-    
-    return {
-      id: `${index + 1}`,
-      type,
-      amount,
-      usdValue,
-      timestamp,
-      date: formatDate(date),
-    };
-  });
-  
-  // Sort by timestamp (newest first)
-  mockActivities.sort((a, b) => b.timestamp - a.timestamp);
+  try {
+    // Get the asset detail to use the correct symbol
+    const assetDetail = await fetchAssetDetail(assetId);
+    const symbol = assetDetail.symbol.toUpperCase();
 
-  return mockActivities;
+    // Fetch real transaction history from API
+    const response = await apiClient.getTransactionHistory({
+      address: WALLET_ADDRESS,
+      limit: 50,
+    });
+
+    const formatDate = (timestamp: number): string => {
+      const date = new Date(timestamp);
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      return `${months[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
+    };
+
+    // Filter by token symbol and map to AssetActivity interface
+    const filteredActivities: AssetActivity[] = response.transactions
+      .filter(tx => tx.tokenSymbol.toUpperCase() === symbol || tx.tokenAddress.toLowerCase() === assetId.toLowerCase())
+      .map(tx => ({
+        id: tx.id,
+        type: tx.type.toLowerCase() as any,
+        amount: `${formatTokenAmount(tx.amountFormatted)} ${tx.tokenSymbol}`,
+        usdValue: tx.usdValue,
+        timestamp: tx.timestamp,
+        date: formatDate(tx.timestamp),
+      }));
+
+    return filteredActivities;
+  } catch (error) {
+    console.error("Failed to fetch real activities, falling back to mocks:", error);
+
+    // Fallback Mock Logic (Previous implementation)
+    await delay(400);
+    const assetDetail = await fetchAssetDetail(assetId);
+    const symbol = assetDetail.symbol;
+    const now = Date.now();
+    const oneDay = 24 * 60 * 60 * 1000;
+    const activityTypes: Array<'sent' | 'received' | 'swap' | 'stake' | 'unstake'> = ['sent', 'received', 'swap', 'stake', 'unstake'];
+
+    const formatDate = (date: Date): string => {
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      return `${months[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
+    };
+
+    return Array.from({ length: 10 }, (_, index) => {
+      const timestamp = now - (index * 2 * oneDay);
+      const amount = (0.017 + index * 0.01).toFixed(3);
+      return {
+        id: `mock-${index}`,
+        type: activityTypes[index % activityTypes.length],
+        amount: `${amount} ${symbol}`,
+        usdValue: `$${(parseFloat(amount) * 2500).toFixed(2)}`,
+        timestamp,
+        date: formatDate(new Date(timestamp)),
+      };
+    });
+  }
 };
 
 // Cache for portfolio data to avoid repeated fetches
@@ -475,7 +485,7 @@ const getPortfolioData = async (): Promise<PortfolioItem[]> => {
   if (cachedPortfolio) {
     return cachedPortfolio;
   }
-  
+
   // Mock portfolio data (same as in fetchWalletData)
   // Production-ready structure with chain information
   const mockPortfolio: PortfolioItem[] = [
@@ -524,7 +534,7 @@ const getPortfolioData = async (): Promise<PortfolioItem[]> => {
       chartData: 'https://www.figma.com/api/mcp/asset/71d4ca90-aa21-438e-ae22-6d8a1be63c75',
     },
   ];
-  
+
   cachedPortfolio = mockPortfolio;
   return mockPortfolio;
 };
@@ -534,37 +544,37 @@ const getPortfolioData = async (): Promise<PortfolioItem[]> => {
  * Returns asset-specific data based on the assetId
  */
 export const fetchAssetDetail = async (assetId: string): Promise<AssetDetail> => {
-  await delay(400 + Math.random() * 600);
-  
+  // await delay(400 + Math.random() * 600);
+
   // Get the portfolio to find the asset
   const portfolio = await getPortfolioData();
   const portfolioAsset = portfolio.find((asset) => asset.id === assetId);
-  
+
   // If asset not found in portfolio, return default ETH data
   if (!portfolioAsset) {
     // Generate mock chart data - positive trend (green) or negative trend (red)
     const isPositive = Math.random() > 0.5;
     const basePrice = 10000;
     const variation = isPositive ? 0.1 : -0.1;
-    
+
     const generateChartData = (points: number, trend: 'up' | 'down'): ChartDataPoint[] => {
       const data: ChartDataPoint[] = [];
       const now = Date.now();
       const interval = 86400000 / points;
-      
+
       for (let i = 0; i < points; i++) {
         const timestamp = now - (points - i) * interval;
         const noise = (Math.random() - 0.5) * 0.02;
-        const trendValue = trend === 'up' 
+        const trendValue = trend === 'up'
           ? basePrice * (1 + (i / points) * variation + noise)
           : basePrice * (1 - (i / points) * Math.abs(variation) + noise);
-        
+
         data.push({
           timestamp,
           value: Math.max(trendValue, basePrice * 0.9),
         });
       }
-      
+
       return data;
     };
 
@@ -577,6 +587,7 @@ export const fetchAssetDetail = async (assetId: string): Promise<AssetDetail> =>
       usdValue: '$10,234.23',
       change24h: isPositive ? 0.1 : -0.1,
       change24hAmount: isPositive ? '0,10%' : '-0,10%',
+      priceUSD: '1800.00',
       chainId: 'ethereum', // Default to Ethereum if asset not found
       chartData: {
         '1D': generateChartData(24, isPositive ? 'up' : 'down'),
@@ -594,25 +605,25 @@ export const fetchAssetDetail = async (assetId: string): Promise<AssetDetail> =>
   const isPositive = portfolioAsset.change24h > 0;
   const basePrice = 10000;
   const variation = isPositive ? Math.abs(portfolioAsset.change24h) / 100 : -Math.abs(portfolioAsset.change24h) / 100;
-  
+
   const generateChartData = (points: number, trend: 'up' | 'down'): ChartDataPoint[] => {
     const data: ChartDataPoint[] = [];
     const now = Date.now();
     const interval = 86400000 / points;
-    
+
     for (let i = 0; i < points; i++) {
       const timestamp = now - (points - i) * interval;
       const noise = (Math.random() - 0.5) * 0.02;
-      const trendValue = trend === 'up' 
+      const trendValue = trend === 'up'
         ? basePrice * (1 + (i / points) * variation + noise)
         : basePrice * (1 - (i / points) * Math.abs(variation) + noise);
-      
+
       data.push({
         timestamp,
         value: Math.max(trendValue, basePrice * 0.9),
       });
     }
-    
+
     return data;
   };
 
@@ -620,12 +631,12 @@ export const fetchAssetDetail = async (assetId: string): Promise<AssetDetail> =>
   // (getAllAssetActivities will return all activities)
   const now = Date.now();
   const oneDay = 24 * 60 * 60 * 1000;
-  
+
   const formatDate = (date: Date): string => {
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     return `${months[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
   };
-  
+
   const activities: AssetActivity[] = [
     {
       id: '1',
@@ -654,8 +665,8 @@ export const fetchAssetDetail = async (assetId: string): Promise<AssetDetail> =>
   ];
 
   // Format change24h amount
-  const change24hAmount = isPositive 
-    ? `+${portfolioAsset.change24h.toFixed(2)}%` 
+  const change24hAmount = isPositive
+    ? `+${portfolioAsset.change24h.toFixed(2)}%`
     : `${portfolioAsset.change24h.toFixed(2)}%`;
 
   return {
@@ -665,6 +676,7 @@ export const fetchAssetDetail = async (assetId: string): Promise<AssetDetail> =>
     logo: portfolioAsset.logo,
     balance: portfolioAsset.balance,
     usdValue: portfolioAsset.usdValue,
+    priceUSD: portfolioAsset.usdValue.replace('$', '').replace(',', ''),
     change24h: portfolioAsset.change24h / 100, // Convert percentage to decimal
     change24hAmount: change24hAmount,
     chainId: portfolioAsset.chainId, // Preserve chain information from portfolio

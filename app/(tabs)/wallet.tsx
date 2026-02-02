@@ -5,10 +5,10 @@ import {
     NFTList,
     QuickActions,
     TotalBalanceCard,
-    WalletHeader,
     type WalletTabKey,
 } from '@/components/sections/Wallet';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
+import { Header } from '@/components/ui/header';
 import { colors } from '@/constants/colors';
 import { useTranslation } from '@/hooks/useLocalization';
 import { useWalletBalances } from '@/hooks/useWalletBalances';
@@ -51,231 +51,140 @@ export default function WalletScreen() {
     const chains = useFilterStore((state) => state.chains);
 
     // State
+    const [activeTab, setActiveTab] = useState<WalletTabKey>((params.tab as WalletTabKey) || 'assets');
+    const [isBalanceVisible, setIsBalanceVisible] = useState(true);
     const [nfts, setNfts] = useState<NFTItem[]>([]);
     const [isLoadingNFTs, setIsLoadingNFTs] = useState(false);
-    const [isBalanceVisible, setIsBalanceVisible] = useState(true);
-    const [refreshing, setRefreshing] = useState(false);
 
-    // Initialize activeTab from URL params or default to "assets"
-    const [activeTab, setActiveTab] = useState<WalletTabKey>(
-        (params.tab === 'nfts' ? 'nfts' : 'assets') as WalletTabKey
-    );
+    // Filtered tokens
+    const filteredTokens = useMemo(() => {
+        return applyFilters(tokens, { sortBy, tokenCategories, chains });
+    }, [tokens, sortBy, tokenCategories, chains]);
 
-    // Update activeTab when URL params change
-    useEffect(() => {
-        if (params.tab === 'nfts' || params.tab === 'assets') {
-            setActiveTab(params.tab as WalletTabKey);
+    // UI Handlers
+    const handleToggleVisibility = () => setIsBalanceVisible(!isBalanceVisible);
+    const handleTodayPress = () => { };
+    const handleAssetPress = (asset: any) => {
+        const assetId = asset.address || asset.id;
+        router.push({
+            pathname: `/asset/${assetId}` as any,
+            params: {
+                id: asset.address,
+                symbol: asset.symbol,
+                name: asset.name,
+                balance: asset.balance,
+                usdValue: asset.usdValue,
+                chainId: asset.chainId,
+                logo: asset.logo,
+                priceUSD: asset.priceUSD,
+                change24h: asset.priceChange24h
+            }
+        });
+    };
+
+    const handleRefresh = useCallback(async () => {
+        queryClient.invalidateQueries({ queryKey: ['walletBalances'] });
+        if (activeTab === 'nfts' && address) {
+            loadNFTs(address);
         }
+    }, [activeTab, address, queryClient]);
+
+    const loadNFTs = async (walletAddress: string) => {
+        setIsLoadingNFTs(true);
+        try {
+            const items = await fetchNFTs(walletAddress);
+            setNfts(items);
+        } catch (error) {
+            console.error('Failed to fetch NFTs:', error);
+        } finally {
+            setIsLoadingNFTs(false);
+        }
+    };
+
+    // Effects
+    useEffect(() => {
+        if (params.tab) setActiveTab(params.tab as WalletTabKey);
     }, [params.tab]);
 
-    const onRefresh = useCallback(async () => {
-        setRefreshing(true);
-        await queryClient.invalidateQueries({ queryKey: ['walletBalances'] });
-        setRefreshing(false);
-    }, [queryClient]);
-
-    // Fetch NFTs when NFT tab is active
     useEffect(() => {
-        const activeAddress = address || (connectedWallets.length > 0 ? connectedWallets[0].address : null);
-        if (activeTab === 'nfts' && nfts.length === 0 && activeAddress) {
-            const loadNFTs = async () => {
-                setIsLoadingNFTs(true);
-                try {
-                    const data = await fetchNFTs(activeAddress);
-                    setNfts(data);
-                } catch (error) {
-                    console.error('Failed to fetch NFTs:', error);
-                } finally {
-                    setIsLoadingNFTs(false);
-                }
-            };
-
-            loadNFTs();
+        if (activeTab === 'nfts' && address) {
+            loadNFTs(address);
         }
-    }, [activeTab, nfts.length, address, connectedWallets]);
-
-    // Handlers
-    const handleToggleVisibility = () => {
-        setIsBalanceVisible(!isBalanceVisible);
-    };
-
-    const handleIrisScanPress = () => {
-        console.log('Iris scan pressed');
-    };
-
-    const handleSettingsPress = () => {
-        router.push('/settings' as any);
-    };
-
-    const handleSendPress = () => {
-        router.push('/send' as any);
-    };
-
-    const handleReceivePress = () => {
-        router.push('/receive' as any);
-    };
-
-    const handlePayPress = () => {
-        console.log('Pay pressed');
-    };
-
-    const handleActivitiesPress = () => {
-        router.push("/wallet/activities" as any);
-    };
-
-    const handleRewardsPress = () => {
-        console.log('Rewards pressed');
-    };
-
-    const handleFilterPress = () => {
-        console.log('Filter pressed');
-    };
-
-    const handleTabChange = (tab: WalletTabKey) => {
-        setActiveTab(tab);
-    };
-
-    const handleTodayPress = () => {
-        console.log('Today pressed');
-    };
-
-    // Map APIToken to PortfolioItem expected by AssetListItem
-    const portfolioItems = useMemo(() => {
-        return tokens.map(t => ({
-            id: `${t.chainId}-${t.address}`,
-            symbol: t.symbol,
-            name: t.name,
-            logo: t.logoURI || 'https://cryptologos.cc/logos/ethereum-eth-logo.png',
-            balance: t.balanceFormatted,
-            priceUSD: t.priceUSD || '0',
-            usdValue: t.usdValue || '0',
-            change24h: t.priceChange24h ? parseFloat(t.priceChange24h) : 0,
-            chainId: t.chainId === 7565164 ? 'aegis' : (t.chainId === 56 ? 'apex' : 'ethereum'), // Map to local chain keys
-        }));
-    }, [tokens]);
-
-    // Apply filters to assets
-    const filteredAssets = useMemo(() => {
-        return applyFilters(
-            portfolioItems as any,
-            sortBy,
-            tokenCategories,
-            chains
-        );
-    }, [
-        portfolioItems,
-        sortBy,
-        Array.from(tokenCategories).join(','),
-        Array.from(chains).join(','),
-    ]);
-
-    const handleNFTPress = (nft: NFTItem) => {
-        console.log('NFT pressed:', nft.id);
-    };
-
-    // If no wallets connected, we might want to show a placeholder or prompt
-    const displayAddress = address || (connectedWallets.length > 0 ? connectedWallets[0].address : '0x...');
+    }, [activeTab, address]);
 
     return (
-        <View style={[styles.container, { backgroundColor: colors.bg }]}>
+        <View style={styles.container}>
             <CustomStatusBar />
 
-            {/* Sticky Header */}
-            <View style={[styles.header, { paddingTop: top || 0 }]}>
-                <WalletHeader
-                    walletAddress={displayAddress}
-                    onIrisScanPress={handleIrisScanPress}
-                    onSettingsPress={handleSettingsPress}
-                />
-            </View>
+            {/* Header */}
+            <Header
+                disableWalletModal={true}
+                onSettingsPress={() => router.push('/settings')}
+                onScanPress={() => { }}
+            />
 
-            {/* Scrollable Content */}
             <ScrollView
-                style={styles.scrollView}
-                contentContainerStyle={[
-                    styles.scrollContent,
-                    { paddingBottom: (bottom || 16) + 76 + 24 }
-                ]}
+                style={styles.content}
+                contentContainerStyle={[styles.scrollContent, { paddingBottom: bottom + 20 }]}
                 showsVerticalScrollIndicator={false}
                 refreshControl={
                     <RefreshControl
-                        refreshing={refreshing}
-                        onRefresh={onRefresh}
+                        refreshing={isRefetchingBalances || isLoadingNFTs}
+                        onRefresh={handleRefresh}
                         tintColor={colors.primaryCTA}
-                        colors={[colors.primaryCTA]}
-                        progressViewOffset={0}
                     />
                 }
             >
-                {/* Main Content Container */}
-                <View style={styles.mainContent}>
-                    {/* Top Section: Balance + Quick Actions + Rewards */}
-                    <View style={styles.topSection}>
-                        <View style={styles.balanceActionsContainer}>
-                            {/* Total Balance Card */}
-                            <TotalBalanceCard
-                                totalBalance={totalNetWorthUsd}
-                                portfolioChange={{
-                                    amount: "+$0.00",
-                                    percent: "+0.00%",
-                                    period: "today"
-                                }}
-                                isBalanceVisible={isBalanceVisible}
-                                onToggleVisibility={handleToggleVisibility}
-                                onTodayPress={handleTodayPress}
-                            />
+                <View style={[styles.innerContent, { paddingBottom: bottom + 100 }]}>
+                    {/* Total Balance Card */}
+                    <TotalBalanceCard
+                        totalBalance={totalNetWorthUsd}
+                        portfolioChange={{
+                            amount: balanceData?.portfolioChange?.amount || "0.00",
+                            percent: balanceData?.portfolioChange?.percent || "0.00",
+                            period: "today"
+                        }}
+                        isBalanceVisible={isBalanceVisible}
+                        onToggleVisibility={handleToggleVisibility}
+                        onTodayPress={handleTodayPress}
+                    />
 
-                            {/* Quick Actions */}
-                            <QuickActions
-                                onSendPress={handleSendPress}
-                                onReceivePress={handleReceivePress}
-                                onPayPress={handlePayPress}
-                                onActivitiesPress={handleActivitiesPress}
-                            />
+                    {/* Quick Actions */}
+                    <QuickActions
+                        onSendPress={() => router.push('/send')}
+                        onReceivePress={() => router.push('/receive')}
+                        onPayPress={() => { /* TODO: Implement Pay logic */ }}
+                        onActivitiesPress={() => router.push('/activities')}
+                    />
+
+                    {/* Claimable Rewards */}
+                    <ClaimableRewardsCard amount="0.00" />
+
+                    {/* Tab Switcher */}
+                    <AssetsTabSwitcher
+                        activeTab={activeTab}
+                        onTabChange={setActiveTab}
+                    />
+
+                    {/* Asset / NFT List */}
+                    {activeTab === 'assets' ? (
+                        <View style={styles.assetList}>
+                            {filteredTokens.map((token: any) => (
+                                <AssetListItem
+                                    key={`${token.chainId}-${token.address}`}
+                                    asset={{
+                                        ...token,
+                                        id: token.address,
+                                        logo: token.logoURI,
+                                        change24h: parseFloat(token.priceChange24h || '0')
+                                    }}
+                                    onPress={() => handleAssetPress(token)}
+                                />
+                            ))}
                         </View>
-
-                        {/* Claimable Rewards Card */}
-                        <ClaimableRewardsCard
-                            amount="0.00"
-                            onPress={handleRewardsPress}
-                        />
-                    </View>
-
-                    {/* Assets Section */}
-                    <View style={styles.assetsSection}>
-                        {/* Tab Switcher */}
-                        <AssetsTabSwitcher
-                            activeTab={activeTab}
-                            onTabChange={handleTabChange}
-                            onFilterPress={handleFilterPress}
-                        />
-
-                        {/* Asset List */}
-                        {activeTab === 'assets' && (
-                            <View style={styles.assetList}>
-                                {filteredAssets.map((asset) => (
-                                    <AssetListItem
-                                        key={asset.id}
-                                        asset={asset as any}
-                                        onPress={() => {
-                                            console.log('Asset pressed:', asset.id);
-                                        }}
-                                    />
-                                ))}
-                            </View>
-                        )}
-
-                        {/* NFTs Tab */}
-                        {activeTab === 'nfts' && (
-                            <View style={styles.nftContainer}>
-                                {isLoadingNFTs ? (
-                                    <View style={styles.loadingContainer} />
-                                ) : (
-                                    <NFTList nfts={nfts} onNFTPress={handleNFTPress} />
-                                )}
-                            </View>
-                        )}
-                    </View>
+                    ) : (
+                        <NFTList nfts={nfts} isLoading={isLoadingNFTs} />
+                    )}
                 </View>
             </ScrollView>
         </View>
@@ -285,55 +194,20 @@ export default function WalletScreen() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-    },
-    header: {
         backgroundColor: colors.bg,
     },
-    scrollView: {
+    content: {
         flex: 1,
     },
     scrollContent: {
-        paddingTop: 24,
-        alignItems: 'center',
-        gap: 24,
+        flexGrow: 1,
     },
-    mainContent: {
-        width: "100%",
-        maxWidth: '100%',
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: 24,
-    },
-    topSection: {
-        width: '100%',
-        flexDirection: 'column',
-        gap: 18,
-        alignItems: 'center',
-    },
-    balanceActionsContainer: {
-        width: '100%',
-        flexDirection: 'column',
-        gap: 10,
-        alignItems: 'center',
-    },
-    assetsSection: {
-        width: '100%',
-        flexDirection: 'column',
-        gap: 18,
+    innerContent: {
+        paddingHorizontal: 20,
+        paddingTop: 10,
     },
     assetList: {
-        width: '100%',
-        flexDirection: 'column',
-        gap: 4,
-    },
-    nftContainer: {
-        width: '100%',
-        flexDirection: 'column',
-        gap: 6,
-    },
-    loadingContainer: {
-        flex: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
+        marginTop: 20,
+        gap: 12,
     },
 });

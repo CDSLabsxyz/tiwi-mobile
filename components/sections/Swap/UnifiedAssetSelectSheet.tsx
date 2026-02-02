@@ -106,6 +106,7 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
                 address: t.address,
                 chainId: t.chainId,
                 decimals: t.decimals,
+                priceUSD: t.priceUSD,
             };
         });
     }, [tokens, balanceData]);

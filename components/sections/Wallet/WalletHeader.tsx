@@ -24,6 +24,8 @@ interface WalletHeaderProps {
     onBackPress?: () => void;
     showTransactionHistory?: boolean;
     onTransactionHistoryPress?: () => void;
+    showIrisScan?: boolean;
+    showSettings?: boolean;
 }
 
 /**
@@ -37,6 +39,8 @@ export const WalletHeader: React.FC<WalletHeaderProps> = ({
     onBackPress,
     showTransactionHistory = false,
     onTransactionHistoryPress,
+    showIrisScan = true,
+    showSettings = true,
 }) => {
     const displayAddress = truncateAddress(walletAddress);
 
@@ -96,20 +100,22 @@ export const WalletHeader: React.FC<WalletHeaderProps> = ({
                 )}
 
                 {/* Iris Scan Icon */}
-                <TouchableOpacity
-                    activeOpacity={0.8}
-                    onPress={onIrisScanPress}
-                    style={styles.iconButton}
-                >
-                    <Image
-                        source={IrisScanIcon}
-                        style={styles.iconFull}
-                        contentFit="contain"
-                    />
-                </TouchableOpacity>
+                {showIrisScan && (
+                    <TouchableOpacity
+                        activeOpacity={0.8}
+                        onPress={onIrisScanPress}
+                        style={styles.iconButton}
+                    >
+                        <Image
+                            source={IrisScanIcon}
+                            style={styles.iconFull}
+                            contentFit="contain"
+                        />
+                    </TouchableOpacity>
+                )}
 
                 {/* Settings Icon */}
-                {!showBackButton && (
+                {showSettings && (
                     <TouchableOpacity
                         activeOpacity={0.8}
                         onPress={onSettingsPress}

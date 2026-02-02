@@ -32,27 +32,75 @@ export default function AssetDetailScreen() {
   const { top, bottom } = useSafeAreaInsets();
   const router = useRouter();
   const pathname = usePathname();
-  const { id, tab } = useLocalSearchParams<{ id: string; tab?: string }>();
+  const params = useLocalSearchParams<{
+    id: string;
+    symbol?: string;
+    name?: string;
+    balance?: string;
+    usdValue?: string;
+    chainId?: string;
+    logo?: string;
+    priceUSD?: string;
+    change24h?: string;
+    tab?: string;
+  }>();
 
-  // State
-  const [asset, setAsset] = useState<AssetDetailType | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const { id, tab } = params;
+
+  // Initialize Asset State from Params for instant UI
+  const [asset, setAsset] = useState<AssetDetailType | null>(() => {
+    if (!id || !params.symbol) return null;
+    const change24hVal = parseFloat(params.change24h || "0");
+    const isPositive = change24hVal >= 0;
+
+    return {
+      id,
+      symbol: params.symbol || "",
+      name: params.name || "",
+      balance: params.balance || "0",
+      usdValue: params.usdValue || "0",
+      chainId: (params.chainId as any) || "ethereum",
+      logo: params.logo || "",
+      priceUSD: params.priceUSD || "0",
+      change24h: change24hVal / 100,
+      change24hAmount: isPositive ? `+${change24hVal.toFixed(2)}%` : `${change24hVal.toFixed(2)}%`,
+      activities: [],
+      chartData: { "1D": [], "1W": [], "1M": [], "1Y": [], "5Y": [], "All": [] },
+    } as AssetDetailType;
+  });
+
+  const [isLoading, setIsLoading] = useState(!asset); // Only loading if we don't have param data
   const [timePeriod, setTimePeriod] = useState<ChartTimePeriod>("1D");
 
   // Stores
   const swapStore = useSwapStore();
   const assetStore = useAssetStore();
 
-  // Fetch asset detail
+  // Fetch asset detail for full data (activities, chart)
   useEffect(() => {
     const loadAssetDetail = async () => {
       if (!id) return;
 
-      setIsLoading(true);
+      // If we don't have initial asset data, show loading
+      if (!asset) setIsLoading(true);
+
       try {
         const data = await fetchAssetDetail(id);
-        setAsset(data);
-        // Store the current asset in the store for swap pre-population
+
+        setAsset(prev => {
+          if (!prev) return data;
+
+          // Trust the data passed from the list (prev) for core metadata 
+          // and only enhance it with the fetched activities and chart data.
+          // This prevents the "flicker" where it replaces real data with hardcoded mocks.
+          return {
+            ...prev,
+            activities: data.activities && data.activities.length > 0 ? data.activities : prev.activities,
+            chartData: data.chartData || prev.chartData
+          };
+        });
+
+        // Store the merged or new asset in the store
         assetStore.setCurrentAsset(data);
       } catch (error) {
         console.error("Failed to fetch asset detail:", error);
@@ -95,8 +143,20 @@ export default function AssetDetailScreen() {
       sendStore.prePopulateFromAsset(tokenOption, chainOption, asset.balance, asset.usdValue);
     }
 
-    // Navigate to send screen with asset ID
-    router.push(`/send?assetId=${id}` as any);
+    // Navigate to send screen with full asset details
+    router.push({
+      pathname: "/send",
+      params: {
+        assetId: id,
+        symbol: asset.symbol,
+        name: asset.name,
+        balance: asset.balance,
+        usdValue: asset.usdValue,
+        chainId: asset.chainId,
+        logo: typeof asset.logo === "string" ? asset.logo : undefined,
+        priceUSD: asset.priceUSD,
+      },
+    } as any);
   };
 
   const handleReceivePress = () => {
@@ -122,8 +182,20 @@ export default function AssetDetailScreen() {
       swapStore.setSwapQuote(null);
     }
 
-    // Navigate to swap screen
-    router.push("/swap" as any);
+    // Navigate to swap screen with full asset details
+    router.push({
+      pathname: "/swap",
+      params: {
+        assetId: id,
+        symbol: asset.symbol,
+        name: asset.name,
+        balance: asset.balance,
+        usdValue: asset.usdValue,
+        chainId: asset.chainId,
+        logo: typeof asset.logo === "string" ? asset.logo : undefined,
+        priceUSD: asset.priceUSD,
+      },
+    } as any);
   };
 
   const handleActivitiesPress = () => {
@@ -165,6 +237,8 @@ export default function AssetDetailScreen() {
           onSettingsPress={handleSettingsPress}
           showBackButton
           onBackPress={handleBackPress}
+          showIrisScan={false}
+          showSettings={true}
         />
       </View>
 
@@ -181,8 +255,8 @@ export default function AssetDetailScreen() {
         {/* Content Container */}
         <View
           style={{
-            width: 358,
-            maxWidth: "100%",
+            width: "100%",
+            paddingHorizontal: 12,
             flexDirection: "column",
             alignItems: "flex-start",
             gap: 18,

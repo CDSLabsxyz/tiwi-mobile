@@ -10,6 +10,7 @@ import type { SwapTabKey } from "@/components/sections/Swap/SwapTabs";
 import type { ExpiresOption } from "@/components/sections/Swap/ExpiresSection";
 
 // Default FROM token (TWC) - ensures fromToken is never null
+const TWC_ADDRESS = '0xDA1060158F7D593667cCE0a15DB346BB3FfB3596';
 const defaultFromToken: TokenOption = {
   id: "twc",
   symbol: "TWC",
@@ -17,7 +18,10 @@ const defaultFromToken: TokenOption = {
   icon: require("@/assets/home/tiwicat-token.svg"),
   tvl: "$1,000,000",
   balanceFiat: "$0",
-  balanceToken: "0 TIWI",
+  balanceToken: "0 TWC",
+  address: TWC_ADDRESS,
+  chainId: 1,
+  decimals: 9,
 };
 
 export interface SwapQuoteDetails {

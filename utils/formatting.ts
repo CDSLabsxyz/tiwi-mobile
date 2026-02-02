@@ -220,6 +220,51 @@ export function getColorFromSeed(seed: string): string {
 }
 
 /**
+ * Formats a token amount with Rabby-style suffixes (B, M, K)
+ * or full amount up to 4 decimals for smaller values.
+ */
+export function formatTokenQuantity(amount: string | number): string {
+    const val = typeof amount === 'string' ? parseFloat(amount) : amount;
+    if (isNaN(val) || val === 0) return '0';
+
+    const absVal = Math.abs(val);
+
+    if (absVal >= 1e9) {
+        return (val / 1e9).toFixed(4).replace(/\.?0+$/, '') + 'B';
+    } else if (absVal >= 1e6) {
+        return (val / 1e6).toFixed(4).replace(/\.?0+$/, '') + 'M';
+    } else if (absVal >= 1e3) {
+        // Only suffix K if it's quite large, e.g. > 100k, otherwise show full for precision
+        if (absVal >= 100000) {
+            return (val / 1e3).toFixed(2).replace(/\.?0+$/, '') + 'K';
+        }
+    }
+
+    // Default to full amount with commas and max 4 decimals
+    return val.toLocaleString('en-US', {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 4,
+        useGrouping: true,
+    });
+}
+
+/**
+ * Formats a token amount without compact notation (no M/K)
+ * Enforces a 4-decimal ceiling for display as per user requirement.
+ */
+export function formatFullAmount(amount: string | number): string {
+    const val = typeof amount === 'string' ? parseFloat(amount) : amount;
+    if (isNaN(val) || val === 0) return '0';
+
+    // ceiling/round to 4 decimal places for display
+    return val.toLocaleString('en-US', {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 4,
+        useGrouping: true, // Use commas for thousands
+    });
+}
+
+/**
  * Smart formatting for token amounts (Uniswap style)
  * - Large numbers (>1): Show 2-4 decimal places
  * - Small numbers (<1): Show up to 6 significant digits
@@ -229,34 +274,8 @@ export function formatTokenAmount(amount: string | number): string {
     const val = typeof amount === 'string' ? parseFloat(amount) : amount;
     if (isNaN(val) || val === 0) return '0';
 
-    if (val < 0.000001) {
-        return '< 0.000001';
-    }
-
-    if (val < 1) {
-        // Show up to 6 significant digits for precision
-        return val.toLocaleString('en-US', {
-            minimumFractionDigits: 0,
-            maximumFractionDigits: 6,
-        });
-    }
-
-    if (val < 10000) {
-        return val.toLocaleString('en-US', {
-            minimumFractionDigits: 0,
-            maximumFractionDigits: 4,
-        });
-    }
-
-    if (val < 1000000) {
-        return val.toLocaleString('en-US', {
-            minimumFractionDigits: 0,
-            maximumFractionDigits: 2,
-        });
-    }
-
-    // For very large numbers, use compact notation (1.2M)
-    return formatCompactNumber(val, { decimals: 2 });
+    // User explicitly asked for NO COMPACT NOTATION and 4 decimal ceiling for display
+    return formatFullAmount(amount);
 }
 
 /**

@@ -19,11 +19,29 @@ export function useWalletBalances() {
             // Aggregate tokens and calculate total USD value
             const allTokens: APIToken[] = [];
             let totalUSD = 0;
+            let yesterdayTotalUSD = 0;
 
             results.forEach(res => {
-                allTokens.push(...res.balances);
-                totalUSD += parseFloat(res.totalUSD || '0');
+                // Filter verified tokens only
+                const verifiedBalances = res.balances.filter(token => token.verified !== false);
+
+                allTokens.push(...verifiedBalances);
+
+                // Calculate total USD for verified tokens only
+                verifiedBalances.forEach(token => {
+                    const currentVal = parseFloat(token.usdValue || '0');
+                    totalUSD += currentVal;
+
+                    const changePercent = parseFloat(token.priceChange24h || '0');
+                    // price_now = price_yesterday * (1 + change)
+                    // price_yesterday = price_now / (1 + change)
+                    const historicalVal = currentVal / (1 + (changePercent / 100));
+                    yesterdayTotalUSD += historicalVal;
+                });
             });
+
+            const changeAmount = totalUSD - yesterdayTotalUSD;
+            const changePercent = yesterdayTotalUSD > 0 ? (changeAmount / yesterdayTotalUSD) * 100 : 0;
 
             // Simple deduplication/consolidation by token address and chainId
             const consolidatedTokens = allTokens.reduce((acc, token) => {
@@ -42,9 +60,13 @@ export function useWalletBalances() {
             return {
                 tokens: Object.values(consolidatedTokens),
                 totalNetWorthUsd: totalUSD.toFixed(2),
+                portfolioChange: {
+                    amount: changeAmount.toFixed(2),
+                    percent: changePercent.toFixed(2),
+                }
             };
         },
         enabled: connectedWallets.length > 0,
-        staleTime: 1000 * 60, // 1 minute
+        staleTime: 1000 * 60 * 5, // 5 minutes
     });
 }

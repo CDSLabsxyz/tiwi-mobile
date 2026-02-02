@@ -2,13 +2,13 @@ import { colors } from '@/constants/colors';
 import { useTokens } from '@/hooks/useTokens';
 import { useWalletBalances } from '@/hooks/useWalletBalances';
 import { getColorFromSeed } from '@/utils/formatting';
+import { truncateAddress } from '@/utils/wallet';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import React, { useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import type { ChainId } from './ChainSelectSheet';
 import { SelectionBottomSheet } from './SelectionBottomSheet';
-import { truncateAddress } from '@/utils/wallet';
 
 const CheckmarkIcon = require('@/assets/swap/checkmark-circle-01.svg');
 
@@ -23,6 +23,7 @@ export interface TokenOption {
     address: string;
     chainId: number;
     decimals: number;
+    priceUSD?: string;
 }
 
 interface TokenSelectSheetProps {
@@ -70,6 +71,7 @@ export const TokenSelectSheet: React.FC<TokenSelectSheetProps> = ({
                 address: t.address,
                 chainId: t.chainId,
                 decimals: t.decimals,
+                priceUSD: t.priceUSD,
             };
         });
     }, [tokens, balanceData]);
@@ -131,7 +133,7 @@ export const TokenSelectSheet: React.FC<TokenSelectSheetProps> = ({
                                             </View>
                                             <View style={styles.textColumn}>
                                                 <Text style={styles.symbol}>{token.symbol}</Text>
-                                                <Text style={styles.tvl}>{truncateAddress(token.address )}</Text>
+                                                <Text style={styles.tvl}>{truncateAddress(token.address)}</Text>
                                             </View>
                                         </View>
 

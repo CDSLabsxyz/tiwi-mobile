@@ -11,13 +11,18 @@ import { NFTListItem } from './NFTListItem';
 interface NFTListProps {
     nfts: NFTItem[];
     onNFTPress?: (nft: NFTItem) => void;
+    isLoading?: boolean;
 }
 
 /**
  * NFT List - Grid layout for NFT items
  * 2 columns with spacing
  */
-export const NFTList: React.FC<NFTListProps> = ({ nfts, onNFTPress }) => {
+export const NFTList: React.FC<NFTListProps> = ({ nfts, onNFTPress, isLoading }) => {
+    if (isLoading && nfts.length === 0) {
+        return null;
+    }
+
     // Group NFTs into rows of 2
     const rows: NFTItem[][] = [];
     for (let i = 0; i < nfts.length; i += 2) {

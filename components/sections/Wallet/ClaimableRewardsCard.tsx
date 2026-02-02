@@ -1,132 +1,189 @@
 /**
- * Claimable Rewards Card Component
- * Displays claimable rewards amount with expandable arrow
+ * Modular Banner Card Component
+ * Reusable for Claimable Rewards, Stake to Earn, etc.
+ * Matches Figma design (node-id: 3279:120018)
  */
 
-import { colors } from '@/constants/colors';
 import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View, ViewStyle } from 'react-native';
 
-import { TokenPrice } from '@/components/ui/TokenPrice';
-import { useTranslation } from '@/hooks/useLocalization';
+const ArrowRightIcon = require('@/assets/home/arrow-down-01.svg'); // Reusing and rotating
 
-const StarIcon = require('@/assets/home/star-18.svg');
-const ArrowDownIcon = require('@/assets/home/arrow-down-01.svg');
-
-interface ClaimableRewardsCardProps {
-    amount: string;
+interface BannerCardProps {
+    /** Left icon can be an image source or a React Node */
+    icon: any;
+    /** Main text label or a render function for complex tags */
+    title?: string;
+    renderTitle?: () => React.ReactNode;
+    /** Optional amount/value to display prominently */
+    amount?: string;
+    /** Click handler */
     onPress?: () => void;
+    /** Optional extra styling for container */
+    style?: ViewStyle;
+    /** Optional secondary text for subtitle/description */
+    subtitle?: string;
 }
 
 /**
- * Claimable Rewards Card - Shows rewards amount with expand arrow
+ * A premium, reusable banner card with the signature Tiwi glow effect.
  */
-export const ClaimableRewardsCard: React.FC<ClaimableRewardsCardProps> = ({
+export const BannerCard: React.FC<BannerCardProps> = ({
+    icon,
+    title,
+    renderTitle,
     amount,
     onPress,
+    style,
+    subtitle,
 }) => {
-    const { t } = useTranslation();
-
     return (
         <TouchableOpacity
             activeOpacity={0.8}
             onPress={onPress}
-            style={styles.container}
+            style={[styles.container, style]}
         >
-            {/* Background Gradient Line (Simulated with View) */}
-            <View style={styles.gradientLine} />
+            {/* High-Fidelity Bottom Gradient Line (Figma node-id: 3279:120024) */}
+            <LinearGradient
+                colors={['rgba(177, 241, 40, 0)', 'rgba(177, 241, 40, 0.95)', 'rgba(177, 241, 40, 0)']}
+                start={{ x: 0, y: 0.5 }}
+                end={{ x: 1, y: 0.5 }}
+                style={styles.gradientLine}
+                pointerEvents="none"
+            />
 
-            {/* Left: Star Icon + Text */}
+            {/* Left Content */}
             <View style={styles.leftSection}>
-                <View style={styles.starIconWrapper}>
-                    <Image
-                        source={StarIcon}
-                        style={styles.fullSize}
-                        contentFit="contain"
-                    />
+                <View style={styles.iconWrapper}>
+                    {typeof icon === 'number' || (typeof icon === 'object' && icon.uri) ? (
+                        <Image source={icon} style={styles.fullSize} contentFit="contain" />
+                    ) : (
+                        icon
+                    )}
                 </View>
-                <Text style={styles.labelText}>
-                    {t('home.claimable_rewards')}:{' '}
-                    <TokenPrice amount={amount} style={styles.amountText} />
-                </Text>
+
+                <View style={styles.textWrapper}>
+                    {renderTitle ? (
+                        renderTitle()
+                    ) : (
+                        <Text style={styles.titleText}>
+                            {title}
+                            {amount && (
+                                <Text style={styles.amountText}>: {amount}</Text>
+                            )}
+                        </Text>
+                    )}
+                    {subtitle && <Text style={styles.subtitleText}>{subtitle}</Text>}
+                </View>
             </View>
 
-            {/* Right: Arrow Icon (rotated) */}
-            <View style={styles.arrowIconWrapper}>
+            {/* Right Arrow */}
+            <View style={styles.arrowWrapper}>
                 <Image
-                    source={ArrowDownIcon}
-                    style={styles.fullSize}
+                    source={ArrowRightIcon}
+                    style={styles.arrowIcon}
                     contentFit="contain"
                 />
             </View>
-
-            {/* Decorative Glow (Simulated with View) */}
-            <View style={styles.glow} />
         </TouchableOpacity>
+    );
+};
+
+/**
+ * Specific implementation for Claimable Rewards
+ */
+const StarIcon = require('@/assets/home/star-18.svg');
+
+export const ClaimableRewardsCard: React.FC<{ amount: string; onPress?: () => void }> = ({
+    amount,
+    onPress
+}) => {
+    return (
+        <BannerCard
+            icon={StarIcon}
+            renderTitle={() => (
+                <Text style={styles.titleText}>
+                    Claimable Rewards: <Text style={styles.amountText}>{amount}</Text>
+                </Text>
+            )}
+            onPress={onPress}
+            style={{ marginTop: 12 }}
+        />
     );
 };
 
 const styles = StyleSheet.create({
     container: {
-        width: 353,
+        width: '100%',
+        minHeight: 48,
+        backgroundColor: '#010501',
         borderWidth: 1,
-        borderColor: colors.bgStroke,
+        borderColor: '#1f261e',
         borderRadius: 16,
         paddingHorizontal: 12,
-        paddingVertical: 10.5,
+        paddingVertical: 10,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
         overflow: 'hidden',
-        backgroundColor: 'transparent',
         position: 'relative',
+        marginVertical: 20,
     },
     gradientLine: {
         position: 'absolute',
         bottom: 0,
-        left: 16,
-        right: 16,
+        left: 0,
+        right: 0,
         height: 1,
-        backgroundColor: colors.primaryCTA,
-        opacity: 0.3,
-        borderRadius: 999,
     },
     leftSection: {
+        flex: 1,
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 4,
+        gap: 6,
     },
-    starIconWrapper: {
+    iconWrapper: {
         width: 18,
         height: 18,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
-    labelText: {
+    textWrapper: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flexShrink: 1,
+    },
+    titleText: {
         fontFamily: 'Manrope-Medium',
         fontSize: 14,
-        color: colors.bodyText,
+        color: '#B5B5B5',
+        includeFontPadding: false,
     },
     amountText: {
         fontFamily: 'Manrope-SemiBold',
-        color: colors.titleText,
+        color: '#FFFFFF',
     },
-    arrowIconWrapper: {
+    subtitleText: {
+        fontFamily: 'Manrope-Medium',
+        fontSize: 12,
+        color: '#B5B5B5',
+    },
+    arrowWrapper: {
         width: 16,
         height: 16,
-        transform: [{ rotate: '270deg' }], // Pointing right/rotated
+        alignItems: 'center',
+        justifyContent: 'center',
+        transform: [{ rotate: '270deg' }], // Pointing right
+    },
+    arrowIcon: {
+        width: '100%',
+        height: '100%',
+        tintColor: '#b5b5b5',
     },
     fullSize: {
         width: '100%',
         height: '100%',
-    },
-    glow: {
-        position: 'absolute',
-        width: 144,
-        height: 36,
-        left: 91,
-        top: 39,
-        backgroundColor: colors.primaryCTA,
-        opacity: 0.05,
-        borderRadius: 72,
     },
 });

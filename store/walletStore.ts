@@ -38,6 +38,8 @@ interface WalletState {
   removeWallet: (address: string) => void;
   setActiveWallet: (address: string) => void;
   disconnect: () => void;
+  _hasHydrated: boolean;
+  setHasHydrated: (state: boolean) => void;
 }
 
 export const useWalletStore = create<WalletState>()(
@@ -144,10 +146,15 @@ export const useWalletStore = create<WalletState>()(
         connectedWallets: [],
         walletIcon: null,
       }),
+      _hasHydrated: false,
+      setHasHydrated: (state) => set({ _hasHydrated: state }),
     }),
     {
       name: 'tiwi-wallet-storage',
       storage: createJSONStorage(() => AsyncStorage),
+      onRehydrateStorage: (state) => {
+        return () => state?.setHasHydrated(true);
+      }
     }
   )
 );

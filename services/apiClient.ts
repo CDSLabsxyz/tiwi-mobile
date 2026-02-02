@@ -9,8 +9,8 @@
  */
 
 // const BASE_URL = 'https://app.tiwiprotocol.xyz';
-// const BASE_URL = 'https://tiwi-super-app.vercel.app';
-const BASE_URL = 'https://fc49bc9b2d81.ngrok-free.app';
+const BASE_URL = 'https://tiwi-super-app.vercel.app';
+// const BASE_URL = 'https://3eb5f8808c3f.ngrok-free.app';
 
 // For local development, you can set this in your environment
 const API_URL = process.env.EXPO_PUBLIC_TIWI_BACKEND_URL || BASE_URL;
@@ -25,7 +25,7 @@ export interface Chain {
     id: number;
     name: string;
     slug: string;
-    type: string;                                                                   
+    type: string;
     logo?: string;
     logoURI?: string;
     isMainnet: boolean;
@@ -200,11 +200,45 @@ export interface RouteAPIResponse {
         };
         priceImpact?: string;
         slippage?: string;
+        transactionRequest?: {
+            to: string;
+            data: string;
+            value: string;
+        };
+        transactionData?: string;
+        raw?: any;
     };
     alternatives?: any[];
+    raw?: any;
     timestamp: number;
     expiresAt: number;
     error?: string;
+}
+
+export interface TransactionHistoryItem {
+    id: string;
+    hash: string;
+    type: 'Swap' | 'Sent' | 'Received' | 'Stake' | 'Unstake' | 'Approve' | 'Transfer';
+    from: string;
+    to: string;
+    tokenSymbol: string;
+    tokenAddress: string;
+    amount: string;
+    amountFormatted: string;
+    usdValue: string;
+    chainId: number;
+    timestamp: number;
+    status: 'pending' | 'completed' | 'failed';
+}
+
+export interface TransactionHistoryResponse {
+    address: string;
+    transactions: TransactionHistoryItem[];
+    total: number;
+    limit: number;
+    offset: number;
+    hasMore: boolean;
+    timestamp: number;
 }
 
 class TiwiApiClient {
@@ -260,7 +294,7 @@ class TiwiApiClient {
     async getWalletBalances(address: string, chains?: number[]): Promise<WalletBalancesResponse> {
         const chainsParam = chains ? `?chains=${chains.join(',')}` : '';
         const result = await this.fetcher<WalletBalancesResponse>(`/api/v1/wallet/balances?address=${address}${chainsParam ? `&${chainsParam.slice(1)}` : ''}`);
-        console.log("🚀 ~ getWalletBalances ~ result:", result)
+        console.log("🚀 ~ TiwiApiClient ~ getWalletBalances ~ result:", result)
         return result;
     }
 
@@ -363,7 +397,27 @@ class TiwiApiClient {
         return this.fetcher<RouteAPIResponse>('/api/v1/route', {
             method: 'POST',
             body: JSON.stringify(params),
-        });                                                                                                                                                     
+        });
+    }
+
+    /**
+     * Get transaction history for a wallet
+     */
+    async getTransactionHistory(params: {
+        address: string;
+        chains?: number[];
+        types?: string[];
+        limit?: number;
+        offset?: number;
+    }): Promise<TransactionHistoryResponse> {
+        const query = new URLSearchParams();
+        query.append('address', params.address);
+        if (params.chains) query.append('chains', params.chains.join(','));
+        if (params.types) query.append('types', params.types.join(','));
+        if (params.limit) query.append('limit', params.limit.toString());
+        if (params.offset) query.append('offset', params.offset.toString());
+
+        return this.fetcher<TransactionHistoryResponse>(`/api/v1/wallet/transactions?${query.toString()}`);
     }
 }
 

@@ -4,15 +4,15 @@
  * For asset detail screen - Swap instead of Pay
  */
 
-import React from "react";
-import { View, Text, TouchableOpacity } from "react-native";
-import { Image } from "expo-image";
 import { colors } from "@/constants/colors";
+import { Image } from "expo-image";
+import React from "react";
+import { Text, TouchableOpacity, View } from "react-native";
 
-const SendIcon = require("@/assets/home/navigation-03.svg");
-const ReceiveIcon = require("@/assets/home/download-04.svg");
-const SwapIcon = require("@/assets/home/exchange-01.svg");
-const ActivitiesIcon = require("@/assets/home/transaction-history.svg");
+const SendIcon = require("@/assets/wallet/navigation-03.svg");
+const ReceiveIcon = require("@/assets/wallet/download-04.svg");
+const SwapIcon = require("@/assets/wallet/exchange-01.svg");
+const ActivitiesIcon = require("@/assets/wallet/transaction-history.svg");
 
 interface AssetQuickActionsProps {
   onSendPress?: () => void;
@@ -35,25 +35,21 @@ export const AssetQuickActions: React.FC<AssetQuickActionsProps> = ({
       icon: SendIcon,
       label: "Send",
       onPress: onSendPress,
-      width: 50,
     },
     {
       icon: ReceiveIcon,
       label: "Receive",
       onPress: onReceivePress,
-      width: 56.5,
     },
     {
       icon: SwapIcon,
       label: "Swap",
       onPress: onSwapPress,
-      width: 56.5,
     },
     {
       icon: ActivitiesIcon,
       label: "Activities",
       onPress: onActivitiesPress,
-      width: 60.5,
     },
   ];
 
@@ -71,14 +67,14 @@ export const AssetQuickActions: React.FC<AssetQuickActionsProps> = ({
       {actions.map((action, index) => (
         <TouchableOpacity
           key={index}
-          activeOpacity={0.8}
+          // activeOpacity={0.8}
           onPress={action.onPress}
           style={{
+            flex: 1,
             flexDirection: "column",
             alignItems: "center",
             justifyContent: "center",
             gap: 8,
-            width: action.width,
           }}
         >
           {/* Icon Container */}
@@ -99,7 +95,7 @@ export const AssetQuickActions: React.FC<AssetQuickActionsProps> = ({
             >
               <Image
                 source={action.icon}
-                className="w-full h-full"
+                style={{ width: '100%', height: '100%' }}
                 contentFit="contain"
               />
             </View>

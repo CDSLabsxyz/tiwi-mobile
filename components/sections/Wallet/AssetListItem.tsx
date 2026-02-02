@@ -4,19 +4,36 @@
  * Converted from Tailwind to StyleSheet
  */
 
+import { Sparkline } from '@/components/ui/Sparkline';
 import { TokenPrice } from '@/components/ui/TokenPrice';
 import { colors } from '@/constants/colors';
 import { useTranslation } from '@/hooks/useLocalization';
 import type { PortfolioItem } from '@/services/walletService';
-import { getColorFromSeed } from '@/utils/formatting';
+import { formatTokenQuantity, getColorFromSeed } from '@/utils/formatting';
 import { Image } from 'expo-image';
-import React from 'react';
+import React, { useMemo } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 interface AssetListItemProps {
-    asset: PortfolioItem & { priceUSD?: string };
+    asset: PortfolioItem & { priceUSD?: string; change24h: number; balanceFormatted: string };
     onPress?: () => void;
 }
+
+/**
+ * Helper to generate mock sparkline data based on 24h change
+ */
+const generateSparklineData = (change: number) => {
+    const points = 20;
+    const data = [];
+    let current = 100;
+    for (let i = 0; i < points; i++) {
+        // Add random noise but trend toward the final change
+        const trend = (change / points) * i;
+        const noise = (Math.random() - 0.5) * 2;
+        data.push(current + trend + noise);
+    }
+    return data;
+};
 
 /**
  * Asset List Item - Individual asset row in the portfolio list
@@ -26,6 +43,11 @@ export const AssetListItem: React.FC<AssetListItemProps> = ({
     onPress,
 }) => {
     const { t } = useTranslation();
+    const isPositive = asset.change24h >= 0;
+    // Figma Colors: success #3FEA9B, primaryCTA #B1F128, negative #FB406E
+    const chartColor = isPositive ? '#B1F128' : '#FB406E';
+
+    const sparkData = useMemo(() => generateSparklineData(asset.change24h), [asset.change24h]);
 
     return (
         <TouchableOpacity
@@ -64,17 +86,15 @@ export const AssetListItem: React.FC<AssetListItemProps> = ({
                 </View>
             </View>
 
-            {/* Center: Price Chart (Placeholder) */}
+            {/* Center: Sparkline Price Chart */}
             <View style={styles.chartContainer}>
-                {asset.chartData ? (
-                    <Image
-                        source={{ uri: asset.chartData }}
-                        style={styles.chartImage}
-                        contentFit="contain"
-                    />
-                ) : (
-                    <View style={styles.chartPlaceholder} />
-                )}
+                <Sparkline
+                    data={sparkData}
+                    color={chartColor}
+                    width={70}
+                    height={32}
+                    strokeWidth={1.5}
+                />
             </View>
 
             {/* Right: Balance + USD Value */}
@@ -83,31 +103,8 @@ export const AssetListItem: React.FC<AssetListItemProps> = ({
                 <Text
                     style={styles.balance}
                     numberOfLines={1}
-                    adjustsFontSizeToFit={false}
                 >
-                    {(() => {
-                        // Parse the balance number and round it to fit within the width
-                        const balanceNum = parseFloat(asset.balance.replace(/,/g, ''));
-                        if (isNaN(balanceNum)) return asset.balance;
-
-                        // Try different decimal places until it fits
-                        let decimals = 8;
-                        let formatted = balanceNum.toFixed(decimals);
-
-                        // Remove trailing zeros
-                        formatted = formatted.replace(/\.?0+$/, '');
-
-                        // If still too long, reduce decimals progressively
-                        while (formatted.length > 12 && decimals > 0) {
-                            decimals--;
-                            formatted = balanceNum.toFixed(decimals).replace(/\.?0+$/, '');
-                        }
-
-                        // Add thousand separators if needed
-                        const parts = formatted.split('.');
-                        parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-                        return parts.length > 1 ? parts.join('.') : parts[0];
-                    })()}
+                    {formatTokenQuantity(asset.balanceFormatted.replace(/,/g, ''))} {asset.symbol}
                 </Text>
 
                 {/* USD Value */}

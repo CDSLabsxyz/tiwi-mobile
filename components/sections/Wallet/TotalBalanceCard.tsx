@@ -11,7 +11,7 @@ import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { TokenPrice } from '@/components/ui/TokenPrice';
-import { useTranslation } from '@/hooks/useLocalization';
+import { usePrice, useTranslation } from '@/hooks/useLocalization';
 
 const ViewIcon = require('../../../assets/wallet/view.svg');
 
@@ -74,8 +74,11 @@ export const TotalBalanceCard: React.FC<TotalBalanceCardProps> = ({
 
                 {/* Portfolio Change */}
                 <View style={styles.changeRow}>
-                    <Text style={styles.changeText}>
-                        {portfolioChange.amount} ({portfolioChange.percent})
+                    <Text style={[
+                        styles.changeText,
+                        { color: portfolioChange.amount.startsWith('-') ? '#FB406E' : '#B1F128' }
+                    ]}>
+                        {portfolioChange.amount.startsWith('-') ? '-' : '+'}{usePrice(Math.abs(parseFloat(portfolioChange.amount)))} ({portfolioChange.amount.startsWith('-') ? '' : '+'}{portfolioChange.percent}%)
                     </Text>
                     <TouchableOpacity activeOpacity={0.8} onPress={onTodayPress}>
                         <Text style={styles.periodText}>

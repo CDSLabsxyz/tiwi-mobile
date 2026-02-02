@@ -4,11 +4,11 @@
  * Matches Figma design exactly (node-id: 3279-120268)
  */
 
-import React, { useMemo } from "react";
-import { View, Text, TouchableOpacity } from "react-native";
-import Svg, { Path, Defs, LinearGradient, Stop } from "react-native-svg";
 import { colors } from "@/constants/colors";
 import type { AssetDetail, ChartTimePeriod } from "@/services/walletService";
+import React, { useMemo } from "react";
+import { Text, TouchableOpacity, useWindowDimensions, View } from "react-native";
+import Svg, { Defs, LinearGradient, Path, Stop } from "react-native-svg";
 
 interface PriceChartProps {
   asset: AssetDetail;
@@ -16,9 +16,8 @@ interface PriceChartProps {
   onTimePeriodChange: (period: ChartTimePeriod) => void;
 }
 
-const CHART_WIDTH = 356;
 const CHART_HEIGHT = 232;
-const CHART_PADDING = 20;
+const CHART_PADDING = 10; // Smaller padding for "full width" feel
 
 /**
  * Price Chart - Interactive chart with time period selection
@@ -28,12 +27,15 @@ export const PriceChart: React.FC<PriceChartProps> = ({
   timePeriod,
   onTimePeriodChange,
 }) => {
+  const { width: screenWidth } = useWindowDimensions();
+  const CHART_WIDTH = screenWidth - 24; // Small margin on sides
+
   const chartData = asset.chartData[timePeriod];
   const isPositive = asset.change24h >= 0;
   const chartColor = isPositive ? colors.success : colors.error;
 
   // Calculate chart path and area
-  const { path, areaPath, minValue, maxValue } = useMemo(() => {
+  const { path, areaPath } = useMemo(() => {
     if (!chartData || chartData.length === 0) {
       return { path: "", areaPath: "", minValue: 0, maxValue: 0 };
     }
@@ -73,7 +75,7 @@ export const PriceChart: React.FC<PriceChartProps> = ({
       minValue: min,
       maxValue: max,
     };
-  }, [chartData]);
+  }, [chartData, CHART_WIDTH]);
 
   const timePeriods: ChartTimePeriod[] = ["1D", "1W", "1M", "1Y", "5Y", "All"];
 

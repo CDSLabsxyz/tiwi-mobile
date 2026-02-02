@@ -8,7 +8,7 @@ import { Image } from 'expo-image';
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-const FilterIcon = require('@/assets/home/filter-horizontal.svg');
+const FilterIcon = require('@/assets/wallet/filter-horizontal.svg');
 
 export type WalletTabKey = 'assets' | 'nfts';
 
@@ -95,7 +95,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'space-between',
         width: '100%',
-        paddingHorizontal: 16,
+        // paddingHorizontal: 16,
     },
     segmentedControl: {
         backgroundColor: '#1B1B1B',

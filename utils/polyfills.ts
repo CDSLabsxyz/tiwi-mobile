@@ -14,16 +14,16 @@ if (typeof window === 'undefined') {
 }
 
 // @ts-ignore
-const win = global.window;
+const win = global.window || global;
 
 // 1. Event Listeners
 if (!win.addEventListener) {
   // @ts-ignore
-  win.addEventListener = () => {};
+  win.addEventListener = () => { };
 }
 if (!win.removeEventListener) {
   // @ts-ignore
-  win.removeEventListener = () => {};
+  win.removeEventListener = () => { };
 }
 if (!win.dispatchEvent) {
   // @ts-ignore
@@ -33,10 +33,10 @@ if (!win.dispatchEvent) {
 // 2. CustomEvent (Fix for 'mipd' ReferenceError)
 if (typeof win.CustomEvent === 'undefined' || typeof global.CustomEvent === 'undefined') {
   class CustomEvent {
-    constructor(event: any, params: any = {}) {
-      // @ts-ignore
+    type: string;
+    detail: any;
+    constructor(event: string, params: any = {}) {
       this.type = event;
-      // @ts-ignore
       this.detail = params.detail || {};
     }
   }
@@ -46,9 +46,40 @@ if (typeof win.CustomEvent === 'undefined' || typeof global.CustomEvent === 'und
   global.CustomEvent = CustomEvent;
 }
 
-// 3. Additional shims for text encoding
+// 3. Event (Fix for '@wallet-standard/app' ReferenceError within @lifi/sdk)
+if (typeof global.Event === 'undefined' || typeof win.Event === 'undefined') {
+  class Event {
+    type: string;
+    constructor(type: string) {
+      this.type = type;
+    }
+  }
+  // @ts-ignore
+  global.Event = Event;
+  // @ts-ignore
+  win.Event = Event;
+}
+
+// 4. EventTarget (Wagmi / LiFi necessity)
+if (typeof global.EventTarget === 'undefined' || typeof win.EventTarget === 'undefined') {
+  class EventTarget {
+    addEventListener() { }
+    removeEventListener() { }
+    dispatchEvent() { return true; }
+  }
+  // @ts-ignore
+  global.EventTarget = EventTarget;
+  // @ts-ignore
+  win.EventTarget = EventTarget;
+}
+
+// 5. Additional shims for text encoding
 if (typeof TextEncoder === 'undefined') {
-  const { TextEncoder, TextDecoder } = require('text-encoding');
-  global.TextEncoder = TextEncoder;
-  global.TextDecoder = TextDecoder;
+  try {
+    const { TextEncoder, TextDecoder } = require('text-encoding');
+    global.TextEncoder = TextEncoder;
+    global.TextDecoder = TextDecoder;
+  } catch (e) {
+    // If text-encoding is not available, we assume fast-text-encoding handled it via import
+  }
 }

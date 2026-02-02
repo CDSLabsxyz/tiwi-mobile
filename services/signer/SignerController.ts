@@ -1,9 +1,13 @@
-import { useSecurityStore } from '@/store/securityStore';
 import { useWalletStore } from '@/store/walletStore';
 import { LocalSignerEngine } from './LocalSignerEngine';
 import { ExecutionResult, TransactionRequest } from './SignerTypes';
 import { SolanaLocalEngine } from './SolanaLocalEngine';
 
+/**
+ * SignerController is the main entry point for all transaction signatures.
+ * It routes requests to the appropriate engine (Local or External) and 
+ * provides low-level provider access (WalletClient) for SDKs.
+ */
 export class SignerController {
     private evmEngine: LocalSignerEngine;
     private solanaEngine: SolanaLocalEngine;
@@ -14,45 +18,28 @@ export class SignerController {
     }
 
     /**
-     * The main execution entry point. 
-     * Handles routing between Local Signer and External (WalletConnect) Signer.
+     * Executes a single transaction.
+     * Biometric security is handled at the Engine level to ensure consistency.
      */
     async executeTransaction(tx: TransactionRequest, address: string): Promise<ExecutionResult> {
         const walletStore = useWalletStore.getState();
-        const securityStore = useSecurityStore.getState();
 
         // 1. Identify Wallet Source
         const wallet = walletStore.connectedWallets.find(w => w.address.toLowerCase() === address.toLowerCase());
         const isLocal = wallet?.source === 'internal' || wallet?.source === 'imported';
 
         if (isLocal) {
-            // 2. Security Challenge (Industry Standard: Biometrics before every signature)
-            const isAuthorized = await securityStore.authenticateBiometrics('Confirm Transaction');
-
-            if (!isAuthorized && securityStore.hasPasscode) {
-                // Fallback to passcode would typically happen here or be handled by authenticateBiometrics
-                // For now, if unauthorized, we block
-                throw new Error('User authentication failed');
-            }
-
-            if (!isAuthorized && !securityStore.hasPasscode) {
-                // If no security is set up, we should probably warn or allow if it's a low-security mode
-                // But best practice is to require SOMETHING.
-            }
-
-            // 3. Select Engine based on Chain Family
+            // 2. Select Engine based on Chain Family
             const engine = tx.chainFamily === 'evm' ? this.evmEngine : this.solanaEngine;
 
-            // 4. Execute
+            // 3. Execute (Engine will prompt for biometrics)
             return await engine.sendTransaction(tx, address);
         } else {
-            // 5. Handle WalletConnect / External Signer
-            // In a real app, this would use wagmi/core (EVM) or Solana Wallet Adapter (Solana)
+            // 4. Handle External Signer
             try {
                 if (tx.chainFamily === 'evm') {
-                    // Placeholder for WalletConnect EVM
-                    // Usually: await sendTransaction(wagmiConfig, { to: tx.to, value: tx.value, ... })
-                    throw new Error('WalletConnect EVM signature required. Please verify in your external wallet.');
+                    // This is handled by Wagmi/AppKit UI usually
+                    throw new Error('External signatures should be handled via the AppKit provider interface.');
                 } else {
                     throw new Error('WalletConnect Solana signature required. Please verify in your external wallet.');
                 }
@@ -60,6 +47,15 @@ export class SignerController {
                 return { hash: '', status: 'failed', error: e.message };
             }
         }
+    }
+
+    /**
+     * Provides a viem WalletClient that can be injected into 3rd-party SDKs.
+     * The internal account of this client is "securely wrapped" to prompt biometrics.
+     */
+    async getWalletClient(chainId: number, address: string) {
+        // We only support EVM WalletClient for now
+        return await this.evmEngine.getWalletClient(chainId, address);
     }
 }
 

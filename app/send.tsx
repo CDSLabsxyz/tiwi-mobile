@@ -30,7 +30,16 @@ export default function SendScreen() {
     const { top, bottom } = useSafeAreaInsets();
     const router = useRouter();
     const pathname = usePathname();
-    const params = useLocalSearchParams<{ assetId?: string }>();
+    const params = useLocalSearchParams<{
+        assetId?: string;
+        symbol?: string;
+        name?: string;
+        balance?: string;
+        usdValue?: string;
+        chainId?: string;
+        logo?: string;
+        priceUSD?: string;
+    }>();
 
     const sendStore = useSendStore();
     const {
@@ -48,8 +57,28 @@ export default function SendScreen() {
 
     // Check if we're coming from asset detail page
     useEffect(() => {
+        if (params.symbol && params.chainId) {
+            // Instant pre-population from params
+            const tokenOption = {
+                id: params.assetId || params.symbol,
+                symbol: params.symbol,
+                name: params.name || params.symbol,
+                icon: params.logo,
+                balanceToken: params.balance || '0',
+                balanceFiat: params.usdValue || '$0',
+                priceUSD: params.priceUSD || '0',
+            };
+            const { getChainOptionWithFallback } = require('@/utils/chainUtils');
+            const chainOption = getChainOptionWithFallback(params.chainId);
+
+            if (tokenOption && chainOption) {
+                prePopulateFromAsset(tokenOption as any, chainOption, params.balance || '0', params.usdValue || '$0');
+                return;
+            }
+        }
+
         if (params.assetId) {
-            // Pre-populate from asset
+            // Fallback: fetch from wallet data if we only have ID
             const loadAsset = async () => {
                 try {
                     const walletData = await fetchWalletData(WALLET_ADDRESS);
@@ -70,7 +99,7 @@ export default function SendScreen() {
             // Reset to initial state
             resetSendState();
         }
-    }, [params.assetId]);
+    }, [params.assetId, params.symbol, params.chainId]);
 
     const { address } = useWalletStore();
 

@@ -51,7 +51,7 @@ const allActions: MoreAction[] = [
         id: 'history',
         label: 'History',
         icon: require('../assets/home/transaction-history.svg'),
-        route: '/history',
+        route: '/activities',
         category: 'recommended',
     },
     // Popular

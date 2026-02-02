@@ -11,5 +11,6 @@ export const EVM_CHAINS: Record<number, any> = {
 };
 
 export function getChainById(chainId: number) {
+    console.log("🚀 ~ getChainById ~ chainId:", chainId)
     return EVM_CHAINS[chainId] || mainnet;
 }

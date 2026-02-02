@@ -1,107 +1,88 @@
-import { parseEther } from 'viem';
-import { apiClient, FetchRouteParams } from './apiClient';
-import { signerController } from './signer/SignerController';
+import { formatUnits, parseUnits } from 'viem';
+import { apiClient } from './apiClient';
+import { SwapQuote, TokenMinimal } from './swap/types';
+import { unifiedSwapManager } from './swap/UnifiedSwapManager';
+
+export * from './swap/types';
 
 /**
  * Swap service - handles swap-related API calls
  */
 
-export interface SwapQuote {
-    toAmount: string;
-    fiatAmount: string;
-    rate: number;
-    slippage: number;
-    gasEstimate: string;
-    gasFee: string;
-    twcFee: string;
-    source: string[];
-    // Execution Data (added for Local Signing)
-    txTo?: string;
-    txData?: string;
-    txValue?: string;
-    fromAmountUSD?: string;
-    toAmountUSD?: string;
-}
-
-interface TokenMinimal {
-    address: string;
-    chainId: number;
-    symbol: string;
-    decimals: number;
-}
-
 export async function fetchSwapQuote(
     fromAmount: string,
     fromToken: TokenMinimal,
     toToken: TokenMinimal,
-    fromAddress?: string
+    fromAddress: string,
+    recipient: string
 ): Promise<SwapQuote> {
-
-    const amount = parseFloat(fromAmount);
-    if (isNaN(amount) || amount <= 0) {
+    if (!fromAmount || parseFloat(fromAmount) <= 0) {
         throw new Error('Invalid amount');
     }
 
     try {
-        const params: FetchRouteParams = {
-            fromToken: {
-                address: fromToken.address,
-                chainId: fromToken.chainId,
-                symbol: fromToken.symbol,
-                decimals: fromToken.decimals,
-            },
-            toToken: {
-                address: toToken.address,
-                chainId: toToken.chainId,
-                symbol: toToken.symbol,
-                decimals: toToken.decimals,
-            },
-            fromAmount: fromAmount,
-            fromAddress: fromAddress,
-            order: 'RECOMMENDED',
+        const params = {
+            fromChainId: fromToken.chainId,
+            toChainId: toToken.chainId,
+            fromToken,
+            toToken,
+            fromAmount,
+            fromAddress,
+            recipient,
+            slippage: 0.5
         };
-        console.log("🚀 ~ fetchSwapQuote ~ params:", params)
 
         const response = await apiClient.fetchRoute(params);
+        console.log("🚀 ~ fetchSwapQuote ~ response:", response)
         const route = response.route;
-        console.log("🚀 ~ fetchSwapQuote ~ route:", route)
 
-        // Calculate rate
-        const rate = parseFloat(route.toToken.amount) / parseFloat(route.fromToken.amount);
 
         // Extract USD values
-        const toFiat = route.toToken.amountUSD ? route.toToken.amountUSD : (parseFloat(route.toToken.amount) * 1).toString();
-        const fromFiat = route.fromToken.amountUSD ? route.fromToken.amountUSD : (parseFloat(route.fromToken.amount) * 1).toString();
+        const fromFiat = route.fromToken.amountUSD || '0';
+        const toFiat = route.toToken.amountUSD || '0';
         const gasFee = route.fees?.gasUSD ? `$${parseFloat(route.fees.gasUSD).toFixed(2)}` : '0.001%';
 
-        // Extract transaction data
-        // We check multiple common fields (transactionRequest, transaction, tx) to be robust
-        const tx = (route as any).transactionRequest || (route as any).transaction || (route as any).tx;
+        // Extract execution data
+        const txTo = route.transactionRequest?.to || route.raw?.routerAddress || route.toToken.address;
+        const txData = route.transactionRequest?.data || route.transactionData || '0x';
+        const txValue = route.transactionRequest?.value || '0';
+
+        // Fix: Use raw.amountOut if toToken.amount has a decimal point, as BigInt() fails on decimals
+        let toAmountFormatted = route.toToken.amount;
+        if (route.toToken.amount.includes('.')) {
+            // It's already human readable
+            toAmountFormatted = route.toToken.amount;
+        } else {
+            // It's atomic/integer, format it
+            try {
+                toAmountFormatted = formatUnits(BigInt(route.toToken.amount), toToken.decimals);
+            } catch (e) {
+                // If BigInt still fails (e.g. empty string), use a fallback
+                toAmountFormatted = '0';
+            }
+        }
 
         return {
-            toAmount: route.toToken.amount,
-            fiatAmount: toFiat, // Keeping for backward compatibility but using toAmountUSD preferred
+            toAmount: toAmountFormatted,
+            fiatAmount: toFiat,
             fromAmountUSD: fromFiat,
             toAmountUSD: toFiat,
-            rate,
             slippage: route.slippage ? parseFloat(route.slippage) : 0.5,
             gasEstimate: route.fees?.gas || '0.001',
             gasFee: gasFee,
             twcFee: '0.40%',
             source: [route.router || 'Best', 'Tiwi Router'],
-
-            // Execution details
-            txTo: tx?.to || (route as any).routerAddress,
-            txData: tx?.data,
-            txValue: tx?.value,
+            txTo,
+            txData,
+            txValue,
+            raw: route.raw, // Preserve raw for client-side encoding if needed
+            router: route.router, // Store router for the executor
         };
     } catch (error) {
         console.error('[SwapService] fetchSwapQuote failed, using fallback:', error);
-        // Fallback to simple calculation if API fails
         return {
-            toAmount: (amount * 1).toString(),
-            fiatAmount: `$${(amount * 1).toFixed(2)}`,
-            rate: 1,
+            toAmount: fromAmount,
+            fiatAmount: '0',
             slippage: 0.5,
             gasEstimate: '0.001',
             gasFee: '0.001%',
@@ -116,38 +97,21 @@ export async function executeSwap(
     fromToken: TokenMinimal,
     toToken: TokenMinimal,
     fromAddress: string,
-    quote: SwapQuote // We pass the quote which should contain the tx data
+    recipientAddress: string,
+    quote: SwapQuote
 ): Promise<{ txHash: string }> {
-    try {
-        // 1. Prepare Transaction Request
-        const chainFamily = fromToken.address.startsWith('0x') || [1, 56, 137, 8453, 42161].includes(fromToken.chainId)
-            ? 'evm'
-            : 'solana';
+    const result = await unifiedSwapManager.execute({
+        fromAmount,
+        fromToken,
+        toToken,
+        fromAddress,
+        recipientAddress,
+        quote,
+    });
 
-        // Safety Check: Ensure we have execution data
-        if (!quote.txTo || !quote.txData) {
-            console.error('[SwapService] Missing execution data in quote:', quote);
-            throw new Error('Swap quote is missing execution data (target address or calldata). Cannot execute safely.');
-        }
-
-        const txRequest = {
-            chainFamily: chainFamily as any,
-            to: quote.txTo,
-            value: quote.txValue || (fromToken.address === '0x0000000000000000000000000000000000000000' ? parseEther(fromAmount).toString() : '0'),
-            data: quote.txData,
-            chainId: fromToken.chainId,
-        };
-
-        // 2. Execute via the Unified Signer Controller
-        const result = await signerController.executeTransaction(txRequest, fromAddress);
-
-        if (result.status === 'success') {
-            return { txHash: result.hash };
-        } else {
-            throw new Error(result.error || 'Transaction failed');
-        }
-    } catch (error: any) {
-        console.error('[SwapService] executeSwap failed', error);
-        throw error;
+    if (result.success && result.txHash) {
+        return { txHash: result.txHash };
+    } else {
+        throw new Error(result.error || 'Swap execution failed');
     }
 }

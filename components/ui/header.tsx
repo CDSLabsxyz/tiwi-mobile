@@ -10,12 +10,16 @@ interface HeaderProps {
     onWalletPress?: () => void;
     onScanPress?: () => void;
     onSettingsPress?: () => void;
+    disableWalletModal?: boolean;
+    showBackButton?: boolean;
+    onBackPress?: () => void;
 }
 
 const TiwiCat = require('../../assets/home/tiwicat.svg');
 const ArrowDown01 = require('../../assets/home/arrow-down-01.svg');
 const Scan = require('../../assets/home/iris-scan.svg');
 const Settings = require('../../assets/home/settings-03.svg');
+const ChevronLeftIcon = require('../../assets/swap/arrow-left-02.svg');
 
 import { useNotifications } from '@/hooks/useNotifications';
 import { useWalletStore } from '@/store/walletStore';
@@ -30,6 +34,9 @@ export const Header: React.FC<HeaderProps> = ({
     onWalletPress,
     onScanPress,
     onSettingsPress,
+    disableWalletModal = false,
+    showBackButton = false,
+    onBackPress,
 }) => {
     const router = useRouter();
     const { address, walletIcon } = useWalletStore();
@@ -42,29 +49,37 @@ export const Header: React.FC<HeaderProps> = ({
 
     return (
         <View style={styles.container}>
-            {/* Left Side - Logo and Wallet */}
+            {/* Left Side - Logo/Back and Wallet */}
             <View style={styles.leftSection}>
-                <View style={styles.logoContainer}>
-                    <Image
-                        source={displayIcon}
-                        style={styles.logo}
-                        contentFit="cover"
-                    />
-                </View>
+                {showBackButton ? (
+                    <TouchableOpacity onPress={onBackPress} style={styles.backButton}>
+                        <Image source={ChevronLeftIcon} style={styles.icon} contentFit="contain" />
+                    </TouchableOpacity>
+                ) : (
+                    <View style={styles.logoContainer}>
+                        <Image
+                            source={displayIcon}
+                            style={styles.logo}
+                            contentFit="cover"
+                        />
+                    </View>
+                )}
 
                 <TouchableOpacity
-                    onPress={onWalletPress}
+                    onPress={disableWalletModal ? undefined : onWalletPress}
                     style={styles.walletButton}
-                    activeOpacity={0.7}
+                    activeOpacity={disableWalletModal ? 1 : 0.7}
                 >
                     <Text style={styles.walletText}>
                         {displayAddress}
                     </Text>
-                    <Image
-                        source={ArrowDown01}
-                        style={styles.arrowIcon}
-                        contentFit="contain"
-                    />
+                    {!disableWalletModal && (
+                        <Image
+                            source={ArrowDown01}
+                            style={styles.arrowIcon}
+                            contentFit="contain"
+                        />
+                    )}
                 </TouchableOpacity>
             </View>
 
@@ -110,6 +125,12 @@ const styles = StyleSheet.create({
     logoContainer: {
         width: 32, // w-8
         height: 32,
+    },
+    backButton: {
+        width: 32,
+        height: 32,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     logo: {
         width: '100%',

@@ -4,21 +4,21 @@
  * Matches Figma design exactly (node-id: 3279-120361, 3279-119615)
  */
 
-import React, { useState, useEffect } from "react";
-import { View, ScrollView, Text } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRouter, useLocalSearchParams, usePathname } from "expo-router";
-import { Image } from "expo-image";
+import { WalletHeader } from "@/components/sections/Wallet";
 import { CustomStatusBar } from "@/components/ui/custom-status-bar";
 import { colors } from "@/constants/colors";
-import { WALLET_ADDRESS } from "@/utils/wallet";
 import {
-    getAllAssetActivities,
     fetchAssetDetail,
+    getAllAssetActivities,
     type AssetActivity,
     type AssetDetail,
 } from "@/services/walletService";
-import { WalletHeader } from "@/components/sections/Wallet";
+import { WALLET_ADDRESS } from "@/utils/wallet";
+import { Image } from "expo-image";
+import { useLocalSearchParams, usePathname, useRouter } from "expo-router";
+import React, { useEffect, useState } from "react";
+import { ScrollView, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 // Folder icon will be loaded from Figma URL
 
@@ -75,11 +75,26 @@ export default function AssetActivitiesScreen() {
     };
 
     if (isLoading) {
-        // TODO: Add skeleton loading UI
         return (
             <View style={[{ flex: 1, backgroundColor: colors.bg }]}>
                 <CustomStatusBar />
-                <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }} />
+                <View style={{ paddingTop: top || 0 }}>
+                    <WalletHeader
+                        walletAddress={WALLET_ADDRESS}
+                        onIrisScanPress={handleIrisScanPress}
+                        onSettingsPress={handleSettingsPress}
+                        showBackButton
+                        onBackPress={handleBackPress}
+                        showIrisScan={false}
+                    />
+                </View>
+                <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+                    <View style={{ gap: 20, width: '90%' }}>
+                        {[1, 2, 3, 4, 5].map((i) => (
+                            <View key={i} style={{ height: 60, backgroundColor: colors.bgSemi, borderRadius: 12, opacity: 0.3 }} />
+                        ))}
+                    </View>
+                </View>
             </View>
         );
     }
@@ -103,49 +118,51 @@ export default function AssetActivitiesScreen() {
                     onSettingsPress={handleSettingsPress}
                     showBackButton
                     onBackPress={handleBackPress}
-                    showTransactionHistory
-                    onTransactionHistoryPress={() => { }}
+                    showIrisScan={false}
+                    showSettings={true}
                 />
             </View>
 
             {/* Scrollable Content */}
             <ScrollView
                 style={{ flex: 1 }}
+                contentContainerStyle={{
+                    alignItems: "center",
+                    paddingBottom: bottom + 40,
+                }}
                 showsVerticalScrollIndicator={false}
             >
-                {hasActivities ? (
-                    <>
-                        {/* Title - Only shown when there are activities */}
-                        <View
+                {/* Main Container with Max Width */}
+                <View style={{
+                    width: '100%',
+                    maxWidth: 500,
+                    paddingHorizontal: 20,
+                    alignItems: 'center',
+                }}>
+
+                    {/* Page Title */}
+                    <View style={{ paddingVertical: 24, width: '100%' }}>
+                        <Text
                             style={{
-                                width: 357,
-                                maxWidth: "100%",
-                                marginBottom: 0,
-                                paddingTop: 24,
+                                fontFamily: "Manrope-SemiBold",
+                                fontSize: 20,
+                                lineHeight: 28,
+                                color: colors.titleText,
+                                textAlign: "center",
+                                textTransform: "capitalize",
                             }}
                         >
-                            <Text
-                                style={{
-                                    fontFamily: "Manrope-SemiBold",
-                                    fontSize: 20,
-                                    lineHeight: 28,
-                                    color: colors.titleText,
-                                    textAlign: "center",
-                                    textTransform: "capitalize",
-                                }}
-                            >
-                                activities
-                            </Text>
-                        </View>
+                            activities
+                        </Text>
+                    </View>
 
-                        {/* Activities List */}
+                    {hasActivities ? (
+                        /* Activities List */
                         <View
                             style={{
-                                width: 350,
-                                maxWidth: "100%",
+                                width: '100%',
                                 flexDirection: "column",
-                                gap: 18,
-                                marginTop: 18,
+                                gap: 20,
                             }}
                         >
                             {activities.map((activity) => {
@@ -158,24 +175,18 @@ export default function AssetActivitiesScreen() {
                                         style={{
                                             width: "100%",
                                             flexDirection: "row",
-                                            alignItems: "flex-start",
+                                            alignItems: "center",
                                             justifyContent: "space-between",
+                                            paddingVertical: 4,
                                         }}
                                     >
                                         {/* Left: Type and Date */}
-                                        <View
-                                            style={{
-                                                flexDirection: "column",
-                                                alignItems: "flex-start",
-                                                gap: 4,
-                                                width: 97,
-                                            }}
-                                        >
+                                        <View style={{ flex: 1, gap: 4 }}>
                                             <Text
                                                 style={{
                                                     fontFamily: "Manrope-Bold",
                                                     fontSize: 16,
-                                                    lineHeight: 24,
+                                                    lineHeight: 22,
                                                     color: colors.titleText,
                                                     textTransform: "capitalize",
                                                 }}
@@ -186,28 +197,21 @@ export default function AssetActivitiesScreen() {
                                                 style={{
                                                     fontFamily: "Manrope-Medium",
                                                     fontSize: 12,
-                                                    lineHeight: 18,
-                                                    color: colors.bodyText,
+                                                    lineHeight: 16,
+                                                    color: colors.mutedText,
                                                 }}
                                             >
                                                 {activity.date}
                                             </Text>
                                         </View>
 
-                                        {/* Right: Amount and USD Value */}
-                                        <View
-                                            style={{
-                                                flexDirection: "column",
-                                                alignItems: "flex-end",
-                                                gap: 4,
-                                                width: 129,
-                                            }}
-                                        >
+                                        {/* Right: Amount and Value */}
+                                        <View style={{ alignItems: "flex-end", gap: 4 }}>
                                             <Text
                                                 style={{
-                                                    fontFamily: "Manrope-Medium",
+                                                    fontFamily: "Manrope-Bold",
                                                     fontSize: 16,
-                                                    lineHeight: 24,
+                                                    lineHeight: 22,
                                                     color: amountColor,
                                                     textAlign: "right",
                                                     textTransform: "uppercase",
@@ -219,10 +223,9 @@ export default function AssetActivitiesScreen() {
                                                 style={{
                                                     fontFamily: "Manrope-Medium",
                                                     fontSize: 12,
-                                                    lineHeight: 18,
-                                                    color: colors.bodyText,
+                                                    lineHeight: 16,
+                                                    color: colors.mutedText,
                                                     textAlign: "right",
-                                                    textTransform: "uppercase",
                                                 }}
                                             >
                                                 {activity.usdValue}
@@ -232,82 +235,64 @@ export default function AssetActivitiesScreen() {
                                 );
                             })}
                         </View>
-                    </>
-                ) : (
-                    /* Empty State */
-                    <View
-                        style={{
-                            width: "100%",
-                            flexDirection: "column",
-                            alignItems: "center",
-                            gap: 32,
-                            paddingTop: 24,
-                        }}
-                    >
-                        {/* Title - Shown in empty state */}
+                    ) : (
+                        /* Premium Empty State */
                         <View
                             style={{
-                                width: 357,
-                                maxWidth: "100%",
-                            }}
-                        >
-                            <Text
-                                style={{
-                                    fontFamily: "Manrope-SemiBold",
-                                    fontSize: 20,
-                                    lineHeight: 28,
-                                    color: colors.titleText,
-                                    textAlign: "center",
-                                    textTransform: "capitalize",
-                                }}
-                            >
-                                activities
-                            </Text>
-                        </View>
-
-                        {/* Empty State Content */}
-                        <View
-                            style={{
-                                width: 235,
-                                maxWidth: "100%",
-                                flexDirection: "column",
+                                width: "100%",
                                 alignItems: "center",
+                                paddingTop: 40,
                                 gap: 32,
                             }}
                         >
-                            {/* Folder Icon */}
                             <View
                                 style={{
-                                    width: 235,
-                                    height: 235,
+                                    width: 180,
+                                    height: 180,
+                                    backgroundColor: colors.bgSemi,
+                                    borderRadius: 90,
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
                                 }}
                             >
                                 <Image
                                     source={require("@/assets/wallet/folder-02.svg")}
                                     style={{
-                                        width: "100%",
-                                        height: "100%",
+                                        width: 80,
+                                        height: 80,
+                                        opacity: 0.8,
                                     }}
                                     contentFit="contain"
                                 />
                             </View>
 
-                            {/* Empty State Text */}
-                            <Text
-                                style={{
-                                    fontFamily: "Manrope-SemiBold",
-                                    fontSize: 24,
-                                    lineHeight: 36,
-                                    color: colors.titleText,
-                                    textAlign: "center",
-                                    textTransform: "capitalize",
-                                }}
-                            >
-                                No Activity Yet
-                            </Text>
+                            <View style={{ alignItems: 'center', gap: 12 }}>
+                                <Text
+                                    style={{
+                                        fontFamily: "Manrope-SemiBold",
+                                        fontSize: 24,
+                                        color: colors.titleText,
+                                        textAlign: "center",
+                                    }}
+                                >
+                                    No Activity Yet
+                                </Text>
+                                <Text
+                                    style={{
+                                        fontFamily: "Manrope-Regular",
+                                        fontSize: 14,
+                                        color: colors.mutedText,
+                                        textAlign: "center",
+                                        paddingHorizontal: 40,
+                                        lineHeight: 20,
+                                    }}
+                                >
+                                    When you make transactions, they will appear here in your activity feed.
+                                </Text>
+                            </View>
                         </View>
-                    </View>
-                )}
+                    )}
+                </View>
             </ScrollView>
         </View>
     );

@@ -13,6 +13,7 @@ import { useTokenPrefetch } from '@/hooks/useTokenPrefetch';
 import { currencyService } from '@/services/currencyService';
 import { deviceService } from '@/services/deviceService';
 import { mobileSessionManager } from '@/services/mobileSessionManager';
+import { initializeLiFi } from '@/services/swap/lifiConfig';
 import { useOnboardingStore } from '@/store/onboardingStore';
 import { useSecurityStore } from '@/store/securityStore';
 import { useWalletStore } from '@/store/walletStore';
@@ -140,9 +141,10 @@ export default function RootLayout() {
   const [isAppInitialized, setIsAppInitialized] = useState(false);
 
   const { hasCompletedOnboarding, isLoading: isOnboardingLoading, checkOnboardingStatus } = useOnboardingStore();
-  const { isConnected, address } = useWalletStore();
-  const { isLocked, hasPasscode, isSetupComplete, lastActive, lockApp, updateLastActive, autoLockTimeout } = useSecurityStore();
-  console.log("🚀 ~ RootLayout ~ State:", { isLocked, isConnected, address, hasPasscode, isSetupComplete })
+  const { isConnected, address, _hasHydrated: isWalletHydrated } = useWalletStore();
+  const { isLocked, hasPasscode, isSetupComplete, lastActive, lockApp, updateLastActive, autoLockTimeout, _hasHydrated: isSecurityHydrated } = useSecurityStore();
+  const isHydrated = isWalletHydrated && isSecurityHydrated;
+  console.log("🚀 ~ RootLayout ~ State:", { isLocked, isConnected, address, hasPasscode, isSetupComplete, isHydrated })
 
   // 1. Initialize app state
   useEffect(() => {
@@ -152,6 +154,9 @@ export default function RootLayout() {
         await currencyService.init(); // Initialize currency service
         // Register current device session
         await deviceService.registerSession();
+
+        // Initialize LiFi SDK
+        await initializeLiFi();
       } catch (e) {
         console.error('Initialization error', e);
       } finally {
@@ -200,7 +205,7 @@ export default function RootLayout() {
 
   // 3. Navigation Guard Logic
   useEffect(() => {
-    if (isOnboardingLoading || !isNavigationReady) return;
+    if (isOnboardingLoading || !isNavigationReady || !isHydrated) return;
 
     const segmentsArray = Array.from(segments);
     const inOnboarding = segmentsArray[0] === 'onboarding';
@@ -216,27 +221,30 @@ export default function RootLayout() {
         router.replace('/onboarding' as any);
       }
     }
-    // Flow 2: Connect Wallet (Returning or New)
+    // Flow 2: Security Lock (Highest Priority for Returning Users)
+    // If user has a passcode and app is locked, force to Lock screen first.
+    else if (hasPasscode && isLocked) {
+      if (!inLock) {
+        router.replace('/lock' as any);
+      }
+    }
+    // Flow 3: Mandatory Security Setup
+    // If onboarding is done but security isn't finished (and no passcode set yet)
+    else if (!isSetupComplete && !hasPasscode) {
+      if (!inSecurity && !inWelcome) {
+        router.replace('/security' as any);
+      }
+    }
+    // Flow 4: Connection State
+    // If unlocked but no wallet session active (e.g. they finished onboarding but didn't create/import yet)
     else if (!isConnected) {
       if (!inWelcome && !inOnboarding && !inWalletFlow) {
         router.replace('/welcome' as any);
       }
     }
-    // Flow 3: Returning User - Locked
-    else if (isLocked && hasPasscode) {
-      if (!inLock) {
-        router.replace('/lock' as any);
-      }
-    }
-    // Flow 4: Mandatory Security Setup
-    else if (!isSetupComplete) {
-      if (!inSecurity && !inWelcome) {
-        router.replace('/security' as any);
-      }
-    }
     // Flow 5: Authorized Session
     else {
-      if (inOnboarding || inWelcome || inSecurity || inLock || inWalletFlow || isRoot) {
+      if (inOnboarding || inWelcome || inSecurity || inLock || isRoot) {
         router.replace('/(tabs)' as any);
       }
     }

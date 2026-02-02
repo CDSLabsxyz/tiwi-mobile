@@ -9,6 +9,7 @@ import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-nati
 interface SpotlightSectionProps {
     tokens: SpotlightToken[];
     isLoading?: boolean;
+    onTokenPress?: (token: SpotlightToken) => void;
 }
 
 /**
@@ -19,6 +20,7 @@ interface SpotlightSectionProps {
 export const SpotlightSection: React.FC<SpotlightSectionProps> = ({
     tokens,
     isLoading = false,
+    onTokenPress,
 }) => {
     const { t } = useTranslation();
 
@@ -72,24 +74,30 @@ export const SpotlightSection: React.FC<SpotlightSectionProps> = ({
                 contentContainerStyle={styles.scrollContent}
             >
                 {tokens.map((token) => (
-                    <View key={token.id} style={styles.card}>
-                        <Image
-                            source={token.logo}
-                            style={styles.tokenLogo}
-                            contentFit="cover"
-                        />
-                        <View style={styles.tokenInfo}>
-                            <Text style={styles.tokenSymbol}>{token.symbol}</Text>
-                            <Text
-                                style={[
-                                    styles.tokenChange,
-                                    { color: getChangeColor(token.change24h) }
-                                ]}
-                            >
-                                {formatChange(token.change24h)}
-                            </Text>
+                    <TouchableOpacity
+                        key={token.id}
+                        activeOpacity={0.7}
+                        onPress={() => onTokenPress?.(token)}
+                    >
+                        <View style={styles.card}>
+                            <Image
+                                source={token.logo}
+                                style={styles.tokenLogo}
+                                contentFit="cover"
+                            />
+                            <View style={styles.tokenInfo}>
+                                <Text style={styles.tokenSymbol}>{token.symbol}</Text>
+                                <Text
+                                    style={[
+                                        styles.tokenChange,
+                                        { color: getChangeColor(token.change24h) }
+                                    ]}
+                                >
+                                    {formatChange(token.change24h)}
+                                </Text>
+                            </View>
                         </View>
-                    </View>
+                    </TouchableOpacity>
                 ))}
             </ScrollView>
         </View>

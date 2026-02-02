@@ -178,7 +178,7 @@ export default function HomeScreen() {
 
   const handleWalletHistory = () => {
     setIsWalletModalVisible(false);
-    router.push('/wallet' as any);
+    router.push('/activities' as any);
   };
 
   const handleWalletSettings = () => {
@@ -268,7 +268,11 @@ export default function HomeScreen() {
           <View style={styles.paddedContent}>
             <QuickActionsSection />
             <StakeBanner />
-            <SpotlightSection tokens={homeData.spotlight} isLoading={homeData.isLoading} />
+            <SpotlightSection
+              tokens={homeData.spotlight}
+              isLoading={homeData.isLoading}
+              onTokenPress={(token) => router.push(`/market/${token.symbol}`)}
+            />
             <MarketSection isLoading={homeData.isLoading} />
             <TradeStatsSection stats={homeData.stats} chains={chains} isLoading={homeData.isLoading} />
             <SmartMarketsSection markets={homeData.dexMarkets} isLoading={homeData.isLoading} />

@@ -4,10 +4,10 @@
  * Matches Figma design exactly (node-id: 3279-120307)
  */
 
-import React from "react";
-import { View, Text, TouchableOpacity } from "react-native";
 import { colors } from "@/constants/colors";
 import type { AssetActivity } from "@/services/walletService";
+import React from "react";
+import { Text, TouchableOpacity, View } from "react-native";
 
 interface AssetDetailActivitiesProps {
   activities: AssetActivity[];
@@ -120,24 +120,18 @@ export const AssetDetailActivities: React.FC<AssetDetailActivitiesProps> = ({
               style={{
                 width: "100%",
                 flexDirection: "row",
-                alignItems: "flex-start",
+                alignItems: "center",
                 justifyContent: "space-between",
+                paddingVertical: 2,
               }}
             >
               {/* Left: Type and Date */}
-              <View
-                style={{
-                  flexDirection: "column",
-                  alignItems: "flex-start",
-                  gap: 4,
-                  width: 97,
-                }}
-              >
+              <View style={{ flex: 1, gap: 2 }}>
                 <Text
                   style={{
                     fontFamily: "Manrope-Bold",
                     fontSize: 14,
-                    lineHeight: 21,
+                    lineHeight: 20,
                     color: colors.titleText,
                     textTransform: "capitalize",
                   }}
@@ -147,29 +141,22 @@ export const AssetDetailActivities: React.FC<AssetDetailActivitiesProps> = ({
                 <Text
                   style={{
                     fontFamily: "Manrope-Medium",
-                    fontSize: 12,
-                    lineHeight: 18,
-                    color: colors.bodyText,
+                    fontSize: 10,
+                    lineHeight: 14,
+                    color: colors.mutedText,
                   }}
                 >
                   {activity.date}
                 </Text>
               </View>
 
-              {/* Right: Amount and USD Value */}
-              <View
-                style={{
-                  flexDirection: "column",
-                  alignItems: "flex-end",
-                  gap: 4,
-                  width: 129,
-                }}
-              >
+              {/* Right: Amount and Value */}
+              <View style={{ alignItems: "flex-end", gap: 2 }}>
                 <Text
                   style={{
-                    fontFamily: "Manrope-Medium",
+                    fontFamily: "Manrope-Bold",
                     fontSize: 14,
-                    lineHeight: 21,
+                    lineHeight: 20,
                     color: amountColor,
                     textAlign: "right",
                     textTransform: "uppercase",
@@ -180,11 +167,10 @@ export const AssetDetailActivities: React.FC<AssetDetailActivitiesProps> = ({
                 <Text
                   style={{
                     fontFamily: "Manrope-Medium",
-                    fontSize: 12,
-                    lineHeight: 18,
-                    color: colors.bodyText,
+                    fontSize: 10,
+                    lineHeight: 14,
+                    color: colors.mutedText,
                     textAlign: "right",
-                    textTransform: "uppercase",
                   }}
                 >
                   {activity.usdValue}

@@ -29,7 +29,7 @@ import { useLocaleStore } from '@/store/localeStore';
 import { useSecurityStore } from '@/store/securityStore';
 import { useWalletStore } from '@/store/walletStore';
 import { formatFiatValue, formatTokenAmount } from '@/utils/formatting';
-import { usePathname, useRouter } from 'expo-router';
+import { useLocalSearchParams, usePathname, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -38,6 +38,16 @@ export default function SwapScreen() {
     const { bottom } = useSafeAreaInsets();
     const router = useRouter();
     const pathname = usePathname();
+    const params = useLocalSearchParams<{
+        assetId?: string;
+        symbol?: string;
+        name?: string;
+        balance?: string;
+        usdValue?: string;
+        chainId?: string;
+        logo?: string;
+        priceUSD?: string;
+    }>();
 
     // Prefetch top chain tokens
     useTokenPrefetch();
@@ -104,8 +114,33 @@ export default function SwapScreen() {
     const [isLoadingSwap, setIsLoadingSwap] = useState(false);
     const [isSuccessModalVisible, setIsSuccessModalVisible] = useState(false);
     const [swapQuote, setSwapQuote] = useState<SwapQuote | null>(null);
+
     const { address } = useWalletStore();
     const { isTransactionRiskEnabled } = useSecurityStore();
+
+    // Pre-populate from params if coming from asset detail
+    useEffect(() => {
+        if (params.symbol && params.chainId) {
+            const { getChainOptionWithFallback } = require('@/utils/chainUtils');
+            const chainOption = getChainOptionWithFallback(params.chainId);
+
+            if (chainOption) {
+                setFromChain(chainOption);
+                setFromToken({
+                    id: params.assetId || params.symbol,
+                    symbol: params.symbol,
+                    name: params.name || params.symbol,
+                    icon: params.logo,
+                    balanceToken: params.balance || '0.00',
+                    balanceFiat: params.usdValue || '$0.00',
+                    priceUSD: params.priceUSD || '0',
+                    address: params.assetId || '',
+                    chainId: chainOption.id,
+                    decimals: 18 // Default
+                } as any);
+            }
+        }
+    }, [params.symbol, params.chainId]);
 
     const handleOpenAssetSheet = (target: 'from' | 'to') => {
         setAssetSheetTarget(target);
@@ -161,21 +196,24 @@ export default function SwapScreen() {
 
         setIsLoadingQuote(true);
         try {
-            const quote = await fetchSwapQuote(fromAmount, fromToken, toToken, address || undefined);
-            setSwapQuote(quote);
-            setToAmount(quote.toAmount);
+            const fetchedQuote = await fetchSwapQuote(fromAmount, fromToken, toToken, address || '', address || '');
 
-            // Format fiat values
-            if (quote.fromAmountUSD) {
-                setFromFiatAmount(formatFiatValue(quote.fromAmountUSD, region, currency));
-            }
-            if (quote.toAmountUSD) {
-                setToFiatAmount(formatFiatValue(quote.toAmountUSD, region, currency));
-            } else {
-                setToFiatAmount(formatFiatValue(quote.fiatAmount, region, currency));
+            setSwapQuote(fetchedQuote);
+
+            if (fetchedQuote) {
+                setToAmount(fetchedQuote.toAmount);
+
+                // Calculate To Fiat using toToken.priceUSD
+                if (toToken.priceUSD && parseFloat(fetchedQuote.toAmount) > 0) {
+                    const toUsdValue = parseFloat(fetchedQuote.toAmount) * parseFloat(toToken.priceUSD);
+                    setToFiatAmount(formatFiatValue(toUsdValue, region, currency));
+                } else {
+                    setToFiatAmount('$0.00');
+                }
             }
         } catch (error) {
             console.error('Failed to fetch quote:', error);
+            setSwapQuote(null);
         } finally {
             setIsLoadingQuote(false);
         }
@@ -187,6 +225,20 @@ export default function SwapScreen() {
         }, 500);
         return () => clearTimeout(timer);
     }, [fromAmount, fromToken, toToken, updateQuote]);
+
+    // Update From Fiat whenever amount or token changes
+    useEffect(() => {
+        if (!fromAmount || !fromToken?.priceUSD || parseFloat(fromAmount) === 0) {
+            setFromFiatAmount('$0.00');
+            return;
+        }
+        try {
+            const usdValue = parseFloat(fromAmount) * parseFloat(fromToken.priceUSD);
+            setFromFiatAmount(formatFiatValue(usdValue, region, currency));
+        } catch (e) {
+            setFromFiatAmount('$0.00');
+        }
+    }, [fromAmount, fromToken, region, currency]);
 
     const handleConfirmSwap = async () => {
         if (!fromAmount || !fromToken || !toToken || !address) return;
@@ -225,11 +277,11 @@ export default function SwapScreen() {
         setIsLoadingSwap(true);
         try {
             if (!swapQuote) throw new Error('No swap quote available');
-            const result = await executeSwap(fromAmount, fromToken, toToken, address, swapQuote);
+            const result = await executeSwap(fromAmount, fromToken, toToken, address, address, swapQuote);
 
             // Log transaction to backend
             const { apiClient } = require('@/services/apiClient');
-            const txHash = result?.txHash || `mock-hash-${Date.now()}`;
+            const txHash = result?.txHash || `mock-hash-e${Date.now()}`;
             const chainId = typeof fromChain?.id === 'number' ? fromChain.id : 56;
 
             await apiClient.logTransaction({
@@ -363,7 +415,7 @@ export default function SwapScreen() {
                                 tokenIcon={fromToken?.icon}
                                 chainBadgeIcon={fromChain?.icon}
                                 amount={fromAmount}
-                                fiatAmount={fromFiatAmount !== '$0.00' ? fromFiatAmount : (fromToken?.balanceFiat || "$0.00")}
+                                fiatAmount={fromFiatAmount}
                                 balanceText={fromToken?.balanceToken || '0.00'}
                                 onAmountChange={setFromAmount}
                                 onTokenPress={() => handleOpenAssetSheet('from')}

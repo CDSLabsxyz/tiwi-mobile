@@ -60,6 +60,8 @@ interface SecurityState {
     removeWhitelistedAddress: (address: string) => void;
 
     resetSecurity: () => Promise<void>;
+    _hasHydrated: boolean;
+    setHasHydrated: (state: boolean) => void;
 }
 
 export const useSecurityStore = create<SecurityState>()(
@@ -172,12 +174,15 @@ export const useSecurityStore = create<SecurityState>()(
                     isLocked: false
                 });
             },
+            _hasHydrated: false,
+            setHasHydrated: (state) => set({ _hasHydrated: state }),
         }),
         {
             name: 'tiwi-security-storage',
             storage: createJSONStorage(() => AsyncStorage),
-            // Explicitly exclude any sensitive data from the persisted store if it were there
-            // though we already removed the 'passcode' property from state
+            onRehydrateStorage: (state) => {
+                return () => state?.setHasHydrated(true);
+            }
         }
     )
 );

@@ -1,120 +1,35 @@
-import { Image } from 'expo-image';
-import { LinearGradient } from 'expo-linear-gradient';
+import { BannerCard } from '@/components/sections/Wallet/ClaimableRewardsCard';
 import { useRouter } from 'expo-router';
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text } from 'react-native';
 
 /**
  * Stake Banner Component
- * 1:1 Implementation of Figma Design (node-id: 3331-39008)
- * Uses native components and high-quality SVG assets.
+ * Reusable implementation using the modular BannerCard.
  */
 export const StakeBanner: React.FC = () => {
     const router = useRouter();
 
     const handlePress = () => {
-        // Navigating to Earn as it's the relevant section for staking
         router.push('/earn' as any);
     };
 
     return (
-        <TouchableOpacity
+        <BannerCard
+            icon={require('@/assets/home/stake_icon.svg')}
+            renderTitle={() => (
+                <Text style={styles.label}>
+                    <Text style={styles.labelMuted}>Stake to earn </Text>
+                    <Text style={styles.labelHighlight}>$TWC</Text>
+                </Text>
+            )}
             onPress={handlePress}
-            activeOpacity={0.8}
-            style={styles.container}
-        >
-            {/* Background Layer with Bottom Glow */}
-            <View style={styles.glowContainer}>
-                <LinearGradient
-                    colors={['transparent', 'rgba(177, 241, 40, 0.6)', 'transparent']}
-                    start={{ x: 0, y: 0.5 }}
-                    end={{ x: 1, y: 0.5 }}
-                    style={styles.glowEffect}
-                />
-                {/* Secondary stronger highlight at the very bottom */}
-                <View style={styles.bottomBar} />
-            </View>
-
-            {/* Inner Content Section */}
-            <View style={styles.content}>
-                <View style={styles.leftGroup}>
-                    {/* Stake Icon */}
-                    <Image
-                        source={require('@/assets/home/stake_icon.svg')}
-                        style={styles.stakeIcon}
-                        contentFit="contain"
-                    />
-
-                    {/* Text Label */}
-                    <Text style={styles.label}>
-                        <Text style={styles.labelMuted}>Stake to earn </Text>
-                        <Text style={styles.labelHighlight}>$TWC</Text>
-                    </Text>
-                </View>
-
-                {/* Right Arrow */}
-                <Image
-                    source={require('@/assets/home/arrow-right-01.svg')}
-                    style={styles.arrowIcon}
-                    contentFit="contain"
-                    tintColor="#b5b5b5"
-                />
-            </View>
-        </TouchableOpacity>
+            style={{ marginBottom: 12 }}
+        />
     );
 };
 
 const styles = StyleSheet.create({
-    container: {
-        width: "100%",
-        height: 40,
-        borderRadius: 16,
-        backgroundColor: '#0F110F',
-        borderWidth: 1,
-        borderColor: '#1f261e',
-        overflow: 'hidden',
-        justifyContent: 'center',
-        paddingHorizontal: 12,
-    },
-    glowContainer: {
-        ...StyleSheet.absoluteFillObject,
-        alignItems: 'center',
-        justifyContent: 'flex-end',
-    },
-    glowEffect: {
-        width: 146,
-        height: 37,
-        bottom: -18,
-        position: 'absolute',
-        borderRadius: 100,
-        opacity: 0.8,
-    },
-    bottomBar: {
-        width: 60,
-        height: 1,
-        backgroundColor: '#B1F128',
-        bottom: 0,
-        position: 'absolute',
-        shadowColor: '#B1F128',
-        shadowOffset: { width: 0, height: -2 },
-        shadowOpacity: 0.8,
-        shadowRadius: 4,
-    },
-    content: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        zIndex: 1,
-    },
-    leftGroup: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-    },
-    stakeIcon: {
-        width: 18,
-        height: 18,
-    },
     label: {
         fontFamily: 'Manrope-Medium',
         fontSize: 14,
@@ -126,9 +41,5 @@ const styles = StyleSheet.create({
     labelHighlight: {
         fontFamily: 'Manrope-SemiBold',
         color: '#FFFFFF',
-    },
-    arrowIcon: {
-        width: 16,
-        height: 16,
     },
 });
