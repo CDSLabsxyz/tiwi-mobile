@@ -1,15 +1,18 @@
 /**
  * Passcode Screen Component
  * Passcode input for transaction confirmation
- * Uses native numeric keyboard (industry standard)
+ * Uses custom SecurityKeypad and PasscodeField to match Branding
  * Matches Figma design exactly (node-id: 3279-119940)
  */
 
+import { PasscodeField } from "@/components/ui/security/PasscodeField";
+import { SecurityKeypad } from "@/components/ui/security/SecurityKeypad";
 import { colors } from "@/constants";
 import { useSecurityStore } from "@/store/securityStore";
 import * as Haptics from "expo-haptics";
-import React, { useEffect, useRef, useState } from "react";
-import { Keyboard, Text, TextInput, TouchableOpacity, View } from "react-native";
+import * as LocalAuthentication from "expo-local-authentication";
+import React, { useState } from "react";
+import { StyleSheet, Text, View } from "react-native";
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 
 interface PasscodeScreenProps {
@@ -19,11 +22,9 @@ interface PasscodeScreenProps {
 type ValidationState = "idle" | "validating" | "valid" | "invalid";
 
 export const PasscodeScreen: React.FC<PasscodeScreenProps> = ({ onSuccess }) => {
-  const [passcode, setPasscode] = useState<string[]>(Array(6).fill(""));
-  const [focusedIndex, setFocusedIndex] = useState<number>(0);
+  const [passcode, setPasscode] = useState("");
   const [validationState, setValidationState] = useState<ValidationState>("idle");
-  const verifyPasscode = useSecurityStore((state) => state.verifyPasscode);
-  const inputRefs = useRef<(TextInput | null)[]>([]);
+  const { verifyPasscode, isBiometricsEnabled } = useSecurityStore();
 
   const shake = useSharedValue(0);
   const shakeStyle = useAnimatedStyle(() => ({
@@ -42,35 +43,38 @@ export const PasscodeScreen: React.FC<PasscodeScreenProps> = ({ onSuccess }) => 
     });
   };
 
-  // Auto-focus first input on mount
-  useEffect(() => {
-    setTimeout(() => {
-      inputRefs.current[0]?.focus();
-    }, 100);
-  }, []);
+  const handlePress = (digit: string) => {
+    if (validationState === "validating" || validationState === "valid") return;
 
-  // Handle passcode completion and validation
-  useEffect(() => {
-    const isComplete = passcode.every((digit) => digit !== "") && passcode.length === 6;
-    if (isComplete && validationState === "idle") {
-      handleVerify();
+    if (passcode.length < 6) {
+      const newPasscode = passcode + digit;
+      setPasscode(newPasscode);
+
+      if (newPasscode.length === 6) {
+        handleVerify(newPasscode);
+      }
     }
-  }, [passcode, validationState]);
+  };
 
-  const handleVerify = async () => {
-    Keyboard.dismiss();
-    const fullPasscode = passcode.join("");
+  const handleDelete = () => {
+    if (passcode.length > 0) {
+      setPasscode(passcode.slice(0, -1));
+      setValidationState("idle");
+    }
+  };
+
+  const handleVerify = async (inputCode: string) => {
     setValidationState("validating");
 
     try {
-      const isValid = await verifyPasscode(fullPasscode);
+      const isValid = await verifyPasscode(inputCode);
 
       if (isValid) {
         setValidationState("valid");
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         setTimeout(() => {
           onSuccess();
-        }, 500);
+        }, 300);
       } else {
         setValidationState("invalid");
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -78,211 +82,114 @@ export const PasscodeScreen: React.FC<PasscodeScreenProps> = ({ onSuccess }) => 
 
         // Reset passcode after showing error
         setTimeout(() => {
-          setPasscode(Array(6).fill(""));
-          setFocusedIndex(0);
+          setPasscode("");
           setValidationState("idle");
-          inputRefs.current[0]?.focus();
-        }, 1500);
+        }, 1200);
       }
     } catch (error) {
       console.error("Passcode validation error:", error);
       setValidationState("invalid");
       setTimeout(() => {
-        setPasscode(Array(6).fill(""));
-        setFocusedIndex(0);
+        setPasscode("");
         setValidationState("idle");
-        inputRefs.current[0]?.focus();
-      }, 1500);
+      }, 1200);
     }
   };
 
-  const handleTextChange = (text: string, index: number) => {
-    // Only allow single digit
-    if (text.length > 1) {
-      text = text.slice(-1);
-    }
+  const handleBiometric = async () => {
+    try {
+      const result = await LocalAuthentication.authenticateAsync({
+        promptMessage: "Confirm Transaction",
+        fallbackLabel: "Use Passcode",
+      });
 
-    // Only allow numbers (0-9)
-    if (text && !/^[0-9]$/.test(text)) {
-      return;
-    }
-
-    const newPasscode = [...passcode];
-    newPasscode[index] = text;
-    setPasscode(newPasscode);
-
-    // Auto-advance to next input if digit entered
-    if (text && index < 5) {
-      setFocusedIndex(index + 1);
-      // Small delay to ensure smooth transition
-      setTimeout(() => {
-        inputRefs.current[index + 1]?.focus();
-      }, 50);
-    } else if (text && index === 5) {
-      // Last digit entered, dismiss keyboard
-      Keyboard.dismiss();
-    }
-  };
-
-  const handleKeyPress = (e: any, index: number) => {
-    // Handle backspace - move to previous input if current is empty
-    if (e.nativeEvent.key === "Backspace") {
-      if (!passcode[index] && index > 0) {
-        // Clear previous input and move focus
-        const newPasscode = [...passcode];
-        newPasscode[index - 1] = "";
-        setPasscode(newPasscode);
-        setFocusedIndex(index - 1);
-        setTimeout(() => {
-          inputRefs.current[index - 1]?.focus();
-        }, 50);
-      } else if (passcode[index]) {
-        // Clear current input
-        const newPasscode = [...passcode];
-        newPasscode[index] = "";
-        setPasscode(newPasscode);
+      if (result.success) {
+        setValidationState("valid");
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        onSuccess();
       }
-    }
-  };
-
-  const handleBoxPress = (index: number) => {
-    setFocusedIndex(index);
-    inputRefs.current[index]?.focus();
-  };
-
-  const handleFocus = (index: number) => {
-    setFocusedIndex(index);
-  };
-
-  const handleBlur = () => {
-    // Keep focus if passcode is incomplete
-    if (!passcode.every((digit) => digit !== "")) {
-      // Don't blur if there are empty inputs
+    } catch (e) {
+      console.log("Biometric error", e);
     }
   };
 
   return (
-    <Animated.View
-      style={[{
-        width: "100%",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        paddingTop: 40,
-        paddingBottom: 20,
-      }, shakeStyle]}
-    >
-      {/* Title */}
-      <Text
-        style={{
-          fontFamily: "Manrope-SemiBold",
-          fontSize: 20,
-          lineHeight: 28,
-          color: colors.titleText,
-          textAlign: "center",
-          marginBottom: 32,
-        }}
-      >
-        Enter Passcode
-      </Text>
+    <View style={styles.container}>
+      <Animated.View style={[styles.content, shakeStyle]}>
+        {/* Title */}
+        <Text style={styles.title}>Enter Passcode</Text>
 
-      {/* Passcode Input Boxes */}
-      <View
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 14.5,
-          marginBottom: 24,
-        }}
-      >
-        {Array.from({ length: 6 }).map((_, index) => {
-          // Determine border color based on validation state
-          let borderColor: string = colors.bodyText;
-          if (validationState === "valid") {
-            borderColor = "#10B981"; // Green
-          } else if (validationState === "invalid") {
-            borderColor = "#EF4444"; // Red
-          } else if (focusedIndex === index) {
-            borderColor = colors.primaryCTA;
-          }
+        {/* Passcode Field */}
+        <View style={styles.dotsContainer}>
+          <PasscodeField
+            length={6}
+            passcode={passcode}
+            isError={validationState === "invalid"}
+          />
+        </View>
 
-          return (
-            <TouchableOpacity
-              key={index}
-              activeOpacity={0.8}
-              onPress={() => handleBoxPress(index)}
-              style={{
-                width: 50,
-                height: 50,
-                borderRadius: 8,
-                borderWidth: 1.5,
-                borderColor: borderColor as any,
-                backgroundColor: colors.bgSemi,
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              {/* Hidden TextInput for keyboard - uses native numeric keyboard */}
-              <TextInput
-                ref={(ref) => {
-                  inputRefs.current[index] = ref;
-                }}
-                value={passcode[index]}
-                onChangeText={(text) => handleTextChange(text, index)}
-                onKeyPress={(e) => handleKeyPress(e, index)}
-                onFocus={() => handleFocus(index)}
-                onBlur={handleBlur}
-                keyboardType="number-pad"
-                maxLength={1}
-                numberOfLines={1}
-                returnKeyType="next"
-                style={{
-                  position: "absolute",
-                  width: 1,
-                  height: 1,
-                  opacity: 0,
-                }}
-                autoFocus={index === 0}
-                secureTextEntry={false}
-                editable={validationState !== "validating" && validationState !== "valid"}
-              />
+        {validationState === "invalid" ? (
+          <Text style={styles.errorText}>Incorrect passcode</Text>
+        ) : (
+          <Text style={styles.helperText}>
+            Enter your 6-digit passcode to confirm the transaction
+          </Text>
+        )}
+      </Animated.View>
 
-              {/* Visual indicator (dot) - shows when digit is entered */}
-              {passcode[index] ? (
-                <View
-                  style={{
-                    width: 12,
-                    height: 12,
-                    borderRadius: 6,
-                    backgroundColor: validationState === "invalid" ? "#EF4444" : colors.titleText,
-                  }}
-                />
-              ) : null}
-            </TouchableOpacity>
-          );
-        })}
+      {/* Security Keypad */}
+      <View style={styles.keypadWrapper}>
+        <SecurityKeypad
+          onPress={handlePress}
+          onDelete={handleDelete}
+          onBiometric={isBiometricsEnabled ? handleBiometric : undefined}
+          showBiometric={isBiometricsEnabled}
+          biometricIcon={true}
+        />
       </View>
-
-      {validationState === "invalid" && (
-        <Text style={{ color: "#EF4444", marginBottom: 16, fontFamily: "Manrope-Medium" }}>
-          Incorrect passcode
-        </Text>
-      )}
-
-      {/* Helper Text */}
-      <Text
-        style={{
-          fontFamily: "Manrope-Regular",
-          fontSize: 14,
-          lineHeight: 20,
-          color: colors.bodyText,
-          textAlign: "center",
-          paddingHorizontal: 40,
-        }}
-      >
-        Enter your 6-digit passcode to confirm the transaction
-      </Text>
-    </Animated.View>
+    </View>
   );
 };
+
+const styles = StyleSheet.create({
+  container: {
+    width: "100%",
+    minHeight: 500,
+    flexDirection: "column",
+    alignItems: "center",
+  },
+  content: {
+    width: "100%",
+    alignItems: "center",
+    paddingTop: 20,
+    marginBottom: 40,
+  },
+  title: {
+    fontFamily: "Manrope-SemiBold",
+    fontSize: 20,
+    lineHeight: 28,
+    color: colors.titleText,
+    textAlign: "center",
+    marginBottom: 32,
+  },
+  dotsContainer: {
+    marginBottom: 24,
+  },
+  errorText: {
+    color: "#EF4444",
+    fontFamily: "Manrope-Medium",
+    fontSize: 14,
+    marginBottom: 16,
+  },
+  helperText: {
+    fontFamily: "Manrope-Regular",
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.bodyText,
+    textAlign: "center",
+    paddingHorizontal: 40,
+  },
+  keypadWrapper: {
+    width: "100%",
+  },
+});

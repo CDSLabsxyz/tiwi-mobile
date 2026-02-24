@@ -1,5 +1,5 @@
 import { colors } from '@/constants/colors';
-import { WALLET_ADDRESS, truncateAddress } from '@/utils/wallet';
+import { truncateAddress } from '@/utils/wallet';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
 import React from 'react';
@@ -39,13 +39,13 @@ export const Header: React.FC<HeaderProps> = ({
     onBackPress,
 }) => {
     const router = useRouter();
-    const { address, walletIcon } = useWalletStore();
+    const { address } = useWalletStore();
     const { unreadCount } = useNotifications();
-    const fullAddress = walletAddress || address || WALLET_ADDRESS;
+    const fullAddress = walletAddress || address || '';
     const displayAddress = truncateAddress(fullAddress);
 
     // Use provider icon if available, otherwise fallback to TiwiCat
-    const displayIcon = walletIcon ? { uri: walletIcon } : TiwiCat;
+    const displayIcon = TiwiCat;
 
     return (
         <View style={styles.container}>
@@ -92,6 +92,9 @@ export const Header: React.FC<HeaderProps> = ({
                             <Text style={styles.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
                         </View>
                     )}
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => router.push('/referral' as any)} style={styles.iconButton} activeOpacity={0.7}>
+                    <Ionicons name="gift-outline" size={24} color={colors.titleText} />
                 </TouchableOpacity>
                 <TouchableOpacity onPress={onSettingsPress} style={styles.iconButton} activeOpacity={0.7}>
                     <Image

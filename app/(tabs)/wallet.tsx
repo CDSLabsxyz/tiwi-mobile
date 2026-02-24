@@ -5,12 +5,15 @@ import {
     NFTList,
     QuickActions,
     TotalBalanceCard,
+    WalletFilterSheet,
     type WalletTabKey,
 } from '@/components/sections/Wallet';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { Header } from '@/components/ui/header';
 import { colors } from '@/constants/colors';
+import { useChains } from '@/hooks/useChains';
 import { useTranslation } from '@/hooks/useLocalization';
+import { useTokens } from '@/hooks/useTokens';
 import { useWalletBalances } from '@/hooks/useWalletBalances';
 import {
     fetchNFTs,
@@ -53,13 +56,18 @@ export default function WalletScreen() {
     // State
     const [activeTab, setActiveTab] = useState<WalletTabKey>((params.tab as WalletTabKey) || 'assets');
     const [isBalanceVisible, setIsBalanceVisible] = useState(true);
+    const [isFilterVisible, setIsFilterVisible] = useState(false);
     const [nfts, setNfts] = useState<NFTItem[]>([]);
     const [isLoadingNFTs, setIsLoadingNFTs] = useState(false);
 
-    // Filtered tokens
+    // Filtered items
     const filteredTokens = useMemo(() => {
         return applyFilters(tokens, { sortBy, tokenCategories, chains });
     }, [tokens, sortBy, tokenCategories, chains]);
+
+    const filteredNFTs = useMemo(() => {
+        return applyFilters(nfts, { sortBy, tokenCategories, chains });
+    }, [nfts, sortBy, tokenCategories, chains]);
 
     // UI Handlers
     const handleToggleVisibility = () => setIsBalanceVisible(!isBalanceVisible);
@@ -101,6 +109,10 @@ export default function WalletScreen() {
         }
     };
 
+    const handleNFTPress = (nft: any) => {
+        router.push(`/nft/${nft.id}?tab=nfts`);
+    };
+
     // Effects
     useEffect(() => {
         if (params.tab) setActiveTab(params.tab as WalletTabKey);
@@ -111,6 +123,26 @@ export default function WalletScreen() {
             loadNFTs(address);
         }
     }, [activeTab, address]);
+
+    // Prefetch for Receive Screen (Tokens and Chains)
+    const supportedEcosystems = useMemo(() =>
+        connectedWallets.map(w => w.chainType),
+        [connectedWallets]);
+
+    const supportedChainIds = useMemo(() => {
+        const ids: number[] = [];
+        if (supportedEcosystems.includes('evm')) ids.push(1, 56, 137, 42161);
+        if (supportedEcosystems.includes('solana')) ids.push(1399811149);
+        return ids;
+    }, [supportedEcosystems]);
+
+    // Pre-warm React Query cache for tokens and chains
+    useChains(supportedEcosystems);
+    useTokens({
+        chains: supportedChainIds,
+        enabled: supportedChainIds.length > 0 && !!address,
+        limit: 50
+    });
 
     return (
         <View style={styles.container}>
@@ -164,6 +196,7 @@ export default function WalletScreen() {
                     <AssetsTabSwitcher
                         activeTab={activeTab}
                         onTabChange={setActiveTab}
+                        onFilterPress={() => setIsFilterVisible(true)}
                     />
 
                     {/* Asset / NFT List */}
@@ -183,10 +216,17 @@ export default function WalletScreen() {
                             ))}
                         </View>
                     ) : (
-                        <NFTList nfts={nfts} isLoading={isLoadingNFTs} />
+                        <NFTList nfts={filteredNFTs} isLoading={isLoadingNFTs} onNFTPress={handleNFTPress} />
                     )}
                 </View>
             </ScrollView>
+
+            {/* Filter Modal */}
+            <WalletFilterSheet
+                visible={isFilterVisible}
+                onClose={() => setIsFilterVisible(false)}
+                nfts={nfts}
+            />
         </View>
     );
 }

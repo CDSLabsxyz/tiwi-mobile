@@ -5,7 +5,8 @@ import { ScreenHeader } from '@/components/features/market/detail/ScreenHeader';
 import { TradingViewChart } from '@/components/features/market/detail/TradingViewChart';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { colors } from '@/constants/colors';
-import { useTokenDetail } from '@/hooks/useTokenDetail';
+import { useEnrichedMarketDetail } from '@/hooks/useEnrichedMarketDetail';
+import { useMarketStore } from '@/store/marketStore';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -14,20 +15,24 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 type SubTab = 'Order Book' | 'Trades';
 
 export default function FuturesMarketDetail() {
-    const { symbol, address, chainId } = useLocalSearchParams<{
+    const { symbol, address, chainId, provider } = useLocalSearchParams<{
         symbol: string;
         address: string;
         chainId: string;
+        provider: 'binance' | 'dydx' | 'onchain';
     }>();
     const { bottom } = useSafeAreaInsets();
+    const { isFavorite, toggleFavorite } = useMarketStore();
     const [activeTab, setActiveTab] = React.useState<SubTab>('Order Book');
 
     const router = useRouter(); // Initialize router
 
-    const { data: token, isLoading } = useTokenDetail({
-        address,
-        symbol,
-        chainId: chainId ? parseInt(chainId) : undefined
+    const { data: token, isLoading } = useEnrichedMarketDetail({
+        symbol: symbol || '',
+        address: address,
+        chainId: chainId ? parseInt(chainId, 10) : undefined,
+        marketType: 'perp',
+        provider: provider
     });
 
     // Navigate to the dedicated Perps Trading Screen
@@ -47,9 +52,12 @@ export default function FuturesMarketDetail() {
 
     if (isLoading) {
         return (
-            <View style={[styles.container, styles.center]}>
+            <View style={styles.container}>
                 <CustomStatusBar />
-                <Text style={styles.loadingText}>Loading {symbol}...</Text>
+                {/* <LoadingOverlay
+                    visible={isLoading}
+                    mode="high-contrast"
+                /> */}
             </View>
         );
     }
@@ -66,14 +74,29 @@ export default function FuturesMarketDetail() {
     return (
         <View style={styles.container}>
             <CustomStatusBar />
-            <ScreenHeader symbol={token.symbol} />
+            <ScreenHeader
+                symbol={token.displaySymbol || token.symbol}
+                logoURI={token.logoURI}
+                isFavorite={isFavorite(token.id)}
+                onToggleFavorite={() => toggleFavorite(token.id)}
+            />
 
             <ScrollView
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={{ paddingBottom: bottom + 100 }}
             >
                 <PriceHeader token={token} />
-                <TradingViewChart />
+                <TradingViewChart
+                    symbol={token.displaySymbol || token.symbol}
+                    baseSymbol={token.symbol}
+                    marketType="perp"
+                    precision={token.decimals}
+                    price={typeof token.price === 'string' ? parseFloat(token.price) : token.price}
+                    baseAddress={token.baseToken?.address || token.contractAddress || token.address}
+                    quoteAddress={token.quoteToken?.address}
+                    chainId={token.chainId}
+                    provider={token.provider}
+                />
 
                 {/* Tabs for Order Book / Trades */}
                 <View style={styles.tabContainer}>
@@ -91,9 +114,18 @@ export default function FuturesMarketDetail() {
                 </View>
 
                 {activeTab === 'Order Book' ? (
-                    <OrderBook baseSymbol={token.symbol} />
+                    <OrderBook
+                        symbol={token.displaySymbol || token.symbol}
+                        baseSymbol={token.symbol}
+                        address={token.address}
+                        chainId={token.chainId}
+                        marketType="perp"
+                    />
                 ) : (
-                    <RecentTrades />
+                    <RecentTrades
+                        symbol={token.displaySymbol || token.symbol}
+                        marketType="perp"
+                    />
                 )}
             </ScrollView>
 

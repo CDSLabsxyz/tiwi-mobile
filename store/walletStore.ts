@@ -3,27 +3,36 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
-export type ChainType = 'evm' | 'solana' | 'bitcoin' | 'other';
+export type ChainType = 'EVM' | 'SOLANA' | 'SUI' | 'TON' | 'TRON';
 
-export interface ConnectedWallet {
-  address: string;
+export interface WalletGroup {
+  id: string;
   name: string;
-  chainType: ChainType;
-  source: string;
-  isConnected: boolean;
+  type: 'mnemonic' | 'privateKey' | 'external';
+  primaryChain: ChainType;
+  addresses: {
+    [key in ChainType]?: string;
+  };
+  source: string; // e.g., 'internal', 'imported', 'metamask', etc.
   walletIcon?: string;
+  isBackupComplete?: boolean;
 }
 
 interface WalletState {
-  // Legacy / Active session
+  // Currently Active Identity
+  activeGroupId: string | null;
+  activeAddress: string | null; // Primary address (usually EVM)
+  activeChain: ChainType;
+
+  // Storage for all wallet groups
+  walletGroups: WalletGroup[];
+
+  // Legacy/Compatibility fields (keep for now to avoid breaking existing UI)
   address: string | null;
+  isConnected: boolean;
   name: string | null;
   chainId: string | null;
-  isConnected: boolean;
 
-  // Multi-wallet state
-  connectedWallets: ConnectedWallet[];
-  walletIcon: string | null;
   // Actions
   setConnection: (details: {
     address: string | null;
@@ -32,11 +41,14 @@ interface WalletState {
     isConnected: boolean;
     walletIcon?: string;
     source?: string;
+    type?: 'mnemonic' | 'privateKey' | 'external';
   }) => void;
-  updateWalletName: (name: string) => void;
-  addWallet: (wallet: Omit<ConnectedWallet, 'isConnected'>) => Promise<void>;
-  removeWallet: (address: string) => void;
-  setActiveWallet: (address: string) => void;
+
+  addWalletGroup: (group: WalletGroup) => void;
+  setActiveGroup: (groupId: string) => void;
+  updateGroupName: (groupId: string, name: string) => void;
+  removeWalletGroup: (groupId: string) => void;
+
   disconnect: () => void;
   _hasHydrated: boolean;
   setHasHydrated: (state: boolean) => void;
@@ -45,106 +57,129 @@ interface WalletState {
 export const useWalletStore = create<WalletState>()(
   persist(
     (set, get) => ({
+      activeGroupId: null,
+      activeAddress: null,
+      activeChain: 'EVM',
+      walletGroups: [],
+
+      // Keep legacy fields populated for UI compatibility
       address: null,
       name: 'Wallet 1',
       chainId: null,
       isConnected: false,
 
-      connectedWallets: [],
-      walletIcon: null,
-
-      setConnection: ({ address, name, chainId, isConnected, walletIcon, source }) => {
+      setConnection: ({ address, name, chainId, isConnected, walletIcon, source, type }) => {
         const state = get();
         const finalName = name || 'Wallet 1';
 
         set({
-          address,
+          address, // legacy
+          activeAddress: address,
+          activeChain: 'EVM',
           name: finalName,
           chainId: chainId ? chainId.toString() : null,
           isConnected,
-          walletIcon: walletIcon || null
         });
 
-        // Automatically add to connected wallets if not present
+        // If it's a new connection, create or update a WalletGroup
         if (address && isConnected) {
-          const exists = state.connectedWallets.some(w => w.address.toLowerCase() === address.toLowerCase());
+          const exists = state.walletGroups.some(g =>
+            Object.values(g.addresses).some(addr => addr?.toLowerCase() === address.toLowerCase())
+          );
+
           if (!exists) {
-            get().addWallet({
-              address,
+            const newGroup: WalletGroup = {
+              id: Date.now().toString(),
               name: finalName,
-              chainType: address.startsWith('0x') ? 'evm' : 'solana',
+              type: type || 'external',
+              primaryChain: 'EVM',
+              addresses: { EVM: address },
               source: source || 'walletconnect',
               walletIcon: walletIcon
-            });
+            };
+            get().addWalletGroup(newGroup);
           }
         }
       },
 
-      updateWalletName: (newName) => {
+      addWalletGroup: (newGroup) => {
         const state = get();
-        if (state.address) {
-          set({ name: newName });
-          const updatedWallets = state.connectedWallets.map(w =>
-            w.address === state.address ? { ...w, name: newName } : w
-          );
-          set({ connectedWallets: updatedWallets });
-        }
-      },
-
-      addWallet: async (newWallet) => {
-        const state = get();
-        const updatedWallets = [
-          ...state.connectedWallets.filter(w => w.address.toLowerCase() !== newWallet.address.toLowerCase()),
-          { ...newWallet, isConnected: true }
+        const updatedGroups = [
+          ...state.walletGroups.filter(g => g.id !== newGroup.id),
+          newGroup
         ];
 
-        set({ connectedWallets: updatedWallets });
-
-        // Map internal sources to API allowed sources
-        let apiSource = newWallet.source;
-        const ALLOWED_SOURCES = ['local', 'metamask', 'walletconnect', 'coinbase', 'rabby', 'phantom', 'other'];
-
-        if (apiSource === 'internal' || apiSource === 'imported') {
-          apiSource = 'local';
-        } else if (!ALLOWED_SOURCES.includes(apiSource)) {
-          apiSource = 'other';
-        }
-
-        // Register with backend in background
-        apiClient.registerWallet(newWallet.address, apiSource);
-
-        // queryClient will automatically refetch due to connectedWallets dependency
-      },
-
-      removeWallet: (address) => {
-        const state = get();
-        const updatedWallets = state.connectedWallets.filter(w => w.address !== address);
-
         set({
-          connectedWallets: updatedWallets,
-          // If removing active wallet, clear it
-          ...(state.address === address ? { address: null, isConnected: false, chainId: null } : {})
+          walletGroups: updatedGroups,
+          activeGroupId: newGroup.id,
+          activeAddress: newGroup.addresses[newGroup.primaryChain] || null,
+          activeChain: newGroup.primaryChain,
+          isConnected: true,
+          // Legacy sync
+          address: newGroup.addresses[newGroup.primaryChain] || null,
+          name: newGroup.name
         });
+
+        // Register the primary address with backend
+        const primaryAddr = newGroup.addresses[newGroup.primaryChain];
+        if (primaryAddr) {
+          let apiSource = newGroup.source;
+          if (apiSource === 'internal' || apiSource === 'imported') apiSource = 'local';
+          apiClient.registerWallet(primaryAddr, apiSource);
+        }
       },
 
-      setActiveWallet: (address) => {
-        const wallet = get().connectedWallets.find(w => w.address === address);
-        if (wallet) {
+      setActiveGroup: (groupId) => {
+        const group = get().walletGroups.find(g => g.id === groupId);
+        if (group) {
+          const mainAddr = group.addresses[group.primaryChain] || null;
           set({
-            address: wallet.address,
-            name: wallet.name,
-            isConnected: true,
-            // Chain ID might be unknown or need updating from provider
+            activeGroupId: groupId,
+            activeAddress: mainAddr,
+            activeChain: group.primaryChain,
+            // Legacy sync
+            address: mainAddr,
+            name: group.name,
+            isConnected: true
           });
         }
       },
 
+      updateGroupName: (groupId, newName) => {
+        const updatedGroups = get().walletGroups.map(g =>
+          g.id === groupId ? { ...g, name: newName } : g
+        );
+        set({ walletGroups: updatedGroups });
+        if (get().activeGroupId === groupId) {
+          set({ name: newName });
+        }
+      },
+
+      removeWalletGroup: (groupId) => {
+        const state = get();
+        const updatedGroups = state.walletGroups.filter(g => g.id !== groupId);
+
+        const isRemovingActive = state.activeGroupId === groupId;
+
+        set({
+          walletGroups: updatedGroups,
+          ...(isRemovingActive ? {
+            activeGroupId: null,
+            activeAddress: null,
+            address: null,
+            isConnected: false,
+            chainId: null
+          } : {})
+        });
+      },
+
       disconnect: () => set({
+        activeGroupId: null,
+        activeAddress: null,
         address: null,
         chainId: null,
         isConnected: false,
-        connectedWallets: [],
-        walletIcon: null,
+        walletGroups: [],
       }),
       _hasHydrated: false,
       setHasHydrated: (state) => set({ _hasHydrated: state }),

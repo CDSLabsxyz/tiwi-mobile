@@ -4,32 +4,35 @@
  * Matches Figma design exactly (node-id: 3279-120155)
  */
 
-import React, { useState, useEffect } from "react";
-import { View, ScrollView, TouchableOpacity } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRouter, useLocalSearchParams, usePathname } from "expo-router";
-import { LinearGradient } from "expo-linear-gradient";
-import { Image } from "expo-image";
-import { WalletHeader } from "@/components/sections/Wallet/WalletHeader";
-import { QuickActions } from "@/components/sections/Wallet/QuickActions";
 import {
+  NFTDetailActivities,
   NFTDetailHeader,
   NFTDetailStats,
-  NFTDetailActivities,
 } from "@/components/sections/Wallet";
+import { QuickActions } from "@/components/sections/Wallet/QuickActions";
+import { WalletHeader } from "@/components/sections/Wallet/WalletHeader";
+import { CustomStatusBar } from "@/components/ui/custom-status-bar";
 import { colors } from "@/constants/colors";
-import { WALLET_ADDRESS } from "@/utils/wallet";
 import {
   fetchNFTDetail,
   type NFTDetail as NFTDetailType,
 } from "@/services/walletService";
-import { CustomStatusBar } from "@/components/ui/custom-status-bar";
+import { useWalletStore } from "@/store/walletStore";
+import { Image } from "expo-image";
+import { LinearGradient } from "expo-linear-gradient";
+import { useLocalSearchParams, usePathname, useRouter } from "expo-router";
+import React, { useEffect, useState } from "react";
+import { ScrollView, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function NFTDetailScreen() {
   const { top, bottom } = useSafeAreaInsets();
   const router = useRouter();
   const pathname = usePathname();
   const { id, tab } = useLocalSearchParams<{ id: string; tab?: string }>();
+
+  // Store data
+  const { address } = useWalletStore();
 
   // State
   const [nft, setNft] = useState<NFTDetailType | null>(null);
@@ -113,7 +116,7 @@ export default function NFTDetailScreen() {
         }}
       >
         <WalletHeader
-          walletAddress={WALLET_ADDRESS}
+          walletAddress={address || ""}
           onIrisScanPress={handleIrisScanPress}
           onSettingsPress={handleSettingsPress}
           showBackButton
@@ -189,6 +192,29 @@ export default function NFTDetailScreen() {
 
             {/* NFT Stats */}
             <NFTDetailStats nft={nft} />
+
+            {/* Description (Optional) */}
+            {nft.description && (
+              <View style={{ width: '100%', gap: 8 }}>
+                <Text style={{
+                  fontFamily: 'Manrope-Bold',
+                  fontSize: 14,
+                  color: colors.bodyText,
+                  textTransform: 'uppercase',
+                  letterSpacing: 1
+                }}>
+                  Description
+                </Text>
+                <Text style={{
+                  fontFamily: 'Manrope-Regular',
+                  fontSize: 14,
+                  lineHeight: 20,
+                  color: colors.titleText
+                }}>
+                  {nft.description}
+                </Text>
+              </View>
+            )}
           </View>
 
           {/* Quick Actions */}
@@ -206,7 +232,7 @@ export default function NFTDetailScreen() {
             <QuickActions
               onSendPress={handleSendPress}
               onReceivePress={handleReceivePress}
-              onPayPress={() => {}}
+              onPayPress={() => { }}
               onActivitiesPress={handleActivitiesPress}
             />
           </View>

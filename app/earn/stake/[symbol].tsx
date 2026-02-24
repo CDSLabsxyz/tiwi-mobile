@@ -9,18 +9,28 @@ import { DepositSelectionModal } from '@/components/sections/Earn/DepositSelecti
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { NumericKeypad } from '@/components/ui/NumericKeypad';
 import { colors } from '@/constants/colors';
+import { useStakingAllowance } from '@/hooks/useStakingAllowance';
+import { useStakingPool } from '@/hooks/useStakingPool';
+import { useWalletBalances } from '@/hooks/useWalletBalances';
+import { stakingService, type StakingPool } from '@/services/stakingService';
+import { useWalletStore } from '@/store/walletStore';
 import AntDesign from '@expo/vector-icons/AntDesign';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
+    ActivityIndicator,
+    Alert,
     ScrollView,
     StyleSheet,
     Text,
+    TextInput,
     TouchableOpacity,
     View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { parseUnits } from 'viem';
+import { useAccount } from 'wagmi';
 
 // Icons
 const BackIcon = require('../../../assets/swap/arrow-left-02.svg');
@@ -41,47 +51,196 @@ export default function StakeScreen() {
     const [amount, setAmount] = useState('');
     const [selectedDuration, setSelectedDuration] = useState('30 Days');
     const [autoSubscribe, setAutoSubscribe] = useState(true);
-    const [accountType, setAccountType] = useState<AccountType>('Account');
     const [isAccountModalVisible, setIsAccountModalVisible] = useState(false);
     const [isDepositModalVisible, setIsDepositModalVisible] = useState(false);
+    const [selection, setSelection] = useState({ start: 0, end: 0 });
 
-    // Stats
+    const { connectedWallets, address: activeAddress } = useWalletStore();
+    const { data: balanceData } = useWalletBalances();
+    const [pool, setPool] = useState<StakingPool | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
+
+    // Get user balance for this specific token
+    const userTokenBalance = React.useMemo(() => {
+        if (!balanceData?.tokens || !symbol) return '0';
+        const token = balanceData.tokens.find(t => t.symbol.toLowerCase() === symbol.toLowerCase());
+        return token?.balanceFormatted || '0';
+    }, [balanceData, symbol]);
+
+    // Construct the dynamic list of accounts (Connected Wallets only)
+    const availableAccounts = React.useMemo(() => {
+        const list: any[] = [];
+
+        // Add each connected wallet
+        connectedWallets.forEach(wallet => {
+            const isMain = wallet.address.toLowerCase() === activeAddress?.toLowerCase();
+            list.push({
+                id: wallet.address,
+                name: wallet.name || (isMain ? 'Main Wallet' : 'Imported Wallet'),
+                type: 'Wallet',
+                balance: `${isMain ? userTokenBalance : '0.00'} ${symbol}`,
+                address: wallet.address
+            });
+        });
+
+        return list;
+    }, [connectedWallets, activeAddress, userTokenBalance, symbol]);
+
+    const [selectedAccountId, setSelectedAccountId] = useState<string>(activeAddress || '');
+    const selectedAccount = React.useMemo(() =>
+        availableAccounts.find(a => a.id === selectedAccountId) || availableAccounts[0]
+        , [availableAccounts, selectedAccountId]);
+
+    useEffect(() => {
+        const loadPool = async () => {
+            if (symbol) {
+                const foundPool = await stakingService.getPoolBySymbol(symbol);
+                if (foundPool) {
+                    setPool(foundPool);
+                }
+                setIsLoading(false);
+            }
+        };
+        loadPool();
+    }, [symbol]);
+
+    // On-Chain Read & Write
+    const stakingData = useStakingPool(pool?.poolId);
+    const {
+        allowance: initialAllowance,
+        isLoading: isStakingLoading,
+        isTransactionPending,
+        approve,
+        stake,
+        refetch: refetchStaking
+    } = stakingData;
+
+    // High-frequency polling for the "Fast-Flow" button
+    const {
+        allowance: polledAllowance,
+        startPolling,
+        stopPolling
+    } = useStakingAllowance(pool?.tokenAddress);
+
+    // Combine for best UX (initial from wagmi, then polled)
+    const currentAllowance = polledAllowance > 0n ? polledAllowance : initialAllowance;
+
+    const totalBalanceNumeric = React.useMemo(() => {
+        const walletBal = parseFloat(userTokenBalance) || 0;
+        const vaultBal = parseFloat(stakingData.userStakedFormatted || '0') || 0;
+        return (walletBal + vaultBal).toString();
+    }, [userTokenBalance, stakingData.userStakedFormatted]);
+
+    const totalBalance = React.useMemo(() => {
+        return `${parseFloat(totalBalanceNumeric).toFixed(4)} ${symbol}`;
+    }, [totalBalanceNumeric, symbol]);
+
+    const { isConnected } = useAccount();
+
+    const needsApproval = React.useMemo(() => {
+        if (!amount || isNaN(parseFloat(amount))) return false;
+        try {
+            const amountWei = parseUnits(amount, 9); // Use 9 decimals for TWC
+            const isNeeded = (currentAllowance || 0n) < amountWei;
+
+            // Start polling if we might need approval
+            if (isNeeded) {
+                startPolling();
+            } else {
+                stopPolling();
+            }
+
+            return isNeeded;
+        } catch (e) {
+            return false;
+        }
+    }, [amount, currentAllowance, startPolling, stopPolling]);
+
+    const isOutOfRange = React.useMemo(() => {
+        if (!amount || !pool) return false;
+        const val = parseFloat(amount);
+        const min = pool.minStakeAmount || 0;
+        const max = pool.maxStakeAmount || Infinity;
+        return val < min || val > max;
+    }, [amount, pool]);
+
+    // Stats based on real pool data
     const stats = {
-        tvl: '$1.4M',
-        apr: '5.48%',
-        totalStaked: '1.1M TWC',
-        limits: '0.03-50 TWC',
+        tvl: stakingData.tvlUsd || '$0.00',
+        apr: stakingData.apr || pool?.displayApy || 'N/A',
+        totalStaked: stakingData.totalStakedCompact || '0 TWC',
+        lockPeriod: pool?.minStakingPeriod || stakingData.lockPeriod || 'N/A',
+        limits: pool?.displayLimits || 'N/A',
     };
 
-    const handleConfirm = () => {
-        // Handle staking confirmation logic
-        console.log('Staking confirmed:', {
-            symbol,
-            amount,
-            stakeType,
-            duration: stakeType === 'Fixed' ? selectedDuration : 'Flexible',
-        });
-        router.back();
+    const handleConfirm = async () => {
+        if (!isConnected) {
+            Alert.alert('Connect Wallet', 'Please connect your wallet to continue.');
+            return;
+        }
+
+        if (!amount || parseFloat(amount) <= 0) {
+            Alert.alert('Invalid Amount', 'Please enter a valid amount to stake.');
+            return;
+        }
+
+        try {
+            if (needsApproval) {
+                await approve();
+                Alert.alert('Success', 'Token approved successfully!');
+                refetchStaking();
+            } else {
+                await stake(amount);
+                Alert.alert('Success', 'Staked successfully!', [
+                    { text: 'OK', onPress: () => router.back() }
+                ]);
+                refetchStaking();
+            }
+        } catch (error: any) {
+            console.error('[StakeScreen] Transaction error:', error);
+            const errorMsg = error?.message || 'Transaction failed. Please try again.';
+            if (!errorMsg.includes('User rejected')) {
+                Alert.alert('Transaction Failed', errorMsg);
+            }
+        }
     };
 
     const handleMax = () => {
-        setAmount('50'); // Mock max balance
+        setAmount(totalBalanceNumeric);
+        setSelection({ start: totalBalanceNumeric.length, end: totalBalanceNumeric.length });
     };
 
     const handleKeyPress = (value: string) => {
         if (value === '.') {
             if (amount.includes('.')) return;
-            setAmount(prev => prev ? prev + '.' : '0.');
-            return;
         }
-        setAmount(prev => {
-            if (prev === '0') return value;
-            return prev + value;
-        });
+
+        const newAmount =
+            amount.slice(0, selection.start) +
+            value +
+            amount.slice(selection.end);
+
+        setAmount(newAmount);
+        const newPos = selection.start + value.length;
+        setSelection({ start: newPos, end: newPos });
     };
 
     const handleDelete = () => {
-        setAmount(prev => prev.slice(0, -1));
+        if (selection.start === 0 && selection.end === 0) return;
+
+        let newAmount = '';
+        let newPos = 0;
+
+        if (selection.start !== selection.end) {
+            newAmount = amount.slice(0, selection.start) + amount.slice(selection.end);
+            newPos = selection.start;
+        } else {
+            newAmount = amount.slice(0, selection.start - 1) + amount.slice(selection.end);
+            newPos = Math.max(0, selection.start - 1);
+        }
+
+        setAmount(newAmount);
+        setSelection({ start: newPos, end: newPos });
     };
 
     return (
@@ -99,10 +258,8 @@ export default function StakeScreen() {
                 </TouchableOpacity>
 
                 <View style={styles.tokenHeader}>
-                    <Image source={TWCIcon} style={styles.tokenIcon} contentFit="cover" />
-                    <View style={styles.tokenTag}>
-                        <Text style={styles.tokenTagText}>{symbol || 'TWC'}</Text>
-                    </View>
+                    <Image source={pool?.tokenLogo ? { uri: pool.tokenLogo } : TWCIcon} style={styles.tokenIcon} contentFit="cover" />
+                    <Text style={styles.headerSymbol}>{symbol || 'TWC'}</Text>
                 </View>
                 <View style={{ width: 24 }} />
             </View>
@@ -110,7 +267,7 @@ export default function StakeScreen() {
             <View style={{ flex: 1 }}>
                 <ScrollView
                     style={styles.scrollView}
-                    contentContainerStyle={{ paddingBottom: 150 }} // Space for button
+                    contentContainerStyle={{ paddingBottom: 40 }}
                     showsVerticalScrollIndicator={false}
                 >
                     {/* Stats Card */}
@@ -127,8 +284,8 @@ export default function StakeScreen() {
                             </View>
                             <View style={styles.divider} />
                             <View style={styles.statItem}>
-                                <Text style={styles.statLabel}>Total Staked</Text>
-                                <Text style={styles.statValue}>{stats.totalStaked}</Text>
+                                <Text style={styles.statLabel}>Lock Period</Text>
+                                <Text style={styles.statValue}>{stats.lockPeriod}</Text>
                             </View>
                             <View style={styles.divider} />
                             <View style={styles.statItem}>
@@ -148,14 +305,17 @@ export default function StakeScreen() {
                                 stakeType === 'Flexible' && styles.typeCardActive
                             ]}
                         >
-                            <Text style={[
-                                styles.typeCardLabel,
-                                stakeType === 'Flexible' ? styles.textActive : styles.textInactive
-                            ]}>Flexible</Text>
+                            <View>
+                                <Text style={[
+                                    styles.typeCardLabel,
+                                    stakeType === 'Flexible' ? styles.textActive : styles.textInactive
+                                ]}>Flexible</Text>
+                                <Text style={styles.lockInfoText}>No Lock</Text>
+                            </View>
                             <Text style={[
                                 styles.typeCardValue,
                                 stakeType === 'Flexible' ? styles.textWhite : styles.textInactive
-                            ]}>5.30%</Text>
+                            ]}>{pool?.displayApy || '5.30%'}</Text>
                         </TouchableOpacity>
 
                         <TouchableOpacity
@@ -166,52 +326,48 @@ export default function StakeScreen() {
                                 stakeType === 'Fixed' && styles.typeCardActive
                             ]}
                         >
-                            <Text style={[
-                                styles.typeCardLabel,
-                                stakeType === 'Fixed' ? styles.textActive : styles.textInactive
-                            ]}>Fixed</Text>
+                            <View>
+                                <Text style={[
+                                    styles.typeCardLabel,
+                                    stakeType === 'Fixed' ? styles.textActive : styles.textInactive
+                                ]}>Fixed</Text>
+                                <Text style={styles.lockInfoText}>{stats.lockPeriod}</Text>
+                            </View>
                             <Text style={[
                                 styles.typeCardValue,
                                 stakeType === 'Fixed' ? styles.textWhite : styles.textInactive
-                            ]}>5.30%</Text>
+                            ]}>{pool?.displayApy || '5.30%'}</Text>
                         </TouchableOpacity>
                     </View>
 
                     {/* Amount Input Display */}
                     <View style={styles.amountSection}>
-                        <View style={styles.amountInputContainer}>
-                            <Text style={[styles.largeInput, !amount && { color: colors.mutedText }]}>
-                                {amount || '0.000'}
-                            </Text>
-                            <Text style={styles.inputSuffix}>TWC</Text>
+                        <View style={[
+                            styles.amountInputContainer,
+                            isOutOfRange && amount.length > 0 && styles.amountInputError
+                        ]}>
+                            <TextInput
+                                style={styles.largeInput}
+                                value={amount}
+                                placeholder="0.000"
+                                placeholderTextColor={colors.mutedText}
+                                showSoftInputOnFocus={false}
+                                onSelectionChange={(e) => setSelection(e.nativeEvent.selection)}
+                                selection={selection}
+                            />
                             <TouchableOpacity onPress={handleMax} style={styles.maxButton}>
                                 <Text style={styles.maxButtonText}>Max</Text>
                             </TouchableOpacity>
                         </View>
-                        <Text style={styles.rangeText}>Range: 0.001 BTC - 50 BTC</Text>
+                        <Text style={[
+                            styles.rangeText,
+                            isOutOfRange && amount.length > 0 && { color: '#FF4D4D' }
+                        ]}>
+                            Range: {stats.limits}
+                        </Text>
                     </View>
 
-                    {/* Est. APR / Tiers */}
-                    <View style={styles.infoSection}>
-                        <View style={styles.infoHeader}>
-                            <Text style={styles.infoTitle}>Est. APR</Text>
-                            <View style={styles.liveAprTag}>
-                                {/* Icon placeholder */}
-                                <Text style={styles.liveAprText}>Live APR</Text>
-                            </View>
-                        </View>
-
-                        <View style={styles.tierRow}>
-                            <Text style={styles.tierLabel}>Tier 1</Text>
-                            <Text style={styles.tierCondition}>{'<='} 0.003 TWC</Text>
-                            <Text style={styles.tierRate}>5.30%</Text>
-                        </View>
-                        <View style={styles.tierRow}>
-                            <Text style={styles.tierLabel}>Tier 2</Text>
-                            <Text style={styles.tierCondition}>Tier 2 {'>'} 0.03 TWC</Text>
-                            <Text style={styles.tierRate}>0.30%</Text>
-                        </View>
-                    </View>
+                    <View style={{ height: 24 }} />
 
                     {/* Account Selection */}
                     <View style={styles.accountSection}>
@@ -219,24 +375,24 @@ export default function StakeScreen() {
                             style={styles.accountSelector}
                             onPress={() => setIsAccountModalVisible(true)}
                         >
-                            <Text style={styles.accountSelectorLabel}>Account</Text>
+                            <Text style={styles.accountSelectorLabel}>{selectedAccount?.name || 'Account'}</Text>
                             <Image source={DropdownIcon} style={styles.dropdownIcon} contentFit="contain" />
                         </TouchableOpacity>
 
                         <View style={styles.balanceAction}>
-                            <Text style={styles.balanceValue}>0.0053 TWC</Text>
+                            <Text style={styles.balanceValue}>{selectedAccount?.balance || userTokenBalance}</Text>
                             <TouchableOpacity onPress={() => setIsDepositModalVisible(true)}>
                                 <AntDesign name="plus" size={16} color={colors.titleText} />
                             </TouchableOpacity>
                         </View>
                     </View>
 
-                    <View style={{ height: 20 }} />
+                    <View style={{ height: 30 }} />
 
-                    {/* Numeric Keypad */}
+                    {/* Numeric Keypad right after account selection */}
                     <NumericKeypad onPress={handleKeyPress} onDelete={handleDelete} />
+                    <View style={{ height: 150 }} />
 
-                    <View style={{ height: 100 }} />
                 </ScrollView>
             </View>
 
@@ -244,10 +400,20 @@ export default function StakeScreen() {
             <View style={[styles.bottomBar, { paddingBottom: bottom + 12 }]}>
                 <TouchableOpacity
                     onPress={handleConfirm}
-                    style={styles.confirmButton}
+                    disabled={isTransactionPending || !amount || parseFloat(amount) <= 0 || isOutOfRange}
+                    style={[
+                        styles.confirmButton,
+                        (isTransactionPending || !amount || parseFloat(amount) <= 0 || isOutOfRange) && styles.confirmButtonDisabled
+                    ]}
                     activeOpacity={0.9}
                 >
-                    <Text style={styles.confirmButtonText}>Stake Now</Text>
+                    {isTransactionPending ? (
+                        <ActivityIndicator color={colors.bg} size="small" />
+                    ) : (
+                        <Text style={styles.confirmButtonText}>
+                            {needsApproval ? 'Approve Token' : 'Stake Now'}
+                        </Text>
+                    )}
                 </TouchableOpacity>
             </View>
 
@@ -255,9 +421,10 @@ export default function StakeScreen() {
             <AccountSelectionModal
                 visible={isAccountModalVisible}
                 onClose={() => setIsAccountModalVisible(false)}
-                onSelect={(account) => {
-                    console.log('Selected account:', account);
-                }}
+                onSelect={(account) => setSelectedAccountId(account.id)}
+                accounts={availableAccounts}
+                selectedAccountId={selectedAccountId}
+                totalBalance={totalBalance}
             />
 
             {/* Deposit Selection Modal */}
@@ -265,11 +432,10 @@ export default function StakeScreen() {
                 visible={isDepositModalVisible}
                 onClose={() => setIsDepositModalVisible(false)}
                 onSelect={(action) => {
-                    console.log('Selected action:', action);
-                    if (action === 'deposit') {
-                        router.push('/earn/deposit');
-                    }
                     setIsDepositModalVisible(false);
+                    if (action === 'send') router.push('/send');
+                    else if (action === 'swap') router.push('/swap');
+                    else if (action === 'receive') router.push('/receive');
                 }}
             />
         </View>
@@ -296,27 +462,18 @@ const styles = StyleSheet.create({
         height: '100%',
     },
     tokenHeader: {
+        flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'center',
+        gap: 8,
     },
     tokenIcon: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
+        width: 32,
+        height: 32,
+        borderRadius: 16,
     },
-    tokenTag: {
-        position: 'absolute',
-        bottom: -4,
-        backgroundColor: colors.bgSemi,
-        paddingHorizontal: 6,
-        paddingVertical: 2,
-        borderRadius: 4,
-        borderWidth: 1,
-        borderColor: colors.bgStroke,
-    },
-    tokenTagText: {
-        fontFamily: 'Manrope-SemiBold',
-        fontSize: 10,
+    headerSymbol: {
+        fontFamily: 'Manrope-Bold',
+        fontSize: 18,
         color: colors.titleText,
     },
     scrollView: {
@@ -366,7 +523,6 @@ const styles = StyleSheet.create({
         backgroundColor: colors.bgSemi,
         borderRadius: 16,
         padding: 16,
-        height: 80,
         justifyContent: 'space-between',
         borderWidth: 1,
         borderColor: colors.bgStroke,
@@ -376,11 +532,17 @@ const styles = StyleSheet.create({
     },
     typeCardLabel: {
         fontFamily: 'Manrope-Medium',
-        fontSize: 14,
+        fontSize: 12,
     },
     typeCardValue: {
         fontFamily: 'Manrope-SemiBold',
-        fontSize: 20,
+        fontSize: 12,
+    },
+    lockInfoText: {
+        fontFamily: 'Manrope-Medium',
+        fontSize: 10,
+        color: colors.mutedText,
+        marginTop: 2,
     },
     textActive: {
         color: colors.mutedText,
@@ -401,22 +563,18 @@ const styles = StyleSheet.create({
         backgroundColor: colors.bgSemi,
         borderWidth: 1,
         borderColor: colors.bgStroke,
-        borderRadius: 100, // Pill shape
-        paddingHorizontal: 24,
-        height: 72,
+        paddingHorizontal: 14,
+        borderRadius: 16,
+        height: 64,
+    },
+    amountInputError: {
+        borderColor: '#FF4D4D',
     },
     largeInput: {
         flex: 1,
         fontFamily: 'Manrope-Regular',
-        fontSize: 32,
-        color: colors.titleText,
-    },
-    inputSuffix: {
-        fontFamily: 'Manrope-Medium',
         fontSize: 16,
-        color: colors.mutedText,
-        marginRight: 16,
-        marginTop: 8,
+        color: colors.titleText,
     },
     maxButton: {
         backgroundColor: colors.primaryCTA,
@@ -435,57 +593,6 @@ const styles = StyleSheet.create({
         color: colors.mutedText,
         marginTop: 8,
         paddingHorizontal: 4,
-    },
-    infoSection: {
-        marginTop: 24,
-        paddingHorizontal: 20,
-        backgroundColor: colors.bgSemi,
-        marginHorizontal: 20,
-        borderRadius: 16,
-        paddingVertical: 16,
-    },
-    infoHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        marginBottom: 16,
-    },
-    infoTitle: {
-        fontFamily: 'Manrope-Medium',
-        fontSize: 14,
-        color: colors.mutedText,
-    },
-    liveAprTag: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 4,
-    },
-    liveAprText: {
-        fontFamily: 'Manrope-Medium',
-        fontSize: 14,
-        color: colors.titleText,
-    },
-    tierRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        marginBottom: 8,
-    },
-    tierLabel: {
-        fontFamily: 'Manrope-Medium',
-        fontSize: 14,
-        color: colors.mutedText,
-        width: 50,
-    },
-    tierCondition: {
-        fontFamily: 'Manrope-Medium',
-        fontSize: 14,
-        color: colors.titleText,
-        flex: 1,
-    },
-    tierRate: {
-        fontFamily: 'Manrope-Medium',
-        fontSize: 14,
-        color: colors.titleText,
-        textAlign: 'right',
     },
     accountSection: {
         flexDirection: 'row',
@@ -541,5 +648,9 @@ const styles = StyleSheet.create({
         fontFamily: 'Manrope-SemiBold',
         fontSize: 16,
         color: colors.bg,
+    },
+    confirmButtonDisabled: {
+        opacity: 0.6,
+        backgroundColor: colors.bgStroke,
     },
 });

@@ -1,6 +1,6 @@
 import { colors } from '@/constants/colors';
-import { TokenMetadata } from '@/services/apiClient';
-import { formatCurrencyWithSuffix, formatNumber, formatPercentageChange, formatUSDPrice } from '@/utils/formatting';
+import { EnrichedMarket } from '@/services/apiClient';
+import { formatPercentageChange, formatSmartPrice, formatSmartUSD } from '@/utils/formatting';
 import { Image } from 'expo-image';
 import React, { useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -9,13 +9,13 @@ const imgChartLine = "http://localhost:3845/assets/e32e087f99ed074a5dc70df414131
 const imgChartCandle = "http://localhost:3845/assets/032b4d324a66506f1d09ab9ae61af60627c4f0af.svg";
 
 interface PriceHeaderProps {
-    token: TokenMetadata;
+    token: EnrichedMarket;
     quoteSymbol?: string;
 }
 
 export const PriceHeader: React.FC<PriceHeaderProps> = ({
     token,
-    quoteSymbol = 'USDT'
+    quoteSymbol = 'USD'
 }) => {
     const [chartMode, setChartMode] = useState<'line' | 'candle'>('line');
     const isPositive = (token.priceChange24h || 0) >= 0;
@@ -31,10 +31,13 @@ export const PriceHeader: React.FC<PriceHeaderProps> = ({
                         style={styles.logo}
                         contentFit="cover"
                     />
-                    <Text style={styles.symbol}>
-                        {token.symbol}
-                        <Text style={styles.quote}>/{quoteSymbol}</Text>
-                    </Text>
+                    <View>
+                        <Text style={styles.symbol}>
+                            {token.symbol}
+                            <Text style={styles.quote}>/{quoteSymbol}</Text>
+                        </Text>
+                        <Text style={styles.tokenName}>{token.name}</Text>
+                    </View>
                 </View>
 
                 <View style={styles.chartToggle}>
@@ -64,7 +67,7 @@ export const PriceHeader: React.FC<PriceHeaderProps> = ({
                 {/* Left: Price and Change */}
                 <View style={styles.priceContainer}>
                     <Text style={styles.priceLabel}>
-                        {formatUSDPrice(token.priceUSD || '0')}
+                        {formatSmartPrice(token.priceUSD || '0')}
                     </Text>
                     <View style={styles.changeRow}>
                         <Text style={[
@@ -81,15 +84,15 @@ export const PriceHeader: React.FC<PriceHeaderProps> = ({
                 <View style={styles.statsContainer}>
                     <View style={styles.statRow}>
                         <Text style={styles.statLabel}>M.cap</Text>
-                        <Text style={styles.statValue}>{formatCurrencyWithSuffix(token.marketCap || 0)}</Text>
+                        <Text style={styles.statValue}>{formatSmartUSD(token.marketCap || 0)}</Text>
                     </View>
                     <View style={styles.statRow}>
                         <Text style={styles.statLabel}>24H High</Text>
-                        <Text style={styles.statValue}>{formatNumber(token.high24h || 0)}</Text>
+                        <Text style={styles.statValue}>{formatSmartPrice(token.high24h || 0)}</Text>
                     </View>
                     <View style={styles.statRow}>
                         <Text style={styles.statLabel}>24H Low</Text>
-                        <Text style={styles.statValue}>{formatNumber(token.low24h || 0)}</Text>
+                        <Text style={styles.statValue}>{formatSmartPrice(token.low24h || 0)}</Text>
                     </View>
                 </View>
             </View>
@@ -127,6 +130,12 @@ const styles = StyleSheet.create({
     },
     quote: {
         color: colors.bodyText,
+    },
+    tokenName: {
+        fontFamily: 'Manrope-Medium',
+        fontSize: 12,
+        color: colors.bodyText,
+        marginTop: -2,
     },
     chartToggle: {
         flexDirection: 'row',

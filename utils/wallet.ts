@@ -1,10 +1,5 @@
-/**
- * Wallet Utilities
- * Helper functions for wallet operations
- */
-
-// Mock wallet address - Replace with actual wallet connection
-export const WALLET_ADDRESS = '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb';
+// Wallet Utilities
+// Helper functions for wallet operations
 
 /**
  * Truncates a wallet address for display
@@ -20,7 +15,7 @@ export const truncateAddress = (
 ): string => {
   if (!address) return '';
   if (address.length <= startChars + endChars) return address;
-  
+
   return `${address.slice(0, startChars)}...${address.slice(-endChars)}`;
 };
 
@@ -31,4 +26,18 @@ export const truncateAddress = (
  */
 export const isValidAddress = (address: string): boolean => {
   return /^0x[a-fA-F0-9]{40}$/.test(address);
+};
+/**
+ * Checks if an address represents a native token (ETH, BNB, etc)
+ * @param address Token address
+ * @returns Boolean
+ */
+export const isNativeToken = (address: string): boolean => {
+  if (!address) return true;
+  const lower = address.toLowerCase();
+  return (
+    lower === '0x0000000000000000000000000000000000000000' ||
+    lower === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' ||
+    lower === 'native'
+  );
 };

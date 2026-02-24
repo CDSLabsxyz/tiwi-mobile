@@ -1,12 +1,12 @@
 import { create } from 'zustand';
 
-export type SortOption = 'balance-high' | 'balance-low' | 'name-az' | 'name-za';
+export type SortOption = 'value-high' | 'recent-activity';
 
 interface FilterState {
   sortBy: SortOption;
   tokenCategories: Set<string>;
   chains: Set<string>;
-  
+
   // Actions
   setSortBy: (sort: SortOption) => void;
   toggleTokenCategory: (category: string) => void;
@@ -18,9 +18,9 @@ export const useFilterStore = create<FilterState>((set) => ({
   sortBy: 'balance-high',
   tokenCategories: new Set<string>(),
   chains: new Set<string>(),
-  
+
   setSortBy: (sort) => set({ sortBy: sort }),
-  
+
   toggleTokenCategory: (category) => set((state) => {
     const newCategories = new Set(state.tokenCategories);
     if (newCategories.has(category)) {
@@ -30,7 +30,7 @@ export const useFilterStore = create<FilterState>((set) => ({
     }
     return { tokenCategories: newCategories };
   }),
-  
+
   toggleChain: (chain) => set((state) => {
     const newChains = new Set(state.chains);
     if (newChains.has(chain)) {
@@ -40,9 +40,9 @@ export const useFilterStore = create<FilterState>((set) => ({
     }
     return { chains: newChains };
   }),
-  
+
   resetFilters: () => set({
-    sortBy: 'balance-high',
+    sortBy: 'value-high',
     tokenCategories: new Set<string>(),
     chains: new Set<string>(),
   }),

@@ -10,6 +10,8 @@ interface SwapConfirmButtonProps {
     onPress?: () => void;
     activeTab?: SwapTabKey;
     hasValidQuote?: boolean; // Only show specific labels when quote is valid
+    isRefreshing?: boolean;
+    isStale?: boolean;
 }
 
 /**
@@ -23,13 +25,19 @@ export const SwapConfirmButton: React.FC<SwapConfirmButtonProps> = ({
     onPress,
     activeTab = 'swap',
     hasValidQuote = false,
+    isRefreshing = false,
+    isStale = false,
 }) => {
-    const isDisabled = disabled || loading;
+    const isDisabled = disabled || loading || isRefreshing;
 
     // Determine button label based on tab and quote validity
     const getButtonLabel = (): string => {
         // If custom label provided, use it
         if (label) return label;
+
+        if (isStale) {
+            return 'Update Price';
+        }
 
         // Only show specific labels when there's a valid quote
         if (hasValidQuote) {

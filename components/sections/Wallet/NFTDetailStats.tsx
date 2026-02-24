@@ -4,10 +4,10 @@
  * Matches Figma design exactly (node-id: 3279-120170)
  */
 
-import React from "react";
-import { View, Text } from "react-native";
 import { colors } from "@/constants/colors";
 import type { NFTDetail } from "@/services/walletService";
+import React from "react";
+import { Text, View } from "react-native";
 
 interface NFTDetailStatsProps {
   nft: NFTDetail;
@@ -52,7 +52,7 @@ export const NFTDetailStats: React.FC<NFTDetailStatsProps> = ({ nft }) => {
               color: colors.titleText,
             }}
           >
-            {nft.totalNativeVolume}
+            {nft.totalUSDVolume ? `$${parseFloat(nft.totalUSDVolume).toLocaleString()}` : 'N/A'}
           </Text>
           <Text
             style={{
@@ -83,7 +83,7 @@ export const NFTDetailStats: React.FC<NFTDetailStatsProps> = ({ nft }) => {
               color: colors.titleText,
             }}
           >
-            {nft.numberOfOwners.toLocaleString()}
+            {nft.numberOfOwners ? nft.numberOfOwners.toLocaleString() : 'N/A'}
           </Text>
           <Text
             style={{
@@ -124,7 +124,7 @@ export const NFTDetailStats: React.FC<NFTDetailStatsProps> = ({ nft }) => {
               color: colors.titleText,
             }}
           >
-            {nft.floorPrice}
+            {nft.floorPriceUSD ? `$${parseFloat(nft.floorPriceUSD).toLocaleString()}` : 'N/A'}
           </Text>
           <Text
             style={{
@@ -155,7 +155,19 @@ export const NFTDetailStats: React.FC<NFTDetailStatsProps> = ({ nft }) => {
               color: colors.titleText,
             }}
           >
-            {nft.chain}
+            {(() => {
+              const chainMap: { [key: number]: string } = {
+                1: 'Ethereum',
+                10: 'Optimism',
+                56: 'BSC',
+                137: 'Polygon',
+                42161: 'Arbitrum',
+                43114: 'Avalanche',
+                8453: 'Base',
+                1399811149: 'Solana'
+              };
+              return chainMap[nft.chainId] || 'Unknown';
+            })()}
           </Text>
           <Text
             style={{
@@ -197,7 +209,7 @@ export const NFTDetailStats: React.FC<NFTDetailStatsProps> = ({ nft }) => {
               textAlign: "right",
             }}
           >
-            {nft.listedPercentage}
+            {nft.listedPercentage ? `${nft.listedPercentage.toFixed(2)}%` : '0%'}
           </Text>
           <Text
             style={{
@@ -229,7 +241,7 @@ export const NFTDetailStats: React.FC<NFTDetailStatsProps> = ({ nft }) => {
               color: colors.titleText,
             }}
           >
-            {nft.creationDate}
+            {nft.creationDate || 'N/A'}
           </Text>
           <Text
             style={{

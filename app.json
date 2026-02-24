@@ -1,10 +1,10 @@
 {
   "expo": {
-    "name": "Tiwi Protocol",
+    "name": "TIWI Protocol",
     "slug": "tiwi-mobile-app",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/tiwi-logo.svg",
+    "icon": "./assets/images/tiwi_protocol_icon.png",
     "scheme": "tiwiprotocol",
     "userInterfaceStyle": "dark",
     "backgroundColor": "#010501",
@@ -15,9 +15,8 @@
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#010501",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "foregroundImage": "./assets/images/tiwi-protocol-android-icon-foreground.png",
+        "monochromeImage": "./assets/images/tiwi-protocol-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
@@ -29,14 +28,14 @@
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/tiwi_protocol_icon.png"
     },
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/full logo.svg",
+          "image": "./assets/images/tiwi-protocol-splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#010501",
@@ -57,7 +56,7 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "0d2d610c-399b-4ed0-998e-bfff64e01fd2"
+        "projectId": "2df18cdd-695e-4ba2-beea-0080de8800eb"
       }
     }
   }

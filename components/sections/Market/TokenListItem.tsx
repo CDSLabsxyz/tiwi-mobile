@@ -1,5 +1,5 @@
 import { colors } from '@/constants/colors';
-import { MarketTokenPair } from '@/services/apiClient';
+import { EnrichedMarket } from '@/services/apiClient';
 import { formatNumber, formatPercentageChange } from '@/utils/formatting';
 import { Image } from 'expo-image';
 import React from 'react';
@@ -9,7 +9,7 @@ import { TokenPrice } from '@/components/ui/TokenPrice';
 import { useTranslation } from '@/hooks/useLocalization';
 
 interface TokenListItemProps {
-    token: MarketTokenPair;
+    token: EnrichedMarket;
     onPress: () => void;
 }
 
@@ -39,9 +39,8 @@ export const TokenListItem: React.FC<TokenListItemProps> = ({ token, onPress }) 
                             numberOfLines={1}
                             ellipsizeMode="tail"
                         >
-                            {token.symbol}
+                            {token.displaySymbol || token.symbol}
                         </Text>
-                        <Text style={styles.tokenQuote}>/USDT</Text>
                         {/* Rank Badge */}
                         {token.marketCapRank && (
                             <View style={styles.leverageBadge}>

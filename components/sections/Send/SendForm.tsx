@@ -14,10 +14,13 @@ import React, { useEffect, useState } from "react";
 import { Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SendTokenSelector } from "./SendTokenSelector";
+import { WhitelistSelectSheet } from "./WhitelistSelectSheet";
 
 const CopyIcon = require("@/assets/wallet/copy-01.svg");
 const CheckmarkIcon = require("@/assets/swap/checkmark-circle-01.svg");
 const WalletIcon = require("@/assets/wallet/wallet-01.svg");
+const AddressBookIcon = require("@/assets/settings/address-book.svg");
+const PlusIcon = require("@/assets/settings/add-square.svg");
 
 interface SendFormProps {
   onNext: () => void;
@@ -25,7 +28,7 @@ interface SendFormProps {
 
 export const SendForm: React.FC<SendFormProps> = ({ onNext }) => {
   const sendStore = useSendStore();
-  const { isStrictModeEnabled, whitelistedAddresses } = useSecurityStore();
+  const { isStrictModeEnabled, whitelistedAddresses, addWhitelistedAddress } = useSecurityStore();
   const { selectedToken, selectedChain, recipientAddress, amount, usdValue, setRecipientAddress, setAmount, openTokenSheet } = sendStore;
 
   const [localAddress, setLocalAddress] = useState(recipientAddress);
@@ -34,6 +37,12 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext }) => {
   const [addressError, setAddressError] = useState<string | null>(null);
   const [amountError, setAmountError] = useState<string | null>(null);
   const { top, bottom } = useSafeAreaInsets();
+
+  // Whitelist state
+  const [isWhitelistSheetVisible, setIsWhitelistSheetVisible] = useState(false);
+  const [showSaveSuggestion, setShowSaveSuggestion] = useState(false);
+  const [isSavingToWhitelist, setIsSavingToWhitelist] = useState(false);
+  const [newAddressName, setNewAddressName] = useState("");
 
   // Validate address when it changes
   useEffect(() => {
@@ -48,13 +57,25 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext }) => {
         );
         if (!isWhitelisted) {
           setAddressError("Strict Mode: Recipient not in Whitelist");
+          setShowSaveSuggestion(false);
           return;
         }
       }
 
       setAddressError(result.isValid ? null : result.error || null);
+
+      // Check for whitelist suggestion
+      if (result.isValid) {
+        const isWhitelisted = whitelistedAddresses.some(
+          (a) => a.address.toLowerCase() === localAddress.toLowerCase()
+        );
+        setShowSaveSuggestion(!isWhitelisted);
+      } else {
+        setShowSaveSuggestion(false);
+      }
     } else {
       setAddressError(null);
+      setShowSaveSuggestion(false);
     }
   }, [localAddress, selectedChain?.id, isStrictModeEnabled, whitelistedAddresses]);
 
@@ -99,14 +120,19 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext }) => {
     }
   };
 
-  const addressValidation = validateAddress(localAddress, selectedChain?.id ? String(selectedChain.id) : undefined);
-  const amountValidation = validateAmount(localAmount);
-  const isFormValid =
-    addressValidation.isValid &&
-    amountValidation.isValid &&
-    localAddress.trim().length > 0 &&
-    parseFloat(localAmount) > 0 &&
-    selectedToken;
+  const handleSaveToWhitelist = () => {
+    if (localAddress && newAddressName.trim()) {
+      addWhitelistedAddress(localAddress, newAddressName.trim());
+      setIsSavingToWhitelist(false);
+      setNewAddressName("");
+      setShowSaveSuggestion(false);
+    }
+  };
+
+  const handleSelectFromWhitelist = (address: string) => {
+    handleAddressChange(address);
+    setIsWhitelistSheetVisible(false);
+  };
 
   return (
     <View
@@ -129,7 +155,7 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext }) => {
         </View>
       )}
 
-      {/* Recipient Address - Exact Figma spacing */}
+      {/* Recipient Address */}
       <View
         style={{
           flexDirection: "column",
@@ -190,34 +216,127 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext }) => {
                 multiline={false}
               />
             </View>
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={handleCopyAddress}
-              style={{
-                width: 24,
-                height: 24,
-                alignItems: "center",
-                justifyContent: "center",
-                flexShrink: 0,
-                marginLeft: 3,
-              }}
-            >
-              {copied ? (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => setIsWhitelistSheetVisible(true)}
+                style={{
+                  width: 24,
+                  height: 24,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  backgroundColor: colors.bgSemi,
+                  borderRadius: 12,
+                }}
+              >
                 <Image
-                  source={CheckmarkIcon}
-                  className="w-full h-full"
+                  source={AddressBookIcon}
+                  style={{ width: 22, height: 22 }}
                   contentFit="contain"
                 />
-              ) : (
-                <Image
-                  source={CopyIcon}
-                  className="w-full h-full"
-                  contentFit="contain"
-                />
-              )}
-            </TouchableOpacity>
+              </TouchableOpacity>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={handleCopyAddress}
+                style={{
+                  width: 24,
+                  height: 24,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                {copied ? (
+                  <Image
+                    source={CheckmarkIcon}
+                    style={{ width: 20, height: 20 }}
+                    contentFit="contain"
+                  />
+                ) : (
+                  <Image
+                    source={CopyIcon}
+                    style={{ width: 20, height: 20 }}
+                    contentFit="contain"
+                  />
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
+
+        {/* Save Suggestion UI */}
+        {showSaveSuggestion && !isSavingToWhitelist && (
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => setIsSavingToWhitelist(true)}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 6,
+              paddingLeft: 17,
+              marginTop: 4,
+            }}
+          >
+            <Image source={PlusIcon} style={{ width: 14, height: 14 }} contentFit="contain" />
+            <Text
+              style={{
+                fontFamily: "Manrope-Medium",
+                fontSize: 12,
+                color: colors.primaryCTA,
+              }}
+            >
+              Save to Address Book?
+            </Text>
+          </TouchableOpacity>
+        )}
+
+        {isSavingToWhitelist && (
+          <View
+            style={{
+              backgroundColor: colors.bgSemi,
+              borderRadius: 12,
+              padding: 12,
+              marginTop: 8,
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 10,
+            }}
+          >
+            <TextInput
+              autoFocus
+              placeholder="Name (e.g. Mom's Wallet)"
+              placeholderTextColor={colors.bodyText}
+              value={newAddressName}
+              onChangeText={setNewAddressName}
+              style={{
+                flex: 1,
+                fontFamily: "Manrope-Medium",
+                fontSize: 14,
+                color: colors.titleText,
+                padding: 0,
+              }}
+            />
+            <TouchableOpacity
+              onPress={() => setIsSavingToWhitelist(false)}
+              style={{ paddingHorizontal: 8 }}
+            >
+              <Text style={{ fontFamily: "Manrope-Medium", fontSize: 12, color: colors.bodyText }}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleSaveToWhitelist}
+              disabled={!newAddressName.trim()}
+              style={{
+                backgroundColor: newAddressName.trim() ? colors.primaryCTA : colors.bgCards,
+                paddingHorizontal: 12,
+                paddingVertical: 6,
+                borderRadius: 8,
+              }}
+            >
+              <Text style={{ fontFamily: "Manrope-SemiBold", fontSize: 12, color: newAddressName.trim() ? colors.bg : colors.bodyText }}>Save</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {addressError && (
           <Text
             style={{
@@ -226,6 +345,7 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext }) => {
               lineHeight: 14,
               color: "#EF4444",
               paddingLeft: 17,
+              marginTop: 4,
             }}
           >
             {addressError}
@@ -233,7 +353,7 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext }) => {
         )}
       </View>
 
-      {/* Amount Input - Exact Figma spacing */}
+      {/* Amount Input */}
       <View
         style={{
           flexDirection: "column",
@@ -266,17 +386,8 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext }) => {
               flexShrink: 0,
             }}
           >
-            <View
-              style={{
-                width: 14,
-                height: 14,
-              }}
-            >
-              <Image
-                source={WalletIcon}
-                className="w-full h-full"
-                contentFit="contain"
-              />
+            <View style={{ width: 14, height: 14 }}>
+              <Image source={WalletIcon} style={{ width: "100%", height: "100%" }} contentFit="contain" />
             </View>
             <Text
               style={{
@@ -288,10 +399,7 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext }) => {
             >
               {selectedToken?.balanceToken.split(" ")[0] || "0"}
             </Text>
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={handleMaxPress}
-            >
+            <TouchableOpacity activeOpacity={0.8} onPress={handleMaxPress}>
               <Text
                 style={{
                   fontFamily: "Manrope-SemiBold",
@@ -373,8 +481,12 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext }) => {
         </View>
       </View>
 
+      <WhitelistSelectSheet
+        visible={isWhitelistSheetVisible}
+        onClose={() => setIsWhitelistSheetVisible(false)}
+        onSelect={handleSelectFromWhitelist}
+        selectedAddress={localAddress}
+      />
     </View>
   );
 };
-
-

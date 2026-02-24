@@ -19,7 +19,7 @@ export const useTWCToken = () => {
                 chains: [TWC_CHAIN_ID],
                 limit: 1
             });
-            return tokens.length > 0 ? tokens[0] : null;
+            return tokens.tokens.length > 0 ? tokens.tokens[0] : null;
         },
         staleTime: 30 * 1000, // 30 seconds
         gcTime: 5 * 60 * 1000,

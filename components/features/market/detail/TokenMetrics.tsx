@@ -1,18 +1,20 @@
 import { colors } from '@/constants/colors';
-import { TokenMetadata } from '@/services/apiClient';
-import { formatUSDPrice } from '@/utils/formatting';
+import { EnrichedMarket } from '@/services/apiClient';
+import { formatSmartUSD } from '@/utils/formatting';
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 interface TokenMetricsProps {
-    token: TokenMetadata;
+    token: EnrichedMarket;
 }
 
 export const TokenMetrics: React.FC<TokenMetricsProps> = ({ token }) => {
     const stats = [
-        { label: 'Market Cap', value: formatUSDPrice(token.marketCap || 0) },
-        { label: 'Liquidity', value: formatUSDPrice(token.liquidity || 0) },
-        { label: '24h Volume', value: formatUSDPrice(token.volume24h || 0) },
+        { label: 'Market Cap', value: formatSmartUSD(token.marketCap || 0) },
+        { label: 'FDV', value: formatSmartUSD(token.fdv || 0) },
+        { label: 'Liquidity', value: formatSmartUSD(token.liquidity || 0) },
+        { label: '24h Volume', value: formatSmartUSD(token.volume24h || 0) },
+        { label: 'Market Cap Rank', value: token.marketCapRank ? `#${token.marketCapRank}` : 'N/A' },
     ];
 
     return (

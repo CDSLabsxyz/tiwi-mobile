@@ -1,4 +1,5 @@
 import { colors } from '@/constants/colors';
+import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -20,7 +21,39 @@ interface SwapDetailsCardProps {
     twcFee?: string;
     source?: string[];
     isLoading?: boolean;
+    isRefreshing?: boolean;
+    isStale?: boolean;
+    lastFetchTime?: number;
 }
+
+const RefreshIndicator = ({ isRefreshing, isStale, lastFetchTime }: { isRefreshing: boolean, isStale: boolean, lastFetchTime?: number }) => {
+    const [secondsAgo, setSecondsAgo] = useState(0);
+
+    useEffect(() => {
+        if (!lastFetchTime) return;
+        const interval = setInterval(() => {
+            setSecondsAgo(Math.floor((Date.now() - lastFetchTime) / 1000));
+        }, 1000);
+        return () => clearInterval(interval);
+    }, [lastFetchTime]);
+
+    if (!lastFetchTime) return null;
+
+    return (
+        <View style={styles.refreshIndicator}>
+            {isStale ? (
+                <View style={styles.staleWrapper}>
+                    <Ionicons name="warning" size={12} color={colors.error} />
+                    <Text style={styles.staleText}>Price Stale</Text>
+                </View>
+            ) : isRefreshing ? (
+                <Text style={styles.refreshingText}>Refreshing...</Text>
+            ) : (
+                <Text style={styles.timeAgoText}>Updated {secondsAgo}s ago</Text>
+            )}
+        </View>
+    );
+};
 
 /**
  * Swap Details Card with expand/collapse animation
@@ -32,6 +65,9 @@ export const SwapDetailsCard: React.FC<SwapDetailsCardProps> = ({
     twcFee,
     source,
     isLoading = false,
+    isRefreshing = false,
+    isStale = false,
+    lastFetchTime,
 }) => {
     const [isExpanded, setIsExpanded] = useState(false);
     const rotation = useSharedValue(0);
@@ -65,7 +101,7 @@ export const SwapDetailsCard: React.FC<SwapDetailsCardProps> = ({
     }));
 
     const contentStyle = useAnimatedStyle(() => {
-        const expandedHeight = 100;
+        const expandedHeight = 110; // Slightly more height for indicator
         const collapsedHeight = 0;
         const animatedHeight = interpolate(height.value, [0, 1], [collapsedHeight, expandedHeight], Extrapolate.CLAMP);
         const opacity = interpolate(height.value, [0, 0.3, 1], [0, 0, 1], Extrapolate.CLAMP);
@@ -98,13 +134,22 @@ export const SwapDetailsCard: React.FC<SwapDetailsCardProps> = ({
 
             <Animated.View style={[styles.card, contentStyle]}>
                 <View style={styles.detailsContent}>
+                    {/* Freshness Indicator */}
+                    {!isLoading && (
+                        <RefreshIndicator
+                            isRefreshing={isRefreshing}
+                            isStale={isStale}
+                            lastFetchTime={lastFetchTime}
+                        />
+                    )}
+
                     {/* Gas Fee */}
                     <View style={styles.detailRow}>
                         <Text style={styles.detailLabel}>Gas Fee</Text>
                         {isLoading ? (
                             <Animated.View style={[styles.skeletonSmall, skeletonStyle]} />
                         ) : (
-                            <Text style={styles.detailValue}>{displayGasFee}</Text>
+                            <Text style={[styles.detailValue, (isRefreshing || isStale) && { opacity: 0.6 }]}>{displayGasFee}</Text>
                         )}
                     </View>
 
@@ -121,7 +166,8 @@ export const SwapDetailsCard: React.FC<SwapDetailsCardProps> = ({
                                         style={[
                                             styles.sourceBadge,
                                             item === 'Best' ? styles.bestBadge : styles.otherBadge,
-                                            index === 0 ? styles.firstBadge : styles.lastBadge
+                                            index === 0 ? styles.firstBadge : styles.lastBadge,
+                                            (isRefreshing || isStale) && { opacity: 0.6 }
                                         ]}
                                     >
                                         <Text style={styles.sourceText}>{item}</Text>
@@ -137,7 +183,7 @@ export const SwapDetailsCard: React.FC<SwapDetailsCardProps> = ({
                         {isLoading ? (
                             <Animated.View style={[styles.skeletonSmall, skeletonStyle]} />
                         ) : (
-                            <Text style={styles.detailValue}>{displaySlippage}</Text>
+                            <Text style={[styles.detailValue, (isRefreshing || isStale) && { opacity: 0.6 }]}>{displaySlippage}</Text>
                         )}
                     </View>
 
@@ -147,7 +193,7 @@ export const SwapDetailsCard: React.FC<SwapDetailsCardProps> = ({
                         {isLoading ? (
                             <Animated.View style={[styles.skeletonSmall, skeletonStyle]} />
                         ) : (
-                            <Text style={styles.detailValue}>{displayTwcFee}</Text>
+                            <Text style={[styles.detailValue, (isRefreshing || isStale) && { opacity: 0.6 }]}>{displayTwcFee}</Text>
                         )}
                     </View>
                 </View>
@@ -248,5 +294,29 @@ const styles = StyleSheet.create({
         height: 10,
         borderRadius: 4,
         backgroundColor: colors.bgCards,
+    },
+    refreshIndicator: {
+        marginBottom: 8,
+        alignItems: 'flex-end',
+    },
+    staleWrapper: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+    },
+    staleText: {
+        fontFamily: 'Manrope-Bold',
+        fontSize: 10,
+        color: colors.error,
+    },
+    refreshingText: {
+        fontFamily: 'Manrope-Medium',
+        fontSize: 10,
+        color: colors.primaryCTA,
+    },
+    timeAgoText: {
+        fontFamily: 'Manrope-Medium',
+        fontSize: 10,
+        color: colors.mutedText,
     },
 });

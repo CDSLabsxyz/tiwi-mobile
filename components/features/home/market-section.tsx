@@ -79,7 +79,7 @@ export const MarketSection: React.FC<MarketSectionProps> = ({
                             chains: [parseInt(chainId)],
                             limit: 1
                         });
-                        return tokens[0];
+                        return tokens.tokens[0];
                     } catch (e) {
                         return null;
                     }
@@ -236,7 +236,7 @@ export const MarketSection: React.FC<MarketSectionProps> = ({
                                     >
                                         {token.symbol}
                                     </Text>
-                                    <Text style={styles.quoteSymbol}>/USDT</Text>
+                                    <Text style={styles.quoteSymbol}>-USD</Text>
                                     {token.marketCapRank && (
                                         <View style={styles.leverageBadge}>
                                             <Text style={styles.leverageText}>#{token.marketCapRank}</Text>
@@ -375,7 +375,7 @@ const styles = StyleSheet.create({
     symbolRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 6,
+        // gap: 6,
     },
     baseSymbol: {
         fontFamily: 'Manrope-SemiBold',

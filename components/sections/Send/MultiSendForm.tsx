@@ -4,20 +4,22 @@
  * Matches Figma design (node-id: 3279-119061)
  */
 
-import React, { useState, useEffect } from "react";
-import { View, Text, TextInput, TouchableOpacity, Alert, Platform } from "react-native";
+import { colors } from "@/constants";
+import { useSendStore } from "@/store/sendStore";
+import { validateAddresses, validateAmount } from "@/utils/addressValidation";
+import { isValidCSVFile, parseCSVAddresses } from "@/utils/csvParser";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
-import { useSendStore } from "@/store/sendStore";
-import { SendTokenSelector } from "./SendTokenSelector";
-import { validateAddresses, validateAmount } from "@/utils/addressValidation";
-import { parseCSVAddresses, isValidCSVFile } from "@/utils/csvParser";
 import { Image } from "expo-image";
-import { colors } from "@/constants";
+import React, { useEffect, useState } from "react";
+import { Alert, Platform, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { SendTokenSelector } from "./SendTokenSelector";
+import { WhitelistSelectSheet } from "./WhitelistSelectSheet";
 
 const CopyIcon = require("@/assets/wallet/copy-01.svg");
 const AttachmentIcon = require("@/assets/wallet/attachment-square.svg");
 const WalletIcon = require("@/assets/wallet/wallet-01.svg");
+const AddressBookIcon = require("@/assets/settings/address-book.svg");
 
 interface MultiSendFormProps {
   onNext: () => void;
@@ -32,6 +34,9 @@ export const MultiSendForm: React.FC<MultiSendFormProps> = ({ onNext }) => {
   const [addressErrors, setAddressErrors] = useState<string[]>([]);
   const [amountError, setAmountError] = useState<string | null>(null);
 
+  // Whitelist state
+  const [isWhitelistSheetVisible, setIsWhitelistSheetVisible] = useState(false);
+
   // Validate addresses when they change
   useEffect(() => {
     if (addressesInput.trim()) {
@@ -39,7 +44,7 @@ export const MultiSendForm: React.FC<MultiSendFormProps> = ({ onNext }) => {
         .split(/[\s\n]+/)
         .map((addr) => addr.trim())
         .filter((addr) => addr.length > 0);
-      
+
       if (addresses.length > 0) {
         const validation = validateAddresses(addresses, selectedChain?.id);
         setAddressErrors(validation.errors);
@@ -107,7 +112,7 @@ export const MultiSendForm: React.FC<MultiSendFormProps> = ({ onNext }) => {
     try {
       // Request document picker
       const result = await DocumentPicker.getDocumentAsync({
-        type: Platform.OS === "ios" 
+        type: Platform.OS === "ios"
           ? ["public.comma-separated-values-text", "public.data"]
           : ["text/csv", "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
         copyToCacheDirectory: true,
@@ -118,7 +123,7 @@ export const MultiSendForm: React.FC<MultiSendFormProps> = ({ onNext }) => {
       }
 
       const file = result.assets[0];
-      
+
       // Validate file type
       if (!isValidCSVFile(file.name, file.mimeType || undefined)) {
         Alert.alert("Invalid File", "Please select a CSV or Excel file (.csv, .xlsx, .xls)");
@@ -127,10 +132,10 @@ export const MultiSendForm: React.FC<MultiSendFormProps> = ({ onNext }) => {
 
       // Read file content
       const fileContent = await FileSystem.readAsStringAsync(file.uri);
-      
+
       // Parse addresses from CSV
       const extractedAddresses = parseCSVAddresses(fileContent);
-      
+
       if (extractedAddresses.length === 0) {
         Alert.alert("No Addresses Found", "Could not find any valid addresses in the file. Please check the file format.");
         return;
@@ -139,7 +144,7 @@ export const MultiSendForm: React.FC<MultiSendFormProps> = ({ onNext }) => {
       // Populate addresses into input
       const addressesText = extractedAddresses.join(" ");
       setAddressesInput(addressesText);
-      
+
       // Update recipients
       const recipients = extractedAddresses.map((address) => ({
         address,
@@ -154,20 +159,19 @@ export const MultiSendForm: React.FC<MultiSendFormProps> = ({ onNext }) => {
     }
   };
 
-  const addresses = addressesInput
-    .split(/[\s\n,;]+/)
-    .map((addr) => addr.trim())
-    .filter((addr) => addr.length > 0);
-  
-  const addressesValidation = validateAddresses(addresses, selectedChain?.id);
-  const amountValidation = validateAmount(localAmount);
-  
-  const isFormValid =
-    addresses.length > 0 &&
-    addressesValidation.isValid &&
-    amountValidation.isValid &&
-    parseFloat(localAmount) > 0 &&
-    selectedToken;
+  const handleMultiSelectWhitelist = (selectedAddresses: string[]) => {
+    const currentAddresses = addressesInput
+      .split(/[\s\n,;]+/)
+      .map((addr) => addr.trim())
+      .filter((addr) => addr.length > 0);
+
+    // Merge only new unique addresses
+    const uniqueNew = selectedAddresses.filter(addr => !currentAddresses.includes(addr));
+    const updatedAddresses = [...currentAddresses, ...uniqueNew];
+
+    const newText = updatedAddresses.join(" ");
+    handleAddressesChange(newText);
+  };
 
   return (
     <View
@@ -266,7 +270,7 @@ export const MultiSendForm: React.FC<MultiSendFormProps> = ({ onNext }) => {
               </View>
               <TouchableOpacity
                 activeOpacity={0.8}
-                onPress={() => {}}
+                onPress={() => { }}
                 style={{
                   width: 24,
                   height: 24,
@@ -274,7 +278,7 @@ export const MultiSendForm: React.FC<MultiSendFormProps> = ({ onNext }) => {
               >
                 <Image
                   source={CopyIcon}
-                  className="w-full h-full"
+                  style={{ width: "100%", height: "100%" }}
                   contentFit="contain"
                 />
               </TouchableOpacity>
@@ -316,37 +320,78 @@ export const MultiSendForm: React.FC<MultiSendFormProps> = ({ onNext }) => {
             </View>
           )}
         </View>
-        <TouchableOpacity
-          activeOpacity={0.8}
-          onPress={handleAttachCSV}
+
+        <View
           style={{
             flexDirection: "row",
             alignItems: "center",
-            gap: 8,
+            gap: 16,
           }}
         >
-          <View
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={() => setIsWhitelistSheetVisible(true)}
             style={{
-              width: 24,
-              height: 24,
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 8,
             }}
           >
-            <Image
-              source={AttachmentIcon}
-              className="w-full h-full"
-              contentFit="contain"
-            />
-          </View>
-          <Text
+            <View
+              style={{
+                width: 24,
+                height: 24,
+              }}
+            >
+              <Image
+                source={AddressBookIcon}
+                style={{ width: "100%", height: "100%" }}
+                contentFit="contain"
+              />
+            </View>
+            <Text
+              style={{
+                fontFamily: "Manrope-Medium",
+                fontSize: 14,
+                color: colors.bodyText,
+              }}
+            >
+              Add from Address Book
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={handleAttachCSV}
             style={{
-              fontFamily: "Manrope-Medium",
-              fontSize: 14,
-              color: colors.bodyText,
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 8,
             }}
           >
-            Attach CSV File
-          </Text>
-        </TouchableOpacity>
+            <View
+              style={{
+                width: 24,
+                height: 24,
+              }}
+            >
+              <Image
+                source={AttachmentIcon}
+                style={{ width: "100%", height: "100%" }}
+                contentFit="contain"
+              />
+            </View>
+            <Text
+              style={{
+                fontFamily: "Manrope-Medium",
+                fontSize: 14,
+                color: colors.bodyText,
+              }}
+            >
+              Attach CSV File
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Amount Per Recipient */}
@@ -354,6 +399,7 @@ export const MultiSendForm: React.FC<MultiSendFormProps> = ({ onNext }) => {
         style={{
           flexDirection: "column",
           gap: 8,
+          marginTop: 8,
         }}
       >
         <View
@@ -380,15 +426,10 @@ export const MultiSendForm: React.FC<MultiSendFormProps> = ({ onNext }) => {
               gap: 5,
             }}
           >
-            <View
-              style={{
-                width: 14,
-                height: 14,
-              }}
-            >
+            <View style={{ width: 14, height: 14 }}>
               <Image
                 source={WalletIcon}
-                className="w-full h-full"
+                style={{ width: "100%", height: "100%" }}
                 contentFit="contain"
               />
             </View>
@@ -417,6 +458,7 @@ export const MultiSendForm: React.FC<MultiSendFormProps> = ({ onNext }) => {
             </TouchableOpacity>
           </View>
         </View>
+
         <View
           style={{
             flexDirection: "column",
@@ -484,8 +526,13 @@ export const MultiSendForm: React.FC<MultiSendFormProps> = ({ onNext }) => {
         </View>
       </View>
 
+      <WhitelistSelectSheet
+        visible={isWhitelistSheetVisible}
+        onClose={() => setIsWhitelistSheetVisible(false)}
+        onSelect={() => { }} // Not used in multi-select mode
+        multiSelect
+        onMultiSelect={handleMultiSelectWhitelist}
+      />
     </View>
   );
 };
-
-

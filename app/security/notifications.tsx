@@ -1,5 +1,5 @@
 import { colors } from '@/constants/colors';
-import { registerForPushNotificationsAsync, sendTestNotification } from '@/services/notificationService';
+import { registerForPushNotificationsAsync, sendTestNotification, sendWelcomeNotification } from '@/services/notificationService';
 import { useOnboardingStore } from '@/store/onboardingStore';
 import { useSecurityStore } from '@/store/securityStore';
 import { Feather } from '@expo/vector-icons';
@@ -31,11 +31,14 @@ export default function NotificationsScreen() {
 
             setSetupComplete(true);
             await completeOnboarding();
+            await sendWelcomeNotification();
             router.replace('/(tabs)');
         } catch (error) {
             console.error('Notification setup failed', error);
             // Even if it fails, we move on but set false
             setSetupComplete(true);
+            await completeOnboarding();
+            await sendWelcomeNotification();
             router.replace('/(tabs)');
         } finally {
             setLoading(false);
@@ -47,6 +50,7 @@ export default function NotificationsScreen() {
         setSetupComplete(true);
         // Finally, mark onboarding as complete to avoid loops
         await completeOnboarding();
+        await sendWelcomeNotification();
         router.replace('/(tabs)');
     };
 

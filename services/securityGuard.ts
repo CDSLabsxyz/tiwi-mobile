@@ -38,6 +38,7 @@ class SecurityGuardService {
             // Placeholder: In a production app, we hit the GoPlus /address_security endpoint
             // For now, we simulate the logic and return a structured response
             const response = await axios.get(`${this.baseApi}/address_security/${address}?chain_id=${chainId}`);
+            console.log("🚀 ~ SecurityGuardService ~ checkAddressRisk ~ response:", response.data)
             const data = response.data?.result;
 
             if (!data) {
@@ -47,14 +48,31 @@ class SecurityGuardService {
             const warnings: string[] = [];
             let riskScore = 0;
 
-            if (data.is_blacklisted === '1' || data.is_scammer === '1') {
-                warnings.push('Address is blacklisted or flagged for scams.');
-                riskScore = 100;
+            // Check for malicious activities
+            const maliciousKeys = [
+                { key: 'phishing_activities', label: 'Phishing' },
+                { key: 'blackmail_activities', label: 'Blackmail' },
+                { key: 'cybercrime', label: 'Cybercrime' },
+                { key: 'money_laundering', label: 'Money Laundering' },
+                { key: 'stealing_attack', label: 'Stealing Attack' },
+                { key: 'darkweb_transactions', label: 'Darkweb Transactions' }
+            ];
+
+            maliciousKeys.forEach(({ key, label }) => {
+                if (data[key] === '1') {
+                    warnings.push(`Address is flagged for ${label}.`);
+                    riskScore = Math.max(riskScore, 100);
+                }
+            });
+
+            if (data.sanctioned === '1') {
+                warnings.push('Address is on a global sanctions list.');
+                riskScore = Math.max(riskScore, 100);
             }
 
-            if (data.is_sanctioned === '1') {
-                warnings.push('Address is on a global sanctions list.');
-                riskScore = Math.max(riskScore, 90);
+            if (data.honeypot_related_address === '1') {
+                warnings.push('Address is related to honeypot scams.');
+                riskScore = Math.max(riskScore, 80);
             }
 
             return {

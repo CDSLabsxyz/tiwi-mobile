@@ -26,6 +26,7 @@ interface WalletHeaderProps {
     onTransactionHistoryPress?: () => void;
     showIrisScan?: boolean;
     showSettings?: boolean;
+    onCopyPress?: () => void;
 }
 
 /**
@@ -39,8 +40,9 @@ export const WalletHeader: React.FC<WalletHeaderProps> = ({
     onBackPress,
     showTransactionHistory = false,
     onTransactionHistoryPress,
-    showIrisScan = true,
+    showIrisScan = false,
     showSettings = true,
+    onCopyPress,
 }) => {
     const displayAddress = truncateAddress(walletAddress);
 

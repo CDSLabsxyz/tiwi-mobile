@@ -18,20 +18,20 @@ export const useMarketStore = create<MarketState>()(
             favorites: [TWC_ID], // Initialize with TWC by default
 
             toggleFavorite: (tokenId: string) => {
+                if (!tokenId) return;
                 const { favorites } = get();
                 const lowerTokenId = tokenId.toLowerCase();
 
                 if (favorites.includes(lowerTokenId)) {
-                    // Don't allow removing TWC if it's the only one? 
-                    // Actually, let users remove it if they want, but it starts there.
-                    set({ favorites: favorites.filter(id => id.toLowerCase() !== lowerTokenId) });
+                    set({ favorites: favorites.filter(id => id?.toLowerCase() !== lowerTokenId) });
                 } else {
                     set({ favorites: [...favorites, lowerTokenId] });
                 }
             },
 
             isFavorite: (tokenId: string) => {
-                return get().favorites.some(id => id.toLowerCase() === tokenId.toLowerCase());
+                if (!tokenId || !get().favorites) return false;
+                return get().favorites.some(id => id?.toLowerCase() === tokenId.toLowerCase());
             },
         }),
         {

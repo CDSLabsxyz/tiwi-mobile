@@ -1,10 +1,12 @@
 import { TokenListItem } from '@/components/sections/Market/TokenListItem';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
+import { LoadingOverlay } from '@/components/ui/LoadingOverlay';
 import { Skeleton } from '@/components/ui/skeleton';
 import { colors } from '@/constants/colors';
+import { useEnrichedMarkets } from '@/hooks/useEnrichedMarkets';
 import { useTranslation } from '@/hooks/useLocalization';
-import { MarketCategory, useMarketPairs } from '@/hooks/useMarketPairs';
-import { apiClient, MarketTokenPair, TokenMetadata } from '@/services/apiClient';
+import { MarketCategory } from '@/hooks/useMarketPairs';
+import { apiClient, EnrichedMarket } from '@/services/apiClient';
 import { useMarketStore } from '@/store/marketStore';
 import { useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
@@ -56,13 +58,14 @@ export default function MarketScreen() {
     const params = useLocalSearchParams<{ category?: string }>();
 
     const [marketType, setMarketType] = useState<'spot' | 'perp'>('spot');
-    const [activeSubTab, setActiveSubTab] = useState<MarketCategory | 'favourite'>(
+    const [activeSubTab, setActiveSubTab] = useState<string>(
         (params.category as any) || 'hot'
     );
     const [searchQuery, setSearchQuery] = useState('');
-    const [searchResults, setSearchResults] = useState<MarketTokenPair[]>([]);
+    const [searchResults, setSearchResults] = useState<EnrichedMarket[]>([]);
     const [isSearching, setIsSearching] = useState(false);
     const [isSearchVisible, setIsSearchVisible] = useState(false);
+    const [isNavigating, setIsNavigating] = useState(false);
 
     const { favorites, toggleFavorite, isFavorite } = useMarketStore();
 
@@ -84,33 +87,29 @@ export default function MarketScreen() {
     const {
         data: marketPairs,
         isLoading: isPairsLoading,
-    } = useMarketPairs({
-        category: activeSubTab === 'favourite' ? 'hot' : activeSubTab as MarketCategory,
-        limit: 40,
+    } = useEnrichedMarkets({
+        marketType: marketType === 'perp' ? 'perp' : 'spot',
+        limit: 250,
         enabled: activeSubTab !== 'favourite'
     });
 
     // Staggered Prefetching
     const queryClient = useQueryClient();
     useEffect(() => {
-        const categories: MarketCategory[] = ['hot', 'new', 'gainers', 'losers'];
-        const toPrefetch = categories.filter(c => c !== activeSubTab);
-
         const prefetch = async () => {
-            for (const category of toPrefetch) {
-                await new Promise(resolve => setTimeout(resolve, 500));
-                queryClient.prefetchQuery({
-                    queryKey: ['marketPairs', category, 40],
-                    queryFn: () => apiClient.getMarketPairs({ category, limit: 40 })
-                });
-            }
+            // Prefetch the other market type (if on spot, prefetch perp)
+            const otherType = marketType === 'spot' ? 'perp' : 'spot';
+            queryClient.prefetchQuery({
+                queryKey: ['enrichedMarkets', otherType, 250],
+                queryFn: () => apiClient.getEnrichedMarkets({ marketType: otherType, limit: 250 })
+            });
         };
 
         prefetch();
-    }, [queryClient, activeSubTab]);
+    }, [queryClient, marketType]);
 
     // Fetch favorites
-    const [favoriteTokens, setFavoriteTokens] = useState<MarketTokenPair[]>([]);
+    const [favoriteTokens, setFavoriteTokens] = useState<EnrichedMarket[]>([]);
     const [isFavLoading, setIsFavLoading] = useState(false);
 
     useEffect(() => {
@@ -127,36 +126,45 @@ export default function MarketScreen() {
                 const promises = favorites.map(async (id) => {
                     const [chainId, address] = id.split('-');
                     try {
-                        const tokens = await apiClient.getTokens({
+                        const response = await apiClient.getTokens({
                             address,
                             chains: [parseInt(chainId)],
                             limit: 1
                         });
-                        return tokens[0];
+                        return response.tokens[0];
                     } catch (e) {
                         return null;
                     }
                 });
 
                 const results = await Promise.all(promises);
-                const validResults = results.filter((t): t is TokenMetadata => !!t && !!t.address);
+                const validResults = results.filter((t): t is any => !!t && !!t.address);
 
-                const mappedFavs: MarketTokenPair[] = validResults.map(t => ({
-                    ...t,
-                    address: t.address,
-                    symbol: t.symbol,
-                    name: t.name,
-                    chainId: t.chainId,
-                    decimals: t.decimals || 18,
-                    priceUSD: t.priceUSD || '0',
-                    logoURI: t.logoURI || '',
-                    verified: !!t.verified,
-                    priceChange24h: t.priceChange24h ? parseFloat(String(t.priceChange24h)) : 0,
-                    volume24h: typeof t.volume24h === 'number' ? t.volume24h : parseFloat(String(t.volume24h || '0')),
-                    marketCap: typeof t.marketCap === 'number' ? t.marketCap : parseFloat(String(t.marketCap || '0')),
-                    holders: typeof t.holders === 'number' ? t.holders : parseInt(String(t.holders || '0')),
-                    transactionCount: typeof t.transactionCount === 'number' ? t.transactionCount : parseInt(String(t.transactionCount || '0')),
-                }));
+                const mappedFavs: EnrichedMarket[] = validResults.map(t => {
+                    const cleanSymbol = t.symbol.toUpperCase();
+                    const displaySymbol = (cleanSymbol.includes('/') || cleanSymbol.includes('-')) ? cleanSymbol : `${cleanSymbol}-USD`;
+
+                    return {
+                        ...t,
+                        id: `${t.chainId}-${t.address}`,
+                        address: t.address,
+                        symbol: t.symbol,
+                        displaySymbol,
+                        name: t.name,
+                        chainId: t.chainId,
+                        decimals: t.decimals || 18,
+                        priceUSD: t.priceUSD || '0',
+                        price: t.priceUSD || '0',
+                        logoURI: t.logoURI || '',
+                        logo: t.logoURI || t.logo || '',
+                        priceChange24h: t.priceChange24h ? parseFloat(String(t.priceChange24h)) : 0,
+                        volume24h: typeof t.volume24h === 'number' ? t.volume24h : parseFloat(String(t.volume24h || '0')),
+                        marketCap: typeof t.marketCap === 'number' ? t.marketCap : parseFloat(String(t.marketCap || '0')),
+                        marketType: 'spot',
+                        provider: 'onchain',
+                        verified: t.verified || false
+                    };
+                });
 
                 setFavoriteTokens(mappedFavs);
             } catch (error) {
@@ -179,25 +187,36 @@ export default function MarketScreen() {
         const delayDebounceFn = setTimeout(async () => {
             setIsSearching(true);
             try {
-                const results = await apiClient.getTokens({
+                const response = await apiClient.getTokens({
                     query: searchQuery,
                     limit: 20
                 });
 
-                const mappedResults: MarketTokenPair[] = results.map(t => ({
-                    ...t,
-                    address: t.address,
-                    symbol: t.symbol,
-                    name: t.name,
-                    chainId: t.chainId,
-                    decimals: t.decimals || 18,
-                    priceUSD: t.priceUSD || '0',
-                    logoURI: t.logoURI || '',
-                    verified: !!t.verified,
-                    priceChange24h: t.priceChange24h ? parseFloat(String(t.priceChange24h)) : 0,
-                    volume24h: typeof t.volume24h === 'number' ? t.volume24h : parseFloat(String(t.volume24h || '0')),
-                    marketCap: typeof t.marketCap === 'number' ? t.marketCap : parseFloat(String(t.marketCap || '0')),
-                }));
+                const mappedResults: EnrichedMarket[] = response.tokens.map(t => {
+                    const cleanSymbol = t.symbol.toUpperCase();
+                    const displaySymbol = (cleanSymbol.includes('/') || cleanSymbol.includes('-')) ? cleanSymbol : `${cleanSymbol}-USD`;
+
+                    return {
+                        ...t,
+                        id: `${t.chainId}-${t.address}`,
+                        address: t.address,
+                        symbol: t.symbol,
+                        displaySymbol,
+                        name: t.name,
+                        chainId: t.chainId,
+                        decimals: t.decimals || 18,
+                        priceUSD: t.priceUSD || '0',
+                        price: t.priceUSD || '0',
+                        logoURI: t.logoURI || '',
+                        logo: t.logoURI || t.logo || '',
+                        priceChange24h: t.priceChange24h ? parseFloat(String(t.priceChange24h)) : 0,
+                        volume24h: typeof t.volume24h === 'number' ? t.volume24h : parseFloat(String(t.volume24h || '0')),
+                        marketCap: typeof t.marketCap === 'number' ? t.marketCap : parseFloat(String(t.marketCap || '0')),
+                        marketType: 'spot',
+                        provider: 'onchain',
+                        verified: t.verified || false
+                    };
+                });
 
                 setSearchResults(mappedResults);
             } catch (error) {
@@ -211,9 +230,29 @@ export default function MarketScreen() {
     }, [searchQuery]);
 
     // Derive display data based on tab
-    const displayData = useMemo(() => {
-        let tokens = activeSubTab === 'favourite' ? favoriteTokens : marketPairs || [];
+    const displayData = useMemo<EnrichedMarket[]>(() => {
+        let tokens: EnrichedMarket[] = activeSubTab === 'favourite' ? favoriteTokens : [...(marketPairs || [])];
 
+        // 1. Sort/Filter based on sub-tab
+        if (activeSubTab !== 'favourite') {
+            if (activeSubTab === 'gainers') {
+                tokens = tokens
+                    .filter(t => (t.priceChange24h ?? 0) > 0)
+                    .sort((a, b) => (b.priceChange24h ?? 0) - (a.priceChange24h ?? 0));
+            } else if (activeSubTab === 'losers') {
+                tokens = tokens
+                    .filter(t => (t.priceChange24h ?? 0) < 0)
+                    .sort((a, b) => (a.priceChange24h ?? 0) - (b.priceChange24h ?? 0));
+            } else if (activeSubTab === 'new') {
+                // Sort by rank/market cap for 'new' (lowest rank often means newer or smaller caps)
+                tokens = tokens.sort((a, b) => (a.marketCapRank ?? 999999) - (b.marketCapRank ?? 999999));
+            } else if (activeSubTab === 'hot') {
+                // Default API sorting is usually by volume/hot
+                tokens = tokens.sort((a, b) => (b.volume24h ?? 0) - (a.volume24h ?? 0));
+            }
+        }
+
+        // 2. Apply Search
         if (searchQuery.trim()) {
             const q = searchQuery.toLowerCase();
             const localResults = tokens.filter(t =>
@@ -235,23 +274,83 @@ export default function MarketScreen() {
             return merged;
         }
 
+        // 3. TWC Priority Logic (Pin to 2nd position in Top/Gainers)
+        if (activeSubTab === 'hot' || activeSubTab === 'gainers') {
+            const TWC_ADDRESS = '0xDA1060158F7D593667cCE0a15DB346BB3FfB3596'.toLowerCase();
+            const twcIndex = tokens.findIndex(t =>
+                (t.address && t.address.toLowerCase() === TWC_ADDRESS) ||
+                t.symbol.toUpperCase() === 'TWC'
+            );
+
+            if (twcIndex > -1) {
+                const [twcToken] = tokens.splice(twcIndex, 1);
+                // Insert at index 1 (2nd position) if list has enough items
+                if (tokens.length >= 1) {
+                    tokens.splice(1, 0, twcToken as EnrichedMarket);
+                } else {
+                    tokens.unshift(twcToken as EnrichedMarket);
+                }
+            }
+        }
+
         return tokens;
     }, [activeSubTab, favoriteTokens, marketPairs, searchQuery, searchResults]);
 
     const isLoading = activeSubTab === 'favourite' ? isFavLoading : isPairsLoading;
 
-    const handleTokenPress = (token: MarketTokenPair) => {
-        const symbolParam = token.symbol.toLowerCase();
-        const route = marketType === 'spot' ? `/market/spot/${symbolParam}` : `/market/futures/${symbolParam}`;
+    const handleTokenPress = async (token: EnrichedMarket) => {
+        setIsNavigating(true);
 
-        router.push({
-            pathname: route as any,
-            params: {
-                address: token.address,
-                chainId: token.chainId,
-                symbol: token.symbol
-            }
-        });
+        // Bridge: Save full token data for instant UI hydration on detail page
+        // setSelectedMarketToken(token);
+
+        const symbolParam = (token.displaySymbol || token.symbol).toLowerCase();
+        const currentContext = marketType; // 'spot' or 'perp'
+
+        const route = currentContext === 'perp'
+            ? `/market/futures/${token.displaySymbol || token.symbol}`
+            : `/market/spot/${token.displaySymbol || token.symbol}`;
+
+        // Prefetch detail data with unified dispatcher params
+        try {
+            // await queryClient.prefetchQuery({
+            //     queryKey: ['enrichedMarketDetail', token.symbol, token.address, currentContext],
+            //     queryFn: () => apiClient.getEnrichedMarketDetail(token.displaySymbol || token.symbol, {
+            //         address: token.contractAddress || token.baseToken?.address,
+            //         chainId: token.chainId,
+            //         marketType: currentContext,
+            //         provider: token.provider
+            //     })
+            // });
+
+            router.push({
+                pathname: route as any,
+                params: {
+                    address: token.contractAddress || token.baseToken?.address,
+                    chainId: token.chainId,
+                    symbol: token.displaySymbol || token.symbol,
+                    provider: token.provider,
+                    name: token.name,
+                    marketType: currentContext
+                }
+            });
+        } catch (error) {
+            console.error('[MarketScreen] Prefetch error:', error);
+            // Navigate anyway, the page will handle its own loading from initialData/Zustand
+            router.push({
+                pathname: route as any,
+                params: {
+                    symbol: token.displaySymbol || token.symbol,
+                    address: token.address,
+                    chainId: token.chainId,
+                    provider: token.provider,
+                    marketType: currentContext
+                }
+            });
+        } finally {
+            // Give time for navigation to transition
+            setTimeout(() => setIsNavigating(false), 300);
+        }
     };
 
     const handleSearchPress = () => {
@@ -324,10 +423,10 @@ export default function MarketScreen() {
                             </View>
                         ) : (
                             <>
-                                {displayData.map((token: MarketTokenPair) => (
+                                {displayData.map((token: EnrichedMarket) => (
                                     <TokenListItem
-                                        key={`${token.chainId}-${token.address}`}
-                                        token={token}
+                                        key={token.id || `${token.chainId}-${token.address}`}
+                                        token={token as any}
                                         onPress={() => handleTokenPress(token)}
                                     />
                                 ))}
@@ -341,6 +440,12 @@ export default function MarketScreen() {
                         )}
                     </View>
                 </ScrollView>
+
+                {/* <LoadingOverlay
+                    visible={isNavigating}
+                    mode="glass"
+                    onCancel={() => setIsNavigating(false)}
+                /> */}
             </View>
         );
     }
@@ -468,10 +573,10 @@ export default function MarketScreen() {
                             ))}
                         </View>
                     ) : (
-                        displayData.map((token: MarketTokenPair) => (
+                        displayData.map((token: EnrichedMarket) => (
                             <TokenListItem
-                                key={`${token.chainId}-${token.address}`}
-                                token={token}
+                                key={token.id || `${token.chainId}-${token.address}`}
+                                token={token as any}
                                 onPress={() => handleTokenPress(token)}
                             />
                         ))
@@ -483,6 +588,12 @@ export default function MarketScreen() {
                     )}
                 </View>
             </ScrollView>
+
+            <LoadingOverlay
+                visible={isNavigating}
+                mode="glass"
+                onCancel={() => setIsNavigating(false)}
+            />
         </View>
     );
 }

@@ -2,7 +2,7 @@
 import { createAppKit } from '@reown/appkit-react-native'
 import { WagmiAdapter } from '@reown/appkit-wagmi-react-native'
 import '@walletconnect/react-native-compat'
-import { arbitrum, mainnet, optimism, polygon } from 'wagmi/chains'
+import { arbitrum, bsc, mainnet, optimism, polygon } from 'wagmi/chains'
 import { storage } from '../utils/appkitStorage'
 
 // 1. Get Project ID
@@ -21,7 +21,7 @@ export const metadata = {
     },
 }
 
-export const networks = [mainnet, polygon, arbitrum, optimism]
+export const networks = [mainnet, polygon, arbitrum, optimism, bsc]
 
 export const wagmiAdapter = new WagmiAdapter({
     projectId,

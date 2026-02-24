@@ -2,7 +2,7 @@ import { apiClient } from '@/services/apiClient';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 
-const TOP_CHAINS = [1, 56, 7565164, 137, 42161, 43114, 10]; // Eth, BNB, Solana, Polygon, Arbitrum, Avalanche, Optimism
+const TOP_CHAINS = [1, 56, 7565164, 8453, 1100, 728126428, 10, 42161, 98865, 137, 43114]; // Eth, BNB, Solana, Base, TON, TRON, Optimism, Arbitrum, Hyperliquid, Polygon, Avalanche
 
 /**
  * Hook to prefetch tokens for the most popular chains and a global list.
@@ -15,10 +15,10 @@ export function useTokenPrefetch() {
     useEffect(() => {
         // 1. Prefetch Global List (All Networks)
         queryClient.prefetchQuery({
-            queryKey: ['tokensList', '', undefined, 100],
+            queryKey: ['tokensList', '', undefined, 50],
             queryFn: () => apiClient.getTokens({
                 query: '',
-                limit: 100
+                limit: 50
             }),
             staleTime: 1000 * 60 * 30, // 30 minutes
         });

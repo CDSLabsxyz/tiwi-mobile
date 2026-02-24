@@ -16,10 +16,11 @@ import {
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { Header } from '@/components/ui/header';
 import { colors } from '@/constants/colors';
-import { WALLET_ADDRESS } from '@/utils/wallet';
+import { stakingService, type StakingPool, type UserStake } from '@/services/stakingService';
+import { useWalletStore } from '@/store/walletStore';
 import { usePathname, useRouter } from 'expo-router';
-import React, { useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // Mock token icon - in production, use actual token logo
@@ -48,20 +49,63 @@ export default function EarnScreen() {
         // This usually opens the wallet selection modal
     };
 
-    // Mock data - in production, fetch from API
-    const totalStaked = '0 TWC';
-    const stakingTokens = [
-        {
-            symbol: 'TWC',
-            name: 'TIWI',
-            apy: '~N/A%',
-            icon: TWCIcon,
-        },
-    ];
+    const { address: walletAddress } = useWalletStore();
+    const [isLoading, setIsLoading] = useState(false);
+    const [stakingTokens, setStakingTokens] = useState<StakingPool[]>([]);
+    const [myStakes, setMyStakes] = useState<UserStake[]>([]);
+    const [totalStaked, setTotalStaked] = useState('Loading...');
 
-    const myStakes:any[] = [
-        // { symbol: 'TWC', name: 'TIWI', apy: '~12.5%', icon: TWCIcon },
-    ];
+    // Fetch data from backend
+    const fetchData = async () => {
+        setIsLoading(true);
+        try {
+            // Fetch total staked once on mount or when sub-tab changes
+            stakingService.getTotalTwcStaked().then(setTotalStaked);
+
+            if (stakingSubTab === 'stake') {
+                const pools = await stakingService.getActivePools();
+                setStakingTokens(pools);
+            } else {
+                if (walletAddress) {
+                    const status = stakingSubTab === 'active' ? 'active' : undefined;
+                    const stakes = await stakingService.getUserStakes(walletAddress, status);
+                    setMyStakes(stakes);
+                }
+            }
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchData();
+    }, [stakingSubTab, walletAddress]);
+
+    // Helper for contextual empty states
+    const getEmptyStateMessages = (tab: StakingSubTab) => {
+        switch (tab) {
+            case 'stake':
+                return {
+                    title: "No Staking Pools",
+                    description: "There are no active staking pools available at the moment."
+                };
+            case 'active':
+                return {
+                    title: "No Active Positions",
+                    description: "You don't have any active staking positions right now."
+                };
+            case 'my-stakes':
+                return {
+                    title: "No Stake History",
+                    description: "You haven't staked any tokens yet. Start staking to earn rewards!"
+                };
+            default:
+                return {
+                    title: "No Pools found",
+                    description: "No staking pools found."
+                };
+        }
+    };
 
     return (
         <View style={[styles.container, { backgroundColor: colors.bg }]}>
@@ -70,7 +114,7 @@ export default function EarnScreen() {
             {/* Header */}
             <View style={{ paddingTop: top }}>
                 <Header
-                    walletAddress={WALLET_ADDRESS}
+                    walletAddress={walletAddress!}
                     onScanPress={handleScanPress}
                     onSettingsPress={handleSettingsPress}
                     onWalletPress={handleWalletPress}
@@ -173,51 +217,74 @@ export default function EarnScreen() {
                             {/* Staking Token Cards */}
                             {stakingSubTab === 'stake' && (
                                 <View style={styles.cardsList}>
-                                    {stakingTokens.map((token, index) => (
-                                        <StakingTokenCard
-                                            key={index}
-                                            tokenSymbol={token.symbol}
-                                            tokenName={token.name}
-                                            apy={token.apy}
-                                            tokenIcon={token.icon}
-                                            onPress={() => router.push(`/earn/stake/${token.symbol}` as any)}
+                                    {isLoading ? (
+                                        <ActivityIndicator color={colors.primaryCTA} style={{ marginTop: 20 }} />
+                                    ) : stakingTokens.length > 0 ? (
+                                        stakingTokens.map((token, index) => (
+                                            <StakingTokenCard
+                                                key={token.id}
+                                                tokenSymbol={token.tokenSymbol}
+                                                tokenName={token.tokenName}
+                                                apy={token.displayApy}
+                                                tokenIcon={token.tokenLogo ? { uri: token.tokenLogo } : TWCIcon}
+                                                onPress={() => router.push(`/earn/stake/${token.tokenSymbol}` as any)}
+                                            />
+                                        ))
+                                    ) : (
+                                        <EarnEmptyState
+                                            title={getEmptyStateMessages('stake').title}
+                                            description={getEmptyStateMessages('stake').description}
                                         />
-                                    ))}
+                                    )}
                                 </View>
                             )}
 
                             {/* Active Positions Content */}
                             {stakingSubTab === 'active' && (
                                 <View style={styles.cardsList}>
-                                    {myStakes.map((stake, index) => (
-                                        <MyStakeCard
-                                            key={index}
-                                            symbol={stake.symbol}
-                                            apy={stake.apy}
-                                            icon={stake.icon}
-                                            onPress={() => router.push(`/earn/manage/${stake.symbol}` as any)}
+                                    {isLoading ? (
+                                        <ActivityIndicator color={colors.primaryCTA} style={{ marginTop: 20 }} />
+                                    ) : myStakes.length > 0 ? (
+                                        myStakes.map((stake, index) => (
+                                            <MyStakeCard
+                                                key={stake.id}
+                                                symbol={stake.pool.tokenSymbol}
+                                                apy={stake.displayApy}
+                                                icon={stake.pool.tokenLogo ? { uri: stake.pool.tokenLogo } : TWCIcon}
+                                                onPress={() => router.push(`/earn/manage/${stake.pool.tokenSymbol}` as any)}
+                                            />
+                                        ))
+                                    ) : (
+                                        <EarnEmptyState
+                                            title={getEmptyStateMessages('active').title}
+                                            description={getEmptyStateMessages('active').description}
                                         />
-                                    ))}
+                                    )}
                                 </View>
                             )}
 
                             {/* My Stakes Content */}
                             {stakingSubTab === 'my-stakes' && (
-                                myStakes.length > 0 ? (
-                                    <View style={styles.cardsList}>
-                                        {myStakes.map((stake, index) => (
+                                <View style={styles.cardsList}>
+                                    {isLoading ? (
+                                        <ActivityIndicator color={colors.primaryCTA} style={{ marginTop: 20 }} />
+                                    ) : myStakes.length > 0 ? (
+                                        myStakes.map((stake, index) => (
                                             <MyStakeCard
-                                                key={index}
-                                                symbol={stake.symbol}
-                                                apy={stake.apy}
-                                                icon={stake.icon}
-                                                onPress={() => router.push(`/earn/manage/${stake.symbol}` as any)}
+                                                key={stake.id}
+                                                symbol={stake.pool.tokenSymbol}
+                                                apy={stake.displayApy}
+                                                icon={stake.pool.tokenLogo ? { uri: stake.pool.tokenLogo } : TWCIcon}
+                                                onPress={() => router.push(`/earn/manage/${stake.pool.tokenSymbol}` as any)}
                                             />
-                                        ))}
-                                    </View>
-                                ) : (
-                                    <EarnEmptyState description="You haven’t created any pools" />
-                                )
+                                        ))
+                                    ) : (
+                                        <EarnEmptyState
+                                            title={getEmptyStateMessages('my-stakes').title}
+                                            description={getEmptyStateMessages('my-stakes').description}
+                                        />
+                                    )}
+                                </View>
                             )}
                         </View>
                     )}
@@ -246,7 +313,7 @@ const styles = StyleSheet.create({
     },
     mainContent: {
         width: '100%',
-        maxWidth: 400,
+        maxWidth: 500,
         flexDirection: 'column',
         gap: 24,
     },

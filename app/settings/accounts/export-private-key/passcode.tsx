@@ -341,11 +341,15 @@ const styles = StyleSheet.create({
     },
     pinContainer: {
         flexDirection: 'row',
-        gap: 14.5,
+        gap: 12,
+        width: '100%',
+        maxWidth: 360,
+        justifyContent: 'center',
+        alignSelf: 'center',
     },
     pinBox: {
-        width: 45,
-        height: 45,
+        width: 48,
+        height: 48,
         borderRadius: 8,
         borderWidth: 0.2,
         borderColor: colors.titleText,

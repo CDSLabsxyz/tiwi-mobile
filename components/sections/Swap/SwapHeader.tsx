@@ -1,5 +1,5 @@
 import { colors } from '@/constants/colors';
-import { WALLET_ADDRESS, truncateAddress } from '@/utils/wallet';
+import { truncateAddress } from '@/utils/wallet';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import React from 'react';
@@ -27,7 +27,7 @@ export const SwapHeader: React.FC<SwapHeaderProps> = ({
     const router = useRouter();
     const { address } = useWalletStore();
 
-    const fullAddress = walletAddress || address || WALLET_ADDRESS;
+    const fullAddress = walletAddress || address || '';
     const displayAddress = truncateAddress(fullAddress);
 
     const handleBack = () => {

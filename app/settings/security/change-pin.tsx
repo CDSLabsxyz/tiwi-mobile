@@ -229,11 +229,13 @@ const styles = StyleSheet.create({
     content: {
         flex: 1,
         paddingHorizontal: 18,
-        paddingTop: 60,
+        justifyContent: 'center',
     },
     inputContainer: {
         gap: 16,
         width: '100%',
+        maxWidth: 400,
+        alignSelf: 'center',
     },
     inputGroup: {
         gap: 8,

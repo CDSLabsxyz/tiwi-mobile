@@ -1,0 +1,36 @@
+Phase 3: Pro-Grade Charting (TradingView Integration)
+Goal: Move away from static images to interactive, real-time TradingView charts.
+
+The "WebView Bridge":
+Develop a custom 
+TradingViewChart
+ component using react-native-webview.
+This host a lightweight HTML envelope containing the TradingView Advanced Charting Library.
+Porting the Datafeed:
+Implement a Communication Bridge: The WebView will request data via postMessage, and the React Native layer will fetch it using the apiClient and send it back.
+Adopt the 
+tradingview-datafeed.ts
+ logic for handling 
+getBars
+ and 
+resolveSymbol
+ within the mobile context.
+Theme Alignment:
+Apply the TIWI Brand Palette (Glassmorphism, Dark Mode tokens) directly to the TradingView overrides so it feels native to the app.
+Phase 4: Optimization & Smart Fallbacks
+Goal: Ensure the app stays performant even for small-cap tokens on slow networks.
+
+Resolution Caching:
+Save user preferences (e.g.,
+"1H" vs "1D") in the marketStore to persist timeframe choices across symbols.
+The Cross-Chain Resolve:
+Ensure calls to the chart API include baseChainId and quoteChainId. This activates the backend's "Cross-Chain Calculator" for tokens that only have WBNB/WETH pairs.
+Loading & Error States:
+Implement "Shimmer" skeletons for the chart area while the WebView is initializing.
+Add a "No Data Found" fallback if the dispatcher exhausts all providers (Binance -> dYdX -> DexScreener).
+Antigravity Analysis: Why this works
+Decoupled Complexity: By letting the backend handle the "Provider War" (Binance vs dYdX), the mobile app code remains clean and easy to maintain.
+Zero-Latency Perception: By using 
+the Zustand Bridge (implemented in the previous task) alongside this real-time data, the page looks full immediately, and only the "deep data" (orderbook/chart) populates a second later.
+Institutional Quality: Using TradingView (via WebView) is the industry standard. It gives our users toolsets like MACD, RSI, and Volume profiles that are impossible to build with standard mobile chart libraries.
+How would you like to spar on Phase 1? We can start by detailing the exact API shapes for the Orderbook, or jump into the WebView Bridge logic.

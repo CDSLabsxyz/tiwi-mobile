@@ -5,7 +5,8 @@ export function useSpotlightTokens(activeOnly: boolean = true) {
     return useQuery({
         queryKey: ['spotlightTokens', activeOnly],
         queryFn: async () => {
-            return await apiClient.getSpotlightTokens(activeOnly);
+            const tokens = await apiClient.getSpotlightTokens(activeOnly);
+            return await apiClient.enrichSpotlightTokens(tokens);
         },
         staleTime: 1000 * 60 * 15, // Spotlight tokens change less frequently (15 mins)
     });

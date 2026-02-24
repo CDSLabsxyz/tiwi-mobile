@@ -1,4 +1,4 @@
-import { apiClient } from '@/services/apiClient';
+import { apiClient, type TokensResponse } from '@/services/apiClient';
 import { useQuery } from '@tanstack/react-query';
 
 interface UseTokensParams {
@@ -12,9 +12,9 @@ interface UseTokensParams {
  * Hook to fetch tokens based on search query and chain filters
  */
 export function useTokens({ query, chains, limit = 50, enabled = true }: UseTokensParams) {
-    return useQuery({
+    const queryResult = useQuery({
         queryKey: ['tokensList', query, chains, limit],
-        queryFn: async () => {
+        queryFn: async (): Promise<TokensResponse> => {
             return apiClient.getTokens({
                 query,
                 chains,
@@ -22,6 +22,9 @@ export function useTokens({ query, chains, limit = 50, enabled = true }: UseToke
             });
         },
         enabled,
-        staleTime: 1000 * 60 * 5, // 5 minutes
+        staleTime: 1000 * 60 * 10, // 10 minutes - Token lists don't change frequently
+        // placeholderData: (previousData) => previousData, // Keep old data visible while fetching new (Cache-first)
     });
+
+    return queryResult;
 }

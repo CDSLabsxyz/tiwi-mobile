@@ -33,20 +33,22 @@ const allActions: MoreAction[] = [
         route: '/stake',
         category: 'recommended',
     },
-    // {
-    //     id: 'pool',
-    //     label: 'Pool',
-    //     icon: require('../assets/home/coins-02-1.svg'),
-    //     route: '/pool',
-    //     category: 'recommended',
     // },
     // {
-    //     id: 'analytics',
-    //     label: 'Analytics',
-    //     icon: require('../assets/home/more/analytics-01.svg'),
-    //     route: '/analytics',
-    //     category: 'recommended',
-    // },
+        // category: 'coming-soon',
+//     id: 'analytics',
+//     label: 'Analytics',
+//     icon: require('../assets/home/more/analytics-01.svg'),
+//     route: '/analytics'
+// },
+    
+    {
+        id: 'referral',
+        label: 'Referrals',
+        icon: require('../assets/home/tiwicat-token.svg'),
+        route: '/referral',
+        category: 'recommended',
+    },
     {
         id: 'history',
         label: 'History',
@@ -77,6 +79,14 @@ const allActions: MoreAction[] = [
         category: 'popular',
     },
     // Coming soon
+    {
+        id: 'pool',
+        label: 'Pool',
+        icon: require('../assets/home/coins-02-1.svg'),
+        // route: '/pool',
+        category: 'coming-soon',
+        disabled: true,
+    },
     {
         id: 'pay',
         label: 'Pay',
@@ -161,6 +171,7 @@ export default function MoreScreen() {
     const recommendedActions = filteredActions.filter((a) => a.category === 'recommended');
     const popularActions = filteredActions.filter((a) => a.category === 'popular');
     const comingSoonActions = filteredActions.filter((a) => a.category === 'coming-soon');
+    console.log("🚀 ~ MoreScreen ~ comingSoonActions:", comingSoonActions)
 
     // Show sections only if they have items after filtering
     // When no search query, show all sections

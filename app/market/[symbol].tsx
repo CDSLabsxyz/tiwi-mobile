@@ -130,7 +130,7 @@ export default function MarketDetailScreen() {
                             <View style={styles.tokenIconPlaceholder} />
                             <Text style={styles.tokenSymbol}>
                                 {token.symbol}
-                                <Text style={{ color: colors.bodyText }}>/USDT</Text>
+                                {/* <Text style={{ color: colors.bodyText }}>/USDT</Text> */}
                             </Text>
                         </View>
 

@@ -159,7 +159,7 @@ const styles = StyleSheet.create({
         flex: 1,
         alignItems: 'center',
         justifyContent: 'center',
-        paddingHorizontal: 32,
+        paddingHorizontal: 24,
     },
     title: {
         fontFamily: 'Manrope-Bold',
@@ -174,11 +174,17 @@ const styles = StyleSheet.create({
         marginBottom: 48,
     },
     dotsContainer: {
+        width: '100%',
+        alignItems: 'center',
+        justifyContent: 'center',
         marginBottom: 20
     },
     errorText: {
         position: 'absolute',
         bottom: 40,
+        left: 0,
+        right: 0,
+        textAlign: 'center',
         fontFamily: 'Manrope-Medium',
         color: '#FF4D4D',
         fontSize: 14,

@@ -19,12 +19,15 @@ export interface WhitelistedAddress {
     addedAt: number;
 }
 
+export type SetupPhase = 'WELCOME' | 'WALLET_READY' | 'SECURITY_READY' | 'COMPLETED';
+
 interface SecurityState {
     hasPasscode: boolean;
     isBiometricsEnabled: boolean;
     isNotificationsEnabled: boolean;
     isLocked: boolean;
     isSetupComplete: boolean;
+    setupPhase: SetupPhase; // New field
     lastActive: number;
     autoLockTimeout: number; // in milliseconds
 
@@ -38,6 +41,7 @@ interface SecurityState {
     whitelistedAddresses: WhitelistedAddress[];
 
     setSetupComplete: (complete: boolean) => void;
+    setSetupPhase: (phase: SetupPhase) => void; // New action
     updateLastActive: () => void;
     setAutoLockTimeout: (timeoutMs: number) => void;
 
@@ -72,6 +76,7 @@ export const useSecurityStore = create<SecurityState>()(
             isNotificationsEnabled: false,
             isLocked: true, // Default to locked for higher security on boot
             isSetupComplete: false,
+            setupPhase: 'WELCOME',
             lastActive: Date.now(),
             autoLockTimeout: 30000, // Default 30s as requested
 
@@ -82,7 +87,14 @@ export const useSecurityStore = create<SecurityState>()(
 
             whitelistedAddresses: [],
 
-            setSetupComplete: (complete) => set({ isSetupComplete: complete }),
+            setSetupComplete: (complete) => set({
+                isSetupComplete: complete,
+                setupPhase: complete ? 'COMPLETED' : 'SECURITY_READY'
+            }),
+            setSetupPhase: (phase) => set({
+                setupPhase: phase,
+                isSetupComplete: phase === 'COMPLETED'
+            }),
             updateLastActive: () => set({ lastActive: Date.now() }),
             setAutoLockTimeout: (timeoutMs) => set({ autoLockTimeout: timeoutMs }),
 
@@ -171,7 +183,9 @@ export const useSecurityStore = create<SecurityState>()(
                     isFlaggedAddressEnabled: true,
                     isStrictModeEnabled: false,
                     whitelistedAddresses: [],
-                    isLocked: false
+                    isLocked: false,
+                    isSetupComplete: false,
+                    setupPhase: 'WELCOME'
                 });
             },
             _hasHydrated: false,

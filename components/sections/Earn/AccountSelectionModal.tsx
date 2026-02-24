@@ -9,8 +9,8 @@ import AntDesign from '@expo/vector-icons/AntDesign';
 import { BlurView } from 'expo-blur';
 import { Image } from 'expo-image';
 import React, { useEffect, useState } from 'react';
-import { Dimensions, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
+import { Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Gesture, GestureDetector, GestureHandlerRootView, ScrollView } from 'react-native-gesture-handler';
 import Animated, {
     Easing,
     runOnJS,
@@ -20,14 +20,15 @@ import Animated, {
 } from 'react-native-reanimated';
 
 
-const CheckIcon = require('../../../assets/earn/checkmark-square-01.svg'); // Need to ensure this exists
-// const AddIcon = require('../../../assets/earn/add-01.svg');
+const CheckIcon = require('../../../assets/earn/checkmark-square-01.svg');
+const CheckboxIcon = require('../../../assets/wallet/checkbox.svg');
 
 export interface Account {
     id: string;
     name: string;
     balance: string;
     type: string;
+    address?: string;
 }
 
 interface AccountSelectionModalProps {
@@ -35,27 +36,31 @@ interface AccountSelectionModalProps {
     onClose: () => void;
     onSelect: (account: Account) => void;
     selectedAccountId?: string;
+    accounts: Account[];
+    totalBalance?: string;
 }
-
-const MOCK_ACCOUNTS: Account[] = [
-    { id: '1', name: 'Funding Account', balance: '0.0210 BTC', type: 'Tier 1' },
-    { id: '2', name: 'Unified Trading Account', balance: '0.0000 BTC', type: 'Tier 2' },
-];
 
 export const AccountSelectionModal: React.FC<AccountSelectionModalProps> = ({
     visible,
     onClose,
     onSelect,
     selectedAccountId,
+    accounts = [],
+    totalBalance = '0.00'
 }) => {
-    const { height: screenHeight } = Dimensions.get('window');
-    // Height ratio based on content
-    const sheetHeight = 450;
+    // Standard height to match other selection modals (e.g. DepositSelectionModal)
+    const sheetHeight = 500;
 
     const translateY = useSharedValue(sheetHeight);
     const backdropOpacity = useSharedValue(0);
 
-    const [activeAccount, setActiveAccount] = useState<string>(selectedAccountId!);
+    const [activeAccount, setActiveAccount] = useState<string>(selectedAccountId || '');
+
+    useEffect(() => {
+        if (selectedAccountId) {
+            setActiveAccount(selectedAccountId);
+        }
+    }, [selectedAccountId]);
 
     useEffect(() => {
         if (visible) {
@@ -136,83 +141,97 @@ export const AccountSelectionModal: React.FC<AccountSelectionModalProps> = ({
                 </Animated.View>
 
                 {/* Bottom Sheet */}
-                <GestureDetector gesture={panGesture}>
-                    <Animated.View style={[styles.sheet, { height: sheetHeight }, sheetStyle]}>
-                        <View style={styles.handleWrapper}>
-                            <View style={styles.handle} />
-                        </View>
-
-                        {/* Header Row */}
-                        <View style={styles.headerRow}>
-                            <View style={{ width: 40 }} /> {/* Spacer for centering */}
-                            <Text style={styles.headerTitle}>Select accounts</Text>
-                            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-                                <AntDesign name="close" size={20} color={colors.titleText} />
-                            </TouchableOpacity>
-                        </View>
-                        <View style={{ backgroundColor: colors.bgSemi, borderRadius: 14, padding: 14 }}>
-                            {/* Total Available */}
-                            <View style={styles.totalAvailableRow}>
-                                <Text style={styles.totalLabel}>Total available</Text>
-                                <Text style={styles.totalValue}>0.0053 TWC</Text>
+                <Animated.View style={[styles.sheet, { height: sheetHeight }, sheetStyle]}>
+                    {/* Draggable Header */}
+                    <GestureDetector gesture={panGesture}>
+                        <View>
+                            <View style={styles.handleWrapper}>
+                                <View style={styles.handle} />
                             </View>
 
-                            <View style={styles.listContainer}>
-                                {MOCK_ACCOUNTS.map((account) => {
-                                    const isSelected = activeAccount === account.id;
-                                    return (
-                                        <TouchableOpacity
-                                            key={account.id}
-                                            onPress={() => setActiveAccount(account.id)}
-                                            activeOpacity={0.7}
-                                            style={[
-                                                styles.accountItem,
-                                                isSelected && styles.accountItemActive
-                                            ]}
-                                        >
-                                            <View style={styles.accountInfo}>
-                                                <View style={styles.typeBadge}>
-                                                    <Text style={[styles.accountType, { color: colors.mutedText, fontSize: 12, marginRight: 4 }]}>{account.type}</Text>
-                                                    <Text style={styles.accountType}>{account.name}</Text>
-                                                </View>
-                                                <Text style={styles.accountBalance}>Available Balance: {account.balance}</Text>
-                                            </View>
-
-                                            <View style={[styles.checkbox, isSelected && styles.checkboxActive]}>
-                                                {/* {isSelected && (
-                                                    <Image
-                                                        source={CheckIcon}
-                                                        style={styles.checkIcon}
-                                                        contentFit="contain"
-                                                    />
-                                                )} */}
-                                            </View>
-                                        </TouchableOpacity>
-                                    );
-                                })}
-
-                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                                    <Image source={require('../../../assets/earn/alert-diamond.svg')} style={{ width: 16, height: 16, tintColor: colors.mutedText }} contentFit="contain" />
-                                    <Text style={{ fontFamily: 'Manrope-Regular', fontSize: 12, color: colors.mutedText, flex: 1 }}>
-                                        Insufficient funds will be automatically deducted from your trading account
-                                    </Text>
-                                </View>
+                            {/* Header Row */}
+                            <View style={styles.headerRow}>
+                                <View style={{ width: 40 }} />
+                                <Text style={styles.headerTitle}>Select account</Text>
+                                <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+                                    <AntDesign name="close" size={20} color={colors.titleText} />
+                                </TouchableOpacity>
                             </View>
                         </View>
-                        <TouchableOpacity
-                            style={styles.confirmButton}
-                            onPress={() => {
-                                const selected = MOCK_ACCOUNTS.find(a => a.id === activeAccount);
-                                if (selected) {
-                                    onSelect(selected);
-                                }
-                                onClose();
-                            }}
+                    </GestureDetector>
+
+                    <View style={styles.contentContainer}>
+                        {/* Total Available */}
+                        <View style={styles.totalAvailableRow}>
+                            <Text style={styles.totalLabel}>Total available</Text>
+                            <Text style={styles.totalValue}>{totalBalance}</Text>
+                        </View>
+
+                        <ScrollView
+                            style={styles.scrollArea}
+                            showsVerticalScrollIndicator={false}
+                            contentContainerStyle={styles.listContainer}
                         >
-                            <Text style={styles.confirmButtonText}>Confirm</Text>
-                        </TouchableOpacity>
-                    </Animated.View>
-                </GestureDetector>
+                            {accounts.map((account) => {
+                                const isSelected = activeAccount === account.id;
+                                return (
+                                    <TouchableOpacity
+                                        key={account.id}
+                                        onPress={() => handleSelect(account)}
+                                        activeOpacity={0.7}
+                                        style={[
+                                            styles.accountItem,
+                                            isSelected && styles.accountItemActive
+                                        ]}
+                                    >
+                                        <View style={styles.accountInfo}>
+                                            <Text style={styles.accountName}>{account.name}</Text>
+                                            <Text style={styles.accountBalance}>Available Balance: {account.balance}</Text>
+                                        </View>
+
+                                        <View style={styles.checkboxContainer}>
+                                            {isSelected ? (
+                                                <Image
+                                                    source={CheckIcon}
+                                                    style={[styles.checkIcon, { tintColor: colors.primaryCTA }]}
+                                                    contentFit="contain"
+                                                />
+                                            ) : (
+                                                <Image
+                                                    source={CheckboxIcon}
+                                                    style={styles.checkboxEmptyIcon}
+                                                    contentFit="contain"
+                                                />
+                                            )}
+                                        </View>
+                                    </TouchableOpacity>
+                                );
+                            })}
+
+                            <View style={styles.alertBox}>
+                                <Image source={require('../../../assets/earn/alert-diamond.svg')} style={styles.alertIcon} contentFit="contain" />
+                                <Text style={styles.alertText}>
+                                    Insufficient funds in one account will be automatically deducted from other available balances
+                                </Text>
+                            </View>
+                        </ScrollView>
+                    </View>
+
+                    <TouchableOpacity
+                        style={styles.confirmButton}
+                        onPress={() => {
+                            const selected = accounts.find(a => a.id === activeAccount);
+                            if (selected) {
+                                onSelect(selected);
+                            }
+                            onClose();
+                        }}
+                    >
+                        <Text style={styles.confirmButtonText}>Confirm</Text>
+                    </TouchableOpacity>
+
+                    <View style={{ height: 32 }} />
+                </Animated.View>
             </GestureHandlerRootView>
         </Modal>
     );
@@ -229,7 +248,7 @@ const styles = StyleSheet.create({
         bottom: 0,
         borderTopLeftRadius: 40,
         borderTopRightRadius: 40,
-        backgroundColor: '#1B1B1B', // Darker background from design
+        backgroundColor: '#1B1B1B',
         overflow: 'hidden',
         paddingHorizontal: 20,
     },
@@ -261,12 +280,22 @@ const styles = StyleSheet.create({
         width: 40,
         height: 40,
         borderRadius: 20,
-        backgroundColor: 'rgba(129, 129, 129, 0.12)', // Subtle circle bg
+        backgroundColor: 'rgba(129, 129, 129, 0.12)',
         justifyContent: 'center',
         alignItems: 'center',
     },
     listContainer: {
         gap: 12,
+        paddingBottom: 20,
+    },
+    contentContainer: {
+        backgroundColor: colors.bgSemi,
+        borderRadius: 14,
+        padding: 14,
+        flex: 1,
+    },
+    scrollArea: {
+        flex: 1,
     },
     totalAvailableRow: {
         flexDirection: 'row',
@@ -290,21 +319,20 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'space-between',
         padding: 16,
-        backgroundColor: colors.bgSemi,
+        backgroundColor: '#262626',
         borderRadius: 16,
+        marginBottom: 8,
     },
     accountItemActive: {
         backgroundColor: 'rgba(177, 241, 40, 0.05)',
+        borderWidth: 1,
+        borderColor: colors.primaryCTA,
     },
     accountInfo: {
         gap: 4,
+        flex: 1,
     },
-    typeBadge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-    },
-    accountType: {
+    accountName: {
         fontFamily: 'Manrope-SemiBold',
         fontSize: 14,
         color: colors.titleText,
@@ -314,26 +342,42 @@ const styles = StyleSheet.create({
         fontSize: 12,
         color: colors.mutedText,
     },
-    checkbox: {
-        width: 20,
-        height: 20,
-        borderRadius: 5,
-        borderWidth: 1.5,
-        borderColor: colors.mutedText,
+    checkboxContainer: {
+        width: 24,
+        height: 24,
         justifyContent: 'center',
         alignItems: 'center',
-    },
-    checkboxActive: {
-        backgroundColor: colors.primaryCTA,
-        borderColor: colors.primaryCTA,
+        marginLeft: 12,
     },
     checkIcon: {
-        width: 12,
-        height: 12,
-        tintColor: '#050201', // Dark icon on lime green
+        width: 24,
+        height: 24,
+    },
+    checkboxEmptyIcon: {
+        width: 20,
+        height: 20,
+        opacity: 0.5,
+    },
+    alertBox: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        marginTop: 8,
+        paddingHorizontal: 4,
+    },
+    alertIcon: {
+        width: 16,
+        height: 16,
+        tintColor: colors.mutedText,
+    },
+    alertText: {
+        fontFamily: 'Manrope-Regular',
+        fontSize: 12,
+        color: colors.mutedText,
+        flex: 1,
     },
     confirmButton: {
-        marginTop: 24,
+        marginTop: 20,
         backgroundColor: colors.primaryCTA,
         height: 54,
         borderRadius: 27,
@@ -344,18 +388,5 @@ const styles = StyleSheet.create({
         fontFamily: 'Manrope-Medium',
         fontSize: 16,
         color: '#050201',
-    },
-    addButton: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 16,
-        gap: 8,
-        marginTop: 8,
-    },
-    addButtonText: {
-        fontFamily: 'Manrope-SemiBold',
-        fontSize: 14,
-        color: colors.primaryCTA,
     },
 });

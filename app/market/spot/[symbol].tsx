@@ -6,24 +6,29 @@ import { TokenMetrics } from '@/components/features/market/detail/TokenMetrics';
 import { TradingViewChart } from '@/components/features/market/detail/TradingViewChart';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { colors } from '@/constants/colors';
-import { useTokenDetail } from '@/hooks/useTokenDetail';
+import { useEnrichedMarketDetail } from '@/hooks/useEnrichedMarketDetail';
+import { useMarketStore } from '@/store/marketStore';
 import { useLocalSearchParams } from 'expo-router';
 import React from 'react';
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function SpotMarketDetail() {
-    const { symbol, address, chainId } = useLocalSearchParams<{
+    const { symbol, address, chainId, provider, name } = useLocalSearchParams<{
         symbol: string;
         address: string;
         chainId: string;
+        provider: 'binance' | 'dydx' | 'onchain';
+        name: string;
     }>();
     const { bottom } = useSafeAreaInsets();
+    const { isFavorite, toggleFavorite } = useMarketStore();
 
-    const { data: token, isLoading } = useTokenDetail({
-        address,
-        symbol,
-        chainId: chainId ? parseInt(chainId) : undefined
+    const { data: token, isLoading } = useEnrichedMarketDetail({
+        symbol: symbol || '',
+        address: address,
+        chainId: chainId ? parseInt(chainId, 10) : undefined,
+        marketType: 'spot',
     });
 
     const handleBuy = () => Alert.alert('Buy', 'Buy flow coming soon');
@@ -31,9 +36,12 @@ export default function SpotMarketDetail() {
 
     if (isLoading) {
         return (
-            <View style={[styles.container, styles.center]}>
+            <View style={styles.container}>
                 <CustomStatusBar />
-                <Text style={styles.loadingText}>Loading {symbol}...</Text>
+                {/* <LoadingOverlay 
+                    visible={isLoading} 
+                    mode="high-contrast" 
+                /> */}
             </View>
         );
     }
@@ -50,18 +58,37 @@ export default function SpotMarketDetail() {
     return (
         <View style={styles.container}>
             <CustomStatusBar />
-            <ScreenHeader symbol={token.symbol} />
+            <ScreenHeader
+                symbol={token.displaySymbol || token.symbol}
+                logoURI={token.logoURI}
+                isFavorite={isFavorite(token.id)}
+                onToggleFavorite={() => toggleFavorite(token.id)}
+            />
 
             <ScrollView
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={{ paddingBottom: bottom + 100 }}
             >
                 <PriceHeader token={token} />
-                <TradingViewChart />
+                <TradingViewChart
+                    symbol={token.displaySymbol || token.symbol}
+                    baseSymbol={token.symbol}
+                    marketType="spot"
+                    precision={token.decimals}
+                    price={typeof token.price === 'string' ? parseFloat(token.price) : token.price}
+                    baseAddress={token.baseToken?.address || token.contractAddress || token.address}
+                    quoteAddress={token.quoteToken?.address}
+                    chainId={token.chainId}
+                    provider={token.provider}
+                />
 
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Your Position</Text>
                     <View style={styles.emptyCard}>
+                        {/* <Image
+                            source={require('@/assets/images/empty-position.png')}
+                            style={styles.emptyImage}
+                       /> */}
                         <Text style={styles.emptyText}>No Available Data</Text>
                     </View>
                 </View>
@@ -107,7 +134,8 @@ const styles = StyleSheet.create({
     },
     section: {
         paddingHorizontal: 20,
-        paddingVertical: 16,
+        paddingTop: 24,
+        paddingBottom: 8,
     },
     sectionTitle: {
         fontFamily: 'Manrope-SemiBold',

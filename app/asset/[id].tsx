@@ -21,8 +21,8 @@ import {
 import { useAssetStore } from "@/store/assetStore";
 import { useSendStore } from "@/store/sendStore";
 import { useSwapStore } from "@/store/swapStore";
+import { useWalletStore } from "@/store/walletStore";
 import { mapAssetToChainOption, mapAssetToTokenOption } from "@/utils/assetMapping";
-import { WALLET_ADDRESS } from "@/utils/wallet";
 import { useLocalSearchParams, usePathname, useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import { ScrollView, View } from "react-native";
@@ -30,6 +30,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function AssetDetailScreen() {
   const { top, bottom } = useSafeAreaInsets();
+  const { address: WALLET_ADDRESS } = useWalletStore();
   const router = useRouter();
   const pathname = usePathname();
   const params = useLocalSearchParams<{
@@ -232,7 +233,7 @@ export default function AssetDetailScreen() {
         }}
       >
         <WalletHeader
-          walletAddress={WALLET_ADDRESS}
+          walletAddress={WALLET_ADDRESS!}
           onIrisScanPress={handleIrisScanPress}
           onSettingsPress={handleSettingsPress}
           showBackButton

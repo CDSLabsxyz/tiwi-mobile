@@ -1,18 +1,18 @@
 import { colors } from '@/constants/colors';
-import { TokenMetadata } from '@/services/apiClient';
+import { EnrichedMarket } from '@/services/apiClient';
 import { formatNumber } from '@/utils/formatting';
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 interface SupplyMetricsProps {
-    token: TokenMetadata;
+    token: EnrichedMarket;
 }
 
 export const SupplyMetrics: React.FC<SupplyMetricsProps> = ({ token }) => {
     const supplies = [
         { label: 'Circulating Supply', value: formatNumber(token.circulatingSupply || 0) },
         { label: 'Total Supply', value: formatNumber(token.totalSupply || 0) },
-        { label: 'Max. Supply', value: formatNumber(token.maxSupply || 0) },
+        { label: 'Max. Supply', value: token.maxSupply ? formatNumber(token.maxSupply) : '∞' },
     ];
 
     return (

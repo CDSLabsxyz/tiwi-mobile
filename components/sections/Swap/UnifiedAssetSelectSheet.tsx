@@ -7,7 +7,8 @@ import { getColorFromSeed, } from '@/utils/formatting';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Dimensions, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { SelectionBottomSheet } from './SelectionBottomSheet';
 
 // Reuse types from existing sheets
@@ -16,6 +17,13 @@ import type { ChainId, ChainOption } from './ChainSelectSheet';
 import type { TokenOption } from './TokenSelectSheet';
 
 const CheckmarkIcon = require('@/assets/swap/checkmark-circle-01.svg');
+const AllChainsIcon = require('@/assets/home/tiwicat-token.svg');
+
+const ALL_NETWORKS_CHAIN: ChainOption = {
+    id: 'all',
+    name: 'All Networks',
+    icon: AllChainsIcon,
+};
 
 interface UnifiedAssetSelectSheetProps {
     visible: boolean;
@@ -23,6 +31,7 @@ interface UnifiedAssetSelectSheetProps {
     onSelect: (chain: ChainOption, token: TokenOption) => void;
     initialChainId?: ChainId | null;
     selectedTokenId?: string | null;
+    initialStep?: SelectionStep;
 }
 
 type SelectionStep = 'chains' | 'tokens';
@@ -33,19 +42,32 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
     onSelect,
     initialChainId,
     selectedTokenId,
+    initialStep = 'chains',
 }) => {
-    const [step, setStep] = useState<SelectionStep>('chains');
+    const [step, setStep] = useState<SelectionStep>(initialStep);
     const [selectedChain, setSelectedChain] = useState<ChainOption | null>(null);
     const [tokenSearchQuery, setTokenSearchQuery] = useState('');
     const [chainSearchQuery, setChainSearchQuery] = useState('');
 
     const { data: chains, isLoading: isLoadingChains } = useChains();
+    // console.log("🚀 ~ UnifiedAssetSelectSheet ~ chains:", chains)
     const { data: balanceData } = useWalletBalances();
+    const [debouncedQuery, setDebouncedQuery] = useState('');
+
+    useEffect(() => {
+        const handler = setTimeout(() => {
+            setDebouncedQuery(tokenSearchQuery);
+        }, 300);
+        return () => clearTimeout(handler);
+    }, [tokenSearchQuery]);
+
+    const { width: SCREEN_WIDTH } = Dimensions.get('window');
+    const transitionX = useSharedValue(0);
 
     // Reset state when opening
     useEffect(() => {
         if (visible) {
-            if (initialChainId) {
+            if (initialStep === 'tokens' && initialChainId) {
                 const chain = chains?.find(c => c.id === initialChainId);
                 if (chain) {
                     setSelectedChain({
@@ -54,17 +76,24 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
                         icon: chain.logoURI || chain.logo || require('@/assets/home/chains/ethereum.svg'),
                     });
                     setStep('tokens');
+                    transitionX.value = -SCREEN_WIDTH;
                 } else {
                     setStep('chains');
+                    transitionX.value = 0;
                 }
             } else {
                 setStep('chains');
                 setSelectedChain(null);
+                transitionX.value = 0;
             }
             setTokenSearchQuery('');
             setChainSearchQuery('');
         }
-    }, [visible, initialChainId, chains]);
+    }, [visible, initialChainId, chains, initialStep]);
+
+    const animatedContentStyle = useAnimatedStyle(() => ({
+        transform: [{ translateX: transitionX.value }],
+    }));
 
     // --- Chain Logic ---
     const filteredChains = useMemo(() => {
@@ -83,14 +112,30 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
     }, [chains, chainSearchQuery]);
 
     // --- Token Logic ---
-    const { data: tokens, isLoading: isLoadingTokens } = useTokens({
-        query: tokenSearchQuery,
-        chains: selectedChain ? [selectedChain.id as number] : undefined,
+    const stableChains = useMemo(() =>
+        (selectedChain && selectedChain.id !== 'all') ? [selectedChain.id as number] : undefined,
+        [selectedChain]);
+
+    const {
+        data: response,
+        isLoading: isLoadingTokens,
+        isFetching: isFetchingTokens,
+        isPlaceholderData
+    } = useTokens({
+        query: debouncedQuery,
+        chains: stableChains,
     });
+    const tokens = response?.tokens;
 
     const tokenOptions: TokenOption[] = useMemo(() => {
         if (!tokens) return [];
-        return tokens.map(t => {
+
+        // Strict client-side filtering to ensure placeholders/cache don't show tokens from other chains
+        const filteredTokens = (selectedChain && selectedChain.id !== 'all')
+            ? tokens.filter(t => t.chainId === selectedChain.id)
+            : tokens;
+
+        return filteredTokens.map(t => {
             const walletToken = balanceData?.tokens.find(
                 wt => wt.address.toLowerCase() === t.address.toLowerCase() && wt.chainId === t.chainId
             );
@@ -109,7 +154,7 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
                 priceUSD: t.priceUSD,
             };
         });
-    }, [tokens, balanceData]);
+    }, [tokens, balanceData, selectedChain]);
 
     const handleChainSelect = (chain: any) => {
         setSelectedChain({
@@ -118,17 +163,133 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
             icon: chain.icon,
         });
         setStep('tokens');
+        transitionX.value = withSpring(-SCREEN_WIDTH, { damping: 20, stiffness: 150 });
     };
 
     const handleTokenSelect = (token: TokenOption) => {
         if (selectedChain) {
-            onSelect(selectedChain, token);
+            // Find the actual chain for this token if we are in "All Networks" mode
+            let targetChain = selectedChain;
+            if (selectedChain.id === 'all' && chains) {
+                const actualChain = chains.find(c => c.id === token.chainId);
+                if (actualChain) {
+                    targetChain = {
+                        id: actualChain.id,
+                        name: actualChain.name,
+                        icon: actualChain.logoURI || actualChain.logo || AllChainsIcon
+                    };
+                }
+            }
+            onSelect(targetChain, token);
         }
     };
 
     const handleBack = () => {
         setStep('chains');
         setTokenSearchQuery('');
+        transitionX.value = withSpring(0, { damping: 20, stiffness: 150 });
+    };
+
+    const renderChains = () => {
+        if (isLoadingChains) {
+            return (
+                <View style={styles.loaderContainer}>
+                    <ActivityIndicator color={colors.primaryCTA} />
+                </View>
+            );
+        }
+
+        return (
+            <>
+                {/* All Networks Option */}
+                {!chainSearchQuery && (
+                    <TouchableOpacity
+                        style={styles.chainItem}
+                        activeOpacity={0.8}
+                        onPress={() => handleChainSelect(ALL_NETWORKS_CHAIN)}
+                    >
+                        <View style={styles.chainIconWrapper}>
+                            <Image source={ALL_NETWORKS_CHAIN.icon} style={styles.fullSize} contentFit="contain" />
+                        </View>
+                        <Text style={styles.chainName}>{ALL_NETWORKS_CHAIN.name}</Text>
+                        {selectedChain?.id === 'all' && (
+                            <Ionicons name="checkmark-circle" size={24} color={colors.primaryCTA} style={styles.checkIcon} />
+                        )}
+                    </TouchableOpacity>
+                )}
+
+                {filteredChains.map((chain) => (
+                    <TouchableOpacity
+                        key={chain.id}
+                        style={styles.chainItem}
+                        activeOpacity={0.8}
+                        onPress={() => handleChainSelect(chain)}
+                    >
+                        <View style={styles.chainIconWrapper}>
+                            <Image source={chain.icon} style={styles.fullSize} contentFit="contain" />
+                        </View>
+                        <Text style={styles.chainName}>{chain.name}</Text>
+                        {selectedChain?.id === chain.id && (
+                            <Ionicons name="checkmark-circle" size={24} color={colors.primaryCTA} style={styles.checkIcon} />
+                        )}
+                    </TouchableOpacity>
+                ))}
+            </>
+        );
+    };
+
+    const renderTokens = () => {
+        // If loading initial query OR we have placeholder data that filtered down to nothing for the new network selection,
+        // show skeletons to avoid a jarring empty state or "wrong" token feeling.
+        if (isLoadingTokens || (isPlaceholderData && tokenOptions.length === 0)) {
+            return (
+                <>
+                    <TokenSkeleton />
+                    <TokenSkeleton />
+                    <TokenSkeleton />
+                    <TokenSkeleton />
+                    <TokenSkeleton />
+                </>
+            );
+        }
+
+        return tokenOptions.map((token) => {
+            const isActive = token.id === selectedTokenId;
+            return (
+                <TouchableOpacity
+                    key={token.id}
+                    activeOpacity={0.9}
+                    onPress={() => handleTokenSelect(token)}
+                    style={[
+                        styles.tokenItem,
+                        isActive && styles.activeTokenItem,
+                        isFetchingTokens && { opacity: 0.6 }
+                    ]}
+                >
+                    <View style={styles.tokenContent}>
+                        <View style={styles.leftInfo}>
+                            <View style={styles.tokenIconWrapper}>
+                                {token.icon ? (
+                                    <Image source={token.icon} style={styles.fullSize} contentFit="contain" />
+                                ) : (
+                                    <View style={[styles.fallbackCircle, { backgroundColor: getColorFromSeed(token.symbol) }]}>
+                                        <Text style={styles.fallbackText}>{token.symbol.charAt(0).toUpperCase()}</Text>
+                                    </View>
+                                )}
+                            </View>
+                            <View style={styles.tokenTextColumn}>
+                                <Text style={styles.tokenSymbol}>{token.symbol}</Text>
+                                <Text style={styles.tokenAddress}>{truncateAddress(token.address)}</Text>
+                            </View>
+                        </View>
+                        <View style={styles.rightInfo}>
+                            <Text style={styles.fiatBalance}>{token.balanceFiat}</Text>
+                            <Text style={styles.tokenBalance}>{token.balanceToken}</Text>
+                        </View>
+                    </View>
+                </TouchableOpacity>
+            );
+        });
     };
 
     return (
@@ -140,104 +301,52 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
             showSearchIcon={step === 'chains'} // Search icon only for chains logic
             onSearch={step === 'chains' ? setChainSearchQuery : undefined}
         >
-            <View style={styles.content}>
-                {step === 'tokens' && (
-                    <View style={styles.tokenSearchWrapper}>
-                        <View style={styles.tokenSearchContainer}>
-                            <Ionicons name="search" size={20} color={colors.mutedText} />
-                            <TextInput
-                                style={styles.tokenSearchInput}
-                                placeholder="Search by name or address"
-                                placeholderTextColor={colors.mutedText}
-                                value={tokenSearchQuery}
-                                onChangeText={setTokenSearchQuery}
-                                autoCapitalize="none"
-                                autoCorrect={false}
-                            />
-                            {tokenSearchQuery.length > 0 && (
-                                <TouchableOpacity onPress={() => setTokenSearchQuery('')} style={styles.clearButton}>
-                                    <Ionicons name="close-circle" size={20} color={colors.mutedText} />
-                                </TouchableOpacity>
-                            )}
-                        </View>
+            <View style={styles.carouselContainer}>
+                <Animated.View style={[styles.carouselContent, animatedContentStyle]}>
+                    {/* Step 1: Chains */}
+                    <View style={[styles.stepPage, { width: SCREEN_WIDTH }]}>
+                        <ScrollView
+                            style={styles.scroll}
+                            contentContainerStyle={styles.scrollContent}
+                            showsVerticalScrollIndicator={false}
+                            keyboardShouldPersistTaps="handled"
+                        >
+                            {renderChains()}
+                        </ScrollView>
                     </View>
-                )}
 
-                <ScrollView
-                    style={styles.scroll}
-                    contentContainerStyle={styles.scrollContent}
-                    showsVerticalScrollIndicator={false}
-                    keyboardShouldPersistTaps="handled"
-                >
-                    {step === 'chains' ? (
-                        isLoadingChains ? (
-                            <View style={styles.loaderContainer}>
-                                <ActivityIndicator color={colors.primaryCTA} />
-                            </View>
-                        ) : (
-                            filteredChains.map((chain) => (
-                                <TouchableOpacity
-                                    key={chain.id}
-                                    style={styles.chainItem}
-                                    activeOpacity={0.8}
-                                    onPress={() => handleChainSelect(chain)}
-                                >
-                                    <View style={styles.chainIconWrapper}>
-                                        <Image source={chain.icon} style={styles.fullSize} contentFit="contain" />
-                                    </View>
-                                    <Text style={styles.chainName}>{chain.name}</Text>
-                                    {selectedChain?.id === chain.id && (
-                                        <Ionicons name="checkmark-circle" size={24} color={colors.primaryCTA} style={styles.checkIcon} />
-                                    )}
-                                </TouchableOpacity>
-                            ))
-                        )
-                    ) : (
-                        isLoadingTokens ? (
-                            <>
-                                <TokenSkeleton />
-                                <TokenSkeleton />
-                                <TokenSkeleton />
-                                <TokenSkeleton />
-                                <TokenSkeleton />
-                            </>
-                        ) : (
-                            tokenOptions.map((token) => {
-                                const isActive = token.id === selectedTokenId;
-                                return (
-                                    <TouchableOpacity
-                                        key={token.id}
-                                        activeOpacity={0.9}
-                                        onPress={() => handleTokenSelect(token)}
-                                        style={[styles.tokenItem, isActive && styles.activeTokenItem]}
-                                    >
-                                        <View style={styles.tokenContent}>
-                                            <View style={styles.leftInfo}>
-                                                <View style={styles.tokenIconWrapper}>
-                                                    {token.icon ? (
-                                                        <Image source={token.icon} style={styles.fullSize} contentFit="contain" />
-                                                    ) : (
-                                                        <View style={[styles.fallbackCircle, { backgroundColor: getColorFromSeed(token.symbol) }]}>
-                                                            <Text style={styles.fallbackText}>{token.symbol.charAt(0).toUpperCase()}</Text>
-                                                        </View>
-                                                    )}
-                                                </View>
-                                                <View style={styles.tokenTextColumn}>
-                                                    <Text style={styles.tokenSymbol}>{token.symbol}</Text>
-                                                    <Text style={styles.tokenAddress}>{truncateAddress(token.address)}</Text>
-                                                </View>
-                                            </View>
-                                            <View style={styles.rightInfo}>
-                                                <Text style={styles.fiatBalance}>{token.balanceFiat}</Text>
-                                                <Text style={styles.tokenBalance}>{token.balanceToken}</Text>
-                                            </View>
-                                        </View>
+                    {/* Step 2: Tokens */}
+                    <View style={[styles.stepPage, { width: SCREEN_WIDTH }]}>
+                        <View style={styles.tokenSearchWrapper}>
+                            <View style={styles.tokenSearchContainer}>
+                                <Ionicons name="search" size={20} color={colors.mutedText} />
+                                <TextInput
+                                    style={styles.tokenSearchInput}
+                                    placeholder="Search by name or address"
+                                    placeholderTextColor={colors.mutedText}
+                                    value={tokenSearchQuery}
+                                    onChangeText={setTokenSearchQuery}
+                                    autoCapitalize="none"
+                                    autoCorrect={false}
+                                />
+                                {tokenSearchQuery.length > 0 && (
+                                    <TouchableOpacity onPress={() => setTokenSearchQuery('')} style={styles.clearButton}>
+                                        <Ionicons name="close-circle" size={20} color={colors.mutedText} />
                                     </TouchableOpacity>
-                                );
-                            })
-                        )
-                    )}
-                </ScrollView>
+                                )}
+                            </View>
+                        </View>
+
+                        <ScrollView
+                            style={styles.scroll}
+                            contentContainerStyle={styles.scrollContent}
+                            showsVerticalScrollIndicator={false}
+                            keyboardShouldPersistTaps="handled"
+                        >
+                            {renderTokens()}
+                        </ScrollView>
+                    </View>
+                </Animated.View>
             </View>
         </SelectionBottomSheet>
     );
@@ -270,6 +379,17 @@ const styles = StyleSheet.create({
     },
     clearButton: {
         padding: 4,
+    },
+    carouselContainer: {
+        flex: 1,
+        overflow: 'hidden',
+    },
+    carouselContent: {
+        flexDirection: 'row',
+        height: '100%',
+    },
+    stepPage: {
+        height: '100%',
     },
     scroll: {
         flex: 1,

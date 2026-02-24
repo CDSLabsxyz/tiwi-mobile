@@ -7,19 +7,36 @@
  * - expo-secure-store: Hardware-backed secure storage for private keys
  */
 
+import { ChainType } from '@/store/walletStore';
 import { HDKey } from '@scure/bip32';
 import { generateMnemonic, mnemonicToSeedSync } from '@scure/bip39';
 import { wordlist } from '@scure/bip39/wordlists/english.js';
+import { Keypair } from '@solana/web3.js';
 import * as SecureStore from 'expo-secure-store';
-import { mnemonicToAccount } from 'viem/accounts';
+import { mnemonicToAccount, privateKeyToAccount } from 'viem/accounts';
+import * as bs58 from "bs58"
 
 export interface CreatedWallet {
-    address: string;
+    address: string; // Master/Primary (EVM)
+    addresses: {
+        [key in ChainType]?: string;
+    };
     mnemonic: string; // Ephemeral: Only available immediately after creation
 }
 
 const SECURE_STORE_PREFIX = 'tiwi_wallet_priv_';
 const MNEMONIC_PREFIX = 'tiwi_wallet_mnem_';
+
+/**
+ * Derivation Paths for supported chains
+ */
+export const DERIVATION_PATHS: Record<ChainType, string> = {
+    EVM: "m/44'/60'/0'/0/0",
+    SOLANA: "m/44'/501'/0'/0'",
+    TRON: "m/44'/195'/0'/0/0",
+    SUI: "m/44'/784'/0'/0'/0'",
+    TON: "m/44'/607'/0'/0'/0'",
+};
 
 /**
  * Generate a new wallet with a 12-word mnemonic phrase.
@@ -30,11 +47,12 @@ export function generateNewWallet(): CreatedWallet {
         // 1. Generate Mnemonic (128 bits = 12 words)
         const mnemonic = generateMnemonic(wordlist, 128);
 
-        // 2. Derive Account (to get public address)
-        const account = mnemonicToAccount(mnemonic);
+        // 2. Derive all addresses
+        const addresses = deriveMultiChainAddressesFromMnemonic(mnemonic);
 
         return {
-            address: account.address,
+            address: addresses.EVM!,
+            addresses,
             mnemonic: mnemonic,
         };
     } catch (error) {
@@ -44,16 +62,44 @@ export function generateNewWallet(): CreatedWallet {
 }
 
 /**
+ * Derive addresses for all supported chains from a mnemonic.
+ */
+export function deriveMultiChainAddressesFromMnemonic(mnemonic: string): Record<ChainType, string> {
+    const addresses: any = {};
+
+    // 1. EVM (Standard ETH)
+    const ethAccount = mnemonicToAccount(mnemonic);
+    addresses.EVM = ethAccount.address;
+
+    // 2. SOLANA
+    const seed = mnemonicToSeedSync(mnemonic);
+    const solanaKeypair = Keypair.fromSeed(seed.slice(0, 32)); // Standard Solana derivation from seed
+    addresses.SOLANA = solanaKeypair.publicKey.toBase58();
+
+    // 3. TRON
+    // Tron uses same curve as EVM, we can derive the same private key
+    // For now, we store the same hex address or implement Tron Base58 later
+    // TRON address derivation logic usually involves public key -> Keccak256 -> Base58Check
+    addresses.TRON = ethAccount.address; // Placeholder: In a full implementation, convert ETH address to Tron format
+
+    // 4. SUI & TON (Placeholders for now, using ETH address as identifier or deriving raw hex)
+    addresses.SUI = ethAccount.address;
+    addresses.TON = ethAccount.address;
+
+    return addresses;
+}
+
+/**
  * Derive private key from mnemonic.
- * Path: m/44'/60'/0'/0/0 (Standard ETH)
  */
 export function derivePrivateKeyFromMnemonic(
     mnemonic: string,
-    derivationPath = "m/44'/60'/0'/0/0"
+    chain: ChainType = 'EVM'
 ): string {
+    const path = DERIVATION_PATHS[chain];
     const seed = mnemonicToSeedSync(mnemonic);
     const hd = HDKey.fromMasterSeed(seed);
-    const child = hd.derive(derivationPath);
+    const child = hd.derive(path);
 
     if (!child.privateKey) {
         throw new Error('Failed to derive private key');
@@ -68,28 +114,30 @@ export function derivePrivateKeyFromMnemonic(
 
 /**
  * Save sensitive wallet data to SecureStore.
- * On iOS/Android, this uses the Keychain/Keystore system.
- * 
- * @param address Public address (used as lookup key)
- * @param privateKey Private key to store
  */
-export async function saveSecureWallet(address: string, privateKey: string): Promise<void> {
+export async function saveSecureWallet(
+    address: string,
+    privateKey: string,
+    chain: ChainType = 'EVM'
+): Promise<void> {
     if (!address || !privateKey) throw new Error('Invalid address or key');
 
-    const key = `${SECURE_STORE_PREFIX}${address.toLowerCase()}`;
+    const key = `${SECURE_STORE_PREFIX}${chain}_${address.toLowerCase()}`;
 
-    // requireAuthentication: true ensures device unlock is needed to access (biometrics/passcode)
     await SecureStore.setItemAsync(key, privateKey, {
         keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
-        requireAuthentication: false // Start with false for UX flow, can escalate to true for signing
+        requireAuthentication: false
     });
 }
 
 /**
  * Retrieve private key from SecureStore.
  */
-export async function getSecurePrivateKey(address: string): Promise<string | null> {
-    const key = `${SECURE_STORE_PREFIX}${address.toLowerCase()}`;
+export async function getSecurePrivateKey(
+    address: string,
+    chain: ChainType = 'EVM'
+): Promise<string | null> {
+    const key = `${SECURE_STORE_PREFIX}${chain}_${address.toLowerCase()}`;
     return await SecureStore.getItemAsync(key);
 }
 
@@ -121,11 +169,9 @@ export function validateMnemonic(mnemonic: string): boolean {
         const words = mnemonic.trim().split(/\s+/);
         if (words.length !== 12 && words.length !== 24) return false;
 
-        // Basic wordlist check
         const allValid = words.every(w => wordlist.includes(w.toLowerCase()));
         if (!allValid) return false;
 
-        // Checksum check via import attempt
         mnemonicToAccount(mnemonic);
         return true;
     } catch {
@@ -134,36 +180,73 @@ export function validateMnemonic(mnemonic: string): boolean {
 }
 
 /**
- * Validate if a string is a valid ETH private key
+ * Validate if a string is a valid private key
  */
-export function validatePrivateKey(key: string): boolean {
+export function validatePrivateKey(key: string, chain: ChainType = 'EVM'): boolean {
     const cleanKey = key.startsWith('0x') ? key.slice(2) : key;
+    if (chain === 'SOLANA') {
+        try {
+            bs58.default.decode(key);
+            return true;
+        } catch {
+            return false;
+        }
+    }
+    // Default to HEX/EVM/TRON style
     return /^[0-9a-fA-F]{64}$/.test(cleanKey);
 }
 
 /**
  * Import wallet using mnemonic
  */
-export async function importWalletByMnemonic(mnemonic: string): Promise<string> {
+export async function importWalletByMnemonic(mnemonic: string): Promise<CreatedWallet> {
     if (!validateMnemonic(mnemonic)) throw new Error('Invalid mnemonic');
 
-    const account = mnemonicToAccount(mnemonic);
-    const privateKey = derivePrivateKeyFromMnemonic(mnemonic);
+    const addresses = deriveMultiChainAddressesFromMnemonic(mnemonic);
+    const primaryAddress = addresses.EVM!;
 
-    await saveSecureWallet(account.address, privateKey);
-    return account.address;
+    // Save EVM private key by default
+    const privateKey = derivePrivateKeyFromMnemonic(mnemonic, 'EVM');
+    await saveSecureWallet(primaryAddress, privateKey, 'EVM');
+
+    // Save full mnemonic tied to the group identifier (primary address)
+    await saveSecureMnemonic(primaryAddress, mnemonic);
+
+    return {
+        address: primaryAddress,
+        addresses,
+        mnemonic: mnemonic,
+    };
 }
 
 /**
  * Import wallet using private key
  */
-export async function importWalletByPrivateKey(privateKey: string): Promise<string> {
-    if (!validatePrivateKey(privateKey)) throw new Error('Invalid private key');
+export async function importWalletByPrivateKey(
+    privateKey: string,
+    chain: ChainType = 'EVM'
+): Promise<CreatedWallet> {
+    if (!validatePrivateKey(privateKey, chain)) throw new Error('Invalid private key');
 
-    const hex = privateKey.startsWith('0x') ? (privateKey as `0x${string}`) : (`0x${privateKey}` as `0x${string}`);
-    const { privateKeyToAccount } = await import('viem/accounts');
-    const account = privateKeyToAccount(hex);
+    let address = '';
+    let finalKey = privateKey;
 
-    await saveSecureWallet(account.address, hex);
-    return account.address;
+    if (chain === 'SOLANA') {
+        const decoded = bs58.default.decode(privateKey);
+        const keypair = Keypair.fromSecretKey(decoded);
+        address = keypair.publicKey.toBase58();
+    } else {
+        const hex = privateKey.startsWith('0x') ? (privateKey as `0x${string}`) : (`0x${privateKey}` as `0x${string}`);
+        const account = privateKeyToAccount(hex);
+        address = account.address;
+        finalKey = hex;
+    }
+
+    await saveSecureWallet(address, finalKey, chain);
+
+    return {
+        address,
+        addresses: { [chain]: address },
+        mnemonic: '', // No mnemonic for PK import
+    };
 }

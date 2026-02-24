@@ -16,23 +16,41 @@ import { WalletHeader } from '@/components/sections/Wallet/WalletHeader';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { colors } from '@/constants/colors';
 import { useChains } from '@/hooks/useChains';
-import { activityService } from '@/services/activityService';
+import { useTransactionExecution } from '@/hooks/useTransactionExecution';
 import { apiClient } from '@/services/apiClient';
 import { fetchWalletData } from '@/services/walletService';
 import { useSendStore } from '@/store/sendStore';
 import { useWalletStore } from '@/store/walletStore';
 import { validateAddress, validateAddresses, validateAmount } from '@/utils/addressValidation';
 import { mapAssetToTokenOption } from '@/utils/assetMapping';
-import { WALLET_ADDRESS } from '@/utils/wallet';
-import { useLocalSearchParams, usePathname, useRouter } from 'expo-router';
-import React, { useEffect } from 'react';
+import { isNativeToken } from '@/utils/wallet';
+import * as Haptics from 'expo-haptics';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import Animated, { Easing, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter, usePathname, useLocalSearchParams } from 'expo-router';
+import { useEffect } from 'react';
 
 export default function SendScreen() {
     const { top, bottom } = useSafeAreaInsets();
     const router = useRouter();
     const pathname = usePathname();
+
+    // Animation for processing orbit
+    const rotation = useSharedValue(0);
+    const pulse = useSharedValue(1);
+
+   
+
+    const orbitPlanetStyle = useAnimatedStyle(() => ({
+        transform: [
+            { rotate: `${rotation.value}deg` },
+        ],
+    }));
+
+    const orbitIconStyle = useAnimatedStyle(() => ({
+        transform: [{ scale: pulse.value }],
+    }));
     const params = useLocalSearchParams<{
         assetId?: string;
         symbol?: string;
@@ -58,7 +76,27 @@ export default function SendScreen() {
         prePopulateFromAsset,
     } = sendStore;
 
+    const { address: walletAddress, connectedWallets } = useWalletStore();
     const { data: chains } = useChains();
+    const { execute, executeMulti, isExecuting } = useTransactionExecution();
+
+     useEffect(() => {
+        if (isExecuting) {
+            rotation.value = withRepeat(
+                withTiming(360, { duration: 2000, easing: Easing.linear }),
+                -1,
+                false
+            );
+            pulse.value = withRepeat(
+                withTiming(1.2, { duration: 1000, easing: Easing.inOut(Easing.ease) }),
+                -1,
+                true
+            );
+        } else {
+            rotation.value = 0;
+            pulse.value = 1;
+        }
+    }, [isExecuting]);
 
     // Check if we're coming from asset detail page
     useEffect(() => {
@@ -88,11 +126,11 @@ export default function SendScreen() {
             }
         }
 
-        if (params.assetId) {
+        if (params.assetId && walletAddress) {
             // Fallback: fetch from wallet data if we only have ID
             const loadAsset = async () => {
                 try {
-                    const walletData = await fetchWalletData(WALLET_ADDRESS);
+                    const walletData = await fetchWalletData(walletAddress);
                     const asset = walletData.portfolio.find((a) => a.id === params.assetId);
                     if (asset) {
                         const tokenOption = mapAssetToTokenOption(asset, asset.balance, asset.usdValue);
@@ -118,7 +156,7 @@ export default function SendScreen() {
         }
     }, [params.assetId, params.symbol, params.chainId, chains]);
 
-    const { address } = useWalletStore();
+
 
     // Handlers
     const handleBackPress = () => {
@@ -154,19 +192,20 @@ export default function SendScreen() {
                     icon: chain.logoURI || chain.logo
                 });
             }
-        } else if (address && chains) {
-            // Fallback: Get chain info from wallet data
+        } else if (walletAddress && chains) {
             try {
-                const res = await apiClient.getWalletBalances(address || WALLET_ADDRESS);
-                const asset = res.balances.find((a: any) => a.symbol === token.symbol);
-                if (asset) {
-                    const chain = chains.find(c => c.id === asset.chainId);
-                    if (chain) {
-                        sendStore.setSelectedChain({
-                            id: chain.id,
-                            name: chain.name,
-                            icon: chain.logoURI || chain.logo
-                        });
+                if (walletAddress) {
+                    const res = await apiClient.getWalletBalances(walletAddress);
+                    const asset = res.balances.find((a: any) => a.symbol === token.symbol);
+                    if (asset) {
+                        const chain = chains.find(c => c.id === asset.chainId);
+                        if (chain) {
+                            sendStore.setSelectedChain({
+                                id: chain.id,
+                                name: chain.name,
+                                icon: chain.logoURI || chain.logo
+                            });
+                        }
                     }
                 }
             } catch (error) {
@@ -188,69 +227,81 @@ export default function SendScreen() {
         setCurrentStep('review');
     };
 
-    const handleConfirmFromReview = () => {
-        setCurrentStep('passcode');
+    const handleConfirmFromReview = async () => {
+        // Multi-send logic placeholder
+        if (activeTab === 'multi-send') {
+            setCurrentStep('passcode');
+            return;
+        }
+
+        // Check if active wallet is local or external
+        console.log("🚀 ~ handleConfirmFromReview ~ walletAddress:", walletAddress)
+        const wallet = connectedWallets.find((w: any) => {
+            console.log("🚀 ~ handleConfirmFromReview ~ w:", w)
+            return w.address.toLowerCase() === walletAddress?.toLowerCase();
+        });
+        console.log("🚀 ~ handleConfirmFromReview ~ wallet:", wallet)
+        const isLocal = wallet?.source === 'local' || wallet?.source === 'internal' || wallet?.source === 'imported';
+        console.log("🚀 ~ handleConfirmFromReview ~ isLocal:", isLocal)
+
+        if (isLocal) {
+            // Local wallet needs passcode
+            setCurrentStep('passcode');
+        } else {
+            // External wallet triggers own popup
+            try {
+                await performTransaction();
+            } catch (e) {
+                // Error already handled in performTransaction or hook
+            }
+        }
+    };
+
+    const performTransaction = async () => {
+        if (!selectedToken || !sendStore.selectedChain) {
+            return;
+        }
+
+        try {
+            let hash: string | undefined;
+
+            if (activeTab === 'send-to-one') {
+                if (!sendStore.recipientAddress || !sendStore.amount) return;
+                hash = await execute({
+                    tokenAddress: selectedToken.address,
+                    symbol: selectedToken.symbol,
+                    decimals: selectedToken.decimals,
+                    recipientAddress: sendStore.recipientAddress,
+                    amount: sendStore.amount,
+                    chainId: Number(sendStore.selectedChain.id),
+                    isNative: isNativeToken(selectedToken.address),
+                });
+            } else {
+                if (sendStore.recipients.length === 0 || !sendStore.amountPerRecipient) return;
+                hash = await executeMulti({
+                    tokenAddress: selectedToken.address,
+                    symbol: selectedToken.symbol,
+                    decimals: selectedToken.decimals,
+                    recipients: sendStore.recipients.map(r => r.address),
+                    amounts: sendStore.recipients.map(() => sendStore.amountPerRecipient),
+                    chainId: Number(sendStore.selectedChain.id),
+                    isNative: isNativeToken(selectedToken.address),
+                });
+            }
+
+            if (hash) {
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                setCurrentStep('success');
+            }
+        } catch (e) {
+            console.error('Send failed:', e);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        }
     };
 
     const handlePasscodeSuccess = async () => {
-        console.log('Transaction confirmed!');
-
-        if (address) {
-            try {
-                // Log the send transaction(s)
-                if (activeTab === 'send-to-one') {
-                    const txHash = `send-hash-${Date.now()}`;
-                    await apiClient.logTransaction({
-                        walletAddress: address,
-                        transactionHash: txHash,
-                        chainId: parseInt(String(sendStore.selectedChain?.id || '1')),
-                        type: 'Sent',
-                        fromTokenAddress: sendStore.selectedToken?.id,
-                        fromTokenSymbol: sendStore.selectedToken?.symbol,
-                        amount: sendStore.amount,
-                        amountFormatted: `${sendStore.amount} ${sendStore.selectedToken?.symbol}`,
-                        toTokenAddress: sendStore.recipientAddress, // Recipient as target address
-                    });
-
-                    // Log activity
-                    await activityService.logTransaction(
-                        address,
-                        'transaction',
-                        'Sent Successfully',
-                        `You sent ${sendStore.amount} ${sendStore.selectedToken?.symbol} to ${sendStore.recipientAddress}`,
-                        txHash
-                    );
-                } else {
-                    // Multi-send: Log each recipient
-                    for (const recipient of sendStore.recipients) {
-                        const txHash = `multisend-hash-${Date.now()}`;
-                        await apiClient.logTransaction({
-                            walletAddress: address,
-                            transactionHash: txHash,
-                            chainId: parseInt(String(sendStore.selectedChain?.id || '1')),
-                            type: 'Sent',
-                            fromTokenAddress: sendStore.selectedToken?.id,
-                            fromTokenSymbol: sendStore.selectedToken?.symbol,
-                            amount: sendStore.amountPerRecipient,
-                            amountFormatted: `${sendStore.amountPerRecipient} ${sendStore.selectedToken?.symbol}`,
-                            toTokenAddress: recipient.address,
-                        });
-
-                        await activityService.logTransaction(
-                            address,
-                            'transaction',
-                            'Multi-Send Success',
-                            `You sent ${sendStore.amountPerRecipient} ${sendStore.selectedToken?.symbol} to ${recipient.address}`,
-                            txHash
-                        );
-                    }
-                }
-            } catch (e) {
-                console.error('Failed to log transaction', e);
-            }
-        }
-
-        setCurrentStep('success');
+        console.log('Passcode verified, executing transaction...');
+        await performTransaction();
     };
 
     const handleSuccessDone = () => {
@@ -383,7 +434,7 @@ export default function SendScreen() {
             {/* Sticky Header */}
             <View style={[styles.header, { paddingTop: top || 0 }]}>
                 <WalletHeader
-                    walletAddress={WALLET_ADDRESS}
+                    walletAddress={walletAddress || '0x'}
                     onSettingsPress={handleSettingsPress}
                     showBackButton
                     onBackPress={handleBackPress}
@@ -412,6 +463,32 @@ export default function SendScreen() {
                 >
                     {renderContent()}
                 </ScrollView>
+
+                {/* Processing Overlay */}
+                {isExecuting && (
+                    <View style={styles.processingOverlay}>
+                        <View style={styles.processingContent}>
+                            <View style={styles.orbitContainer}>
+                                <View style={styles.orbitCircle} />
+                                <Animated.View style={[styles.orbitPlanetWrapper, orbitPlanetStyle]}>
+                                    <View style={styles.orbitPlanet} />
+                                </Animated.View>
+                                <Animated.Image
+                                    source={require('@/assets/images/full logo.svg')}
+                                    style={[styles.orbitIcon, orbitIconStyle]}
+                                    // contentFit="contain"
+                                />
+                            </View>
+                            <Text style={styles.processingTitle}>Processing Transaction</Text>
+                            <Text style={styles.processingSubtitle}>
+                                {activeTab === 'send-to-one'
+                                    ? `Sending ${sendStore.amount} ${selectedToken?.symbol} to ${sendStore.recipientAddress.slice(0, 6)}...`
+                                    : 'Processing your multi-send request...'}
+                            </Text>
+                            <Text style={styles.processingStatus}>Broadcasting to {sendStore.selectedChain?.name}...</Text>
+                        </View>
+                    </View>
+                )}
 
                 {/* Fixed Next Button at Bottom - show on select-asset and enter-details steps */}
                 {(currentStep === 'select-asset' || currentStep === 'enter-details') && (
@@ -445,11 +522,24 @@ export default function SendScreen() {
                         <TouchableOpacity
                             activeOpacity={0.8}
                             onPress={handleConfirmFromReview}
-                            style={[styles.nextButton, { backgroundColor: colors.primaryCTA }]}
+                            disabled={isExecuting}
+                            style={[
+                                styles.nextButton,
+                                {
+                                    backgroundColor: isExecuting ? colors.bgCards : colors.primaryCTA
+                                }
+                            ]}
                         >
-                            <Text style={[styles.nextButtonText, { color: colors.bg }]}>
-                                {activeTab === 'send-to-one' ? 'Confirm' : 'Confirm Multi-Send'}
-                            </Text>
+                            {isExecuting ? (
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                    <View style={{ width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: colors.primaryCTA, borderTopColor: 'transparent' }} />
+                                    <Text style={[styles.nextButtonText, { color: colors.bodyText }]}>Processing...</Text>
+                                </View>
+                            ) : (
+                                <Text style={[styles.nextButtonText, { color: colors.titleText }]}>
+                                    {activeTab === 'send-to-one' ? 'Confirm' : 'Confirm Multi-Send'}
+                                </Text>
+                            )}
                         </TouchableOpacity>
                     </View>
                 )}
@@ -620,4 +710,73 @@ const styles = StyleSheet.create({
         fontSize: 16,
         color: colors.bg,
     },
+    // Processing Overlay Styles
+    processingOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(0, 0, 0, 0.85)',
+        zIndex: 1000,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: 24,
+    },
+    processingContent: {
+        alignItems: 'center',
+        gap: 16,
+    },
+    orbitContainer: {
+        width: 120,
+        height: 120,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 20,
+    },
+    orbitCircle: {
+        width: 100,
+        height: 100,
+        borderRadius: 50,
+        borderWidth: 2,
+        borderColor: 'rgba(255, 255, 255, 0.1)',
+        position: 'absolute',
+    },
+    orbitPlanetWrapper: {
+        position: 'absolute',
+        width: 100,
+        height: 100,
+        alignItems: 'center',
+        justifyContent: 'flex-start',
+    },
+    orbitPlanet: {
+        width: 12,
+        height: 12,
+        borderRadius: 6,
+        backgroundColor: colors.primaryCTA,
+        marginTop: -6, // Center on the orbit line
+    },
+    orbitIcon: {
+        width: 50,
+        height: 50,
+    },
+    processingTitle: {
+        fontFamily: 'Manrope-Bold',
+        fontSize: 20,
+        color: '#FFFFFF',
+        textAlign: 'center',
+    },
+    processingSubtitle: {
+        fontFamily: 'Manrope-Medium',
+        fontSize: 14,
+        color: 'rgba(255, 255, 255, 0.6)',
+        textAlign: 'center',
+        lineHeight: 20,
+    },
+    processingStatus: {
+        fontFamily: 'Manrope-SemiBold',
+        fontSize: 12,
+        color: colors.primaryCTA,
+        backgroundColor: 'rgba(11, 234, 147, 0.1)',
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 100,
+        marginTop: 8,
+    }
 });

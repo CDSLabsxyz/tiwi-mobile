@@ -23,6 +23,9 @@ export const NFTListItem: React.FC<NFTListItemProps> = ({
     nft,
     onPress,
 }) => {
+    // Determine the source, fallback if mediaUrl is missing or invalid
+    const imageSource = nft.mediaUrl ? { uri: nft.mediaUrl } : null;
+
     return (
         <TouchableOpacity
             activeOpacity={0.8}
@@ -31,11 +34,17 @@ export const NFTListItem: React.FC<NFTListItemProps> = ({
         >
             {/* NFT Image */}
             <View style={styles.imageContainer}>
-                <Image
-                    source={{ uri: nft.mediaUrl }}
-                    style={styles.fullSize}
-                    contentFit="cover"
-                />
+                {imageSource ? (
+                    <Image
+                        source={imageSource}
+                        style={styles.fullSize}
+                        contentFit="cover"
+                    />
+                ) : (
+                    <View style={[styles.fullSize, { backgroundColor: colors.bgCards, alignItems: 'center', justifyContent: 'center' }]}>
+                        <Text style={{ color: colors.bodyText, fontSize: 10 }}>No Image</Text>
+                    </View>
+                )}
             </View>
 
             {/* Bottom Overlay with Name and Floor Price */}
@@ -43,10 +52,10 @@ export const NFTListItem: React.FC<NFTListItemProps> = ({
                 {/* Left: Name and Floor Price */}
                 <View style={styles.infoContainer}>
                     <Text style={styles.nftName} numberOfLines={1}>
-                        {nft.name}
+                        {nft.name || 'Unnamed NFT'}
                     </Text>
                     <Text style={styles.floorPrice}>
-                        Floor: {nft.floorPrice}
+                        Floor: {nft.floorPrice || 'N/A'}
                     </Text>
                 </View>
 

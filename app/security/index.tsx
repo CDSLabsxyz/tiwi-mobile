@@ -14,13 +14,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Feather from '@expo/vector-icons/Feather';
 import { TouchableOpacity } from 'react-native';
 
-const ArrowLeft = require('@/assets/onboarding/arrow-right-02.svg'); // Rotate 180 or find left arrow
-
 export default function CreatePasscodeScreen() {
     const { top, bottom } = useSafeAreaInsets();
     const router = useRouter(); // Use local router
     const [code, setCode] = useState('');
-    const setPasscode = useSecurityStore((state) => state.setPasscode);
+    const { setSetupPhase } = useSecurityStore();
 
     const handlePress = (digit: string) => {
         if (code.length < 6) {
@@ -44,12 +42,17 @@ export default function CreatePasscodeScreen() {
         }
     };
 
+    const handleBack = () => {
+        // Reset setup phase so the navigation guard allows going back to welcome
+        setSetupPhase('WELCOME');
+        router.replace('/welcome' as any);
+    };
+
     return (
         <View style={[styles.container, { paddingTop: top }]}>
             {/* Header */}
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                    {/* Temporary rotate right arrow if left doesn't exist, or use Unicode */}
+                <TouchableOpacity onPress={handleBack} style={styles.backButton}>
                     <Feather name="arrow-left" size={24} color="white" />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Passcode</Text>
@@ -101,8 +104,7 @@ const styles = StyleSheet.create({
         flex: 1,
         alignItems: 'center',
         justifyContent: 'center',
-        // paddingHorizontal: 32,
-        marginTop: -40, // Visual adjustment to match design centering
+        paddingHorizontal: 24,
     },
     title: {
         fontFamily: 'Manrope-Bold',

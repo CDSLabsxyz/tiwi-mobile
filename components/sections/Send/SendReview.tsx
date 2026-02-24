@@ -6,12 +6,16 @@
 
 import { colors } from "@/constants";
 import { RiskCheckResult, securityGuard } from "@/services/securityGuard";
+import { transactionService } from "@/services/transactionService";
 import { useSecurityStore } from "@/store/securityStore";
 import { useSendStore } from "@/store/sendStore";
-import { truncateAddress, WALLET_ADDRESS } from "@/utils/wallet";
+import { useWalletStore } from "@/store/walletStore";
+import { formatTokenAmount } from "@/utils/formatting";
+import { isNativeToken, truncateAddress } from "@/utils/wallet";
 import { Image } from "expo-image";
 import React, { useEffect, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
+import { formatEther } from "viem";
 
 const AlertIcon = require("@/assets/wallet/alert-square.svg");
 const CheckmarkIcon = require("@/assets/swap/checkmark-circle-01.svg");
@@ -21,25 +25,54 @@ interface SendReviewProps {
 }
 
 export const SendReview: React.FC<SendReviewProps> = ({ onConfirm }) => {
-  const { selectedToken, selectedChain, recipientAddress, amount, usdValue, networkFee, networkFeeUSD } = useSendStore();
+  const { address: activeAddress } = useWalletStore();
+  const { selectedToken, selectedChain, recipientAddress, amount, usdValue, networkFee, networkFeeUSD, setNetworkFee } = useSendStore();
   const { isFlaggedAddressEnabled, isTransactionRiskEnabled } = useSecurityStore();
 
   const [riskResult, setRiskResult] = useState<RiskCheckResult | null>(null);
   const [isScanning, setIsScanning] = useState(false);
+  const [isEstimatingGas, setIsEstimatingGas] = useState(false);
 
   useEffect(() => {
-    const runSecurityCheck = async () => {
-      if (!isFlaggedAddressEnabled && !isTransactionRiskEnabled) return;
+    const runInitialChecks = async () => {
+      // 1. Security Check
+      if (isFlaggedAddressEnabled || isTransactionRiskEnabled) {
+        setIsScanning(true);
+        const chainIdStr = selectedChain?.id ? String(selectedChain.id) : '1';
+        const result = await securityGuard.checkAddressRisk(recipientAddress, chainIdStr);
+        setRiskResult(result);
+        setIsScanning(false);
+      }
 
-      setIsScanning(true);
-      const chainIdStr = selectedChain?.id ? String(selectedChain.id) : '1';
-      const result = await securityGuard.checkAddressRisk(recipientAddress, chainIdStr);
-      setRiskResult(result);
-      setIsScanning(false);
+      // 2. Gas Estimation
+      if (selectedToken && selectedChain && recipientAddress && amount) {
+        setIsEstimatingGas(true);
+        try {
+          const { gasCostNative, gasCostUSD } = await transactionService.estimateGas({
+            tokenAddress: selectedToken.address,
+            symbol: selectedToken.symbol,
+            decimals: selectedToken.decimals,
+            recipientAddress: recipientAddress,
+            amount: amount,
+            chainId: Number(selectedChain.id),
+            isNative: isNativeToken(selectedToken.address),
+          });
+
+          const nativeSymbol = selectedChain.id === 56 ? 'BNB' : (selectedChain.id === 1 ? 'ETH' : 'Native');
+          const feeStr = `${formatEther(gasCostNative).slice(0, 8)} ${nativeSymbol}`;
+          const feeUSDStr = `$${gasCostUSD.toFixed(4)}`;
+
+          setNetworkFee(feeStr, feeUSDStr);
+        } catch (e) {
+          console.error('Failed to estimate gas in review:', e);
+        } finally {
+          setIsEstimatingGas(false);
+        }
+      }
     };
 
-    runSecurityCheck();
-  }, [recipientAddress, selectedChain?.id, isFlaggedAddressEnabled, isTransactionRiskEnabled]);
+    runInitialChecks();
+  }, [recipientAddress, selectedChain?.id, isFlaggedAddressEnabled, isTransactionRiskEnabled, amount, selectedToken]);
 
   return (
     <View style={styles.container}>
@@ -47,7 +80,14 @@ export const SendReview: React.FC<SendReviewProps> = ({ onConfirm }) => {
       <View style={styles.amountDisplay}>
         <Text style={styles.confirmTitle}>Confirm</Text>
         <View style={styles.amountWrapper}>
-          <Text style={styles.amountText}>{amount} {selectedToken?.symbol || ""}</Text>
+          <Text
+            style={styles.amountText}
+            adjustsFontSizeToFit={true}
+            numberOfLines={1}
+            minimumFontScale={0.5}
+          >
+            {formatTokenAmount(amount)} {selectedToken?.symbol || ""}
+          </Text>
           <Text style={styles.usdText}>{usdValue}</Text>
         </View>
       </View>
@@ -57,7 +97,7 @@ export const SendReview: React.FC<SendReviewProps> = ({ onConfirm }) => {
         {/* From */}
         <View style={styles.detailItem}>
           <Text style={styles.detailLabel}>From</Text>
-          <Text style={styles.detailValue}>{truncateAddress(WALLET_ADDRESS)}</Text>
+          <Text style={styles.detailValue}>{truncateAddress(activeAddress || "")}</Text>
         </View>
 
         {/* To and Network */}
@@ -82,8 +122,8 @@ export const SendReview: React.FC<SendReviewProps> = ({ onConfirm }) => {
           </View>
         </View>
         <View style={styles.feeValueWrapper}>
-          <Text style={styles.detailValueSmall}>{networkFeeUSD}</Text>
-          <Text style={styles.feeDetail}>{networkFeeUSD}</Text>
+          <Text style={styles.detailValueSmall}>{isEstimatingGas ? 'Calculating...' : networkFee}</Text>
+          <Text style={styles.feeDetail}>{isEstimatingGas ? '...' : networkFeeUSD}</Text>
         </View>
       </View>
 

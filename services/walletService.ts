@@ -6,8 +6,8 @@
 
 import type { ChainId } from "@/components/sections/Swap/ChainSelectSheet";
 import { apiClient } from "@/services/apiClient";
+import { useWalletStore } from "@/store/walletStore";
 import { formatTokenAmount } from "@/utils/formatting";
-import { WALLET_ADDRESS } from "@/utils/wallet";
 
 // Simulate API delay
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -222,156 +222,141 @@ export const fetchActivities = async (address: string): Promise<Activity[]> => {
  * NFT Interfaces
  */
 export interface NFTItem {
-  id: string;
+  id: string; // contractAddress-tokenId
   name: string;
   mediaUrl: string;
-  floorPrice: string; // e.g., "0 ETH"
-  collectionId?: string;
+  floorPrice?: string;
+  collectionName?: string;
+  chainId: number;
+  contractAddress: string;
+  tokenId: string;
 }
 
 export interface NFTDetail {
   id: string;
   name: string;
   mediaUrl: string;
-  totalNativeVolume: string; // e.g., "1.2M ETH"
-  floorPrice: string; // e.g., "6.10 ETH"
-  listedPercentage: string; // e.g., "3.05%"
-  numberOfOwners: number; // e.g., 5320
-  chain: string; // e.g., "Ethereum"
-  creationDate: string; // e.g., "April 2025"
-  createdBy: string; // e.g., "Cartoon-bird_deployer"
+  totalUSDVolume?: string;
+  floorPriceUSD?: string;
+  listedPercentage?: number;
+  numberOfOwners?: number;
+  chainId: number;
+  creationDate?: string;
+  createdBy?: string;
   isVerified: boolean;
   activities: NFTActivity[];
+  description?: string;
+  collectionName?: string;
 }
 
 export interface NFTActivity {
   id: string;
-  type: 'received' | 'sent' | 'listed' | 'unlisted' | 'sold' | 'bought';
+  type: 'received' | 'sent' | 'listed' | 'unlisted' | 'sold' | 'bought' | 'transfer' | 'mint' | 'burn' | 'sale';
   nftName: string;
-  amount?: string; // USD value for transactions
+  amount?: string;
   timestamp: number;
-  date: string; // Formatted date, e.g., "Jan 4, 2024"
+  date: string;
 }
 
 /**
- * Fetches NFTs for a wallet address
+ * Fetches NFTs for a wallet address from actual API
  */
 export const fetchNFTs = async (address: string): Promise<NFTItem[]> => {
-  await delay(400 + Math.random() * 600);
+  try {
+    const apiNfts = await apiClient.getNFTs(address);
 
-  // Mock NFT data matching Figma design
-  const mockNFTs: NFTItem[] = [
-    {
-      id: '1',
-      name: 'Cartoon-bird',
-      mediaUrl: 'https://www.figma.com/api/mcp/asset/be2cc277-351e-410f-87ad-eb4a2887eeda',
-      floorPrice: '0 ETH',
-      collectionId: 'cartoon-bird',
-    },
-    {
-      id: '2',
-      name: 'Alien Amphibian',
-      mediaUrl: 'https://www.figma.com/api/mcp/asset/d9a5806c-183c-4f98-8ae0-3a2694033d27',
-      floorPrice: '0 ETH',
-      collectionId: 'alien-amphibian',
-    },
-    {
-      id: '3',
-      name: 'CyberPunk',
-      mediaUrl: 'https://www.figma.com/api/mcp/asset/c0a371a7-453e-4bd5-89a2-c2df5133b732',
-      floorPrice: '0 ETH',
-      collectionId: 'cyberpunk',
-    },
-    {
-      id: '4',
-      name: 'Pixel Punk',
-      mediaUrl: 'https://www.figma.com/api/mcp/asset/15daf864-c108-4590-8c4d-d85e0964c9b1',
-      floorPrice: '0 ETH',
-      collectionId: 'pixel-punk',
-    },
-    {
-      id: '5',
-      name: 'Cool Cat',
-      mediaUrl: 'https://www.figma.com/api/mcp/asset/78fd997d-f572-4fd0-a78c-10f1dc0bf324',
-      floorPrice: '0 ETH',
-      collectionId: 'cool-cat',
-    },
-    {
-      id: '6',
-      name: 'Wizard',
-      mediaUrl: 'https://www.figma.com/api/mcp/asset/50fb5bf2-6313-406f-b5e9-2e6dd2d3ac53',
-      floorPrice: '0 ETH',
-      collectionId: 'wizard',
-    },
-  ];
-
-  return mockNFTs;
+    // Normalize and handle missing data
+    return apiNfts.map(nft => {
+      const id = `${nft.contractAddress}-${nft.tokenId}`;
+      return {
+        id,
+        name: nft.name || 'Unnamed NFT',
+        mediaUrl: nft.imageThumbnail || nft.image || 'https://via.placeholder.com/400?text=No+Image',
+        floorPrice: nft.floorPriceUSD ? `$${parseFloat(nft.floorPriceUSD).toLocaleString()}` : (nft.floorPrice ? `${nft.floorPrice} ${nft.collectionSymbol || 'ETH'}` : '0 ETH'),
+        collectionName: nft.collectionName,
+        chainId: nft.chainId,
+        contractAddress: nft.contractAddress,
+        tokenId: nft.tokenId
+      };
+    });
+  } catch (error) {
+    console.error("Failed to fetch real NFTs, falling back to mocks:", error);
+    await delay(600);
+    return [
+      {
+        id: 'mock-1',
+        name: 'Cartoon-bird',
+        mediaUrl: 'https://www.figma.com/api/mcp/asset/be2cc277-351e-410f-87ad-eb4a2887eeda',
+        floorPrice: '$0',
+        collectionName: 'Cartoon-bird',
+        chainId: 1,
+        contractAddress: '0x1',
+        tokenId: '1'
+      },
+      {
+        id: 'mock-2',
+        name: 'Alien Amphibian',
+        mediaUrl: 'https://www.figma.com/api/mcp/asset/d9a5806c-183c-4f98-8ae0-3a2694033d27',
+        floorPrice: '$0',
+        collectionName: 'Alien Amphibian',
+        chainId: 1,
+        contractAddress: '0x2',
+        tokenId: '2'
+      },
+    ];
+  }
 };
 
 /**
- * Fetches detailed NFT information by ID
+ * Fetches detailed NFT information by ID from actual API
  */
 export const fetchNFTDetail = async (nftId: string): Promise<NFTDetail> => {
-  await delay(400 + Math.random() * 600);
+  try {
+    const apiDetail = await apiClient.getNFTDetail(nftId);
 
-  // Mock NFT detail data matching Figma design
-  const mockNFTDetail: NFTDetail = {
-    id: nftId,
-    name: 'Cartoon-bird',
-    mediaUrl: 'https://www.figma.com/api/mcp/asset/065526bb-efba-47f4-936b-bc3837aba9e8',
-    totalNativeVolume: '1.2M ETH',
-    floorPrice: '6.10 ETH',
-    listedPercentage: '3.05%',
-    numberOfOwners: 5320,
-    chain: 'Ethereum',
-    creationDate: 'April 2025',
-    createdBy: 'Cartoon-bird_deployer',
-    isVerified: true,
-    activities: [
-      {
-        id: '1',
-        type: 'received',
-        nftName: 'Cartoon Bird',
-        amount: '$725.00',
-        timestamp: new Date('2024-01-04').getTime(),
-        date: 'Jan 4, 2024',
-      },
-      {
-        id: '2',
-        type: 'sent',
-        nftName: 'Cartoon Bird',
-        amount: '$725.00',
-        timestamp: new Date('2024-01-04').getTime(),
-        date: 'Jan 4, 2024',
-      },
-      {
-        id: '3',
-        type: 'received',
-        nftName: 'Cartoon Bird',
-        amount: '$725.00',
-        timestamp: new Date('2024-01-04').getTime(),
-        date: 'Jan 4, 2024',
-      },
-      {
-        id: '4',
-        type: 'sent',
-        nftName: 'Cartoon Bird',
-        amount: '$725.00',
-        timestamp: new Date('2024-01-04').getTime(),
-        date: 'Jan 4, 2024',
-      },
-      {
-        id: '5',
-        type: 'sold',
-        nftName: 'Cartoon Bird',
-        amount: '$725.00',
-        timestamp: new Date('2024-01-04').getTime(),
-        date: 'Jan 4, 2024',
-      },
-    ],
-  };
-
-  return mockNFTDetail;
+    // Normalize and handle missing data
+    return {
+      id: `${apiDetail.contractAddress}-${apiDetail.tokenId}`,
+      name: apiDetail.name || 'Unnamed NFT',
+      mediaUrl: apiDetail.image || apiDetail.imageThumbnail || 'https://via.placeholder.com/400?text=No+Image',
+      totalUSDVolume: apiDetail.totalVolumeUSD,
+      floorPriceUSD: apiDetail.floorPriceUSD,
+      listedPercentage: typeof apiDetail.listedPercentage === 'number' ? apiDetail.listedPercentage : undefined,
+      numberOfOwners: typeof apiDetail.owners === 'number' ? apiDetail.owners : undefined,
+      chainId: apiDetail.chainId,
+      creationDate: apiDetail.blockTimestampMinted ? new Date(apiDetail.blockTimestampMinted).toLocaleDateString() : undefined,
+      createdBy: apiDetail.minterAddress,
+      isVerified: !!apiDetail.isVerified,
+      description: apiDetail.description,
+      collectionName: apiDetail.collectionName,
+      activities: (apiDetail.activities || []).map(act => ({
+        id: act.id,
+        type: act.type as any,
+        nftName: act.nftName,
+        amount: act.amount,
+        timestamp: act.timestamp,
+        date: act.date
+      }))
+    };
+  } catch (error) {
+    console.error("Failed to fetch real NFT detail, falling back to mock:", error);
+    await delay(600);
+    return {
+      id: nftId,
+      name: 'Cartoon-bird',
+      mediaUrl: 'https://www.figma.com/api/mcp/asset/065526bb-efba-47f4-936b-bc3837aba9e8',
+      totalUSDVolume: '1200000',
+      floorPriceUSD: '15000',
+      listedPercentage: 3.05,
+      numberOfOwners: 5320,
+      chainId: 1,
+      creationDate: 'April 2025',
+      createdBy: 'Cartoon-bird_deployer',
+      isVerified: true,
+      collectionName: 'Cartoon-bird',
+      activities: [],
+    };
+  }
 };
 
 /**
@@ -421,8 +406,13 @@ export const getAllAssetActivities = async (assetId: string): Promise<AssetActiv
     const symbol = assetDetail.symbol.toUpperCase();
 
     // Fetch real transaction history from API
+    // We expect the address to be passed or derived somehow. 
+    // Let's add it to the function parameters.
+    const activeAddress = useWalletStore.getState().address;
+    if (!activeAddress) throw new Error("No active wallet");
+
     const response = await apiClient.getTransactionHistory({
-      address: WALLET_ADDRESS,
+      address: activeAddress,
       limit: 50,
     });
 

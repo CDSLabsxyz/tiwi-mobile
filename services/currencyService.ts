@@ -87,11 +87,13 @@ class CurrencyService {
         const localeStore = useLocaleStore.getState();
         const { language } = localeStore;
 
-        // Find the currency metadata to get the symbol
         const currencyMetadata = localeStore.currencies.find(c => c.code === currencyCode);
         const symbol = currencyMetadata?.symbol || currencyCode;
 
-        // For large values (>= 10,000), use compact notation (K, M, B, T)
+        // 1. Precise Zero Check
+        if (value === 0) return `${symbol}0.00`;
+
+        // 2. Large Values (>= 10,000) -> Compact (K, M, B, T)
         if (value >= 10000) {
             return formatCompactNumber(value, {
                 symbol: symbol,
@@ -99,27 +101,37 @@ class CurrencyService {
             });
         }
 
-        // If the value is very small (< 0.1), use subscript if it has many leading zeros
-        if (value > 0 && value < 0.1) {
+        // 3. Tiny Micro-Prices or Small values (< 0.1)
+        // Use subscript logic which handles everything down to 1e-100 accurately
+        if (value < 0.1) {
             return formatPriceWithSubscript(value, {
                 symbol: symbol,
-                minDecimalsForSubscript: 4, // Start subscripting at 4 leading zeros (e.g. 0.00001)
+                minDecimalsForSubscript: 4,
                 maxDisplayDecimals: 4
             });
         }
 
-        // Default standard formatting
-        const locale = language === 'en' ? 'en-US' : language;
-        try {
-            // We use 'en-US' for the number formatting part to ensure dots are used for decimals
-            // as requested by the user ("7.40 instead of 7,40").
+        // 4. Stablecoins or Mid-range ($0.1 to $10)
+        // We want at least 4 decimals for stablecoins ($0.9997)
+        if (value < 10) {
             const formattedNumber = new Intl.NumberFormat('en-US', {
                 minimumFractionDigits: 2,
-                maximumFractionDigits: (value < 10) ? 6 : 2,
+                maximumFractionDigits: 4,
+            }).format(value);
+            return `${symbol}${formattedNumber}`;
+        }
+
+        // 5. Standard formatting ($10 to $10,000)
+        try {
+            const formattedNumber = new Intl.NumberFormat('en-US', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
             }).format(value);
 
             return `${symbol}${formattedNumber}`;
         } catch (e) {
+            // Smart Fallback: If it's very small but fails, use toPrecision
+            if (value < 0.01) return `${symbol}${value.toPrecision(4)}`;
             return `${symbol}${value.toFixed(2)}`;
         }
     }

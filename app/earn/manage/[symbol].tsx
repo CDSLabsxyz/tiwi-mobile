@@ -9,11 +9,20 @@ import { DepositSelectionModal } from '@/components/sections/Earn/DepositSelecti
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { NumericKeypad } from '@/components/ui/NumericKeypad';
 import { colors } from '@/constants/colors';
+import { useStakingAllowance } from '@/hooks/useStakingAllowance';
+import { useStakingPool } from '@/hooks/useStakingPool';
+import { useWalletBalances } from '@/hooks/useWalletBalances';
+import { stakingService, type UserStake } from '@/services/stakingService';
+import { useWalletStore } from '@/store/walletStore';
 import AntDesign from '@expo/vector-icons/AntDesign';
+import FontAwesome6 from '@expo/vector-icons/FontAwesome6';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+    ActivityIndicator,
+    Alert,
     NativeSyntheticEvent,
     ScrollView,
     StyleSheet,
@@ -21,11 +30,11 @@ import {
     TextInput,
     TextInputSelectionChangeEventData,
     TouchableOpacity,
-    View,
+    View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import FontAwesome6 from '@expo/vector-icons/FontAwesome6';
-import Ionicons from '@expo/vector-icons/Ionicons';
+import { parseUnits } from 'viem';
+import { useAccount } from 'wagmi';
 
 // Icons
 const BackIcon = require('../../../assets/swap/arrow-left-02.svg');
@@ -45,12 +54,124 @@ export default function ManageStakeScreen() {
     const [isAccountModalVisible, setIsAccountModalVisible] = useState(false);
     const [isDepositModalVisible, setIsDepositModalVisible] = useState(false);
 
+    const { connectedWallets, address: activeAddress } = useWalletStore();
+    const { data: balanceData } = useWalletBalances();
+    const [userStake, setUserStake] = useState<UserStake | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
     const inputRef = useRef<TextInput>(null);
 
-    // Mock Stats for the Active Position
-    const positionStats = {
-        stakedAmount: '1.1M TWC',
-    };
+    // Get user balance for this specific token
+    const userTokenBalance = useMemo(() => {
+        if (!balanceData?.tokens || !symbol) return '0';
+        const token = balanceData.tokens.find(t => t.symbol.toLowerCase() === symbol.toLowerCase());
+        return token?.balanceFormatted || '0';
+    }, [balanceData, symbol]);
+
+    // Construct the dynamic list of accounts (Connected Wallets only)
+    const availableAccounts = useMemo(() => {
+        const list: any[] = [];
+
+        // Add each connected wallet
+        connectedWallets.forEach(wallet => {
+            const isMain = wallet.address.toLowerCase() === activeAddress?.toLowerCase();
+            list.push({
+                id: wallet.address,
+                name: wallet.name || (isMain ? 'Main Wallet' : 'Imported Wallet'),
+                type: 'Wallet',
+                balance: `${isMain ? userTokenBalance : '0.00'} ${symbol}`,
+                address: wallet.address
+            });
+        });
+
+        return list;
+    }, [connectedWallets, activeAddress, userTokenBalance, symbol]);
+
+    const [selectedAccountId, setSelectedAccountId] = useState<string>(activeAddress || '');
+    const selectedAccount = useMemo(() =>
+        availableAccounts.find(a => a.id === selectedAccountId) || availableAccounts[0]
+        , [availableAccounts, selectedAccountId]);
+
+    useEffect(() => {
+        const loadStake = async () => {
+            if (activeAddress && symbol) {
+                const stake = await stakingService.getUserStakeBySymbol(activeAddress, symbol);
+                if (stake) {
+                    setUserStake(stake);
+                }
+                setIsLoading(false);
+            }
+        };
+        loadStake();
+    }, [activeAddress, symbol]);
+
+    // On-Chain Read & Write
+    const stakingData = useStakingPool(userStake?.pool.poolId);
+    const {
+        allowance: initialAllowance,
+        isLoading: isStakingLoading,
+        isTransactionPending,
+        approve,
+        stake,
+        unstake,
+        claimRewards,
+        refetch: refetchStaking
+    } = stakingData;
+
+    // High-frequency polling for the "Fast-Flow" button (Boost tab only)
+    const {
+        allowance: polledAllowance,
+        startPolling,
+        stopPolling
+    } = useStakingAllowance(userStake?.pool.tokenAddress);
+
+    // Combine for best UX
+    const currentAllowance = polledAllowance > 0n ? polledAllowance : initialAllowance;
+
+    const totalBalanceNumeric = useMemo(() => {
+        const walletBal = parseFloat(userTokenBalance) || 0;
+        const vaultBal = parseFloat(stakingData.userStakedFormatted || '0') || 0;
+        return (walletBal + vaultBal).toString();
+    }, [userTokenBalance, stakingData.userStakedFormatted]);
+
+    const totalBalance = useMemo(() => {
+        return `${parseFloat(totalBalanceNumeric).toFixed(4)} ${symbol}`;
+    }, [totalBalanceNumeric, symbol]);
+
+    const { isConnected } = useAccount();
+
+    const needsApproval = useMemo(() => {
+        if (activeTab !== 'Boost') {
+            stopPolling();
+            return false;
+        }
+        if (!amount || isNaN(parseFloat(amount))) return false;
+        try {
+            const amountWei = parseUnits(amount, 9);
+            const isNeeded = (currentAllowance || 0n) < amountWei;
+
+            if (isNeeded) {
+                startPolling();
+            } else {
+                stopPolling();
+            }
+
+            return isNeeded;
+        } catch (e) {
+            return false;
+        }
+    }, [amount, currentAllowance, activeTab, startPolling, stopPolling]);
+
+    // Position Stats
+    const positionStats = useMemo(() => {
+        return {
+            stakedAmount: stakingData.userStaked ? `${stakingData.userStakedFormatted} ${symbol}` : (userStake?.displayStakedAmount || '0 TWC'),
+            lockPeriod: userStake?.lockPeriodDays ? `${userStake.lockPeriodDays} Days` : 'Flexible',
+            rewardsEarned: stakingData.pendingRewards ? `${stakingData.pendingRewardsFormatted} ${symbol}` : (userStake?.displayRewardsEarned || '0 TWC'),
+            apy: stakingData.apr || (userStake?.displayApy || 'N/A'),
+            totalStaked: stakingData.totalStakedCompact || '...',
+            hasRewards: (stakingData.pendingRewards || 0n) > 0n
+        };
+    }, [stakingData, userStake, symbol]);
 
     const handleSelectionChange = (
         event: NativeSyntheticEvent<TextInputSelectionChangeEventData>
@@ -99,14 +220,59 @@ export default function ManageStakeScreen() {
     };
 
     const handleMax = () => {
-        const maxVal = '5.234';
+        const maxVal = activeTab === 'Boost' ? totalBalanceNumeric : (stakingData.userStakedFormatted || '0');
         setAmount(maxVal);
         setSelection({ start: maxVal.length, end: maxVal.length });
     };
 
-    const handleConfirm = () => {
-        console.log(`${activeTab} confirmed: ${amount} ${symbol}`);
-        router.back();
+    const handleConfirm = async () => {
+        if (!isConnected) {
+            Alert.alert('Connect Wallet', 'Please connect your wallet to continue.');
+            return;
+        }
+
+        if (!amount || parseFloat(amount) <= 0) {
+            Alert.alert('Invalid Amount', 'Please enter a valid amount.');
+            return;
+        }
+
+        try {
+            if (activeTab === 'Boost') {
+                if (needsApproval) {
+                    await approve();
+                    Alert.alert('Success', 'Token approved successfully!');
+                } else {
+                    await stake(amount);
+                    Alert.alert('Success', 'Successfully boosted stake!');
+                    setAmount('');
+                }
+            } else {
+                await unstake(amount);
+                Alert.alert('Success', 'Successfully unstaked tokens!');
+                setAmount('');
+            }
+            refetchStaking();
+        } catch (error: any) {
+            console.error('[ManageStake] Transaction error:', error);
+            const errorMsg = error?.message || 'Transaction failed. Please try again.';
+            if (!errorMsg.includes('User rejected')) {
+                Alert.alert('Transaction Failed', errorMsg);
+            }
+        }
+    };
+
+    const handleClaim = async () => {
+        try {
+            await claimRewards();
+            Alert.alert('Success', 'Rewards claimed successfully!');
+            refetchStaking();
+        } catch (error: any) {
+            console.error('[ManageStake] Claim error:', error);
+            const errorMsg = error?.message || 'Claim failed.';
+            if (!errorMsg.includes('User rejected')) {
+                Alert.alert('Claim Failed', errorMsg);
+            }
+        }
     };
 
     return (
@@ -124,8 +290,8 @@ export default function ManageStakeScreen() {
                 </TouchableOpacity>
 
                 <View style={styles.tokenHeader}>
-                    <Image source={TWCIcon} style={styles.tokenIcon} contentFit="cover" />
-                    <Text style={styles.tokenTitle}>{symbol || 'TWC'}</Text>
+                    <Image source={userStake?.pool.tokenLogo ? { uri: userStake.pool.tokenLogo } : TWCIcon} style={styles.tokenIcon} contentFit="cover" />
+                    <Text style={styles.headerSymbol}>{symbol || 'TWC'}</Text>
                 </View>
                 <View style={{ width: 24 }} />
             </View>
@@ -141,19 +307,24 @@ export default function ManageStakeScreen() {
                         <View style={styles.statsCard}>
                             <View style={styles.statItem}>
                                 <Text style={styles.statLabel}>Staked</Text>
-                                <Text style={styles.statValue}>5 TWC</Text>
-                            </View>
-                            <View style={styles.statItem}>
-                                <Text style={styles.statLabel}>Lock Period</Text>
-                                <Text style={styles.statValue}>30 Days</Text>
-                            </View>
-                            <View style={styles.statItem}>
-                                <Text style={styles.statLabel}>Total Staked</Text>
                                 <Text style={styles.statValue}>{positionStats.stakedAmount}</Text>
                             </View>
                             <View style={styles.statItem}>
-                                <Text style={styles.statLabel}>Users</Text>
-                                <Text style={styles.statValue}>180</Text>
+                                <Text style={styles.statLabel}>Lock Period</Text>
+                                <Text style={styles.statValue}>{positionStats.lockPeriod}</Text>
+                            </View>
+                            <View style={styles.statItem}>
+                                <Text style={styles.statLabel}>Rewards</Text>
+                                <Text style={styles.statValue}>{positionStats.rewardsEarned}</Text>
+                                {positionStats.hasRewards && (
+                                    <TouchableOpacity onPress={handleClaim} style={styles.claimButtonSmall}>
+                                        <Text style={styles.claimButtonTextSmall}>Claim</Text>
+                                    </TouchableOpacity>
+                                )}
+                            </View>
+                            <View style={styles.statItem}>
+                                <Text style={styles.statLabel}>APY</Text>
+                                <Text style={styles.statValue}>{positionStats.apy}</Text>
                             </View>
                         </View>
                     </View>
@@ -195,6 +366,10 @@ export default function ManageStakeScreen() {
                                 <Text style={styles.dropdownLabel}>Time Boost</Text>
                                 <Image source={DropdownIcon} style={{ width: 24, height: 24 }} contentFit="contain" />
                             </TouchableOpacity>
+
+                            <Text style={[styles.dropdownLabel, { marginTop: 16, color: colors.mutedText }]}>
+                                Add more tokens
+                            </Text>
                         </View>
                     )}
 
@@ -228,7 +403,7 @@ export default function ManageStakeScreen() {
                                 keyboardType="numeric"
                             />
 
-                            <Text style={styles.inputSuffix}>TWC</Text>
+                            {/* <Text style={styles.inputSuffix}>{symbol}</Text> */}
 
                             <TouchableOpacity onPress={handleMax} style={styles.maxButton}>
                                 <Text style={styles.maxButtonText}>Max</Text>
@@ -241,12 +416,12 @@ export default function ManageStakeScreen() {
                                 style={styles.accountTrigger}
                                 onPress={() => setIsAccountModalVisible(true)}
                             >
-                                <Text style={styles.accountLabel}>Account</Text>
+                                <Text style={styles.accountLabel}>{selectedAccount?.name || 'Account'}</Text>
                                 <Image source={DropdownIcon} style={{ width: 16, height: 16 }} contentFit="contain" />
                             </TouchableOpacity>
 
                             <View style={styles.balanceContainer}>
-                                <Text style={styles.balanceText}>0.0053 TWC</Text>
+                                <Text style={styles.balanceText}>{selectedAccount?.balance || userTokenBalance}</Text>
                                 <TouchableOpacity onPress={() => setIsDepositModalVisible(true)}>
                                     <AntDesign name="plus" size={16} color={colors.titleText} />
                                 </TouchableOpacity>
@@ -254,10 +429,11 @@ export default function ManageStakeScreen() {
                         </View>
                     </View>
 
-                    <View style={{ height: 20 }} />
+                    <View style={{ height: 30 }} />
 
-                    {/* Numeric Keypad */}
+                    {/* Numeric Keypad right after account selection */}
                     <NumericKeypad onPress={handleKeyPress} onDelete={handleDelete} />
+
                 </ScrollView>
             </View>
 
@@ -265,30 +441,40 @@ export default function ManageStakeScreen() {
             <View style={[styles.bottomBar, { paddingBottom: bottom + 12 }]}>
                 <TouchableOpacity
                     onPress={handleConfirm}
-                    style={styles.confirmButton}
+                    disabled={isTransactionPending || !amount || parseFloat(amount) <= 0}
+                    style={[
+                        styles.confirmButton,
+                        (isTransactionPending || !amount || parseFloat(amount) <= 0) && styles.confirmButtonDisabled
+                    ]}
                     activeOpacity={0.9}
                 >
-                    <Text style={styles.confirmButtonText}>
-                        {activeTab === 'Boost' ? 'Stake Now' : 'Unstake'}
-                    </Text>
+                    {isTransactionPending ? (
+                        <ActivityIndicator color="#000000" size="small" />
+                    ) : (
+                        <Text style={styles.confirmButtonText}>
+                            {activeTab === 'Boost' ? (needsApproval ? 'Approve Token' : 'Boost Stake') : 'Unstake Now'}
+                        </Text>
+                    )}
                 </TouchableOpacity>
             </View>
 
             <AccountSelectionModal
                 visible={isAccountModalVisible}
                 onClose={() => setIsAccountModalVisible(false)}
-                onSelect={(account) => console.log(account)}
+                onSelect={(account) => setSelectedAccountId(account.id)}
+                accounts={availableAccounts}
+                selectedAccountId={selectedAccountId}
+                totalBalance={totalBalance}
             />
 
             <DepositSelectionModal
                 visible={isDepositModalVisible}
                 onClose={() => setIsDepositModalVisible(false)}
                 onSelect={(action) => {
-                    console.log('Selected action:', action);
-                    if (action === 'deposit') {
-                        router.push('/earn/deposit');
-                    }
                     setIsDepositModalVisible(false);
+                    if (action === 'send') router.push('/send');
+                    else if (action === 'swap') router.push('/swap');
+                    else if (action === 'receive') router.push('/receive');
                 }}
             />
         </View>
@@ -324,9 +510,9 @@ const styles = StyleSheet.create({
         height: 32,
         borderRadius: 16,
     },
-    tokenTitle: {
+    headerSymbol: {
         fontFamily: 'Manrope-Bold',
-        fontSize: 16,
+        fontSize: 18,
         color: colors.titleText,
     },
     scrollView: {
@@ -452,12 +638,12 @@ const styles = StyleSheet.create({
         borderRadius: 16,
         paddingHorizontal: 16,
         paddingVertical: 4,
-        height: 72,
+        height: 64,
     },
     inputField: {
         flex: 1,
         fontFamily: 'Manrope-Regular',
-        fontSize: 32,
+        fontSize: 16,
         color: colors.titleText,
         height: '100%',
         padding: 0,
@@ -506,6 +692,10 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: colors.titleText,
     },
+    keypadContainer: {
+        marginTop: 10,
+        paddingBottom: 80,
+    },
     bottomBar: {
         position: 'absolute',
         bottom: 0,
@@ -526,6 +716,22 @@ const styles = StyleSheet.create({
     confirmButtonText: {
         fontFamily: 'Manrope-SemiBold',
         fontSize: 16,
+        color: '#000000',
+    },
+    confirmButtonDisabled: {
+        opacity: 0.6,
+        backgroundColor: colors.bgStroke,
+    },
+    claimButtonSmall: {
+        backgroundColor: colors.primaryCTA,
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 4,
+        marginTop: 4,
+    },
+    claimButtonTextSmall: {
+        fontFamily: 'Manrope-Bold',
+        fontSize: 10,
         color: '#000000',
     },
 });

@@ -26,6 +26,8 @@ interface SwapTokenCardProps {
     onTokenPress?: () => void;
     onMaxPress?: () => void;
     isLoadingQuote?: boolean;
+    isRefreshing?: boolean;
+    isStale?: boolean;
 }
 
 /**
@@ -46,6 +48,8 @@ export const SwapTokenCard: React.FC<SwapTokenCardProps> = ({
     onTokenPress,
     onMaxPress,
     isLoadingQuote = false,
+    isRefreshing = false,
+    isStale = false,
 }) => {
     const isFrom = variant === 'from';
     const label = isFrom ? 'From' : 'To';
@@ -142,7 +146,7 @@ export const SwapTokenCard: React.FC<SwapTokenCardProps> = ({
                             inputMode="decimal"
                             placeholder="0.0"
                             placeholderTextColor={colors.mutedText}
-                            style={styles.amountInput}
+                            style={[styles.amountInput, isRefreshing && { opacity: 0.6 }]}
                             textAlign="right"
                             multiline={false}
                             scrollEnabled={true}
@@ -154,7 +158,7 @@ export const SwapTokenCard: React.FC<SwapTokenCardProps> = ({
                                 showsHorizontalScrollIndicator={false}
                                 contentContainerStyle={styles.amountScrollContent}
                             >
-                                <Text style={styles.amountTextDisplay}>
+                                <Text style={[styles.amountTextDisplay, (isRefreshing || isStale) && { opacity: 0.6 }]}>
                                     {amount || '0.0'}
                                 </Text>
                             </ScrollView>
@@ -165,7 +169,7 @@ export const SwapTokenCard: React.FC<SwapTokenCardProps> = ({
                             <View style={styles.skeletonFiat} />
                         ) : (
                             fiatAmount && fiatAmount !== '$0.00' && fiatAmount !== '0.00' && (
-                                <Text style={styles.fiatAmountText}>{fiatAmount}</Text>
+                                <Text style={[styles.fiatAmountText, (isRefreshing || isStale) && { opacity: 0.6 }]}>{fiatAmount}</Text>
                             )
                         )}
                     </View>

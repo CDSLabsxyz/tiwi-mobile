@@ -46,11 +46,12 @@ export const TokenSelectSheet: React.FC<TokenSelectSheetProps> = ({
 }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const { data: balanceData } = useWalletBalances();
-    const { data: tokens, isLoading } = useTokens({
+    const { data: response, isLoading } = useTokens({
         query: searchQuery,
         // Ensure chainId is a number for filtering
         chains: typeof chainId === 'number' ? [chainId] : undefined,
     });
+    const tokens = response?.tokens;
 
     const options: TokenOption[] = React.useMemo(() => {
         if (!tokens) return [];

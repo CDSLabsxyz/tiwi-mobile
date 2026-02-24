@@ -8,6 +8,8 @@ import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { NFTListItem } from './NFTListItem';
 
+import { NFTEmptyState } from './NFTEmptyState';
+
 interface NFTListProps {
     nfts: NFTItem[];
     onNFTPress?: (nft: NFTItem) => void;
@@ -21,6 +23,10 @@ interface NFTListProps {
 export const NFTList: React.FC<NFTListProps> = ({ nfts, onNFTPress, isLoading }) => {
     if (isLoading && nfts.length === 0) {
         return null;
+    }
+
+    if (!isLoading && nfts.length === 0) {
+        return <NFTEmptyState />;
     }
 
     // Group NFTs into rows of 2

@@ -78,9 +78,11 @@ const styles = StyleSheet.create({
     container: {
         flexDirection: 'row',
         justifyContent: 'center',
-        gap: 6,
+        gap: 12,
         marginBottom: 40,
         width: '100%',
+        maxWidth: 360,
+        alignSelf: 'center',
     },
     box: {
         width: 48,

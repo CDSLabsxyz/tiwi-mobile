@@ -11,10 +11,6 @@ import { getChainById } from './SignerUtils';
  */
 export class LocalSignerEngine implements SignerEngine {
 
-    /**
-     * Helper to create a secure account wrapper that enforces biometrics
-     * before every single signature.
-     */
     private async createSecureAccount(address: string) {
         const privateKey = await getSecurePrivateKey(address);
         if (!privateKey) throw new Error('Private key not found locally');
@@ -22,28 +18,35 @@ export class LocalSignerEngine implements SignerEngine {
         const account = privateKeyToAccount(privateKey as `0x${string}`);
         const securityStore = useSecurityStore.getState();
 
+        // Helper to perform the dual guard check
+        const authorize = async (message: string) => {
+            // If biometrics are enabled, we perform the extra hardware-level verification.
+            // If not, we assume the app-level passcode check (which happens in the UI component
+            // before calling the signer) is sufficient.
+            if (securityStore.isBiometricsEnabled) {
+                const isAuthorized = await securityStore.authenticateBiometrics(message);
+                if (!isAuthorized) throw new Error('User authentication failed');
+            }
+            return true;
+        };
+
         // Wrap the account to intercept signing/sending calls
         const secureAccount = {
             ...account,
             signTransaction: async (tx: any) => {
-                const isAuthorized = await securityStore.authenticateBiometrics('Confirm Transaction');
-                if (!isAuthorized) throw new Error('User authentication failed');
+                await authorize('Confirm Transaction');
                 return account.signTransaction(tx);
             },
             sendTransaction: async (tx: any) => {
-                console.log("🚀 ~ LocalSignerEngine ~ createSecureAccount ~ tx:", tx)
-                const isAuthorized = await securityStore.authenticateBiometrics('Confirm Transaction');
-                if (!isAuthorized) throw new Error('User authentication failed');
+                await authorize('Confirm Transaction');
                 return account.sendTransaction(tx);
             },
             signTypedData: async (data: any) => {
-                const isAuthorized = await securityStore.authenticateBiometrics('Confirm Sign Message');
-                if (!isAuthorized) throw new Error('User authentication failed');
+                await authorize('Confirm Sign Message');
                 return account.signTypedData(data);
             },
             signMessage: async (msg: any) => {
-                const isAuthorized = await securityStore.authenticateBiometrics('Confirm Sign Message');
-                if (!isAuthorized) throw new Error('User authentication failed');
+                await authorize('Confirm Sign Message');
                 return account.signMessage(msg);
             }
         };
@@ -80,15 +83,18 @@ export class LocalSignerEngine implements SignerEngine {
                 transport: http()
             });
 
-            console.log(`[LocalSignerEngine] Executing transaction on chain ${tx.chainId}`);
-
-            const hash = await walletClient.sendTransaction({
+            const txArgs: any = {
                 to: tx.to as `0x${string}`,
                 value: tx.value ? BigInt(tx.value) : undefined,
-                data: (tx.data && tx.data.startsWith('0x')) ? (tx.data as `0x${string}`) : undefined,
                 chainId: Number(tx.chainId)
-            } as any);
+            };
 
+            if (tx.data && tx.data.startsWith('0x')) {
+                txArgs.data = tx.data as `0x${string}`;
+            }
+
+            const hash = await walletClient.sendTransaction(txArgs);
+            
             return { hash, status: 'success' };
         } catch (error: any) {
             console.error('[LocalSignerEngine] Transaction failed', error);

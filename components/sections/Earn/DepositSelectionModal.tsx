@@ -28,7 +28,7 @@ const ArrowRightIcon = require('../../../assets/earn/arrow-right-02.svg');
 interface DepositSelectionModalProps {
     visible: boolean;
     onClose: () => void;
-    onSelect: (action: 'deposit' | 'transfer' | 'receive') => void;
+    onSelect: (action: 'send' | 'swap' | 'receive') => void;
 }
 
 export const DepositSelectionModal: React.FC<DepositSelectionModalProps> = ({
@@ -102,22 +102,22 @@ export const DepositSelectionModal: React.FC<DepositSelectionModalProps> = ({
 
     const actions = [
         {
-            id: 'deposit',
-            title: 'Deposit',
-            subtitle: 'Deposit crypto from external wallet',
-            icon: DepositIcon,
+            id: 'send',
+            title: 'Send',
+            subtitle: 'Send crypto from your wallet',
+            icon: DepositIcon, // navigation-03.svg
         },
         {
-            id: 'transfer',
-            title: 'Transfer',
-            subtitle: 'Move crypto between accounts',
-            icon: TransferIcon,
+            id: 'swap',
+            title: 'Swap',
+            subtitle: 'Exchange crypto for TWC',
+            icon: TransferIcon, // exchange-01.svg
         },
         {
             id: 'receive',
             title: 'Receive',
-            subtitle: 'Move crypto between accounts',
-            icon: ReceiveIcon,
+            subtitle: 'Receive crypto from others',
+            icon: ReceiveIcon, // download-04.svg
         },
     ];
 

@@ -2,13 +2,14 @@ import { apiClient } from '@/services/apiClient';
 import { useQuery } from '@tanstack/react-query';
 
 /**
- * Hook to fetch all supported chains from the Tiwi backend
+ * Hook to fetch supported chains from the Tiwi backend,
+ * optionally filtered by ecosystem types (e.g., ['evm', 'solana'])
  */
-export function useChains() {
+export function useChains(ecosystems?: string[]) {
     return useQuery({
-        queryKey: ['supportedChains'],
+        queryKey: ['supportedChains', ecosystems],
         queryFn: async () => {
-            return apiClient.getChains();
+            return apiClient.getChains(ecosystems);
         },
         staleTime: 1000 * 60 * 60, // 1 hour - chains don't change often
     });

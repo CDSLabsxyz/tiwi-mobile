@@ -7,7 +7,7 @@
 // 1. IMPORT POLYFILLS FIRST (CRITICAL)
 import '@/utils/polyfills';
 
-import { LoadingOverlay } from '@/components/ui/LoadingOverlay';
+import { TransactionToast } from '@/components/ui/TransactionToast';
 import { appKit, wagmiAdapter } from '@/config/AppKitConfig';
 import { useTokenPrefetch } from '@/hooks/useTokenPrefetch';
 import { currencyService } from '@/services/currencyService';
@@ -44,7 +44,7 @@ const queryClient = new QueryClient({
 });
 
 // Prevent splash screen from auto-hiding
-SplashScreen.preventAutoHideAsync();
+// SplashScreen.preventAutoHideAsync();
 
 // Custom component to sync AppKit state with legacy walletStore
 import { useAccount } from 'wagmi';
@@ -53,19 +53,14 @@ function WalletStateSync() {
   const { setConnection } = useWalletStore();
 
   useEffect(() => {
-    // Sync React Native AppKit state to legacy Zustand store
+    // Only sync if we have a definitive connection.
+    // We let the navigation guard and setup flags handle the logic 
+    // for whether the user should be in the app or not.
     if (isConnected && address) {
       setConnection({
         address,
         chainId,
         isConnected: true,
-        // Optional: Could fetch wallet metadata/icon if available from hook
-      });
-    } else if (!isConnected) {
-      setConnection({
-        address: null,
-        chainId: undefined,
-        isConnected: false
       });
     }
   }, [isConnected, address, chainId, setConnection]);
@@ -85,7 +80,6 @@ function SecurityOverlay() {
   }, []);
 
   // Only show blur when app is not active (Privacy in App Switcher)
-  // When active, the Lock screen handles protection without needing an overlay.
   const shouldShowOverlay = appState !== 'active' && hasPasscode;
 
   if (!shouldShowOverlay) return null;
@@ -101,7 +95,7 @@ function SecurityOverlay() {
 }
 
 function AppContent() {
-  // Prefetch tokens on app load - Now safely inside QueryClientProvider
+  // Prefetch tokens on app load
   useTokenPrefetch();
 
   return (
@@ -123,7 +117,7 @@ function AppContent() {
         <Stack.Screen name="wallet/index" />
         <Stack.Screen name="wallet/create" />
         <Stack.Screen name="wallet/import" />
-      </Stack> {/* Fix for Android Modal Issue */}
+      </Stack>
       <SecurityOverlay />
       <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 9999, pointerEvents: 'box-none' }}>
         <AppKit />
@@ -139,29 +133,57 @@ export default function RootLayout() {
 
   const [isNavigationReady, setIsNavigationReady] = useState(false);
   const [isAppInitialized, setIsAppInitialized] = useState(false);
+  const [isSplashComplete, setIsSplashComplete] = useState(false);
+  // const [isMounted, setIsMounted] = useState(false);
+
+  // useEffect(() => {
+  //   setIsMounted(true);
+  // }, []);
 
   const { hasCompletedOnboarding, isLoading: isOnboardingLoading, checkOnboardingStatus } = useOnboardingStore();
   const { isConnected, address, _hasHydrated: isWalletHydrated } = useWalletStore();
-  const { isLocked, hasPasscode, isSetupComplete, lastActive, lockApp, updateLastActive, autoLockTimeout, _hasHydrated: isSecurityHydrated } = useSecurityStore();
+  const {
+    isLocked,
+    hasPasscode,
+    isSetupComplete,
+    setupPhase,
+    lastActive,
+    lockApp,
+    updateLastActive,
+    autoLockTimeout,
+    _hasHydrated: isSecurityHydrated,
+    resetSecurity
+  } = useSecurityStore();
+
   const isHydrated = isWalletHydrated && isSecurityHydrated;
-  console.log("🚀 ~ RootLayout ~ State:", { isLocked, isConnected, address, hasPasscode, isSetupComplete, isHydrated })
+  const isReadyForApp = isAppInitialized && isHydrated && isNavigationReady;
+
+  SplashScreen.setOptions({
+    duration: 1000,
+    fade: true,
+  });
+
 
   // 1. Initialize app state
   useEffect(() => {
     const init = async () => {
       try {
-        await checkOnboardingStatus();
-        await currencyService.init(); // Initialize currency service
-        // Register current device session
-        await deviceService.registerSession();
-
-        // Initialize LiFi SDK
-        await initializeLiFi();
+        SplashScreen.preventAutoHideAsync()
+        // await AsyncStorage.clear();
+        // await resetSecurity()
+        await Promise.all([
+          checkOnboardingStatus(),
+          currencyService.init(),
+          deviceService.registerSession(),
+          initializeLiFi()
+        ]);
       } catch (e) {
         console.error('Initialization error', e);
       } finally {
         setIsNavigationReady(true);
         setIsAppInitialized(true);
+        // Hide native splash once our animated splash is ready to take over
+        SplashScreen.hideAsync();
       }
     };
     init();
@@ -178,14 +200,12 @@ export default function RootLayout() {
           lockApp();
         }
         updateLastActive();
-        // Update device session last active (Local + Cloud)
         if (isConnected && address) {
           mobileSessionManager.syncCurrentSession(address);
         } else {
           deviceService.registerSession();
         }
       } else if (nextAppState === 'background') {
-        // Immediately update last active when going to background
         updateLastActive();
         if (isConnected && address) {
           mobileSessionManager.syncCurrentSession(address);
@@ -193,7 +213,6 @@ export default function RootLayout() {
           deviceService.registerSession();
         }
 
-        // If timeout is set to 0 (Immediately), lock now
         if (autoLockTimeout === 0 && hasPasscode) {
           lockApp();
         }
@@ -201,59 +220,68 @@ export default function RootLayout() {
     });
 
     return () => subscription.remove();
-  }, [lastActive, hasPasscode, lockApp, updateLastActive, autoLockTimeout]);
+  }, [lastActive, hasPasscode, lockApp, updateLastActive, autoLockTimeout, isConnected, address]);
 
   // 3. Navigation Guard Logic
   useEffect(() => {
+    // if (!isMounted || isOnboardingLoading || !isNavigationReady || !isHydrated) return;
     if (isOnboardingLoading || !isNavigationReady || !isHydrated) return;
 
     const segmentsArray = Array.from(segments);
-    const inOnboarding = segmentsArray[0] === 'onboarding';
-    const inWelcome = segmentsArray[0] === 'welcome';
-    const inSecurity = segmentsArray[0] === 'security';
-    const inLock = segmentsArray[0] === 'lock';
-    const inWalletFlow = segmentsArray[0] === 'wallet';
+    const firstSegment = segmentsArray[0];
+
+    const inOnboarding = firstSegment === 'onboarding';
+    const inWelcome = firstSegment === 'welcome';
+    const inSecurity = firstSegment === 'security';
+    const inLock = firstSegment === 'lock';
+    const inWalletFlow = firstSegment === 'wallet';
     const isRoot = segmentsArray.length === 0;
 
-    // Flow 1: First time onboarding
+    // Step 1: Handle Carousel Onboarding
     if (!hasCompletedOnboarding) {
-      if (!inOnboarding) {
-        router.replace('/onboarding' as any);
-      }
-    }
-    // Flow 2: Security Lock (Highest Priority for Returning Users)
-    // If user has a passcode and app is locked, force to Lock screen first.
-    else if (hasPasscode && isLocked) {
-      if (!inLock) {
-        router.replace('/lock' as any);
-      }
-    }
-    // Flow 3: Mandatory Security Setup
-    // If onboarding is done but security isn't finished (and no passcode set yet)
-    else if (!isSetupComplete && !hasPasscode) {
-      if (!inSecurity && !inWelcome) {
-        router.replace('/security' as any);
-      }
-    }
-    // Flow 4: Connection State
-    // If unlocked but no wallet session active (e.g. they finished onboarding but didn't create/import yet)
-    else if (!isConnected) {
-      if (!inWelcome && !inOnboarding && !inWalletFlow) {
-        router.replace('/welcome' as any);
-      }
-    }
-    // Flow 5: Authorized Session
-    else {
-      if (inOnboarding || inWelcome || inSecurity || inLock || isRoot) {
-        router.replace('/(tabs)' as any);
-      }
+      if (!inOnboarding) router.replace('/onboarding' as any);
+      return;
     }
 
-    const hideSplash = async () => {
-      await SplashScreen.hideAsync();
-    };
-    hideSplash();
-  }, [hasCompletedOnboarding, isConnected, isOnboardingLoading, isNavigationReady, segments, hasPasscode, isLocked, isSetupComplete]);
+    // Step 2: Handle Setup Phases
+    switch (setupPhase) {
+      case 'WELCOME':
+        if (!inWelcome && !inWalletFlow) {
+          router.replace('/welcome' as any);
+        }
+        break;
+
+      case 'WALLET_READY':
+        // User has wallet but no security. Force security setup.
+        if (!inSecurity) {
+          router.replace('/security' as any);
+        }
+        break;
+
+      case 'SECURITY_READY':
+        // User has passcode but hasn't finished notifications/final step.
+        // Depending on the app flow, we might want to let them continue 
+        // but let's see where they are.
+        if (!inSecurity && !inLock && !firstSegment?.includes('(tabs)')) {
+          // If they are not in security and not in tabs, send them back to finish
+          router.replace('/security/biometrics' as any); // Or wherever you want them to resume
+        }
+        break;
+
+      case 'COMPLETED':
+        // Standard app entry
+        if (isLocked) {
+          if (!inLock) router.replace('/lock' as any);
+          return;
+        }
+
+        // If they are in setup screens but completed, move to tabs
+        if (inOnboarding || inWelcome || inSecurity || inLock || isRoot) {
+          router.replace('/(tabs)' as any);
+        }
+        break;
+    }
+  }, [hasCompletedOnboarding, isConnected, isOnboardingLoading, isNavigationReady, segments, hasPasscode, isLocked, isSetupComplete, setupPhase, isHydrated]);
 
   // 4. Cloud Session Sync & Kill Switch
   useEffect(() => {
@@ -262,19 +290,14 @@ export default function RootLayout() {
     let subscription: any = null;
 
     const setupSession = async () => {
-      // Sync with cloud
       await mobileSessionManager.syncCurrentSession(address);
-
-      // Subscribe to remote termination
       const deviceId = await deviceService.getOrCreateDeviceId();
       subscription = mobileSessionManager.subscribeToKillSwitch(
         address,
         deviceId,
         () => {
-          // Emergency Logout Action
           const { setConnection } = useWalletStore.getState();
           const { lockApp } = useSecurityStore.getState();
-
           setConnection({
             address: null,
             isConnected: false,
@@ -289,11 +312,12 @@ export default function RootLayout() {
     setupSession();
 
     return () => {
-      if (subscription) {
-        subscription.unsubscribe();
-      }
+      if (subscription) subscription.unsubscribe();
     };
   }, [isConnected, address]);
+  const { address: activeAddress, activeChain, walletGroups, } = useWalletStore();
+  console.log("🚀 ~ RootLayout ~ :", { activeAddress, hasCompletedOnboarding, isConnected, isOnboardingLoading, isNavigationReady, segments, hasPasscode, isLocked, isSetupComplete, setupPhase, isHydrated, activeChain, walletGroups: walletGroups, })
+
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -302,7 +326,13 @@ export default function RootLayout() {
           <AppKitProvider instance={appKit}>
             <QueryClientProvider client={queryClient}>
               <AppContent />
-              {!isAppInitialized && <LoadingOverlay />}
+              <TransactionToast />
+              {/* {!isSplashComplete && (
+                <AnimatedSplashScreen
+                  isReady={isReadyForApp}
+                  onAnimationComplete={() => setIsSplashComplete(true)}
+                />
+              )} */}
             </QueryClientProvider>
           </AppKitProvider>
         </WagmiProvider>

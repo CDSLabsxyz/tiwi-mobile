@@ -36,79 +36,53 @@ export function formatPriceWithSubscript(
 ): string {
     const {
         symbol = '',
-        minDecimalsForSubscript = 5,
+        minDecimalsForSubscript = 4,
         maxDisplayDecimals = 4,
     } = options;
 
-    let numPrice: number;
+    let numPrice: number = typeof price === 'string' ? parseFloat(price) : price;
 
-    if (typeof price === 'string' && (price.includes('e') || price.includes('E'))) {
-        numPrice = parseFloat(price);
-    } else {
-        numPrice = typeof price === 'string' ? parseFloat(price) : price;
-    }
-
-    if (isNaN(numPrice) || numPrice <= 0) {
+    if (isNaN(numPrice) || numPrice === 0) {
         return `${symbol}0.00`;
     }
 
-    // For "normal" prices, use standard rounding
+    // Handle Negative
+    const isNegative = numPrice < 0;
+    numPrice = Math.abs(numPrice);
+
+    // For "normal" prices (>= 0.0001), use high-precision standard rounding
     if (numPrice >= 0.0001) {
-        if (numPrice < 1) {
-            return `${symbol}${numPrice.toLocaleString('en-US', {
-                minimumFractionDigits: 4,
-                maximumFractionDigits: 6,
-            })}`;
-        } else if (numPrice < 1000) {
-            return `${symbol}${numPrice.toLocaleString('en-US', {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 4,
-            })}`;
-        } else {
-            return `${symbol}${numPrice.toLocaleString('en-US', {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-            })}`;
-        }
+        let decimals = 2;
+        if (numPrice < 0.1) decimals = 6;
+        else if (numPrice < 1) decimals = 4;
+
+        const formatted = numPrice.toLocaleString('en-US', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: decimals,
+        });
+        return `${isNegative ? '-' : ''}${symbol}${formatted}`;
     }
 
-    // For very small prices, use subscript notation
-    // Use toFixed(20) to avoid scientific notation
-    const priceStr = numPrice.toFixed(20);
-    const [, decimalPart] = priceStr.split('.');
+    // For very small prices, use exponential notation to find leading zeros accurately
+    const exponential = numPrice.toExponential();
+    const [coefficient, exponentStr] = exponential.split('e');
+    const exponent = Math.abs(parseInt(exponentStr, 10)); // e.g. 10 for 2.5e-10
 
-    if (!decimalPart) {
-        return `${symbol}0.00`;
-    }
+    // leadingZeros is (exponent - 1) because 1.23e-10 is 0.000000000123 (9 zeros)
+    const leadingZeros = exponent - 1;
 
-    let firstNonZeroIndex = -1;
-    for (let i = 0; i < decimalPart.length; i++) {
-        if (decimalPart[i] !== '0') {
-            firstNonZeroIndex = i;
-            break;
-        }
-    }
-
-    if (firstNonZeroIndex === -1) {
-        return `${symbol}0.00`;
-    }
-
-    const leadingZeros = firstNonZeroIndex;
-
-    // If we have fewer leading zeros than the threshold, just show them
+    // If we have fewer leading zeros than the threshold, just show them as standard decimal
     if (leadingZeros < minDecimalsForSubscript) {
-        return `${symbol}${numPrice.toFixed(leadingZeros + maxDisplayDecimals + 1)}`;
+        const formatted = numPrice.toFixed(leadingZeros + maxDisplayDecimals);
+        return `${isNegative ? '-' : ''}${symbol}${formatted}`;
     }
 
     // Subscript notation for many leading zeros
-    const significantDigits = decimalPart.substring(firstNonZeroIndex);
-    const displayDigits = significantDigits.substring(0, maxDisplayDecimals);
-
-    // Number of zeros to show in subscript is (leadingZeros)
-    // DexScreener/Binance style: 0.0{number_of_zeros}significant_digits
+    // Extract significant digits from the coefficient (remove dot)
+    const significantDigits = coefficient.replace('.', '').substring(0, maxDisplayDecimals);
     const subscript = digitsToSubscript(leadingZeros.toString());
 
-    return `${symbol}0.0${subscript}${displayDigits}`;
+    return `${isNegative ? '-' : ''}${symbol}0.0${subscript}${significantDigits}`;
 }
 
 /**
@@ -303,4 +277,95 @@ export function formatFiatValue(
         // Fallback if locale/currency code is invalid
         return `$${val.toFixed(2)}`;
     }
+}
+
+/**
+ * SMART FORMATTING CORE
+ * Modular utilities to handle subscript, standard, and compact notation automatically.
+ */
+
+/**
+ * Smart Price Formatter
+ * - < $0.0001: Subscript (Sub-zero) notation
+ * - $0.0001 to $1000: Standard decimal notation (4-6 decimals)
+ * - > $1000: Compact notation ($1.2K, $98.5K)
+ */
+export function formatSmartPrice(price: number | string, symbol: string = '$'): string {
+    const num = typeof price === 'string' ? parseFloat(price) : price;
+    if (isNaN(num) || num === 0) return `${symbol}0.00`;
+
+    // Large Values: Compact
+    if (num >= 1000) {
+        return formatCompactNumber(num, { symbol, decimals: 2 });
+    }
+
+    // Tiny Values: Subscript
+    if (num < 0.0001) {
+        return formatPriceWithSubscript(num, { symbol });
+    }
+
+    // Standard Range: High Precision
+    return symbol + num.toLocaleString('en-US', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 6,
+    });
+}
+
+/**
+ * Smart USD Metrics Formatter (Market Cap, FDV, Liquidity, Volume)
+ * - Always uses Compact notation for readability.
+ * - Handles tiny values (e.g. liquidity in new pools) with standard decimals.
+ */
+export function formatSmartUSD(value: number | string, symbol: string = '$'): string {
+    const num = typeof value === 'string' ? parseFloat(value) : value;
+    if (isNaN(num)) return `${symbol}0.00`;
+
+    if (num >= 1000) {
+        return formatCompactNumber(num, { symbol, decimals: 2 });
+    }
+
+    if (num < 0.01 && num > 0) {
+        // For tiny metrics, use subscript to keep them readable
+        return formatPriceWithSubscript(num, { symbol });
+    }
+
+    return symbol + num.toLocaleString('en-US', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    });
+}
+
+/**
+ * Convert amount to smallest unit (wei, etc.)
+ * Ported from reference transfer.ts to ensure robust precision management
+ */
+export function toSmallestUnit(amount: string, decimals: number): string {
+    const amountStr = amount.toString().trim();
+
+    if (amountStr.includes("e") || amountStr.includes("E")) {
+        const num = parseFloat(amountStr);
+        const parts = num.toFixed(decimals).split(".");
+        const integerPart = parts[0];
+        const decimalPart = parts[1] || "";
+        const paddedDecimal = decimalPart.padEnd(decimals, "0").substring(0, decimals);
+        return integerPart + paddedDecimal;
+    }
+
+    const decimalIndex = amountStr.indexOf(".");
+    if (decimalIndex === -1) {
+        const amountBigInt = BigInt(amountStr);
+        const decimalsMultiplier = BigInt(10 ** decimals);
+        return (amountBigInt * decimalsMultiplier).toString();
+    }
+
+    const integerPart = amountStr.substring(0, decimalIndex) || "0";
+    let decimalPart = amountStr.substring(decimalIndex + 1);
+
+    if (decimalPart.length > decimals) {
+        decimalPart = decimalPart.substring(0, decimals);
+    } else {
+        decimalPart = decimalPart.padEnd(decimals, "0");
+    }
+
+    return integerPart + decimalPart;
 }

@@ -25,8 +25,12 @@ export class SignerController {
         const walletStore = useWalletStore.getState();
 
         // 1. Identify Wallet Source
-        const wallet = walletStore.connectedWallets.find(w => w.address.toLowerCase() === address.toLowerCase());
-        const isLocal = wallet?.source === 'internal' || wallet?.source === 'imported';
+        const walletGroup = walletStore.walletGroups.find(g => {
+            console.log("🚀 ~ SignerController ~ executeTransaction ~ g:", g)
+            return Object.values(g.addresses).some(addr => addr?.toLowerCase() === address.toLowerCase());
+        }
+        );
+        const isLocal = walletGroup?.source === 'internal' || walletGroup?.source === 'imported';
 
         if (isLocal) {
             // 2. Select Engine based on Chain Family

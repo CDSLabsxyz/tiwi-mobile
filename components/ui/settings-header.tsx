@@ -15,7 +15,6 @@ interface SettingsHeaderProps {
 }
 
 export function SettingsHeader({ title, onBack, showBack = true }: SettingsHeaderProps) {
-    const { top } = useSafeAreaInsets();
     const router = useRouter();
 
     const handleBack = () => {
@@ -29,7 +28,7 @@ export function SettingsHeader({ title, onBack, showBack = true }: SettingsHeade
     };
 
     return (
-        <View style={[styles.header, { paddingTop: top || 0 }]}>
+        <View style={[styles.header]}>
             <CustomStatusBar />
             <View style={styles.headerContent}>
                 {showBack ? (
@@ -68,7 +67,7 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingVertical: 10,
+        paddingBottom: 10,
     },
     backButton: {
         width: 24,

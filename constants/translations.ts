@@ -14,6 +14,7 @@ export const TRANSLATIONS: Record<string, Record<string, string>> = {
         'nav.earn': 'Earn',
         'nav.wallet': 'Wallet',
         'nav.settings': 'Settings',
+        'nav.referral': 'Referral',
 
         // Settings Main
         'settings.title': 'Settings',
@@ -103,6 +104,18 @@ export const TRANSLATIONS: Record<string, Record<string, string>> = {
         'onboarding.slide2_desc': 'Send and accept crypto payments instantly',
         'onboarding.slide3_title': 'NFTs Unlocked',
         'onboarding.slide3_desc': 'Mint, trade, and unlock exclusive utilities seamlessly',
+
+        // Referral Screen
+        'referral.title': 'Referrals',
+        'referral.hero_title': 'Invite Friends, Earn Together',
+        'referral.hero_desc': 'Share your link and get 10% of their trading fees. Your friends also get a 5% discount on their first trade!',
+        'referral.your_code': 'Your Referral Code',
+        'referral.copy_success': 'Referral code copied!',
+        'referral.share_msg': 'Join me on TIWI Protocol! Use my code {{code}} to get a 5% discount on your first trade: {{link}}',
+        'referral.stats_title': 'Your Stats',
+        'referral.total_referrals': 'Total Referrals',
+        'referral.earned_rewards': 'Total Earned',
+        'referral.rewards_desc': 'Rewards are paid instantly to your wallet in TWC tokens.',
     },
     fr: {
         // Navigation

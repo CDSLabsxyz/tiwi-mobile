@@ -34,6 +34,10 @@ export default function ConfirmPasscodeScreen() {
                 if (newCode === tempCode) {
                     // Success
                     setPasscode(newCode, true); // Set to true to indicate passcode exists
+
+                    // Mark security progress
+                    useSecurityStore.getState().setSetupPhase('SECURITY_READY');
+
                     setTimeout(() => {
                         router.push('/security/biometrics');
                     }, 100);
@@ -119,8 +123,7 @@ const styles = StyleSheet.create({
         flex: 1,
         alignItems: 'center',
         justifyContent: 'center',
-        paddingHorizontal: 32,
-        marginTop: -40,
+        paddingHorizontal: 24,
     },
     title: {
         fontFamily: 'Manrope-Bold',

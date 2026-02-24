@@ -1,103 +1,231 @@
 import { colors } from '@/constants/colors';
+import { useOrderBook } from '@/hooks/useOrderBook';
+import { formatCompactNumber } from '@/utils/formatting';
 import { Image } from 'expo-image';
-import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React, { useMemo } from 'react';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { MarketEmptyState } from './MarketEmptyState';
 
 const imgArrowDown = "http://localhost:3845/assets/0e836a617eebbb1ad1003c8ec4eee1d931781d9a.svg";
 
-interface OrderBookItem {
-    price: string;
-    quantity: string;
-    depth: number; // 0 to 1
-}
-
 interface OrderBookProps {
+    symbol: string;
+    address?: string;
+    chainId?: number;
+    marketType?: 'spot' | 'perp';
     baseSymbol: string;
     quoteSymbol?: string;
-    buyPressure?: number;
-    sellPressure?: number;
 }
 
-// Mock data matching the design exactly
-const MOCK_ORDERS = Array(15).fill({
-    buyPrice: '54,980',
-    sellPrice: '34,980',
-    quantity: '35.90K',
-}).map((item, i) => ({
-    ...item,
-    depth: i < 5 ? 0.05 : i < 10 ? (i - 4) * 0.15 : (i - 9) * 0.2 + 0.6
-}));
-
+/**
+ * Symmetric OrderBook (Vertical Valley Design)
+ * 
+ * Layout:
+ * [Qty Bid] [Price Bid (Green)] | [Price Ask (Red)] [Qty Ask]
+ * 
+ * Visualization:
+ * Cumulative depth bars meeting in the center spread.
+ */
 export const OrderBook: React.FC<OrderBookProps> = ({
+    symbol,
+    address,
+    chainId,
+    marketType = 'spot',
     baseSymbol,
-    quoteSymbol = 'USDT',
-    buyPressure = 80,
-    sellPressure = 10
+    quoteSymbol = 'USDT'
 }) => {
+    const { data, isLoading, isError, isConnected, provider, error } = useOrderBook({
+        symbol,
+        address,
+        chainId,
+        marketType,
+    });
+
+    const processedData = useMemo(() => {
+        if (!data) return { bids: [], asks: [], maxTotal: 1, buyPressure: 50 };
+
+        // Take more rows for a deep professional look
+        const bids = (data.bids || []).slice(0, 20);
+        const asks = (data.asks || []).slice(0, 20);
+
+        // Sort asks so best ask (lowest price) is at the end of the array 
+        // if we want to reverse them for the "spread at bottom" view.
+        // Actually, for the symmetric side-by-side rows:
+        // Best Bid (highest price) should be on the first row.
+        // Best Ask (lowest price) should be on the first row.
+        // This makes the "center valley" start at the top? 
+        // No, standard trading apps put the spread in the middle of a vertical list, 
+        // OR as the first row if it's a split view.
+        // The screenshot shows the spread at the TOP or BOTTOM? 
+        // Usually, best prices are closest to the center headers.
+
+        // Calculate Cumulative Totals for center-out visualization
+        let cumulativeBid = 0;
+        const bidsWithDepth = bids.map(b => {
+            const vol = parseFloat(b.total) || 0;
+            cumulativeBid += vol;
+            return { ...b, cumulativeTotal: cumulativeBid };
+        });
+
+        let cumulativeAsk = 0;
+        const asksWithDepth = asks.map(a => {
+            const vol = parseFloat(a.total) || 0;
+            cumulativeAsk += vol;
+            return { ...a, cumulativeTotal: cumulativeAsk };
+        });
+
+        const maxTotal = Math.max(cumulativeBid, cumulativeAsk, 1);
+
+        // Buy/Sell Pressure
+        const top5Buy = bids.slice(0, 5).reduce((acc, b) => acc + (parseFloat(b.total) || 0), 0);
+        const top5Sell = asks.slice(0, 5).reduce((acc, a) => acc + (parseFloat(a.total) || 0), 0);
+        const total = top5Buy + top5Sell;
+        const buyPressure = total > 0 ? Math.round((top5Buy / total) * 100) : 50;
+
+        return { bids: bidsWithDepth, asks: asksWithDepth, maxTotal, buyPressure };
+    }, [data]);
+
+    const formatPrice = (price: string) => {
+        const val = parseFloat(price);
+        if (isNaN(val)) return '--';
+        return val.toLocaleString(undefined, {
+            minimumFractionDigits: val < 1 ? 4 : 2,
+            maximumFractionDigits: val < 1 ? 6 : 2
+        });
+    };
+
+    const formatQty = (qty: string) => {
+        const val = parseFloat(qty);
+        if (isNaN(val)) return '--';
+        if (val >= 1000) return formatCompactNumber(val);
+        return val.toFixed(2);
+    };
+
+    const [showEmpty, setShowEmpty] = React.useState(false);
+
+    React.useEffect(() => {
+        const timer = setTimeout(() => {
+            if (!data || (data.bids.length === 0 && data.asks.length === 0)) {
+                setShowEmpty(true);
+            }
+        }, 6000); // 6s threshold
+
+        return () => clearTimeout(timer);
+    }, [data]);
+
+    if (isLoading && !data && !showEmpty) {
+        return (
+            <View style={[styles.container, styles.center]}>
+                <ActivityIndicator color={colors.primaryCTA} size="small" />
+                <Text style={styles.loadingText}>Connecting...</Text>
+            </View>
+        );
+    }
+
+    if ((!data || (data.bids.length === 0 && data.asks.length === 0)) && showEmpty) {
+        return <MarketEmptyState symbol={symbol} type="order book" />;
+    }
+
+    const { bids, asks, maxTotal, buyPressure } = processedData;
+    const sellPressure = 100 - buyPressure;
+
+    // Paired rows: Best Bid and Best Ask on the first row
+    const rowCount = Math.max(bids.length, asks.length);
+    const rows = Array.from({ length: rowCount }).map((_, i) => ({
+        bid: bids[i] || null,
+        ask: asks[i] || null,
+    }));
+
     return (
         <View style={styles.container}>
-            {/* Pressure Bar */}
-            <View style={styles.pressureContainer}>
-                <View style={styles.pressureLabels}>
-                    <Text style={[styles.pressureValue, { color: colors.success }]}>{buyPressure}%</Text>
-                    <Text style={[styles.pressureValue, { color: colors.error }]}>{sellPressure}%</Text>
+            {/* 1. Pressure Bar Section */}
+            <View style={styles.pressureArea}>
+                <View style={styles.pressureNumbers}>
+                    <Text style={[styles.pressureLabel, { color: colors.success }]}>{buyPressure}%</Text>
+                    <Text style={[styles.pressureLabel, { color: colors.error }]}>{sellPressure}%</Text>
                 </View>
-                <View style={styles.barWrapper}>
-                    <View style={[styles.barBase, { backgroundColor: colors.error, width: '100%' }]} />
-                    <View style={[styles.barBase, { backgroundColor: colors.success, width: `${buyPressure}%`, borderRadius: 100 }]} />
+                <View style={styles.pressureTrack}>
+                    <View style={[styles.pressureFill, { width: `${buyPressure}%`, backgroundColor: colors.success }]} />
+                    <View style={[styles.pressureFill, { width: `${sellPressure}%`, backgroundColor: colors.error, right: 0, position: 'absolute' }]} />
                 </View>
             </View>
 
-            {/* Main Tabs/Headers */}
-            <View style={styles.headerRow}>
-                <Text style={styles.headerLabel}>Buy</Text>
-                <Text style={styles.headerLabel}>Sell</Text>
-                <View style={styles.groupSelector}>
-                    <Text style={styles.groupText}>1</Text>
+            {/* 2. Top Labels: Buy, Sell, and Multiplier */}
+            <View style={styles.labelsWrapper}>
+                <Text style={styles.topLabel}>Buy</Text>
+                <Text style={styles.topLabel}>Sell</Text>
+                <View style={styles.depthSelector}>
+                    <Text style={styles.selectorText}>1</Text>
                     <Image source={{ uri: imgArrowDown }} style={styles.arrowIcon} />
                 </View>
             </View>
 
-            {/* Column Headers */}
-            <View style={styles.subHeader}>
-                <Text style={[styles.subText, { textAlign: 'left', flex: 1 }]}>Qty ({baseSymbol})</Text>
-                <Text style={[styles.subText, { textAlign: 'center', flex: 1.5 }]}>Price ({quoteSymbol})</Text>
-                <Text style={[styles.subText, { textAlign: 'right', flex: 1 }]}>Qty ({baseSymbol})</Text>
+            {/* 3. Column Headers */}
+            <View style={styles.headerRow}>
+                <Text style={[styles.headerText, { textAlign: 'left', flex: 1 }]}>Qty ({baseSymbol})</Text>
+                <Text style={[styles.headerText, { textAlign: 'center', flex: 2.2 }]}>Price ({quoteSymbol})</Text>
+                <Text style={[styles.headerText, { textAlign: 'right', flex: 1 }]}>Qty ({baseSymbol})</Text>
             </View>
 
-            {/* Orders List */}
-            <View style={styles.list}>
-                {MOCK_ORDERS.map((order, i) => (
-                    <View key={i} style={styles.row}>
-                        {/* Buy Depth */}
-                        <View style={[styles.depthBar, {
-                            width: `${order.depth * 50}%`,
-                            backgroundColor: 'rgba(0, 194, 120, 0.15)',
-                            left: 0,
-                            borderTopRightRadius: 2,
-                            borderBottomRightRadius: 2
-                        }]} />
+            {/* 4. Symmetric List */}
+            <View style={styles.listContainer}>
+                {rows.map((row, i) => {
+                    // Cumulative depth width
+                    const bidBarWidth = row.bid ? (row.bid.cumulativeTotal / maxTotal) * 100 : 0;
+                    const askBarWidth = row.ask ? (row.ask.cumulativeTotal / maxTotal) * 100 : 0;
 
-                        {/* Sell Depth */}
-                        <View style={[styles.depthBar, {
-                            width: `${order.depth * 50}%`,
-                            backgroundColor: 'rgba(255, 61, 113, 0.15)',
-                            right: 0,
-                            borderTopLeftRadius: 2,
-                            borderBottomLeftRadius: 2
-                        }]} />
+                    return (
+                        <View key={i} style={styles.dataRow}>
+                            {/* Bid Side Depth (Grows from center to left) */}
+                            <View style={[styles.halfRow, { left: 0 }]}>
+                                {row.bid && (
+                                    <View style={[styles.depthBar, {
+                                        width: `${bidBarWidth}%`,
+                                        backgroundColor: 'rgba(63, 234, 155, 0.08)',
+                                        right: 0
+                                    }]} />
+                                )}
+                            </View>
 
-                        <Text style={[styles.qtyText, { textAlign: 'left', flex: 1 }]}>{order.quantity}</Text>
+                            {/* Ask Side Depth (Grows from center to right) */}
+                            <View style={[styles.halfRow, { right: 0 }]}>
+                                {row.ask && (
+                                    <View style={[styles.depthBar, {
+                                        width: `${askBarWidth}%`,
+                                        backgroundColor: 'rgba(255, 92, 92, 0.08)',
+                                        left: 0
+                                    }]} />
+                                )}
+                            </View>
 
-                        <View style={styles.priceContainer}>
-                            <Text style={[styles.priceText, { color: colors.success }]}>{order.buyPrice}</Text>
-                            <Text style={[styles.priceText, { color: colors.error }]}>{order.sellPrice}</Text>
+                            {/* Content Columns */}
+                            <Text style={[styles.valText, { flex: 1, textAlign: 'left', color: colors.bodyText }]}>
+                                {row.bid ? formatQty(row.bid.quantity) : ''}
+                            </Text>
+
+                            <View style={styles.priceCenter}>
+                                <Text style={[styles.priceText, { color: colors.success, textAlign: 'right' }]}>
+                                    {row.bid ? formatPrice(row.bid.price) : ''}
+                                </Text>
+                                <Text style={[styles.priceText, { color: colors.error, textAlign: 'left' }]}>
+                                    {row.ask ? formatPrice(row.ask.price) : ''}
+                                </Text>
+                            </View>
+
+                            <Text style={[styles.valText, { flex: 1, textAlign: 'right', color: colors.bodyText }]}>
+                                {row.ask ? formatQty(row.ask.quantity) : ''}
+                            </Text>
                         </View>
-
-                        <Text style={[styles.qtyText, { textAlign: 'right', flex: 1 }]}>{order.quantity}</Text>
-                    </View>
-                ))}
+                    );
+                })}
             </View>
+
+            {/* 5. Connection Status (Footer style) */}
+            {/* <View style={styles.footerStatus}>
+                <View style={[styles.statusDot, isConnected ? styles.liveDot : styles.offlineDot]} />
+                <Text style={styles.footerText}>{isConnected ? 'LIVE CONNECTION' : 'RECONNECTING...'}</Text>
+                <Text style={styles.providerInfo}>{provider?.toUpperCase()}</Text>
+            </View> */}
         </View>
     );
 };
@@ -105,82 +233,103 @@ export const OrderBook: React.FC<OrderBookProps> = ({
 const styles = StyleSheet.create({
     container: {
         backgroundColor: colors.bg,
-        paddingHorizontal: 20,
+        paddingHorizontal: 16,
         paddingBottom: 20,
     },
-    pressureContainer: {
+    center: {
+        minHeight: 300,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    loadingText: {
+        fontFamily: 'Manrope-SemiBold',
+        fontSize: 10,
+        color: colors.mutedText,
+        marginTop: 10,
+        letterSpacing: 1,
+    },
+    pressureArea: {
         paddingVertical: 12,
     },
-    pressureLabels: {
+    pressureNumbers: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         marginBottom: 6,
     },
-    pressureValue: {
-        fontFamily: 'Manrope-SemiBold',
-        fontSize: 14,
+    pressureLabel: {
+        fontFamily: 'Manrope-Bold',
+        fontSize: 12,
     },
-    barWrapper: {
-        height: 6,
-        borderRadius: 100,
+    pressureTrack: {
+        height: 4,
+        backgroundColor: 'rgba(255,255,255,0.05)',
+        borderRadius: 2,
         overflow: 'hidden',
         position: 'relative',
     },
-    barBase: {
-        position: 'absolute',
-        top: 0,
-        bottom: 0,
-        left: 0,
+    pressureFill: {
+        height: '100%',
+        borderRadius: 2,
     },
-    headerRow: {
+    labelsWrapper: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingVertical: 12,
-        gap: 20,
+        justifyContent: 'space-between',
+        paddingVertical: 8,
     },
-    headerLabel: {
-        fontFamily: 'Manrope-SemiBold',
+    topLabel: {
+        fontFamily: 'Manrope-Bold',
         fontSize: 14,
-        color: colors.bodyText,
+        color: colors.titleText,
+        flex: 1,
+        // center the Sell label relative to its side
     },
-    groupSelector: {
-        marginLeft: 'auto',
+    depthSelector: {
         flexDirection: 'row',
         alignItems: 'center',
         backgroundColor: colors.bgSemi,
-        paddingHorizontal: 10,
-        paddingVertical: 4,
-        borderRadius: 8,
-        gap: 6,
+        paddingHorizontal: 6,
+        paddingVertical: 3,
+        borderRadius: 4,
+        gap: 4,
     },
-    groupText: {
-        fontFamily: 'Manrope-Medium',
+    selectorText: {
+        fontFamily: 'Manrope-Bold',
         fontSize: 12,
         color: colors.titleText,
     },
     arrowIcon: {
-        width: 12,
-        height: 12,
+        width: 10,
+        height: 10,
         tintColor: colors.bodyText,
     },
-    subHeader: {
+    headerRow: {
         flexDirection: 'row',
-        paddingVertical: 8,
-        marginBottom: 4,
+        paddingVertical: 6,
+        borderBottomWidth: 1,
+        borderBottomColor: colors.bgStroke,
     },
-    subText: {
-        fontFamily: 'Manrope-Medium',
+    headerText: {
+        fontFamily: 'Manrope-Bold',
         fontSize: 10,
         color: colors.mutedText,
+        textTransform: 'uppercase',
     },
-    list: {
-        gap: 4,
+    listContainer: {
+        paddingVertical: 4,
     },
-    row: {
+    dataRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        height: 24,
+        height: 22, // Keep it compact
         position: 'relative',
+        marginVertical: 1,
+    },
+    halfRow: {
+        position: 'absolute',
+        top: 0,
+        bottom: 0,
+        width: '50%',
     },
     depthBar: {
         position: 'absolute',
@@ -188,21 +337,50 @@ const styles = StyleSheet.create({
         bottom: 0,
         zIndex: 0,
     },
-    qtyText: {
+    valText: {
         fontFamily: 'Manrope-Medium',
         fontSize: 12,
-        color: colors.titleText,
         zIndex: 1,
     },
-    priceContainer: {
-        flex: 1.5,
+    priceCenter: {
+        flex: 2.2,
         flexDirection: 'row',
         justifyContent: 'center',
-        gap: 8,
+        gap: 12,
         zIndex: 1,
     },
     priceText: {
-        fontFamily: 'Manrope-SemiBold',
+        fontFamily: 'Manrope-Bold',
         fontSize: 12,
+        width: '45%',
+    },
+    footerStatus: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingTop: 16,
+        gap: 6,
+    },
+    statusDot: {
+        width: 6,
+        height: 6,
+        borderRadius: 3,
+    },
+    liveDot: {
+        backgroundColor: colors.success,
+    },
+    offlineDot: {
+        backgroundColor: colors.error,
+    },
+    footerText: {
+        fontFamily: 'Manrope-Bold',
+        fontSize: 8,
+        color: colors.mutedText,
+        letterSpacing: 0.5,
+    },
+    providerInfo: {
+        marginLeft: 'auto',
+        fontFamily: 'Manrope-ExtraBold',
+        fontSize: 8,
+        color: colors.primaryCTA,
     },
 });

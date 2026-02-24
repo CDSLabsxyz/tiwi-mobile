@@ -1,5 +1,5 @@
 import { colors } from '@/constants/colors';
-import { WALLET_ADDRESS, truncateAddress } from '@/utils/wallet';
+import { truncateAddress } from '@/utils/wallet';
 import * as Clipboard from 'expo-clipboard';
 import { Image } from 'expo-image';
 import React, { useEffect, useState } from 'react';
@@ -56,14 +56,14 @@ export const WalletModal: React.FC<WalletModalProps> = ({
     const displayIcon = walletIcon ? { uri: walletIcon } : TiwiCat;
 
     // Use provided address or store address or fallback
-    const fullAddress = walletAddress || storeAddress || WALLET_ADDRESS;
+    const fullAddress = walletAddress || storeAddress || '';
     const displayAddress = truncateAddress(fullAddress);
 
     const [totalBalance, setTotalBalance] = useState(initialBalance || `$${totalNetWorthUsd}`);
     const { bottom } = useSafeAreaInsets();
 
     // Modal height from Figma: 441px
-    const modalHeight = 441;
+    const modalHeight = 480;
     const translateY = useSharedValue(modalHeight); // Start off-screen
     const opacity = useSharedValue(0);
     const [copied, setCopied] = useState(false);
@@ -165,7 +165,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                             ]}
                         >
                             <Pressable onPress={(e) => e.stopPropagation()} style={styles.innerContentWrapper}>
-                                <View style={styles.contentContainer}>
+                                <View style={[styles.contentContainer, ]}>
                                     {/* Top Handle Bar */}
                                     <View style={styles.handleBarContainer}>
                                         <View style={styles.handleBar} />

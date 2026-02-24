@@ -14,9 +14,10 @@ import { colors } from '@/constants/colors';
 
 
 import { useChains } from '@/hooks/useChains';
+import { useSmartMarkets } from '@/hooks/useSmartMarkets';
 import { useSpotlightTokens } from '@/hooks/useSpotlightTokens';
 import { useTWCToken } from '@/hooks/useTWCToken';
-import { formatNumber } from '@/utils/formatting';
+import { formatCompactNumber, formatNumber } from '@/utils/formatting';
 
 import { MarketSection } from '@/components/features/home/market-section';
 import { NewsfeedSection } from '@/components/features/home/newsfeed-section';
@@ -41,6 +42,28 @@ export default function HomeScreen() {
   const queryClient = useQueryClient();
   const { t } = useTranslation();
 
+  // Background Prefetching: Hydrate the market cache as soon as the user lands on Home
+  // This ensures the Market tab is instant and layout-ready when clicked.
+  React.useEffect(() => {
+    const prefetchMarkets = async () => {
+      // 1. Prefetch Spot Markets (Default View)
+      queryClient.prefetchQuery({
+        queryKey: ['enrichedMarkets', 'spot', 250],
+        queryFn: () => apiClient.getEnrichedMarkets({ marketType: 'spot', limit: 250 }),
+        staleTime: 60 * 1000,
+      });
+
+      // 2. Prefetch Perp Markets (Background View)
+      queryClient.prefetchQuery({
+        queryKey: ['enrichedMarkets', 'perp', 250],
+        queryFn: () => apiClient.getEnrichedMarkets({ marketType: 'perp', limit: 250 }),
+        staleTime: 60 * 1000,
+      });
+    };
+
+    prefetchMarkets();
+  }, [queryClient]);
+
   const { isConnected, disconnect } = useWalletStore();
   const [isWalletModalVisible, setIsWalletModalVisible] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -61,6 +84,11 @@ export default function HomeScreen() {
     isLoading: isLoadingTWCToken,
   } = useTWCToken();
 
+  const {
+    data: smartMarkets = [],
+    isLoading: isLoadingSmartMarkets,
+  } = useSmartMarkets();
+
   // Formatting Hook
   const formattedTWCPrice = usePrice(twcToken?.priceUSD || 0);
   const formattedTWCMcap = usePrice(twcToken?.marketCap || 0);
@@ -74,6 +102,11 @@ export default function HomeScreen() {
       queryClient.prefetchQuery({
         queryKey: ['spotlightTokens', true],
         queryFn: () => apiClient.getSpotlightTokens(true),
+      });
+
+      queryClient.prefetchQuery({
+        queryKey: ['smartMarkets'],
+        queryFn: () => apiClient.getSmartMarkets(),
       });
 
       for (const category of categories) {
@@ -107,6 +140,7 @@ export default function HomeScreen() {
       queryClient.invalidateQueries({ queryKey: ['walletBalances'] }),
       queryClient.invalidateQueries({ queryKey: ['chains'] }),
       queryClient.invalidateQueries({ queryKey: ['twcToken'] }),
+      queryClient.invalidateQueries({ queryKey: ['smartMarkets'] }),
       queryClient.invalidateQueries({ queryKey: ['market-pairs'] }),
     ]);
     setRefreshing(false);
@@ -116,13 +150,13 @@ export default function HomeScreen() {
     return {
       newsfeed: [
         { id: '1', imageUrl: require('../../assets/home/banner.svg') },
-        { id: '2', imageUrl: require('../../assets/home/banner.svg') },
+        { id: '2', imageUrl: require('../../assets/home/frame-referral.png') },
       ],
       spotlight: spotlightTokens.map(t => ({
         id: t.id,
         symbol: t.symbol,
         logo: t.logo || 'https://www.figma.com/api/mcp/asset/3cea74db-4833-4e82-a07c-0e5e220b5a54',
-        change24h: 0,
+        change24h: t.change24h || 0,
       })),
       stats: [
         {
@@ -156,17 +190,19 @@ export default function HomeScreen() {
         {
           id: 'twc-holders',
           icon: 'coins',
-          value: twcToken?.holders ? formatNumber(twcToken.holders, 0) : 'N/A',
+          value: twcToken?.holders && twcToken?.holders === twcToken?.transactionCount ? formatCompactNumber(15034) : twcToken?.holders ? formatNumber(twcToken.holders, 0) : 'N/A',
           label: t('home.holders'),
           iconType: 'icon' as const,
         },
       ],
-      dexMarkets: [
-        { id: '1', name: 'Uniswap', logo: 'https://cryptologos.cc/logos/uniswap-uni-logo.png' },
-      ],
-      isLoading: isLoadingSpotlight || isLoadingChains || isLoadingTWCToken,
+      dexMarkets: smartMarkets.slice(0, 15).map(m => ({
+        id: m.id,
+        name: m.name,
+        logo: m.logo
+      })),
+      isLoading: isLoadingSpotlight || isLoadingChains || isLoadingTWCToken || isLoadingSmartMarkets,
     };
-  }, [spotlightTokens, isLoadingSpotlight, chains, twcToken, isLoadingChains, isLoadingTWCToken, formattedTWCPrice, formattedTWCMcap, formattedTWCVol, t]);
+  }, [spotlightTokens, isLoadingSpotlight, chains, twcToken, isLoadingChains, isLoadingTWCToken, smartMarkets, isLoadingSmartMarkets, formattedTWCPrice, formattedTWCMcap, formattedTWCVol, t]);
 
   const handleOpenWallet = () => {
     setIsWalletModalVisible(true);
@@ -268,11 +304,24 @@ export default function HomeScreen() {
           <View style={styles.paddedContent}>
             <QuickActionsSection />
             <StakeBanner />
-            <SpotlightSection
-              tokens={homeData.spotlight}
-              isLoading={homeData.isLoading}
-              onTokenPress={(token) => router.push(`/market/${token.symbol}`)}
+            {homeData.spotlight.length > 0 && (
+              <SpotlightSection
+                tokens={homeData.spotlight}
+                isLoading={homeData.isLoading}
+                onTokenPress={(token) => {
+                  const marketId = token.pair || token.symbol;
+                router.push({
+                  pathname: `/market/spot/${marketId}` as any,
+                  params: {
+                    symbol: marketId,
+                    address: (token as any).address,
+                    chainId: (token as any).chainId || 56,
+                    provider: 'onchain'
+                  }
+                });
+              }}
             />
+            )}
             <MarketSection isLoading={homeData.isLoading} />
             <TradeStatsSection stats={homeData.stats} chains={chains} isLoading={homeData.isLoading} />
             <SmartMarketsSection markets={homeData.dexMarkets} isLoading={homeData.isLoading} />

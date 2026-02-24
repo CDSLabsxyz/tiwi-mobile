@@ -18,6 +18,7 @@ export interface SpotlightToken {
   symbol: string;
   logo: string | any;
   change24h: number;
+  pair?: string;
 }
 
 export interface StatCard {

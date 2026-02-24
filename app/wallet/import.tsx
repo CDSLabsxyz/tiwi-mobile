@@ -1,5 +1,6 @@
+import { ProcessingOverlay } from '@/components/ui/ProcessingOverlay';
 import { QRScanner } from '@/components/ui/QRScanner';
-import { SuccessModal } from '@/components/ui/SuccessModal';
+import { NetworkSelectionModal } from '@/components/wallet/NetworkSelectionModal';
 import { colors } from '@/constants/colors';
 import {
     importWalletByMnemonic,
@@ -7,7 +8,8 @@ import {
     validateMnemonic,
     validatePrivateKey
 } from '@/services/walletCreationService';
-import { useWalletStore } from '@/store/walletStore';
+import { useSecurityStore } from '@/store/securityStore';
+import { ChainType, useWalletStore } from '@/store/walletStore';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { useRouter } from 'expo-router';
@@ -26,12 +28,12 @@ import {
 
 export default function ImportWalletScreen() {
     const router = useRouter();
-    const { setConnection } = useWalletStore();
+    const { addWalletGroup } = useWalletStore();
 
     const [inputText, setInputText] = useState('');
     const [isLoading, setIsLoading] = useState(false);
-    const [isSuccess, setIsSuccess] = useState(false);
     const [showScanner, setShowScanner] = useState(false);
+    const [showNetworkModal, setShowNetworkModal] = useState(false);
 
     const handleScan = (data: string) => {
         // Basic sanitization
@@ -68,36 +70,49 @@ export default function ImportWalletScreen() {
         setInputText(text);
     };
 
+    const { setSetupPhase } = useSecurityStore();
+
     const handleContinue = async () => {
         if (!validation.isValid) return;
+        setShowNetworkModal(true);
+    };
 
+    const handleNetworkSelect = async (selected: ChainType | 'MULTI') => {
         setIsLoading(true);
+
+        const timer = new Promise(resolve => setTimeout(resolve, 3000));
+
         try {
-            let address = '';
+            let importedWallet;
             if (validation.type === 'mnemonic') {
-                address = await importWalletByMnemonic(inputText.trim());
+                importedWallet = await importWalletByMnemonic(inputText.trim());
             } else {
-                address = await importWalletByPrivateKey(inputText.trim());
+                const chain = selected === 'MULTI' ? 'EVM' : selected;
+                importedWallet = await importWalletByPrivateKey(inputText.trim(), chain);
             }
 
-            setConnection({
-                address,
-                chainId: 1,
-                isConnected: true,
-                source: 'imported',
+            // Artificial delay for high-fidelity feel
+            await timer;
+
+            addWalletGroup({
+                id: Date.now().toString(),
+                name: 'Wallet 1',
+                type: validation.type === 'mnemonic' ? 'mnemonic' : 'privateKey',
+                primaryChain: (selected === 'MULTI' ? 'EVM' : selected) as ChainType,
+                addresses: importedWallet.addresses,
+                source: 'imported'
             });
 
-            setIsSuccess(true);
+            // Update setup phase to persist progress
+            setSetupPhase('WALLET_READY');
+
+            // Redirect directly to Security flow
+            router.push('/security' as any);
         } catch (error) {
             console.error('Import failed', error);
         } finally {
             setIsLoading(false);
         }
-    };
-
-    const handleDone = () => {
-        setIsSuccess(false);
-        router.push('/security' as any);
     };
 
     const inputBorderColor = useMemo(() => {
@@ -127,7 +142,7 @@ export default function ImportWalletScreen() {
                     <View style={[styles.inputWrapper, { borderColor: inputBorderColor }]}>
                         <TextInput
                             style={styles.input}
-                            placeholder="Enter your private key"
+                            placeholder="Enter seed phrase or private key"
                             placeholderTextColor="#6E7873"
                             multiline
                             autoCapitalize="none"
@@ -152,7 +167,7 @@ export default function ImportWalletScreen() {
                     </View>
 
                     {/* Paste Button */}
-                    <TouchableOpacity style={styles.pasteButton} onPress={handlePaste}>
+                    <TouchableOpacity style={[styles.pasteButton, { marginBottom: 40 }]} onPress={handlePaste}>
                         <Text style={styles.pasteText}>Paste</Text>
                         <Ionicons name="copy-outline" size={16} color={colors.primaryCTA} />
                     </TouchableOpacity>
@@ -177,17 +192,30 @@ export default function ImportWalletScreen() {
                 </View>
             </KeyboardAvoidingView>
 
-            {/* Success Modal (Figma node: 3279:123023) */}
-            <SuccessModal
-                isVisible={isSuccess}
-                type="imported"
-                onDone={handleDone}
-            />
 
             <QRScanner
                 isVisible={showScanner}
                 onClose={() => setShowScanner(false)}
                 onScan={handleScan}
+            />
+
+            <NetworkSelectionModal
+                visible={showNetworkModal}
+                onClose={() => setShowNetworkModal(false)}
+                onSelect={handleNetworkSelect}
+                mode={validation.type === 'mnemonic' ? 'mnemonic' : 'privateKey'}
+            />
+
+            <ProcessingOverlay
+                isVisible={isLoading}
+                title="Importing wallet..."
+                subtitles={[
+                    "Recovering your digital legacy.",
+                    "The Tiwi Protocol welcomes you back.",
+                    "Synchronizing your multi-chain balances...",
+                    "Unlocking a world of borderless finance.",
+                    "Ready to swap, trade, and earn."
+                ]}
             />
         </SafeAreaView>
     );

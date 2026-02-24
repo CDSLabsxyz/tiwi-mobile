@@ -12,14 +12,14 @@ interface NumericKeypadProps {
 
 const KEYS = [
     { label: '1', value: '1' },
-    { label: '2', value: '2', sub: 'ABC' },
-    { label: '3', value: '3', sub: 'DEF' },
-    { label: '4', value: '4', sub: 'GHI' },
-    { label: '5', value: '5', sub: 'JKL' },
-    { label: '6', value: '6', sub: 'MNO' },
-    { label: '7', value: '7', sub: 'PQRS' },
-    { label: '8', value: '8', sub: 'TUV' },
-    { label: '9', value: '9', sub: 'WXYZ' },
+    { label: '2', value: '2' },
+    { label: '3', value: '3' },
+    { label: '4', value: '4' },
+    { label: '5', value: '5' },
+    { label: '6', value: '6' },
+    { label: '7', value: '7' },
+    { label: '8', value: '8' },
+    { label: '9', value: '9' },
     { label: '.', value: '.', isDecimal: true },
     { label: '0', value: '0' },
     { label: 'del', value: 'del', isAction: true },
@@ -52,22 +52,15 @@ export const NumericKeypad: React.FC<NumericKeypadProps> = ({
                             key={key.value}
                             style={styles.keyContainer}
                             onPress={() => handlePress(key)}
-                            activeOpacity={0.7}
+                            activeOpacity={0.6}
                         >
-                            {key.value === 'del' ? (
-                                <View style={styles.keyBackground}>
+                            <View style={styles.keyBackground}>
+                                {key.value === 'del' ? (
                                     <Ionicons name="backspace-outline" size={24} color={colors.titleText} />
-                                </View>
-                            ) : key.value === '.' ? (
-                                <View style={styles.keyBackground}>
-                                    <Text style={styles.keyLabel}>.</Text>
-                                </View>
-                            ) : (
-                                <View style={styles.keyBackground}>
+                                ) : (
                                     <Text style={styles.keyLabel}>{key.label}</Text>
-                                    {key.sub && <Text style={styles.keySubLabel}>{key.sub}</Text>}
-                                </View>
-                            )}
+                                )}
+                            </View>
                         </TouchableOpacity>
                     );
                 })}
@@ -78,37 +71,31 @@ export const NumericKeypad: React.FC<NumericKeypadProps> = ({
 
 const styles = StyleSheet.create({
     container: {
-        paddingHorizontal: 6,
+        paddingHorizontal: 20,
         paddingBottom: 20,
     },
     grid: {
         flexDirection: 'row',
         flexWrap: 'wrap',
+        gap: 8,
     },
     keyContainer: {
-        width: '33.33%',
+        width: '31.5%', // Adjust for gap
         height: 64,
-        padding: 4,
         justifyContent: 'center',
         alignItems: 'center',
     },
     keyBackground: {
         flex: 1,
         width: '100%',
-        backgroundColor: colors.bgSemi, // Slight contrast key bg
-        borderRadius: 8,
+        backgroundColor: '#1B1B1B', // Consistent with deposit modal and security keypad blocks
+        borderRadius: 12,
         justifyContent: 'center',
         alignItems: 'center',
     },
     keyLabel: {
         fontFamily: 'Manrope-SemiBold',
-        fontSize: 24,
+        fontSize: 28,
         color: colors.titleText,
-    },
-    keySubLabel: {
-        fontFamily: 'Manrope-Medium',
-        fontSize: 10,
-        color: colors.mutedText,
-        marginTop: -2,
     },
 });

@@ -4,11 +4,11 @@
  * Matches Figma design exactly (node-id: 3279-120160)
  */
 
-import React from "react";
-import { View, Text, TouchableOpacity } from "react-native";
-import { Image } from "expo-image";
 import { colors } from "@/constants/colors";
 import type { NFTDetail } from "@/services/walletService";
+import { Image } from "expo-image";
+import React from "react";
+import { Text, TouchableOpacity, View } from "react-native";
 
 interface NFTDetailHeaderProps {
   nft: NFTDetail;
@@ -81,7 +81,6 @@ export const NFTDetailHeader: React.FC<NFTDetailHeaderProps> = ({
           )}
         </View>
 
-        {/* Creator */}
         <Text
           style={{
             fontFamily: "Manrope-Regular",
@@ -91,7 +90,7 @@ export const NFTDetailHeader: React.FC<NFTDetailHeaderProps> = ({
           }}
         >
           <Text style={{ fontFamily: "Manrope-Regular" }}>By </Text>
-          {nft.createdBy}
+          {nft.createdBy || 'Unknown Creator'}
         </Text>
       </View>
 

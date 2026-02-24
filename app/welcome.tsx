@@ -8,6 +8,7 @@ import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { SuccessModal } from '@/components/ui/SuccessModal';
 import { colors } from '@/constants/colors';
 import { useTranslation } from '@/hooks/useLocalization';
+import { useSecurityStore } from '@/store/securityStore';
 import { useAppKit } from '@reown/appkit-react-native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
@@ -23,13 +24,16 @@ function WelcomeScreen() {
     const { isConnected } = useAccount();
     const { t } = useTranslation();
     const [isSuccess, setIsSuccess] = useState(false);
+    const { setSetupPhase } = useSecurityStore();
 
     // Watch for connection from AppKit
     useEffect(() => {
         if (isConnected) {
             setIsSuccess(true);
+            // Pre-emptively set phase
+            setSetupPhase('WALLET_READY');
         }
-    }, [isConnected]);
+    }, [isConnected, setSetupPhase]);
 
     const handleConnectWallet = async () => {
         await open();
@@ -41,6 +45,7 @@ function WelcomeScreen() {
 
     const handleSuccessDone = () => {
         setIsSuccess(false);
+        setSetupPhase('WALLET_READY');
         router.push('/security' as any);
     };
 

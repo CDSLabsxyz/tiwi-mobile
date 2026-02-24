@@ -8,15 +8,14 @@ import { WalletHeader } from '@/components/sections/Wallet/WalletHeader';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { colors } from '@/constants/colors';
 import { useChains } from '@/hooks/useChains';
-import { fetchWalletData, type PortfolioItem } from '@/services/walletService';
-import { mapAssetToTokenOption } from '@/utils/assetMapping';
-import { WALLET_ADDRESS, truncateAddress } from '@/utils/wallet';
+import { useTokens } from '@/hooks/useTokens';
+import { useWalletStore } from '@/store/walletStore';
+import { truncateAddress } from '@/utils/wallet';
 import * as Clipboard from 'expo-clipboard';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, usePathname, useRouter } from 'expo-router';
-import * as Sharing from 'expo-sharing';
-import React, { useEffect, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { ActivityIndicator, Alert, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -24,12 +23,15 @@ const CopyIcon = require('../assets/wallet/copy-01.svg');
 const CheckmarkIcon = require('../assets/swap/checkmark-circle-01.svg');
 const SearchIcon = require('../assets/swap/search-01.svg');
 const ShareIcon = require('../assets/wallet/share-08.svg');
+const IrisScanIcon = require('../assets/home/iris-scan.svg');
 
-interface TokenWithAddress {
-    token: ReturnType<typeof mapAssetToTokenOption>;
+interface DisplayToken {
+    symbol: string;
+    name: string;
+    logoURI: string;
+    chainId: number;
     address: string;
-    chainId: string | number;
-    asset: PortfolioItem;
+    chainType: 'evm' | 'solana' | 'bitcoin';
 }
 
 export default function ReceiveScreen() {
@@ -37,109 +39,89 @@ export default function ReceiveScreen() {
     const router = useRouter();
     const pathname = usePathname();
     const params = useLocalSearchParams<{ tokenId?: string }>();
-    const { data: chains } = useChains();
+    const { connectedWallets } = useWalletStore();
 
-    const [tokens, setTokens] = useState<TokenWithAddress[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
-    const [selectedToken, setSelectedToken] = useState<TokenWithAddress | null>(null);
+    const [selectedChainFilter, setSelectedChainFilter] = useState<number | null>(null);
+    const [selectedToken, setSelectedToken] = useState<DisplayToken | null>(null);
     const [copied, setCopied] = useState(false);
-    const [isLoading, setIsLoading] = useState(true);
 
-    // Load tokens on mount
-    useEffect(() => {
-        loadTokens();
-    }, []);
+    // Determine supported chain types based on connected wallets
+    const supportedChainTypes = useMemo(() =>
+        connectedWallets.map(w => w.chainType),
+        [connectedWallets]);
 
-    // Handle token selection from URL params
-    useEffect(() => {
-        if (params.tokenId && tokens.length > 0) {
-            const token = tokens.find(t => t.asset.id === params.tokenId);
-            if (token) {
-                setSelectedToken(token);
-            }
-        }
-    }, [params.tokenId, tokens]);
+    const { data: chains } = useChains(supportedChainTypes);
 
-    const loadTokens = async () => {
-        setIsLoading(true);
-        try {
-            const walletData = await fetchWalletData(WALLET_ADDRESS);
-            const tokensData: TokenWithAddress[] = walletData.portfolio.map((asset) => {
-                const token = mapAssetToTokenOption(asset, asset.balance, asset.usdValue);
-                // For now, use main wallet address. In production, this would be chain-specific
-                let address = WALLET_ADDRESS;
-                if (String(asset.chainId) === 'aegis' || String(asset.chainId) === '1399811149') {
-                    // Solana-like address format (mock)
-                    address = 'Re9d3o52i092j9g9iu2ngmu0939i4ti938hT432';
-                }
-                return {
-                    token: token!,
-                    address,
-                    chainId: asset.chainId,
-                    asset,
-                };
-            });
-            setTokens(tokensData);
-        } catch (error) {
-            console.error('Failed to load tokens:', error);
-        } finally {
-            setIsLoading(false);
-        }
+    // IDs for fetching tokens
+    const fetchChainIds = useMemo(() => {
+        if (selectedChainFilter) return [selectedChainFilter];
+        return chains?.map(c => c.id) || [];
+    }, [selectedChainFilter, chains]);
+
+    // Fetch tokens from API
+    const { data: response, isLoading: isFetchingTokens } = useTokens({
+        chains: fetchChainIds,
+        query: searchQuery,
+        limit: 50,
+        enabled: fetchChainIds.length > 0
+    });
+    const apiTokens = response?.tokens;
+    console.log("🚀 ~ ReceiveScreen ~ apiTokens:", apiTokens)
+
+    // Computed list of tokens to show
+    const displayTokens = useMemo(() => {
+        if (!apiTokens) return [];
+
+        return apiTokens.map(t => ({
+            symbol: t.symbol,
+            name: t.name,
+            logoURI: t.logoURI,
+            chainId: t.chainId,
+            address: t.address,
+            chainType: t.chainId === 1399811149 ? 'solana' : 'evm'
+        })) as DisplayToken[];
+    }, [apiTokens]);
+
+    // Get actual wallet address based on chain type
+    const getAddressForToken = (token: DisplayToken) => {
+        const wallet = connectedWallets.find(w => w.chainType === token.chainType);
+        return wallet ? wallet.address : connectedWallets[0]?.address || 'No Wallet Connected';
     };
 
-    // Filter tokens based on search
-    const filteredTokens = tokens.filter(
-        (item) =>
-            item.token?.symbol.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            item.token?.name.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-
-    // Handle token selection - show QR code view
-    const handleTokenSelect = (token: TokenWithAddress) => {
+    const handleTokenSelect = (token: DisplayToken) => {
         setSelectedToken(token);
     };
 
-    // Handle copy with visual feedback
     const handleCopy = async () => {
         if (!selectedToken) return;
+        const address = getAddressForToken(selectedToken);
         try {
-            await Clipboard.setStringAsync(selectedToken.address);
+            await Clipboard.setStringAsync(address);
             setCopied(true);
-            setTimeout(() => {
-                setCopied(false);
-            }, 2000);
+            setTimeout(() => setCopied(false), 2000);
         } catch (error) {
             console.error('Failed to copy address:', error);
-            Alert.alert('Error', 'Failed to copy address');
         }
     };
 
-    // Handle share functionality
     const handleShare = async () => {
         if (!selectedToken) return;
+        const address = getAddressForToken(selectedToken);
         try {
-            const isAvailable = await Sharing.isAvailableAsync();
-            if (isAvailable) {
-                const shareMessage = `My ${selectedToken.token?.symbol} (${selectedToken.token?.name}) wallet address:\n\n${selectedToken.address}`;
-                await Sharing.shareAsync(shareMessage);
-            } else {
-                await Clipboard.setStringAsync(selectedToken.address);
-                Alert.alert('Copied', 'Wallet address copied to clipboard');
-            }
+            const shareMessage = `My ${selectedToken.symbol} (${selectedToken.name}) wallet address:\n\n${address}`;
+            await Share.share({
+                message: shareMessage,
+                title: 'Share Wallet Address'
+            });
         } catch (error: any) {
-            if (error?.code !== 'ERR_CANCELLED') {
-                console.error('Failed to share address:', error);
-                try {
-                    await Clipboard.setStringAsync(selectedToken.address);
-                    Alert.alert('Copied', 'Wallet address copied to clipboard');
-                } catch (clipboardError) {
-                    Alert.alert('Error', 'Failed to share or copy address');
-                }
-            }
+            console.error('Failed to share address:', error);
+            // Fallback to copy if sharing fails
+            await handleCopy();
+            Alert.alert('Copied', 'Wallet address copied to clipboard');
         }
     };
 
-    // Handle back press
     const handleBackPress = () => {
         if (selectedToken) {
             setSelectedToken(null);
@@ -148,49 +130,38 @@ export default function ReceiveScreen() {
         }
     };
 
-    // Handle settings press
     const handleSettingsPress = () => {
         const currentRoute = pathname || '/receive';
         router.push(`/settings?returnTo=${encodeURIComponent(currentRoute)}` as any);
     };
 
-    // Handle iris scan press
     const handleIrisScanPress = () => {
         console.log('Iris scan pressed');
     };
 
-    // Handle copy from token list
-    const handleTokenCopy = async (token: TokenWithAddress) => {
-        try {
-            await Clipboard.setStringAsync(token.address);
-            Alert.alert('Copied', 'Address copied to clipboard');
-        } catch (error) {
-            console.error('Failed to copy address:', error);
-            Alert.alert('Error', 'Failed to copy address');
-        }
+    const handleChainFilter = (chainId: number | null) => {
+        setSelectedChainFilter(chainId);
     };
 
     // If token is selected, show QR code view
     if (selectedToken) {
+        const address = getAddressForToken(selectedToken);
         const chain = chains?.find(c => String(c.id) === String(selectedToken.chainId));
-
 
         return (
             <View style={[styles.container, { backgroundColor: colors.bg }]}>
                 <CustomStatusBar />
 
-                {/* Sticky Header */}
                 <View style={[styles.header, { paddingTop: top || 0 }]}>
                     <WalletHeader
-                        walletAddress={WALLET_ADDRESS}
+                        walletAddress={address}
                         onIrisScanPress={handleIrisScanPress}
-                        onSettingsPress={handleSettingsPress}
+                        onCopyPress={handleCopy}
                         showBackButton
                         onBackPress={handleBackPress}
                     />
                 </View>
 
-                {/* Scrollable Content */}
                 <ScrollView
                     style={styles.scrollView}
                     contentContainerStyle={[
@@ -199,55 +170,49 @@ export default function ReceiveScreen() {
                     ]}
                     showsVerticalScrollIndicator={false}
                 >
-                    {/* Main Content Container */}
                     <View style={styles.qrMainContent}>
-                        {/* Warning Banner */}
                         <View style={styles.warningBanner}>
                             <Text style={styles.warningText}>
                                 <Text>Only send </Text>
                                 <Text style={styles.warningBold}>
-                                    {selectedToken.token?.name} ({selectedToken.token?.symbol})
+                                    {selectedToken.name} ({selectedToken.symbol})
                                 </Text>
-                                <Text> to this address. other assets will be lost forever.</Text>
+                                <Text> via </Text>
+                                <Text style={styles.warningBold}>{chain?.name || 'its native network'}</Text>
+                                <Text> to this address. Other assets will be lost forever.</Text>
                             </Text>
                         </View>
 
-                        {/* QR Code Section */}
                         <View style={styles.qrSection}>
-                            {/* QR Code Container */}
                             <View style={styles.qrContainer}>
                                 <QRCode
-                                    value={selectedToken.address}
+                                    value={address}
                                     size={254}
                                     color="#000000"
-                                    backgroundColor={colors.bodyText}
+                                    backgroundColor="#FFFFFF"
                                 />
                             </View>
 
-                            {/* Address Text - Wrapped */}
-                            <Text style={styles.addressText}>
-                                {selectedToken.address}
-                            </Text>
+                            <View style={styles.addressContainer}>
+                                <Text style={styles.addressText}>{address}</Text>
+                            </View>
 
-                            {/* Action Buttons */}
                             <View style={styles.actionButtons}>
-                                {/* Copy Button */}
                                 <View style={styles.actionButtonWrapper}>
                                     <TouchableOpacity
                                         activeOpacity={0.8}
                                         onPress={handleCopy}
                                         style={styles.actionButton}
                                     >
-                                        {copied ? (
-                                            <Image
-                                                source={CheckmarkIcon}
-                                                style={styles.actionIcon}
-                                                contentFit="contain"
-                                            />
-                                        ) : (
+                                        <Image
+                                            source={CheckmarkIcon}
+                                            style={[styles.actionIcon, { opacity: copied ? 1 : 0 }]}
+                                            contentFit="contain"
+                                        />
+                                        {!copied && (
                                             <Image
                                                 source={CopyIcon}
-                                                style={styles.actionIcon}
+                                                style={[styles.actionIcon, { position: 'absolute' }]}
                                                 contentFit="contain"
                                             />
                                         )}
@@ -255,7 +220,6 @@ export default function ReceiveScreen() {
                                     <Text style={styles.actionLabel}>Copy</Text>
                                 </View>
 
-                                {/* Share Button */}
                                 <View style={styles.actionButtonWrapper}>
                                     <TouchableOpacity
                                         activeOpacity={0.8}
@@ -283,18 +247,21 @@ export default function ReceiveScreen() {
         <View style={[styles.container, { backgroundColor: colors.bg }]}>
             <CustomStatusBar />
 
-            {/* Sticky Header */}
             <View style={[styles.header, { paddingTop: top || 0 }]}>
                 <WalletHeader
-                    walletAddress={WALLET_ADDRESS}
+                    walletAddress={connectedWallets[0]?.address || ""}
                     onIrisScanPress={handleIrisScanPress}
-                    onSettingsPress={handleSettingsPress}
+                    // showCopy
+                    onCopyPress={() => {
+                        const addr = connectedWallets[0]?.address || "";
+                        Clipboard.setStringAsync(addr);
+                        Alert.alert('Copied', 'Wallet address copied to clipboard');
+                    }}
                     showBackButton
                     onBackPress={handleBackPress}
                 />
             </View>
 
-            {/* Scrollable Content */}
             <ScrollView
                 style={styles.scrollView}
                 contentContainerStyle={[
@@ -303,113 +270,109 @@ export default function ReceiveScreen() {
                 ]}
                 showsVerticalScrollIndicator={false}
             >
-                {/* Main Content Container */}
                 <View style={styles.listMainContent}>
-                    {/* Title */}
                     <Text style={styles.title}>Receive Asset</Text>
 
                     {/* Search Bar */}
                     <View style={styles.searchBar}>
-                        <View style={styles.searchIconContainer}>
-                            <Image
-                                source={SearchIcon}
-                                style={styles.searchIcon}
-                                contentFit="contain"
-                            />
-                        </View>
+                        <Image source={SearchIcon} style={styles.searchIcon} contentFit="contain" />
                         <TextInput
                             value={searchQuery}
                             onChangeText={setSearchQuery}
-                            placeholder="Search"
-                            placeholderTextColor="rgba(255, 255, 255, 0.7)"
+                            placeholder="Search token or address"
+                            placeholderTextColor="rgba(255, 255, 255, 0.5)"
                             style={styles.searchInput}
                         />
                     </View>
 
+                    {/* Chain Filter Bar */}
+                    <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        style={styles.chainFilterBar}
+                        contentContainerStyle={styles.chainFilterContent}
+                    >
+                        <TouchableOpacity
+                            onPress={() => handleChainFilter(null)}
+                            style={[styles.chainFilterItem, !selectedChainFilter && styles.chainFilterItemActive]}
+                        >
+                            <Text style={[styles.chainFilterText, !selectedChainFilter && styles.chainFilterTextActive]}>All</Text>
+                        </TouchableOpacity>
+                        {chains?.map((chain) => (
+                            <TouchableOpacity
+                                key={chain.id}
+                                onPress={() => handleChainFilter(chain.id)}
+                                style={[styles.chainFilterItem, selectedChainFilter === chain.id && styles.chainFilterItemActive]}
+                            >
+                                <Image source={chain.logoURI || chain.logo} style={styles.chainFilterIcon} />
+                                <Text style={[styles.chainFilterText, selectedChainFilter === chain.id && styles.chainFilterTextActive]}>{chain.name}</Text>
+                            </TouchableOpacity>
+                        ))}
+                    </ScrollView>
+
                     {/* Token List */}
-                    {isLoading ? (
+                    {isFetchingTokens ? (
                         <View style={styles.loadingContainer}>
-                            <Text style={styles.loadingText}>Loading tokens...</Text>
+                            <ActivityIndicator color={colors.primaryCTA} />
+                            <Text style={styles.loadingText}>Searching tokens...</Text>
                         </View>
                     ) : (
                         <View style={styles.tokenList}>
-                            {filteredTokens.map((item) => {
-                                const chain = chains?.find(c => String(c.id) === String(item.chainId));
-                                const chainLogo = chain?.logoURI || chain?.logo;
-                                const truncatedAddr = truncateAddress(item.address);
+                            {displayTokens.length > 0 ? (
+                                displayTokens.map((item, index) => {
+                                    const chain = chains?.find(c => c.id === item.chainId);
+                                    const address = getAddressForToken(item);
 
-                                return (
-                                    <TouchableOpacity
-                                        key={item.asset.id}
-                                        activeOpacity={0.8}
-                                        onPress={() => handleTokenSelect(item)}
-                                        style={styles.tokenItem}
-                                    >
-                                        {/* Left: Token Info */}
-                                        <View style={styles.tokenInfo}>
-                                            {/* Token Icon with Chain Badge */}
-                                            <View style={styles.tokenIconWrapper}>
-                                                <View style={styles.tokenIconContainer}>
-                                                    <Image
-                                                        source={item.token.icon}
-                                                        style={styles.tokenIcon}
-                                                        contentFit="cover"
-                                                    />
+                                    return (
+                                        <TouchableOpacity
+                                            key={`${item.chainId}-${item.symbol}-${index}`}
+                                            activeOpacity={0.8}
+                                            onPress={() => handleTokenSelect(item)}
+                                            style={styles.tokenItem}
+                                        >
+                                            <View style={styles.tokenInfo}>
+                                                <View style={styles.tokenIconWrapper}>
+                                                    <View style={styles.tokenIconContainer}>
+                                                        <Image
+                                                            source={item.symbol.toUpperCase() === 'TIWICAT' ? require('../assets/home/tiwicat.svg') : item.logoURI}
+                                                            style={styles.tokenIcon}
+                                                            contentFit="cover"
+                                                        />
+                                                    </View>
+                                                    <View style={styles.chainBadge}>
+                                                        <Image
+                                                            source={chain?.logoURI || chain?.logo}
+                                                            style={styles.chainIcon}
+                                                            contentFit="contain"
+                                                        />
+                                                    </View>
                                                 </View>
-                                                {/* Chain Badge */}
-                                                <View style={styles.chainBadge}>
-                                                    <Image
-                                                        source={chainLogo || require('../assets/home/chains/ethereum.svg')}
-                                                        style={styles.chainIcon}
-                                                        contentFit="contain"
-                                                    />
+
+                                                <View style={styles.tokenDetails}>
+                                                    <Text style={styles.tokenSymbol}>{item.symbol}</Text>
+                                                    <Text style={styles.tokenAddress}>{truncateAddress(address)}</Text>
                                                 </View>
                                             </View>
 
-                                            {/* Token Symbol and Address */}
-                                            <View style={styles.tokenDetails}>
-                                                <View style={styles.symbolRow}>
-                                                    <Text style={styles.tokenSymbol}>
-                                                        {item.token.symbol}
-                                                    </Text>
-                                                </View>
-                                                <Text style={styles.tokenAddress}>
-                                                    {truncatedAddr}
-                                                </Text>
+                                            <View style={styles.tokenRight}>
+                                                <TouchableOpacity onPress={handleIrisScanPress} style={styles.irisScanButton}>
+                                                    <Image source={IrisScanIcon} style={styles.irisScanIcon} contentFit="contain" />
+                                                </TouchableOpacity>
+                                                <TouchableOpacity onPress={() => {
+                                                    Clipboard.setStringAsync(address);
+                                                    Alert.alert('Copied', 'Address copied to clipboard');
+                                                }} style={styles.copyButton}>
+                                                    <Image source={CopyIcon} style={styles.copyIcon} contentFit="contain" />
+                                                </TouchableOpacity>
                                             </View>
-                                        </View>
-
-                                        {/* Right: Action Icons */}
-                                        <View style={styles.tokenActions}>
-                                            {/* QR Code Icon */}
-                                            <TouchableOpacity
-                                                activeOpacity={0.8}
-                                                onPress={() => handleTokenSelect(item)}
-                                                style={styles.qrIconButton}
-                                            >
-                                                <Image
-                                                    source={require('../assets/home/iris-scan.svg')}
-                                                    style={styles.qrIcon}
-                                                    contentFit="contain"
-                                                />
-                                            </TouchableOpacity>
-
-                                            {/* Copy Icon */}
-                                            <TouchableOpacity
-                                                activeOpacity={0.8}
-                                                onPress={() => handleTokenCopy(item)}
-                                                style={styles.copyIconButton}
-                                            >
-                                                <Image
-                                                    source={CopyIcon}
-                                                    style={styles.copyIcon}
-                                                    contentFit="contain"
-                                                />
-                                            </TouchableOpacity>
-                                        </View>
-                                    </TouchableOpacity>
-                                );
-                            })}
+                                        </TouchableOpacity>
+                                    );
+                                })
+                            ) : (
+                                <View style={styles.emptyContainer}>
+                                    <Text style={styles.emptyText}>No tokens found</Text>
+                                </View>
+                            )}
                         </View>
                     )}
                 </View>
@@ -441,77 +404,75 @@ const styles = StyleSheet.create({
         maxWidth: '100%',
         flexDirection: 'column',
         alignItems: 'center',
-        gap: 85,
+        gap: 40,
     },
     listMainContent: {
-        width: 353,
-        maxWidth: '100%',
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: 21,
+        width: '100%',
+        paddingHorizontal: 20,
+        gap: 20,
     },
     warningBanner: {
-        width: 329,
-        backgroundColor: '#2b1f0d',
-        borderRadius: 16,
-        padding: 10,
-        alignItems: 'center',
-        justifyContent: 'center',
+        backgroundColor: 'rgba(255, 152, 0, 0.1)',
+        borderRadius: 12,
+        padding: 16,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 152, 0, 0.2)',
     },
     warningText: {
         fontFamily: 'Manrope-Regular',
-        fontSize: 12,
+        fontSize: 13,
         lineHeight: 20,
-        color: colors.titleText,
+        color: '#FF9800',
         textAlign: 'center',
-        width: 329,
     },
     warningBold: {
         fontFamily: 'Manrope-Bold',
-        fontWeight: 'bold',
     },
     qrSection: {
-        width: 274,
-        flexDirection: 'column',
         alignItems: 'center',
-        gap: 18,
+        gap: 24,
     },
     qrContainer: {
-        width: 274,
-        height: 274,
-        backgroundColor: colors.bodyText,
-        borderRadius: 16,
-        padding: 10,
+        backgroundColor: '#FFFFFF',
+        borderRadius: 24,
+        padding: 20,
+        elevation: 5,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 10,
+    },
+    addressContainer: {
+        backgroundColor: colors.bgSemi,
+        paddingHorizontal: 20,
+        paddingVertical: 12,
+        borderRadius: 12,
+        width: '100%',
         alignItems: 'center',
-        justifyContent: 'center',
     },
     addressText: {
         fontFamily: 'Manrope-Medium',
-        fontSize: 16,
-        lineHeight: 20,
+        fontSize: 14,
         color: colors.bodyText,
         textAlign: 'center',
-        width: '100%',
-        maxWidth: 274,
     },
     actionButtons: {
         flexDirection: 'row',
-        alignItems: 'center',
-        gap: 13,
+        gap: 20,
     },
     actionButtonWrapper: {
-        width: 100,
-        flexDirection: 'column',
         alignItems: 'center',
         gap: 8,
     },
     actionButton: {
-        width: '100%',
-        backgroundColor: colors.bgSemi,
-        borderRadius: 12,
-        padding: 8,
+        width: 56,
+        height: 56,
+        backgroundColor: colors.bgCards,
+        borderRadius: 28,
         alignItems: 'center',
         justifyContent: 'center',
+        borderWidth: 1,
+        borderColor: colors.bgStroke,
     },
     actionIcon: {
         width: 24,
@@ -519,145 +480,156 @@ const styles = StyleSheet.create({
     },
     actionLabel: {
         fontFamily: 'Manrope-Medium',
-        fontSize: 14,
+        fontSize: 12,
         color: colors.titleText,
-        textAlign: 'center',
     },
     title: {
-        fontFamily: 'Manrope-SemiBold',
-        fontSize: 20,
-        lineHeight: 20,
+        fontFamily: 'Manrope-Bold',
+        fontSize: 24,
         color: colors.titleText,
+        marginBottom: 8,
         textAlign: 'center',
-        textTransform: 'capitalize',
     },
     searchBar: {
-        width: '100%',
-        height: 48,
-        backgroundColor: colors.bgSemi,
-        borderRadius: 20,
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 24,
-        gap: 5,
-    },
-    searchIconContainer: {
-        width: 16,
-        height: 16,
+        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        borderRadius: 16,
+        paddingHorizontal: 16,
+        height: 52,
     },
     searchIcon: {
-        width: '100%',
-        height: '100%',
+        width: 20,
+        height: 20,
+        marginRight: 12,
+        opacity: 0.5,
     },
     searchInput: {
         flex: 1,
-        fontFamily: 'Manrope-Regular',
-        fontSize: 14,
+        fontFamily: 'Manrope-Medium',
+        fontSize: 15,
         color: colors.titleText,
-        padding: 0,
-        margin: 0,
     },
-    loadingContainer: {
-        padding: 40,
+    chainFilterBar: {
+        flexGrow: 0,
+        marginBottom: 8,
+    },
+    chainFilterContent: {
+        gap: 12,
+        paddingRight: 20,
+    },
+    chainFilterItem: {
+        flexDirection: 'row',
         alignItems: 'center',
+        backgroundColor: colors.bgCards,
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        borderRadius: 100,
+        borderWidth: 1,
+        borderColor: colors.bgStroke,
+        gap: 8,
     },
-    loadingText: {
+    chainFilterItemActive: {
+        backgroundColor: colors.primaryCTA,
+        borderColor: colors.primaryCTA,
+    },
+    chainFilterIcon: {
+        width: 20,
+        height: 20,
+        borderRadius: 10,
+    },
+    chainFilterText: {
+        fontFamily: 'Manrope-SemiBold',
+        fontSize: 14,
         color: colors.bodyText,
     },
+    chainFilterTextActive: {
+        color: colors.bg,
+    },
     tokenList: {
-        width: '100%',
-        flexDirection: 'column',
-        gap: 0,
+        gap: 16,
     },
     tokenItem: {
-        width: '100%',
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
         paddingVertical: 12,
-        paddingHorizontal: 0,
     },
     tokenInfo: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 9,
-        width: 203,
+        gap: 12,
     },
     tokenIconWrapper: {
-        width: 57,
-        height: 57,
+        width: 48,
+        height: 48,
         position: 'relative',
     },
     tokenIconContainer: {
-        width: 57,
-        height: 57,
-        borderRadius: 28.5,
+        width: 40,
+        height: 40,
+        borderRadius: 24,
         backgroundColor: '#1f261e',
-        borderWidth: 1,
-        borderColor: '#7c7c7c',
         overflow: 'hidden',
-        alignItems: 'center',
-        justifyContent: 'center',
     },
     tokenIcon: {
-        width: 56,
-        height: 56,
+        width: '100%',
+        height: '100%',
     },
     chainBadge: {
         position: 'absolute',
         bottom: 0,
         right: 0,
-        width: 18,
-        height: 18,
+        width: 20,
+        height: 20,
         borderRadius: 9,
         backgroundColor: '#1f261e',
-        borderWidth: 1,
+        borderWidth: 1.5,
         borderColor: colors.bg,
         alignItems: 'center',
         justifyContent: 'center',
-        overflow: 'hidden',
     },
     chainIcon: {
-        width: 47,
-        height: 47,
+        width: "100%",
+        height: "100%",
+        borderRadius: 9,
     },
     tokenDetails: {
-        flexDirection: 'column',
-        alignItems: 'flex-start',
-        gap: 0,
-        width: 106,
-    },
-    symbolRow: {
-        flexDirection: 'row',
-        alignItems: 'flex-end',
-        gap: 4,
+        gap: 2,
     },
     tokenSymbol: {
-        fontFamily: 'Manrope-SemiBold',
+        fontFamily: 'Manrope-Bold',
         fontSize: 16,
+        color: colors.titleText,
+    },
+    tokenName: {
+        fontFamily: 'Manrope-Medium',
+        fontSize: 13,
         color: colors.bodyText,
+        opacity: 0.7,
+    },
+    tokenRight: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 20,
     },
     tokenAddress: {
         fontFamily: 'Manrope-Medium',
         fontSize: 14,
         color: colors.bodyText,
+        opacity: 0.6,
     },
-    tokenActions: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 9,
-    },
-    qrIconButton: {
+    irisScanButton: {
         width: 30,
         height: 30,
         alignItems: 'center',
         justifyContent: 'center',
     },
-    qrIcon: {
+    irisScanIcon: {
         width: 30,
         height: 30,
     },
-    copyIconButton: {
+    copyButton: {
         width: 24,
         height: 24,
         alignItems: 'center',
@@ -666,5 +638,26 @@ const styles = StyleSheet.create({
     copyIcon: {
         width: 24,
         height: 24,
+        opacity: 0.8,
+    },
+    loadingContainer: {
+        padding: 40,
+        alignItems: 'center',
+        gap: 12,
+    },
+    loadingText: {
+        fontFamily: 'Manrope-Medium',
+        fontSize: 14,
+        color: colors.bodyText,
+    },
+    emptyContainer: {
+        padding: 40,
+        alignItems: 'center',
+    },
+    emptyText: {
+        fontFamily: 'Manrope-Medium',
+        fontSize: 14,
+        color: colors.bodyText,
+        opacity: 0.5,
     },
 });
