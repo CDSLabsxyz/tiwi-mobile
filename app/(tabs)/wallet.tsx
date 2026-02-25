@@ -36,7 +36,7 @@ export default function WalletScreen() {
     const queryClient = useQueryClient();
 
     // Store data (connected wallets)
-    const { address, connectedWallets } = useWalletStore();
+    const { address, walletGroups = [] } = useWalletStore();
 
     // TanStack Query for Balances
     const {
@@ -126,13 +126,14 @@ export default function WalletScreen() {
 
     // Prefetch for Receive Screen (Tokens and Chains)
     const supportedEcosystems = useMemo(() =>
-        connectedWallets.map(w => w.chainType),
-        [connectedWallets]);
+        (walletGroups || []).map(w => w.primaryChain?.toLowerCase() || 'evm'),
+        [walletGroups]);
 
     const supportedChainIds = useMemo(() => {
         const ids: number[] = [];
-        if (supportedEcosystems.includes('evm')) ids.push(1, 56, 137, 42161);
-        if (supportedEcosystems.includes('solana')) ids.push(1399811149);
+        const ecos = supportedEcosystems || [];
+        if (ecos.includes('evm')) ids.push(1, 56, 137, 42161);
+        if (ecos.includes('solana')) ids.push(1399811149);
         return ids;
     }, [supportedEcosystems]);
 

@@ -115,13 +115,43 @@ export function useStakingPool(poolId?: number | string, decimals: number = 9) {
     // Phase 4: Auto-refresh data on transaction success
     useEffect(() => {
         if (isTxSuccess) {
-            console.log('[useStakingPool] Transaction confirmed, refreshing data...');
-            showToast('Transaction Successful!', 'success', txHash);
-            refetchAll();
-            // Hide toast after 4 seconds
-            setTimeout(hideToast, 4000);
+            const handleLogging = async () => {
+                console.log('[useStakingPool] Transaction confirmed, refreshing data and logging activity...');
+                showToast('Transaction Successful!', 'success', txHash);
+                refetchAll();
+
+                // Log to backend for referral rewards
+                if (txHash && address && poolId !== undefined) {
+                    try {
+                        const { apiClient } = require('@/services/apiClient');
+
+                        // Determine transaction type and details
+                        // We use a simplified mapping for now as we don't track the exact calling function here
+                        // but we can infer 'Stake' or 'Unstake' or 'Claim' based on context if we added a state.
+                        // For now, let's log it as a generic DeFi/Stake activity if we can't distinguish.
+                        // IMPROVEMENT: Distinguish between stake/unstake/claim.
+
+                        await apiClient.logTransaction({
+                            walletAddress: address,
+                            transactionHash: txHash,
+                            chainId: STAKING_CHAIN_ID,
+                            type: 'DeFi',
+                            amount: '0', // Amount is handled by backend from tx receipt usually, or we could pass it
+                            amountFormatted: 'Staking activity',
+                            routerName: 'Tiwi Staking',
+                        });
+                    } catch (e) {
+                        console.error('[useStakingPool] Failed to log activity:', e);
+                    }
+                }
+
+                // Hide toast after 4 seconds
+                setTimeout(hideToast, 4000);
+            };
+
+            handleLogging();
         }
-    }, [isTxSuccess, refetchAll, showToast, hideToast, txHash]);
+    }, [isTxSuccess, refetchAll, showToast, hideToast, txHash, address, poolId]);
 
     // Handle Errors in Toast
     useEffect(() => {

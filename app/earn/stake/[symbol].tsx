@@ -55,7 +55,7 @@ export default function StakeScreen() {
     const [isDepositModalVisible, setIsDepositModalVisible] = useState(false);
     const [selection, setSelection] = useState({ start: 0, end: 0 });
 
-    const { connectedWallets, address: activeAddress } = useWalletStore();
+    const { walletGroups = [], activeAddress } = useWalletStore();
     const { data: balanceData } = useWalletBalances();
     const [pool, setPool] = useState<StakingPool | null>(null);
     const [isLoading, setIsLoading] = useState(true);
@@ -72,19 +72,25 @@ export default function StakeScreen() {
         const list: any[] = [];
 
         // Add each connected wallet
-        connectedWallets.forEach(wallet => {
-            const isMain = wallet.address.toLowerCase() === activeAddress?.toLowerCase();
-            list.push({
-                id: wallet.address,
-                name: wallet.name || (isMain ? 'Main Wallet' : 'Imported Wallet'),
-                type: 'Wallet',
-                balance: `${isMain ? userTokenBalance : '0.00'} ${symbol}`,
-                address: wallet.address
+        if (walletGroups && Array.isArray(walletGroups)) {
+            walletGroups.forEach(wallet => {
+                // Determine EVM address for this group
+                const walletAddress = wallet.addresses?.EVM || wallet.addresses?.SOLANA || '';
+                if (!walletAddress) return;
+
+                const isMain = walletAddress.toLowerCase() === activeAddress?.toLowerCase();
+                list.push({
+                    id: walletAddress,
+                    name: wallet.name || (isMain ? 'Main Wallet' : 'Imported Wallet'),
+                    type: 'Wallet',
+                    balance: `${isMain ? userTokenBalance : '0.00'} ${symbol}`,
+                    address: walletAddress
+                });
             });
-        });
+        }
 
         return list;
-    }, [connectedWallets, activeAddress, userTokenBalance, symbol]);
+    }, [walletGroups, activeAddress, userTokenBalance, symbol]);
 
     const [selectedAccountId, setSelectedAccountId] = useState<string>(activeAddress || '');
     const selectedAccount = React.useMemo(() =>
@@ -135,7 +141,8 @@ export default function StakeScreen() {
         return `${parseFloat(totalBalanceNumeric).toFixed(4)} ${symbol}`;
     }, [totalBalanceNumeric, symbol]);
 
-    const { isConnected } = useAccount();
+    const { isConnected: isWagmiConnected } = useAccount();
+    const isConnected = !!activeAddress || isWagmiConnected;
 
     const needsApproval = React.useMemo(() => {
         if (!amount || isNaN(parseFloat(amount))) return false;

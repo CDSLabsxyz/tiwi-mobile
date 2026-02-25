@@ -160,6 +160,36 @@ export interface OrderBookData {
     currentPrice?: number;
 }
 
+export interface ReferralStats {
+    totalInvites: number;
+    totalBonuses: number;
+    claimableRewards: number;
+    referralCode: string | null;
+    referralLink: string | null;
+}
+
+export interface RecentReferralActivity {
+    walletAddress: string;
+    reward: number;
+    timestamp: string;
+}
+
+export interface ReferralLeaderboardEntry {
+    rank: number;
+    walletAddress: string;
+    invites: number;
+    rewards: number;
+}
+
+export interface ReferralRebateStats {
+    rebateLevel: number;
+    invitedFrens: number;
+    frensSpotVol: number;
+    frensPerpVol: number;
+    mySpotRebate: number;
+    myPerpRebate: number;
+}
+
 export interface ChartHistoryParams {
     symbol: string;
     resolution: string;
@@ -711,6 +741,73 @@ class TiwiApiClient {
         query.append('status', status);
         const response = await this.fetcher<{ pools: APIStakingPool[] }>(`/api/v1/staking-pools?${query.toString()}`);
         return response.pools;
+    }
+
+    /**
+     * Get referral stats for a wallet
+     */
+    async getReferralStats(walletAddress: string): Promise<ReferralStats> {
+        const response = await this.fetcher<{ stats: ReferralStats }>(`/api/v1/referrals?walletAddress=${walletAddress}&action=stats`);
+        return response.stats;
+    }
+
+    /**
+     * Get recent referral activity
+     */
+    async getRecentReferralActivity(limit: number = 5): Promise<RecentReferralActivity[]> {
+        const response = await this.fetcher<{ activity: RecentReferralActivity[] }>(`/api/v1/referrals?action=activity&limit=${limit}`);
+        return response.activity;
+    }
+
+    /**
+     * Get referral leaderboard
+     */
+    async getReferralLeaderboard(limit: number = 10): Promise<ReferralLeaderboardEntry[]> {
+        const response = await this.fetcher<{ leaderboard: ReferralLeaderboardEntry[] }>(`/api/v1/referrals?action=leaderboard&limit=${limit}`);
+        return response.leaderboard;
+    }
+
+    /**
+     * Get rebate stats for a wallet
+     */
+    async getReferralRebateStats(walletAddress: string): Promise<ReferralRebateStats> {
+        const response = await this.fetcher<{ rebateStats: ReferralRebateStats }>(`/api/v1/referrals?walletAddress=${walletAddress}&action=rebate`);
+        return response.rebateStats;
+    }
+
+    /**
+     * Apply a referral code to a wallet
+     */
+    async applyReferralCode(walletAddress: string, referralCode: string): Promise<{ success: boolean; message?: string; referrerWallet?: string }> {
+        return this.fetcher('/api/v1/referrals', {
+            method: 'POST',
+            body: JSON.stringify({
+                action: 'apply',
+                walletAddress,
+                referralCode,
+            }),
+        });
+    }
+
+    /**
+     * Create or get a referral code for a wallet
+     */
+    async createReferralCode(walletAddress: string, customCode?: string): Promise<{ success: boolean; code: string; link: string }> {
+        return this.fetcher('/api/v1/referrals', {
+            method: 'POST',
+            body: JSON.stringify({
+                action: 'create',
+                walletAddress,
+                customCode,
+            }),
+        });
+    }
+
+    /**
+     * Validate if a referral code exists (case-insensitive)
+     */
+    async validateReferralCode(code: string): Promise<{ valid: boolean }> {
+        return this.fetcher<{ valid: boolean }>(`/api/v1/referrals?action=validate&code=${code}`);
     }
 
     /**

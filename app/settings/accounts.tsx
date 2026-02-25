@@ -27,7 +27,7 @@ const ChainIcon = require('../../assets/home/chains/bsc.svg');
 export default function AccountSettingsScreen() {
     const { top, bottom } = useSafeAreaInsets();
     const router = useRouter();
-    const { address, name, connectedWallets } = useWalletStore();
+    const { activeAddress: address, name, walletGroups: connectedWallets = [] } = useWalletStore();
     const [copied, setCopied] = useState(false);
     const [showReceiveModal, setShowReceiveModal] = useState(false);
 
@@ -37,8 +37,10 @@ export default function AccountSettingsScreen() {
     const isLoadingChains = chainsResult.isLoading;
 
     // Find current wallet to get source and type
-    const currentWallet = connectedWallets.find(w => w.address.toLowerCase() === address?.toLowerCase());
-    const isLocalWallet = currentWallet?.source === 'local' || currentWallet?.source === 'imported';
+    const currentWallet = (connectedWallets || []).find(w =>
+        Object.values(w.addresses || {}).some(addr => addr?.toLowerCase() === address?.toLowerCase())
+    );
+    const isLocalWallet = currentWallet?.source === 'internal' || currentWallet?.source === 'imported' || currentWallet?.source === 'local';
     const accountType = isLocalWallet ? 'Non-custodial' : 'External Wallet';
 
     // Track compatible chains
@@ -46,7 +48,7 @@ export default function AccountSettingsScreen() {
         if (!currentWallet) return [];
 
         // Filter by wallet type (evm/solana)
-        const walletType = currentWallet.chainType === 'solana' ? 'solana' : 'evm';
+        const walletType = currentWallet?.primaryChain?.toLowerCase() === 'solana' ? 'solana' : 'evm';
         const filtered = allChains.filter((c: Chain) => c.type?.toLowerCase() === walletType);
 
         // Ensure BNB is always included if EVM

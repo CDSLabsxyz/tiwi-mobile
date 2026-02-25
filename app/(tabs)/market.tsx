@@ -93,19 +93,19 @@ export default function MarketScreen() {
         enabled: activeSubTab !== 'favourite'
     });
 
-    // Staggered Prefetching
+    // Staggered Prefetching (Phase 4: Optimization)
     const queryClient = useQueryClient();
     useEffect(() => {
-        const prefetch = async () => {
-            // Prefetch the other market type (if on spot, prefetch perp)
+        // Small delay to ensure the screen transition is BUTTERY smooth
+        const timer = setTimeout(async () => {
             const otherType = marketType === 'spot' ? 'perp' : 'spot';
             queryClient.prefetchQuery({
                 queryKey: ['enrichedMarkets', otherType, 250],
                 queryFn: () => apiClient.getEnrichedMarkets({ marketType: otherType, limit: 250 })
             });
-        };
+        }, 800);
 
-        prefetch();
+        return () => clearTimeout(timer);
     }, [queryClient, marketType]);
 
     // Fetch favorites
@@ -533,7 +533,10 @@ export default function MarketScreen() {
                         return (
                             <TouchableOpacity
                                 key={tab.id}
-                                onPress={() => setActiveSubTab(tab.id)}
+                                onPress={() => {
+                                    // Let the ripple animation play for a split second
+                                    setActiveSubTab(tab.id);
+                                }}
                                 style={[
                                     styles.subTabButton,
                                     { backgroundColor: isActive ? '#081f02' : colors.bgSemi }

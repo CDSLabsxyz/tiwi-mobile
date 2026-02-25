@@ -82,6 +82,24 @@ export const useTransactionExecution = () => {
                         chainId: params.chainId,
                     });
                 }
+                if (hash && params) {
+                    try {
+                        const { apiClient } = require('@/services/apiClient');
+                        await apiClient.logTransaction({
+                            walletAddress: activeAddress!,
+                            transactionHash: hash,
+                            chainId: params.chainId,
+                            type: 'Transfer',
+                            fromTokenAddress: params.tokenAddress,
+                            fromTokenSymbol: params.symbol,
+                            amount: params.amount,
+                            amountFormatted: `${params.amount} ${params.symbol}`,
+                            routerName: 'Tiwi Transfer',
+                        });
+                    } catch (e) {
+                        console.error('[useTransactionExecution] Failed to log transfer:', e);
+                    }
+                }
                 setLastHash(hash);
                 return hash;
             }
@@ -105,6 +123,24 @@ export const useTransactionExecution = () => {
             if (isLocal) {
                 const result = await transactionService.multiSend(params);
                 if (result.status === 'success') {
+                    // Log to backend
+                    try {
+                        const { apiClient } = require('@/services/apiClient');
+                        await apiClient.logTransaction({
+                            walletAddress: activeAddress!,
+                            transactionHash: result.hash,
+                            chainId: params.chainId,
+                            type: 'Transfer',
+                            fromTokenAddress: params.tokenAddress,
+                            fromTokenSymbol: params.symbol,
+                            // For multi-send we could sum the amounts or just log the intent
+                            amount: params.amounts.reduce((a, b) => (parseFloat(a) + parseFloat(b)).toString(), '0'),
+                            amountFormatted: `Multi-send ${params.symbol}`,
+                            routerName: 'Tiwi Multi-Send',
+                        });
+                    } catch (e) {
+                        console.error('[useTransactionExecution] Failed to log multi-send:', e);
+                    }
                     setLastHash(result.hash);
                     return result.hash;
                 } else {
@@ -136,6 +172,27 @@ export const useTransactionExecution = () => {
                         chainId: params.chainId,
                     });
                 }
+
+                // Log to backend
+                if (hash) {
+                    try {
+                        const { apiClient } = require('@/services/apiClient');
+                        await apiClient.logTransaction({
+                            walletAddress: activeAddress!,
+                            transactionHash: hash,
+                            chainId: params.chainId,
+                            type: 'Transfer',
+                            fromTokenAddress: params.tokenAddress,
+                            fromTokenSymbol: params.symbol,
+                            amount: params.amounts.reduce((a, b) => (parseFloat(a) + parseFloat(b)).toString(), '0'),
+                            amountFormatted: `Multi-send ${params.symbol}`,
+                            routerName: 'Tiwi Multi-Send (Disperse)',
+                        });
+                    } catch (e) {
+                        console.error('[useTransactionExecution] Failed to log external multi-send:', e);
+                    }
+                }
+
                 setLastHash(hash);
                 return hash;
             }

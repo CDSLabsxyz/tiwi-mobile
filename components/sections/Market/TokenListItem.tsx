@@ -13,7 +13,7 @@ interface TokenListItemProps {
     onPress: () => void;
 }
 
-export const TokenListItem: React.FC<TokenListItemProps> = ({ token, onPress }) => {
+export const TokenListItem = React.memo(({ token, onPress }: TokenListItemProps) => {
     const { t } = useTranslation();
     const change = formatPercentageChange(token.priceChange24h || 0);
     const priceChangeColor = change.isPositive ? colors.success : colors.error;
@@ -64,7 +64,7 @@ export const TokenListItem: React.FC<TokenListItemProps> = ({ token, onPress }) 
             </View>
         </TouchableOpacity>
     );
-};
+});
 
 const styles = StyleSheet.create({
     tokenItem: {
