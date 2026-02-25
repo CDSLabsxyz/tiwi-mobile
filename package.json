@@ -14,6 +14,9 @@
     "@expo/vector-icons": "^15.0.3",
     "@google/genai": "^1.38.0",
     "@gorhom/bottom-sheet": "^5.2.8",
+    "@langchain/core": "^1.1.28",
+    "@langchain/google-genai": "^2.1.20",
+    "@langchain/langgraph": "^1.1.5",
     "@lifi/sdk": "^3.15.4",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/netinfo": "11.4.1",
@@ -70,6 +73,7 @@
     "expo-video": "~3.0.15",
     "expo-web-browser": "~15.0.10",
     "fast-text-encoding": "^1.0.6",
+    "langchain": "^1.2.27",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-native": "0.81.5",
@@ -86,6 +90,7 @@
     "react-native-worklets": "0.5.1",
     "viem": "^2.23.5",
     "wagmi": "^2.19.5",
+    "zod": "^4.3.6",
     "zustand": "^5.0.10"
   },
   "devDependencies": {

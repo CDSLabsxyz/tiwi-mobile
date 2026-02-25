@@ -1,41 +1,12 @@
 /**
- * AI Service using Google GenAI SDK (new version)
- * Implements streaming responses with Gemini models
- * Based on helpful.txt migration guide
+ * AI Service for Tiwi Mobile App
+ * Optimized for React Native / Expo to handle streaming correctly
  */
 
-import { GoogleGenAI } from '@google/genai';
-
-// API Key will be provided via environment variable or config
-const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
-
-// Initialize the AI client
-let aiClient: GoogleGenAI | null = null;
+const BACKEND_URL = process.env.EXPO_PUBLIC_AI_BACKEND_URL || 'http://localhost:3000/api/chat';
 
 /**
- * Initialize the AI client
- */
-export const initializeAIClient = (apiKey: string) => {
-  if (!apiKey) {
-    console.warn('Gemini API key not provided');
-    return;
-  }
-  try {
-    aiClient = new GoogleGenAI({ apiKey });
-  } catch (error) {
-    console.error('Error initializing AI client:', error);
-  }
-};
-
-/**
- * Check if AI client is initialized
- */
-export const isAIClientInitialized = (): boolean => {
-  return aiClient !== null;
-};
-
-/**
- * Convert image URI to base64 for inline data
+ * Helper: Convert URI to Base64 (Standard for image uploads)
  */
 const imageUriToBase64 = async (uri: string): Promise<string> => {
   try {
@@ -45,7 +16,6 @@ const imageUriToBase64 = async (uri: string): Promise<string> => {
       const reader = new FileReader();
       reader.onloadend = () => {
         const base64String = reader.result as string;
-        // Remove data URL prefix
         const base64 = base64String.split(',')[1] || base64String;
         resolve(base64);
       };
@@ -53,19 +23,14 @@ const imageUriToBase64 = async (uri: string): Promise<string> => {
       reader.readAsDataURL(blob);
     });
   } catch (error) {
-    throw new Error('Failed to convert image to base64');
+    console.error('Base64 Error:', error);
+    throw new Error('Failed to process image');
   }
 };
 
 /**
- * Stream AI response
- * @param prompt - User's text prompt
- * @param imageUri - Optional image URI (if image was uploaded)
- * @param imageMimeType - Optional image MIME type
- * @param onChunk - Callback for each chunk of response
- * @param onComplete - Callback when streaming is complete
- * @param onError - Callback for errors
- * @param abortSignal - Abort signal to cancel the request
+ * Stream AI response from the backend using XMLHttpRequest 
+ * (Standard fetch streams are not supported in React Native/Hermes)
  */
 export const streamAIResponse = async (
   prompt: string,
@@ -76,68 +41,77 @@ export const streamAIResponse = async (
   onError?: (error: Error) => void,
   abortSignal?: AbortSignal
 ): Promise<void> => {
-  if (!aiClient) {
-    const error = new Error('AI client not initialized. Please provide API key.');
-    onError?.(error);
-    return;
-  }
-
   try {
-    let contents: string | any[];
-    
-    // If image is provided, use array format with role and parts
-    if (imageUri && imageMimeType) {
-      try {
-        const base64Image = await imageUriToBase64(imageUri);
-        const parts: any[] = [{ text: prompt }];
-        parts.push({
-          inlineData: {
-            data: base64Image,
-            mimeType: imageMimeType,
-          },
-        });
-        
-        // Use array format for multimodal (text + image)
-        contents = [{
-          role: 'user',
-          parts,
-        }];
-      } catch (error) {
-        console.error('Error processing image:', error);
-        // Fall back to text-only if image processing fails
-        contents = prompt;
-      }
-    } else {
-      // Text-only: use string format (simpler, matches helpful.txt)
-      contents = prompt;
+    let imageBase64 = undefined;
+    if (imageUri) {
+      imageBase64 = await imageUriToBase64(imageUri);
     }
 
-    // Stream the response using new SDK format (from helpful.txt)
-    // contents can be string (text-only) or array (multimodal)
-    const response = await aiClient.models.generateContentStream({
-      model: 'gemini-2.0-flash', // Using stable model from helpful.txt
-      contents,
+    const body = JSON.stringify({
+      message: prompt,
+      imageBase64,
+      threadId: 'mobile_user_session',
     });
 
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', BACKEND_URL);
+    xhr.setRequestHeader('Content-Type', 'application/json');
+
+    let lastIndex = 0;
     let fullText = '';
 
-    // Process stream chunks
-    for await (const chunk of response) {
-      if (abortSignal?.aborted) {
-        return;
+    xhr.onreadystatechange = () => {
+      // 3 means "LOADING" (partial data received)
+      if (xhr.readyState === 3 || xhr.readyState === 4) {
+        const responseText = xhr.responseText;
+        const newText = responseText.substring(lastIndex);
+        lastIndex = responseText.length;
+
+        // Process the new chunks
+        const lines = newText.split('\n\n');
+        for (const line of lines) {
+          if (!line.trim() || !line.startsWith('data: ')) continue;
+          
+          const jsonStr = line.replace('data: ', '').trim();
+          try {
+            const data = JSON.parse(jsonStr);
+            if (data.token) {
+              fullText += data.token;
+              onChunk?.(data.token);
+            }
+            if (data.done) {
+              // Completion signal inside the data
+            }
+          } catch (e) {
+            // Incomplete JSON or other data
+          }
+        }
       }
 
-      // Extract text from chunk
-      const chunkText = chunk.text || '';
-      if (chunkText) {
-        fullText += chunkText;
-        onChunk?.(chunkText);
+      if (xhr.readyState === 4) {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          onComplete?.(fullText);
+        } else {
+          onError?.(new Error(`Server returned status ${xhr.status}`));
+        }
       }
+    };
+
+    xhr.onerror = () => {
+      onError?.(new Error('Network request failed'));
+    };
+
+    if (abortSignal) {
+      abortSignal.addEventListener('abort', () => xhr.abort());
     }
 
-    onComplete?.(fullText);
-  } catch (error) {
-    const err = error instanceof Error ? error : new Error(String(error));
-    onError?.(err);
+    xhr.send(body);
+
+  } catch (error: any) {
+    console.error('AI Service Error:', error);
+    onError?.(error);
   }
 };
+
+export const initializeAIClient = (apiKey: string) => {};
+export const isAIClientInitialized = (): boolean => true;

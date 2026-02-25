@@ -3,7 +3,7 @@ import { TypingIndicator } from '@/components/ui/TypingIndicator';
 import { colors } from '@/constants/colors';
 import { initializeAIClient, isAIClientInitialized, streamAIResponse } from '@/services/aiService';
 import { transcribeAudio } from '@/services/speechService';
-// import { Audio, RecordingOptionsPresets, useAudioRecorder } from 'expo-audio';
+import { RecordingPresets, requestRecordingPermissionsAsync, useAudioRecorder } from 'expo-audio';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
@@ -50,7 +50,7 @@ export default function ChatbotScreen() {
   const inputContentHeightRef = useRef(0);
   const lastTextLengthRef = useRef(0);
   const scrollViewRef = useRef<ScrollView>(null);
-  // const recorder = useAudioRecorder(RecordingOptionsPresets.HIGH_QUALITY);
+  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recordingStartTimeRef = useRef<number>(0);
   const fullScreenInputRef = useRef<TextInput>(null);
   const inputTextRef = useRef<TextInput>(null);
@@ -185,69 +185,68 @@ export default function ChatbotScreen() {
   };
 
   // Audio Recording Handlers
-  // const startRecording = async () => {
-  //   try {
-  //     // Request permissions
-  //     const { granted } = await Audio.requestPermissionsAsync();
-  //     if (!granted) {
-  //       Alert.alert('Permission Required', 'Please grant microphone access for voice input.');
-  //       return;
-  //     }
+  const startRecording = async () => {
+    try {
+      // Request permissions
+      const { granted } = await requestRecordingPermissionsAsync();
+      if (!granted) {
+        Alert.alert('Permission Required', 'Please grant microphone access for voice input.');
+        return;
+      }
 
-  //     // Start recording using the new expo-audio API
-  //     await recorder.record();
-  //     recordingStartTimeRef.current = Date.now();
-  //     setIsRecording(true);
-  //   } catch (error) {
-  //     console.error('Error starting recording:', error);
-  //     Alert.alert('Error', 'Failed to start recording. Please try again.');
-  //     setIsRecording(false);
-  //   }
-  // };
+      // Start recording using the new expo-audio API
+      await recorder.record();
+      recordingStartTimeRef.current = Date.now();
+      setIsRecording(true);
+    } catch (error) {
+      console.error('Error starting recording:', error);
+      Alert.alert('Error', 'Failed to start recording. Please try again.');
+      setIsRecording(false);
+    }
+  };
 
-  // const stopRecording = async () => {
-  //   try {
-  //     await recorder.stop();
-  //     const uri = recorder.uri;
-  //     setIsRecording(false);
+  const stopRecording = async () => {
+    try {
+      await recorder.stop();
+      const uri = recorder.uri;
+      setIsRecording(false);
 
-  //     if (uri) {
-  //       // Check duration (use recorded duration if available, otherwise fallback to ref)
-  //       const duration = recorder.duration ? recorder.duration * 1000 : (Date.now() - recordingStartTimeRef.current);
-  //       if (duration > MAX_AUDIO_DURATION) {
-  //         Alert.alert('Recording Too Long', `Please keep recordings under ${MAX_AUDIO_DURATION / 1000} seconds`);
-  //         return;
-  //       }
+      if (uri) {
+        // Check duration from the startTimeRef
+        const duration = Date.now() - recordingStartTimeRef.current;
+        if (duration > MAX_AUDIO_DURATION) {
+          Alert.alert('Recording Too Long', `Please keep recordings under ${MAX_AUDIO_DURATION / 1000} seconds`);
+          return;
+        }
 
-  //       // Transcribe audio
-  //       try {
-  //         const transcribedText = await transcribeAudio(uri);
-  //         if (transcribedText) {
-  //           setInputText((prev) => (prev ? `${prev} ${transcribedText}` : transcribedText));
-  //         } else {
-  //           // Only show alert if user didn't just cancel
-  //           if (duration > 500) {
-  //             Alert.alert('No Speech Detected', 'Could not detect any speech in the recording.');
-  //           }
-  //         }
-  //       } catch (error) {
-  //         console.error('Error transcribing audio:', error);
-  //         Alert.alert('Error', 'Failed to transcribe audio. Please try again.');
-  //       }
-  //     }
-  //   } catch (error) {
-  //     console.error('Error stopping recording:', error);
-  //     setIsRecording(false);
-  //   }
-  // };
+        // Transcribe audio
+        try {
+          const transcribedText = await transcribeAudio(uri);
+          if (transcribedText) {
+            setInputText((prev) => (prev ? `${prev} ${transcribedText}` : transcribedText));
+          } else {
+            if (duration > 500) {
+              Alert.alert('No Speech Detected', 'Could not detect any speech in the recording.');
+            }
+          }
+        } catch (error) {
+          console.error('Error transcribing audio:', error);
+          Alert.alert('Error', 'Failed to transcribe audio. Please try again.');
+        }
+      }
+    } catch (error) {
+      console.error('Error stopping recording:', error);
+      setIsRecording(false);
+    }
+  };
 
   const handleMicPress = () => {
     console.log('Mic pressed');
-    // if (isRecording) {
-    //   stopRecording();
-    // } else {
-    //   startRecording();
-    // }
+    if (isRecording) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
   };
 
   // Handle full-screen input open
@@ -663,7 +662,7 @@ export default function ChatbotScreen() {
             {
               backgroundColor: colors.bgCards,
               borderColor: colors.bgStroke,
-              borderRadius: (inputHeight > 40 || selectedImages.length > 0) ? 24 : 100,
+              borderRadius: 16,
               paddingHorizontal: selectedImages.length > 0 ? 12 : 8,
               paddingVertical: selectedImages.length > 0 ? 10 : 6,
               minHeight: selectedImages.length > 0 ? 56 : 48,
@@ -707,14 +706,14 @@ export default function ChatbotScreen() {
           )}
 
           {/* Input Row */}
-          <View style={[styles.inputRow, inputHeight > 40 ? styles.itemsEnd : styles.itemsCenter]}>
+          <View style={[styles.inputRow, styles.itemsCenter]}>
             {/* Image Add Icon */}
             <TouchableOpacity
               onPress={handleImageUpload}
               disabled={selectedImages.length >= MAX_IMAGES || isStreaming}
               style={[
                 styles.iconAction,
-                { opacity: (selectedImages.length >= MAX_IMAGES || isStreaming) ? 0.5 : 1, marginBottom: inputHeight > 40 ? 2 : 0 },
+                { opacity: (selectedImages.length >= MAX_IMAGES || isStreaming) ? 0.5 : 1 },
               ]}
             >
               <Image
@@ -755,7 +754,7 @@ export default function ChatbotScreen() {
                 disabled={isStreaming}
                 style={[
                   styles.iconAction,
-                  { opacity: isStreaming ? 0.5 : 1, marginBottom: inputHeight > 40 ? 2 : 0 },
+                  { opacity: isStreaming ? 0.5 : 1 },
                 ]}
               >
                 {isRecording ? (
@@ -781,7 +780,6 @@ export default function ChatbotScreen() {
                   {
                     backgroundColor: colors.primaryCTA,
                     opacity: (!inputText.trim() && selectedImages.length === 0) ? 0.5 : 1,
-                    marginBottom: inputHeight > 40 ? 2 : 0,
                   },
                 ]}
               >
@@ -797,7 +795,7 @@ export default function ChatbotScreen() {
                 activeOpacity={0.8}
                 style={[
                   styles.stopButton,
-                  { marginBottom: inputHeight > 40 ? 2 : 0 },
+                  {},
                 ]}
               >
                 <Image
@@ -1156,6 +1154,7 @@ const styles = StyleSheet.create({
   inputContainer: {
     borderWidth: 1,
     position: 'relative',
+    borderRadius: 16,
   },
   previewContainer: {
     marginBottom: 8,
@@ -1195,6 +1194,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
     padding: 2,
+    alignItems: 'center', // Added permanent center alignment
   },
   itemsEnd: {
     alignItems: 'flex-end',
