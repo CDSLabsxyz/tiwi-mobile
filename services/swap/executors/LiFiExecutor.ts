@@ -16,7 +16,6 @@ export class LiFiExecutor {
         });
 
         const { fromAddress, recipientAddress, quote } = params;
-        console.log("🚀 ~ LiFiExecutor ~ execute ~ quote:", quote)
 
         try {
             if (!quote.raw) {
@@ -32,7 +31,6 @@ export class LiFiExecutor {
             } else {
                 lifiRoute = convertQuoteToRoute(quote.raw);
             }
-            console.log("🚀 ~ LiFiExecutor ~ execute ~ lifiRoute:", lifiRoute, {steps: lifiRoute.steps})
 
             // 2. Ensure addresses are properly set
             // Note: LiFi SDK needs these to know which wallet to use

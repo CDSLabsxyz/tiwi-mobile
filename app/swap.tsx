@@ -1,7 +1,6 @@
 import {
     ChainOption,
     ChainSelectorCard,
-    ExpiresOption,
     ExpiresSection,
     LimitAssetSheet,
     LimitWhenPriceCard,
@@ -11,7 +10,6 @@ import {
     SwapHeader,
     SwapLoadingOverlay,
     SwapSuccessModal,
-    SwapTabKey,
     SwapTabs,
     SwapTokenCard,
     TokenOption,
@@ -26,9 +24,10 @@ import { useWalletBalances } from '@/hooks/useWalletBalances';
 import { activityService } from '@/services/activityService';
 import { apiClient } from '@/services/apiClient';
 import { securityGuard } from '@/services/securityGuard';
-import { executeSwap, fetchSwapQuote, SwapQuote } from '@/services/swap';
+import { executeSwap, fetchSwapQuote } from '@/services/swap';
 import { useLocaleStore } from '@/store/localeStore';
 import { useSecurityStore } from '@/store/securityStore';
+import { useSwapStore } from '@/store/swapStore';
 import { useWalletStore } from '@/store/walletStore';
 import { formatCompactNumber, formatFiatValue, formatTokenAmount } from '@/utils/formatting';
 import { useLocalSearchParams, usePathname, useRouter } from 'expo-router';
@@ -56,40 +55,37 @@ export default function SwapScreen() {
 
     const { data: chains } = useChains();
 
-    // --- State Management ---
-    const [activeTab, setActiveTab] = useState<SwapTabKey>('swap');
-    const [fromChain, setFromChain] = useState<ChainOption | null>(null);
-    const [toChain, setToChain] = useState<ChainOption | null>(null);
-    const [fromToken, setFromToken] = useState<TokenOption | null>(null);
-    const [toToken, setToToken] = useState<TokenOption | null>(null);
-    const [fromAmount, setFromAmount] = useState('');
-    const [toAmount, setToAmount] = useState('');
+    const {
+        activeTab,
+        fromChain,
+        toChain,
+        fromToken,
+        toToken,
+        fromAmount,
+        toAmount,
+        toFiatAmount,
+        setActiveTab,
+        setFromChain,
+        setToChain,
+        setFromToken,
+        setToToken,
+        setFromAmount,
+        setToAmount,
+        setToFiatAmount,
+        swapDirection,
+        isFormValid,
+        hasValidQuote,
+        setSwapQuote,
+        swapQuote,
+        whenPrice,
+        setWhenPrice,
+        expiresOption,
+        setExpiresOption,
+    } = useSwapStore();
+
     const [fromFiatAmount, setFromFiatAmount] = useState('$0.00');
-    const [toFiatAmount, setToFiatAmount] = useState('$0.00');
 
     const { currency, region } = useLocaleStore();
-
-    // Sync real chain icons when fetched
-    useEffect(() => {
-        if (chains) {
-            if (fromChain && !fromChain.icon?.uri) {
-                const real = chains.find(c => c.id === fromChain.id);
-                if (real?.logoURI) {
-                    setFromChain(prev => prev ? { ...prev, icon: real.logoURI } : null);
-                }
-            }
-            if (toChain && !toChain.icon?.uri) {
-                const real = chains.find(c => c.id === toChain.id);
-                if (real?.logoURI) {
-                    setToChain(prev => prev ? { ...prev, icon: real.logoURI } : null);
-                }
-            }
-        }
-    }, [chains, fromChain?.id, toChain?.id]);
-
-    // Limit specific state
-    const [whenPrice, setWhenPrice] = useState('');
-    const [expiresOption, setExpiresOption] = useState<ExpiresOption>('never');
 
     // UI state
     const [isWalletModalVisible, setIsWalletModalVisible] = useState(false);
@@ -104,7 +100,6 @@ export default function SwapScreen() {
     const [isLoadingSwap, setIsLoadingSwap] = useState(false);
     const [lastFetchTime, setLastFetchTime] = useState<number>(0);
     const [isSuccessModalVisible, setIsSuccessModalVisible] = useState(false);
-    const [swapQuote, setSwapQuote] = useState<SwapQuote | null>(null);
 
     const { address } = useWalletStore();
     const { isTransactionRiskEnabled } = useSecurityStore();
@@ -119,11 +114,11 @@ export default function SwapScreen() {
                 t => t.address.toLowerCase() === fromToken.address?.toLowerCase() && t.chainId === fromToken.chainId
             );
             if (walletToken) {
-                setFromToken(prev => prev ? {
-                    ...prev,
-                    balanceToken: `${parseFloat(walletToken.balanceFormatted || '0').toFixed(6)} ${prev.symbol}`,
+                setFromToken({
+                    ...fromToken,
+                    balanceToken: `${parseFloat(walletToken.balanceFormatted || '0').toFixed(6)} ${fromToken.symbol}`,
                     balanceFiat: `$${parseFloat(walletToken.usdValue || '0').toFixed(2)}`
-                } : null);
+                });
             }
         }
 
@@ -132,77 +127,55 @@ export default function SwapScreen() {
                 t => t.address.toLowerCase() === toToken.address?.toLowerCase() && t.chainId === toToken.chainId
             );
             if (walletToken) {
-                setToToken(prev => prev ? {
-                    ...prev,
-                    balanceToken: `${parseFloat(walletToken.balanceFormatted || '0').toFixed(6)} ${prev.symbol}`,
+                setToToken({
+                    ...toToken,
+                    balanceToken: `${parseFloat(walletToken.balanceFormatted || '0').toFixed(6)} ${toToken.symbol}`,
                     balanceFiat: `$${parseFloat(walletToken.usdValue || '0').toFixed(2)}`
-                } : null);
+                });
             }
         }
     }, [balanceData, fromToken?.address, fromToken?.chainId, toToken?.address, toToken?.chainId]);
 
-    // 2. Fetch Default Tokens (BNB & TWC) if no params provided
+    // 2. Fetch Prices Updates (BNB & TWC) silently in background
     useEffect(() => {
-        // Only fetch if no tokens set and no params from navigation
-        if (params.symbol || params.assetId || fromToken || toToken) return;
-        const fetchDefaults = async () => {
+        const updatePrices = async () => {
             try {
-                const [bnbRes, twcRes] = await Promise.all([
-                    apiClient.getTokens({ query: '0x0000000000000000000000000000000000000000', chains: [56], limit: 1 }),
-                    apiClient.getTokens({ query: '0xDA1060158F7D593667cCE0a15DB346BB3FfB3596', chains: [56], limit: 1 })
-                ]);
-                console.log("🚀 ~ fetchDefaults ~ twcRes:", twcRes)
-
-                if (bnbRes.tokens && bnbRes.tokens.length > 0) {
-                    const bnb = bnbRes.tokens[0];
-                    setFromToken({
-                        id: bnb.address || 'bnb',
-                        symbol: bnb.symbol,
-                        name: bnb.name,
-                        icon: bnb.logoURI ? { uri: bnb.logoURI } : undefined,
-                        tvl: bnb.marketCap ? `$${formatCompactNumber(bnb.marketCap)}` : '$0',
-                        balanceFiat: '$0.00',
-                        balanceToken: `0.00 ${bnb.symbol}`,
-                        address: bnb.address,
-                        chainId: bnb.chainId,
-                        decimals: bnb.decimals || 18,
-                        priceUSD: bnb.priceUSD
-                    });
-                    setFromChain({
-                        id: bnb.chainId,
-                        name: 'BNB Chain',
-                        icon: undefined // Will be synced by the other useEffect
-                    });
+                // Silently update chain icons if missing
+                if (chains && fromChain && !fromChain.icon) {
+                    const real = chains.find(c => c.id === fromChain.id);
+                    if (real) setFromChain({ ...fromChain, icon: real.logoURI || real.logo });
+                }
+                if (chains && toChain && !toChain.icon) {
+                    const real = chains.find(c => c.id === toChain.id);
+                    if (real) setToChain({ ...toChain, icon: real.logoURI || real.logo });
                 }
 
-                if (twcRes.tokens && twcRes.tokens.length > 0) {
-                    const twc = twcRes.tokens[0];
-                    setToToken({
-                        id: twc.address || 'twc',
-                        symbol: twc.symbol,
-                        name: twc.name,
-                        icon: twc.logoURI ? { uri: twc.logoURI } : require('@/assets/home/tiwicat-token.svg'),
-                        tvl: twc.marketCap ? `$${formatCompactNumber(twc.marketCap)}` : '$0',
-                        balanceFiat: '$0.00',
-                        balanceToken: `0.00 ${twc.symbol}`,
-                        address: twc.address,
-                        chainId: twc.chainId,
-                        decimals: twc.decimals || 9,
-                        priceUSD: twc.priceUSD
-                    });
-                    setToChain({
-                        id: twc.chainId,
-                        name: 'BNB Chain',
-                        icon: undefined
-                    });
+                // Silently update token info if it's our defaults
+                const isDefaultBnb = fromToken?.address === "0x0000000000000000000000000000000000000000";
+                const isDefaultTwc = toToken?.address === "0xDA1060158F7D593667CCE0A15DB346BB3FfB3596";
+
+                if (isDefaultBnb || isDefaultTwc) {
+                    const [bnbRes, twcRes] = await Promise.all([
+                        apiClient.getTokens({ query: '0x0000000000000000000000000000000000000000', chains: [56], limit: 1 }),
+                        apiClient.getTokens({ query: '0xDA1060158F7D593667CCE0A15DB346BB3FFB3596', chains: [56], limit: 1 })
+                    ]);
+
+                    if (isDefaultBnb && bnbRes.tokens?.[0]) {
+                        const bnb = bnbRes.tokens[0];
+                        setFromToken({ ...fromToken!, priceUSD: bnb.priceUSD, tvl: bnb.marketCap ? `$${formatCompactNumber(bnb.marketCap)}` : fromToken!.tvl });
+                    }
+                    if (isDefaultTwc && twcRes.tokens?.[0]) {
+                        const twc = twcRes.tokens[0];
+                        setToToken({ ...toToken!, priceUSD: twc.priceUSD, tvl: twc.marketCap ? `$${formatCompactNumber(twc.marketCap)}` : toToken!.tvl });
+                    }
                 }
             } catch (err) {
-                console.error('[SwapScreen] Failed to fetch defaults:', err);
+                console.warn('[SwapScreen] Background price update failed:', err);
             }
         };
 
-        fetchDefaults();
-    }, [params.symbol, params.assetId, chains]);
+        updatePrices();
+    }, [chains, fromChain?.id, toChain?.id]);
 
     // 2. Pre-populate from params if coming from asset detail
     useEffect(() => {
@@ -262,19 +235,7 @@ export default function SwapScreen() {
 
 
     const handleSwapDirection = () => {
-        const tempChain = fromChain;
-        setFromChain(toChain);
-        setToChain(tempChain);
-
-        const tempToken = fromToken;
-        setFromToken(toToken);
-        setToToken(tempToken);
-
-        setFromAmount('');
-        setToAmount('');
-        setFromFiatAmount('$0.00');
-        setToFiatAmount('$0.00');
-        setSwapQuote(null);
+        swapDirection();
     };
 
     const updateQuote = useCallback(async (isRefresh = false) => {
@@ -441,16 +402,6 @@ export default function SwapScreen() {
         setSwapQuote(null);
     };
 
-    const isFormValid = () => {
-        if (activeTab === 'swap') {
-            return !!fromAmount && !!fromToken && !!toToken;
-        } else {
-            return !!fromAmount && !!fromToken && !!toToken && !!whenPrice;
-        }
-    };
-
-
-    console.log("🚀 ~ SwapScreen ~ toToken?.balanceToken:", toToken?.balanceToken)
     return (
         <View style={styles.container}>
             <CustomStatusBar />
@@ -610,7 +561,7 @@ export default function SwapScreen() {
                             isRefreshing={isRefreshing}
                             isStale={isStale}
                             activeTab={activeTab}
-                            hasValidQuote={!!swapQuote}
+                            hasValidQuote={hasValidQuote()}
                         />
                     </View>
                 </ScrollView>
@@ -634,6 +585,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: 20,
         alignItems: 'center',
         width: '100%',
+        paddingBottom: 40
     },
     spacerLarge: {
         marginTop: 32,

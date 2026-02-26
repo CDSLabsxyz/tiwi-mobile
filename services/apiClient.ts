@@ -677,6 +677,35 @@ class TiwiApiClient {
             });
             return true;
         } catch (e) {
+            console.error('[TiwiAPI] logTransaction failed:', e);
+            return false;
+        }
+    }
+
+    /**
+     * Log an NFT activity performed via the app
+     */
+    async logNFTActivity(activityData: {
+        walletAddress: string;
+        transactionHash: string;
+        chainId: number;
+        contractAddress: string;
+        tokenId: string;
+        type: 'mint' | 'transfer' | 'sent' | 'received' | 'sale' | 'purchase' | 'listing' | 'unlisting';
+        fromAddress?: string;
+        toAddress?: string;
+        price?: string;
+        priceUSD?: number;
+        blockTimestamp?: string;
+    }): Promise<boolean> {
+        try {
+            await this.fetcher('/api/v1/nft/activity', {
+                method: 'POST',
+                body: JSON.stringify(activityData),
+            });
+            return true;
+        } catch (e) {
+            console.error('[TiwiAPI] logNFTActivity failed:', e);
             return false;
         }
     }
@@ -730,6 +759,26 @@ class TiwiApiClient {
      */
     async getNFTDetail(id: string): Promise<APINFTDetail> {
         return this.fetcher<APINFTDetail>(`/api/v1/nfts/${id}`);
+    }
+
+    /**
+     * Get NFT activities for a wallet
+     */
+    async getNFTActivities(params: {
+        address: string;
+        chainId?: number;
+        contractAddress?: string;
+        tokenId?: string;
+        limit?: number;
+    }): Promise<{ activities: TransactionHistoryItem[] }> {
+        const query = new URLSearchParams();
+        query.append('address', params.address);
+        if (params.chainId) query.append('chainId', params.chainId.toString());
+        if (params.contractAddress) query.append('contractAddress', params.contractAddress);
+        if (params.tokenId) query.append('tokenId', params.tokenId);
+        if (params.limit) query.append('limit', params.limit.toString());
+
+        return this.fetcher<{ activities: TransactionHistoryItem[] }>(`/api/v1/nft/activities?${query.toString()}`);
     }
 
     /**

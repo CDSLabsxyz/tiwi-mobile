@@ -49,7 +49,7 @@ const RefreshIndicator = ({ isRefreshing, isStale, lastFetchTime }: { isRefreshi
             ) : isRefreshing ? (
                 <Text style={styles.refreshingText}>Refreshing...</Text>
             ) : (
-                <Text style={styles.timeAgoText}>Updated {secondsAgo}s ago</Text>
+                <Text style={styles.timeAgoText}>Updating in {secondsAgo}s</Text>
             )}
         </View>
     );
@@ -101,7 +101,7 @@ export const SwapDetailsCard: React.FC<SwapDetailsCardProps> = ({
     }));
 
     const contentStyle = useAnimatedStyle(() => {
-        const expandedHeight = 110; // Slightly more height for indicator
+        const expandedHeight = 180; // Increased significantly to ensure "Updating in Xs" and all rows are visible
         const collapsedHeight = 0;
         const animatedHeight = interpolate(height.value, [0, 1], [collapsedHeight, expandedHeight], Extrapolate.CLAMP);
         const opacity = interpolate(height.value, [0, 0.3, 1], [0, 0, 1], Extrapolate.CLAMP);

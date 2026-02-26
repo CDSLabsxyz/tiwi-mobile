@@ -73,7 +73,6 @@ export const SwapTokenCard: React.FC<SwapTokenCardProps> = ({
     const displayTokenChain = useMemo(() => tokenChain ?? (isFrom ? 'Ethereum' : ''), [tokenChain, isFrom]);
     const displayTokenIcon = useMemo(() => tokenIcon, [tokenIcon]);
     const displayChainBadge = useMemo(() => chainBadgeIcon ?? ChainBadge, [chainBadgeIcon]);
-    console.log("🚀 ~ SwapTokenCard ~ balanceText:", balanceText)
 
     return (
         <View style={styles.card}>

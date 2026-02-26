@@ -5,9 +5,9 @@ import { useTokens } from '@/hooks/useTokens';
 import { useWalletBalances } from '@/hooks/useWalletBalances';
 import { getColorFromSeed, } from '@/utils/formatting';
 import { Ionicons } from '@expo/vector-icons';
-import { Image } from 'expo-image';
-import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Dimensions, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Dimensions, FlatList, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { SelectionBottomSheet } from './SelectionBottomSheet';
 
@@ -135,16 +135,23 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
             ? tokens.filter(t => t.chainId === selectedChain.id)
             : tokens;
 
-        return filteredTokens.map(t => {
+        const TWC_ADDRESS = '0xda1060158f7d593667cce0a15db346bb3ffb3596'.toLowerCase();
+
+        const mapped = filteredTokens.map(t => {
             const walletToken = balanceData?.tokens.find(
                 wt => wt.address.toLowerCase() === t.address.toLowerCase() && wt.chainId === t.chainId
             );
+
+            // Find chain logo for the badge
+            const chainInfo = chains?.find(c => c.id === t.chainId);
+            const chainIcon = chainInfo?.logoURI || chainInfo?.logo;
 
             return {
                 id: `${t.chainId}-${t.address}`,
                 symbol: t.symbol,
                 name: t.name,
                 icon: t.logoURI,
+                chainIcon: chainIcon,
                 tvl: t.liquidity ? `$${t.liquidity.toLocaleString()}` : 'N/A',
                 balanceFiat: walletToken?.usdValue ? `$${parseFloat(walletToken.usdValue).toFixed(2)}` : '$0.00',
                 balanceToken: walletToken?.balanceFormatted || `0.00 ${t.symbol}`,
@@ -152,9 +159,31 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
                 chainId: t.chainId,
                 decimals: t.decimals,
                 priceUSD: t.priceUSD,
+                isOwned: !!walletToken,
+                usdValueNum: parseFloat(walletToken?.usdValue || '0'),
             };
         });
-    }, [tokens, balanceData, selectedChain]);
+
+        // Sorting Logic:
+        // 1. TWC always at the absolute top
+        // 2. Owned tokens (balance > 0)
+        // 3. Others (by liquidity/API default)
+        return mapped.sort((a, b) => {
+            const isATWC = a.address.toLowerCase() === TWC_ADDRESS;
+            const isBTWC = b.address.toLowerCase() === TWC_ADDRESS;
+            if (isATWC) return -1;
+            if (isBTWC) return 1;
+
+            if (a.isOwned && !b.isOwned) return -1;
+            if (!a.isOwned && b.isOwned) return 1;
+
+            if (a.isOwned && b.isOwned) {
+                return b.usdValueNum - a.usdValueNum;
+            }
+
+            return 0; // Maintain API order for others
+        });
+    }, [tokens, balanceData, selectedChain, chains]);
 
     const handleChainSelect = (chain: any) => {
         setSelectedChain({
@@ -196,7 +225,7 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
         });
     };
 
-    const renderChains = () => {
+    const renderChains = useCallback(() => {
         if (isLoadingChains) {
             return (
                 <View style={styles.loaderContainer}>
@@ -205,98 +234,86 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
             );
         }
 
-        return (
-            <>
-                {/* All Networks Option */}
-                {!chainSearchQuery && (
-                    <TouchableOpacity
-                        style={styles.chainItem}
-                        activeOpacity={0.8}
-                        onPress={() => handleChainSelect(ALL_NETWORKS_CHAIN)}
-                    >
-                        <View style={styles.chainIconWrapper}>
-                            <Image source={ALL_NETWORKS_CHAIN.icon} style={styles.fullSize} contentFit="contain" />
-                        </View>
-                        <Text style={styles.chainName}>{ALL_NETWORKS_CHAIN.name}</Text>
-                        {selectedChain?.id === 'all' && (
-                            <Ionicons name="checkmark-circle" size={24} color={colors.primaryCTA} style={styles.checkIcon} />
-                        )}
-                    </TouchableOpacity>
-                )}
-
-                {filteredChains.map((chain) => (
-                    <TouchableOpacity
-                        key={chain.id}
-                        style={styles.chainItem}
-                        activeOpacity={0.8}
-                        onPress={() => handleChainSelect(chain)}
-                    >
-                        <View style={styles.chainIconWrapper}>
-                            <Image source={chain.icon} style={styles.fullSize} contentFit="contain" />
-                        </View>
-                        <Text style={styles.chainName}>{chain.name}</Text>
-                        {selectedChain?.id === chain.id && (
-                            <Ionicons name="checkmark-circle" size={24} color={colors.primaryCTA} style={styles.checkIcon} />
-                        )}
-                    </TouchableOpacity>
-                ))}
-            </>
-        );
-    };
-
-    const renderTokens = () => {
-        // If loading initial query OR we have placeholder data that filtered down to nothing for the new network selection,
-        // show skeletons to avoid a jarring empty state or "wrong" token feeling.
-        if (isLoadingTokens || (isPlaceholderData && tokenOptions.length === 0)) {
-            return (
-                <>
-                    <TokenSkeleton />
-                    <TokenSkeleton />
-                    <TokenSkeleton />
-                    <TokenSkeleton />
-                    <TokenSkeleton />
-                </>
-            );
+        const data = filteredChains;
+        if (!chainSearchQuery) {
+            // @ts-ignore
+            return [ALL_NETWORKS_CHAIN, ...data];
         }
+        return data;
+    }, [isLoadingChains, filteredChains, chainSearchQuery]);
 
-        return tokenOptions.map((token) => {
-            const isActive = token.id === selectedTokenId;
-            return (
-                <TouchableOpacity
-                    key={token.id}
-                    activeOpacity={0.9}
-                    onPress={() => handleTokenSelect(token)}
-                    style={[
-                        styles.tokenItem,
-                        isActive && styles.activeTokenItem,
-                        isFetchingTokens && { opacity: 0.6 }
-                    ]}
-                >
-                    <View style={styles.tokenContent}>
-                        <View style={styles.leftInfo}>
-                            <View style={styles.tokenIconWrapper}>
-                                {token.icon ? (
-                                    <Image source={token.icon} style={styles.fullSize} contentFit="contain" />
-                                ) : (
-                                    <View style={[styles.fallbackCircle, { backgroundColor: getColorFromSeed(token.symbol) }]}>
-                                        <Text style={styles.fallbackText}>{token.symbol.charAt(0).toUpperCase()}</Text>
-                                    </View>
-                                )}
-                            </View>
-                            <View style={styles.tokenTextColumn}>
-                                <Text style={styles.tokenSymbol}>{token.symbol}</Text>
-                                <Text style={styles.tokenAddress}>{truncateAddress(token.address)}</Text>
-                            </View>
+    const renderChainItem = useCallback(({ item: chain }: { item: any }) => {
+        const isAll = chain.id === 'all';
+        const isSelected = selectedChain?.id === chain.id;
+
+        return (
+            <TouchableOpacity
+                style={styles.chainItem}
+                activeOpacity={0.8}
+                onPress={() => handleChainSelect(chain)}
+            >
+                <View style={styles.chainIconWrapper}>
+                    <ExpoImage source={chain.icon} style={styles.fullSize} contentFit="contain" />
+                </View>
+                <Text style={styles.chainName}>{chain.name}</Text>
+                {isSelected && (
+                    <Ionicons name="checkmark-circle" size={24} color={colors.primaryCTA} style={styles.checkIcon} />
+                )}
+            </TouchableOpacity>
+        );
+    }, [selectedChain]);
+
+    const TokenItem = React.memo(({ token, onSelect, selectedTokenId, isFetching }: { token: TokenOption, onSelect: any, selectedTokenId: any, isFetching: boolean }) => {
+        const isActive = token.id === selectedTokenId;
+        return (
+            <TouchableOpacity
+                activeOpacity={0.9}
+                onPress={() => onSelect(token)}
+                style={[
+                    styles.tokenItem,
+                    isActive && styles.activeTokenItem,
+                    isFetching && { opacity: 0.6 }
+                ]}
+            >
+                <View style={styles.tokenContent}>
+                    <View style={styles.leftInfo}>
+                        <View style={styles.tokenIconWrapper}>
+                            {token.icon ? (
+                                <ExpoImage source={token.icon} style={styles.fullSize} contentFit="cover" />
+                            ) : (
+                                <View style={[styles.fallbackCircle, { backgroundColor: getColorFromSeed(token.symbol) }]}>
+                                    <Text style={styles.fallbackText}>{token.symbol.charAt(0).toUpperCase()}</Text>
+                                </View>
+                            )}
+
+                            {token.chainIcon && (
+                                <View style={styles.chainBadge}>
+                                    <ExpoImage source={token.chainIcon} style={styles.fullSize} contentFit="cover" />
+                                </View>
+                            )}
                         </View>
-                        <View style={styles.rightInfo}>
-                            <Text style={styles.fiatBalance}>{token.balanceFiat}</Text>
-                            <Text style={styles.tokenBalance}>{token.balanceToken}</Text>
+                        <View style={styles.tokenTextColumn}>
+                            <Text style={styles.tokenSymbol}>{token.symbol}</Text>
+                            <Text style={styles.tokenAddress}>{truncateAddress(token.address)}</Text>
                         </View>
                     </View>
-                </TouchableOpacity>
-            );
-        });
-    };
+                    <View style={styles.rightInfo}>
+                        <Text style={styles.fiatBalance}>{token.balanceFiat}</Text>
+                        <Text style={styles.tokenBalance}>{token.balanceToken}</Text>
+                    </View>
+                </View>
+            </TouchableOpacity>
+        );
+    });
+
+    const renderTokenItem = useCallback(({ item: token }: { item: TokenOption }) => (
+        <TokenItem
+            token={token}
+            onSelect={handleTokenSelect}
+            selectedTokenId={selectedTokenId}
+            isFetching={isFetchingTokens}
+        />
+    ), [handleTokenSelect, selectedTokenId, isFetchingTokens]);
 
     return (
         <SelectionBottomSheet
@@ -311,14 +328,18 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
                 <Animated.View style={[styles.carouselContent, animatedContentStyle]}>
                     {/* Step 1: Chains */}
                     <View style={[styles.stepPage, { width: SCREEN_WIDTH }]}>
-                        <ScrollView
+                        <FlatList
+                            data={renderChains() as any[]}
+                            renderItem={renderChainItem}
+                            keyExtractor={item => String(item.id)}
                             style={styles.scroll}
                             contentContainerStyle={styles.scrollContent}
                             showsVerticalScrollIndicator={false}
                             keyboardShouldPersistTaps="handled"
-                        >
-                            {renderChains()}
-                        </ScrollView>
+                            initialNumToRender={10}
+                            maxToRenderPerBatch={10}
+                            windowSize={5}
+                        />
                     </View>
 
                     {/* Step 2: Tokens */}
@@ -343,14 +364,28 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
                             </View>
                         </View>
 
-                        <ScrollView
-                            style={styles.scroll}
-                            contentContainerStyle={styles.scrollContent}
-                            showsVerticalScrollIndicator={false}
-                            keyboardShouldPersistTaps="handled"
-                        >
-                            {renderTokens()}
-                        </ScrollView>
+                        {(isLoadingTokens || (isPlaceholderData && tokenOptions.length === 0)) ? (
+                            <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+                                <TokenSkeleton />
+                                <TokenSkeleton />
+                                <TokenSkeleton />
+                                <TokenSkeleton />
+                                <TokenSkeleton />
+                            </ScrollView>
+                        ) : (
+                            <FlatList
+                                data={tokenOptions}
+                                renderItem={renderTokenItem}
+                                keyExtractor={item => item.id}
+                                style={styles.scroll}
+                                contentContainerStyle={styles.scrollContent}
+                                showsVerticalScrollIndicator={false}
+                                keyboardShouldPersistTaps="handled"
+                                initialNumToRender={10}
+                                maxToRenderPerBatch={10}
+                                windowSize={5}
+                            />
+                        )}
                     </View>
                 </Animated.View>
             </View>
@@ -461,8 +496,20 @@ const styles = StyleSheet.create({
         width: 40,
         height: 40,
         borderRadius: 20,
-        overflow: 'hidden',
         backgroundColor: colors.bgSemi,
+        overflow: 'hidden',
+    },
+    chainBadge: {
+        position: 'absolute',
+        bottom: -2,
+        right: -2,
+        width: 16,
+        height: 16,
+        borderRadius: 8,
+        backgroundColor: colors.bgSemi,
+        borderWidth: 1.5,
+        borderColor: colors.bgSemi,
+        overflow: 'hidden',
     },
     fallbackCircle: {
         width: '100%',

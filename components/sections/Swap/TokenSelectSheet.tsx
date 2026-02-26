@@ -1,4 +1,5 @@
 import { colors } from '@/constants/colors';
+import { useChains } from '@/hooks/useChains';
 import { useTokens } from '@/hooks/useTokens';
 import { useWalletBalances } from '@/hooks/useWalletBalances';
 import { getColorFromSeed } from '@/utils/formatting';
@@ -17,6 +18,7 @@ export interface TokenOption {
     symbol: string;
     name: string;
     icon: any;
+    chainIcon?: any;
     tvl: string;
     balanceFiat: string;
     balanceToken: string;
@@ -46,6 +48,7 @@ export const TokenSelectSheet: React.FC<TokenSelectSheetProps> = ({
 }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const { data: balanceData } = useWalletBalances();
+    const { data: chains } = useChains();
     const { data: response, isLoading } = useTokens({
         query: searchQuery,
         // Ensure chainId is a number for filtering
@@ -55,17 +58,25 @@ export const TokenSelectSheet: React.FC<TokenSelectSheetProps> = ({
 
     const options: TokenOption[] = React.useMemo(() => {
         if (!tokens) return [];
-        return tokens.map(t => {
+
+        const TWC_ADDRESS = '0xda1060158f7d593667cce0a15db346bb3ffb3596'.toLowerCase();
+
+        const mapped = tokens.map(t => {
             // Find if this token has a balance in our wallet
             const walletToken = balanceData?.tokens.find(
                 wt => wt.address.toLowerCase() === t.address.toLowerCase() && wt.chainId === t.chainId
             );
+
+            // Find chain logo for the badge
+            const chainInfo = chains?.find(c => c.id === t.chainId);
+            const chainIcon = chainInfo?.logoURI || chainInfo?.logo;
 
             return {
                 id: `${t.chainId}-${t.address}`,
                 symbol: t.symbol,
                 name: t.name,
                 icon: t.logoURI,
+                chainIcon: chainIcon,
                 tvl: t.liquidity ? `$${t.liquidity.toLocaleString()}` : 'N/A',
                 balanceFiat: walletToken?.usdValue ? `$${parseFloat(walletToken.usdValue).toFixed(2)}` : '$0.00',
                 balanceToken: walletToken?.balanceFormatted || `0.00 ${t.symbol}`,
@@ -73,9 +84,28 @@ export const TokenSelectSheet: React.FC<TokenSelectSheetProps> = ({
                 chainId: t.chainId,
                 decimals: t.decimals,
                 priceUSD: t.priceUSD,
+                isOwned: !!walletToken,
+                usdValueNum: parseFloat(walletToken?.usdValue || '0'),
             };
         });
-    }, [tokens, balanceData]);
+
+        // Sorting Logic: TWC -> Owned -> Others
+        return mapped.sort((a, b) => {
+            const isATWC = a.address.toLowerCase() === TWC_ADDRESS;
+            const isBTWC = b.address.toLowerCase() === TWC_ADDRESS;
+            if (isATWC) return -1;
+            if (isBTWC) return 1;
+
+            if (a.isOwned && !b.isOwned) return -1;
+            if (!a.isOwned && b.isOwned) return 1;
+
+            if (a.isOwned && b.isOwned) {
+                return b.usdValueNum - a.usdValueNum;
+            }
+
+            return 0;
+        });
+    }, [tokens, balanceData, chains]);
 
     return (
         <SelectionBottomSheet
@@ -129,6 +159,13 @@ export const TokenSelectSheet: React.FC<TokenSelectSheetProps> = ({
                                                 ) : (
                                                     <View style={[styles.fallbackCircle, { backgroundColor: getColorFromSeed(token.symbol) }]}>
                                                         <Text style={styles.fallbackText}>{token.symbol.charAt(0).toUpperCase()}</Text>
+                                                    </View>
+                                                )}
+
+                                                {/* Chain Badge */}
+                                                {token.chainIcon && (
+                                                    <View style={styles.chainBadge}>
+                                                        <Image source={token.chainIcon} style={styles.fullSize} contentFit="contain" />
                                                     </View>
                                                 )}
                                             </View>
@@ -223,9 +260,20 @@ const styles = StyleSheet.create({
     iconWrapper: {
         width: 40,
         height: 40,
-        borderRadius: 999, // Full circular rounding
-        overflow: 'hidden',
+        borderRadius: 20,
         backgroundColor: colors.bgSemi,
+    },
+    chainBadge: {
+        position: 'absolute',
+        bottom: -2,
+        right: -2,
+        width: 16,
+        height: 16,
+        borderRadius: 8,
+        backgroundColor: colors.bgSemi,
+        borderWidth: 1.5,
+        borderColor: colors.bgSemi,
+        overflow: 'hidden',
     },
     fullSize: {
         width: '100%',

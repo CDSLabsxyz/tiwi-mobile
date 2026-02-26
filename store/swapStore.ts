@@ -3,33 +3,46 @@
  * Migrated from useState hooks in swap.tsx to Zustand for better state management
  */
 
-import { create } from "zustand";
 import type { ChainOption } from "@/components/sections/Swap/ChainSelectSheet";
-import type { TokenOption } from "@/components/sections/Swap/TokenSelectSheet";
-import type { SwapTabKey } from "@/components/sections/Swap/SwapTabs";
 import type { ExpiresOption } from "@/components/sections/Swap/ExpiresSection";
+import type { SwapTabKey } from "@/components/sections/Swap/SwapTabs";
+import type { TokenOption } from "@/components/sections/Swap/TokenSelectSheet";
+import type { SwapQuote } from "@/services/swap/types";
+import { create } from "zustand";
 
-// Default FROM token (TWC) - ensures fromToken is never null
-const TWC_ADDRESS = '0xDA1060158F7D593667cCE0a15DB346BB3FfB3596';
-const defaultFromToken: TokenOption = {
-  id: "twc",
-  symbol: "TWC",
-  name: "TWC",
-  icon: require("@/assets/home/tiwicat-token.svg"),
-  tvl: "$1,000,000",
-  balanceFiat: "$0",
-  balanceToken: "0 TWC",
-  address: TWC_ADDRESS,
-  chainId: 1,
-  decimals: 9,
+const DEFAULT_BNB_TOKEN: TokenOption = {
+  address: "0x0000000000000000000000000000000000000000",
+  chainId: 56,
+  decimals: 18,
+  icon: "https://assets.coingecko.com/coins/images/825/small/binance-coin-logo.png?1547034615",
+  id: "bnb-native",
+  name: "BNB",
+  priceUSD: "619.87",
+  symbol: "BNB",
+  tvl: "$0",
+  balanceFiat: "$0.00",
+  balanceToken: "0.00 BNB",
 };
 
-export interface SwapQuoteDetails {
-  gasFee: string;
-  slippage: string;
-  twcFee: string;
-  source: string[];
-}
+const DEFAULT_TWC_TOKEN: TokenOption = {
+  address: "0xDA1060158F7D593667cCE0a15DB346BB3FfB3596",
+  chainId: 56,
+  decimals: 9,
+  icon: "https://cdn.dexscreener.com/cms/images/c135d9cc87d8db4c1e74788c546ed3c7c4498a5da693cbefdc30e749cbea4843?width=800&height=800&quality=90",
+  id: "twc-native",
+  name: "TIWI CAT",
+  priceUSD: "0.0000000003498",
+  symbol: "TWC",
+  tvl: "$317,309",
+  balanceFiat: "$0.00",
+  balanceToken: "0.00 TWC",
+};
+
+const DEFAULT_BNB_CHAIN: ChainOption = {
+  id: 56,
+  name: "BNB Chain",
+  icon: undefined // Will be updated by chains hook
+};
 
 type SheetTarget = "from" | "to" | "whenPrice";
 
@@ -55,7 +68,7 @@ interface SwapState {
   tokenSheetTarget: SheetTarget;
 
   // Quote state
-  swapQuote: SwapQuoteDetails | null;
+  swapQuote: SwapQuote | null;
   toFiatAmount: string;
 
   // Actions - Form
@@ -79,7 +92,7 @@ interface SwapState {
   closeTokenSheet: () => void;
 
   // Actions - Quote
-  setSwapQuote: (quote: SwapQuoteDetails | null) => void;
+  setSwapQuote: (quote: SwapQuote | null) => void;
   setToFiatAmount: (amount: string) => void;
 
   // Actions - Complex operations
@@ -99,10 +112,10 @@ export const useSwapStore = create<SwapState>((set, get) => ({
   activeTab: "swap",
   fromAmount: "",
   toAmount: "",
-  fromChain: { id: 'ethereum', name: "Ethereum", icon: require("@/assets/home/chains/ethereum.svg") },
-  fromToken: defaultFromToken,
-  toChain: null,
-  toToken: null,
+  fromChain: DEFAULT_BNB_CHAIN,
+  fromToken: DEFAULT_BNB_TOKEN,
+  toChain: DEFAULT_BNB_CHAIN,
+  toToken: DEFAULT_TWC_TOKEN,
   whenPrice: "",
   whenPriceToken: null,
   expiresOption: "never",
@@ -151,7 +164,7 @@ export const useSwapStore = create<SwapState>((set, get) => ({
       fromAmount: state.toAmount,
       toAmount: state.fromAmount,
       fromChain: state.toChain,
-      fromToken: state.toToken || defaultFromToken,
+      fromToken: state.toToken || DEFAULT_TWC_TOKEN,
       toChain: state.fromChain,
       toToken: state.fromToken,
     });
@@ -159,10 +172,10 @@ export const useSwapStore = create<SwapState>((set, get) => ({
   resetSwapState: () => set({
     fromAmount: "",
     toAmount: "",
-    fromChain: null,
-    fromToken: defaultFromToken,
-    toChain: null,
-    toToken: null,
+    fromChain: DEFAULT_BNB_CHAIN,
+    fromToken: DEFAULT_BNB_TOKEN,
+    toChain: DEFAULT_BNB_CHAIN,
+    toToken: DEFAULT_TWC_TOKEN,
     whenPrice: "",
     whenPriceToken: null,
     expiresOption: "never",

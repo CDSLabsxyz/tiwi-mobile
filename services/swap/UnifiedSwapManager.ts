@@ -9,6 +9,7 @@ export class UnifiedSwapManager {
     async execute(params: ExecuteSwapParams): Promise<SwapExecutionResult> {
         const { quote } = params;
         const router = quote.router?.toLowerCase() || 'unknown';
+        console.log("🚀 ~ UnifiedSwapManager ~ execute ~ router:", router)
 
         console.log(`[UnifiedSwapManager] Routing swap to ${router} executor`);
 

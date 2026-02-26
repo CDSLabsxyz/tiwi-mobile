@@ -67,7 +67,6 @@ export default function ReceiveScreen() {
         enabled: fetchChainIds.length > 0
     });
     const apiTokens = response?.tokens;
-    console.log("🚀 ~ ReceiveScreen ~ apiTokens:", apiTokens)
 
     // Computed list of tokens to show
     const displayTokens = useMemo(() => {

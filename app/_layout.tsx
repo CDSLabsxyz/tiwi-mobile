@@ -316,7 +316,7 @@ export default function RootLayout() {
     };
   }, [isConnected, address]);
   const { address: activeAddress, activeChain, walletGroups, } = useWalletStore();
-  console.log("🚀 ~ RootLayout ~ :", { activeAddress, hasCompletedOnboarding, isConnected, isOnboardingLoading, isNavigationReady, segments, hasPasscode, isLocked, isSetupComplete, setupPhase, isHydrated, activeChain, walletGroups: walletGroups, })
+  // console.log("🚀 ~ RootLayout ~ :", { activeAddress, hasCompletedOnboarding, isConnected, isOnboardingLoading, isNavigationReady, segments, hasPasscode, isLocked, isSetupComplete, setupPhase, isHydrated, activeChain, walletGroups: walletGroups, })
 
 
   return (

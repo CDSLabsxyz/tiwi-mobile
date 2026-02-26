@@ -5,6 +5,7 @@ import React, { useEffect } from 'react';
 import { Dimensions, Keyboard, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, {
+    Easing,
     FadeIn,
     FadeOut,
     runOnJS,
@@ -59,10 +60,9 @@ export const SelectionBottomSheet: React.FC<SelectionBottomSheetProps> = ({
 
     useEffect(() => {
         if (visible) {
-            translateY.value = withSpring(0, {
-                damping: 15,
-                stiffness: 100,
-                mass: 0.8,
+            translateY.value = withTiming(0, {
+                duration: 350,
+                easing: Easing.out(Easing.quad),
             });
             backdropOpacity.value = withTiming(1, { duration: 300 });
         } else {
