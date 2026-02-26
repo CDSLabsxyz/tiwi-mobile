@@ -35,5 +35,25 @@ export function useTokenPrefetch() {
                 staleTime: 1000 * 60 * 30, // 30 minutes
             });
         });
+
+        // 3. Prefetch Default Swap Tokens (BNB for from, TWC for to)
+        queryClient.prefetchQuery({
+            queryKey: ['tokensList', 'BNB', [56], 1],
+            queryFn: () => apiClient.getTokens({
+                query: 'BNB',
+                chains: [56],
+                limit: 1
+            }),
+            staleTime: 1000 * 60 * 60, // 1 hour
+        });
+
+        queryClient.prefetchQuery({
+            queryKey: ['tokensList', 'TIWI CAT', undefined, 1],
+            queryFn: () => apiClient.getTokens({
+                query: 'TIWI CAT',
+                limit: 1
+            }),
+            staleTime: 1000 * 60 * 60, // 1 hour
+        });
     }, [queryClient]);
 }

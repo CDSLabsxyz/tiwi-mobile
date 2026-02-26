@@ -8,7 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Dimensions, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { SelectionBottomSheet } from './SelectionBottomSheet';
 
 // Reuse types from existing sheets
@@ -17,7 +17,7 @@ import type { ChainId, ChainOption } from './ChainSelectSheet';
 import type { TokenOption } from './TokenSelectSheet';
 
 const CheckmarkIcon = require('@/assets/swap/checkmark-circle-01.svg');
-const AllChainsIcon = require('@/assets/home/tiwicat-token.svg');
+const AllChainsIcon = require('@/assets/swap/all-networks.svg');
 
 const ALL_NETWORKS_CHAIN: ChainOption = {
     id: 'all',
@@ -163,7 +163,10 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
             icon: chain.icon,
         });
         setStep('tokens');
-        transitionX.value = withSpring(-SCREEN_WIDTH, { damping: 20, stiffness: 150 });
+        transitionX.value = withTiming(-SCREEN_WIDTH, {
+            duration: 300,
+            easing: Easing.out(Easing.quad),
+        });
     };
 
     const handleTokenSelect = (token: TokenOption) => {
@@ -187,7 +190,10 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
     const handleBack = () => {
         setStep('chains');
         setTokenSearchQuery('');
-        transitionX.value = withSpring(0, { damping: 20, stiffness: 150 });
+        transitionX.value = withTiming(0, {
+            duration: 300,
+            easing: Easing.out(Easing.quad),
+        });
     };
 
     const renderChains = () => {
@@ -387,6 +393,7 @@ const styles = StyleSheet.create({
     carouselContent: {
         flexDirection: 'row',
         height: '100%',
+        width: Dimensions.get('window').width * 2,
     },
     stepPage: {
         height: '100%',

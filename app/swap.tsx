@@ -22,13 +22,15 @@ import { WalletModal } from '@/components/ui/wallet-modal';
 import { colors } from '@/constants/colors';
 import { useChains } from '@/hooks/useChains';
 import { useTokenPrefetch } from '@/hooks/useTokenPrefetch';
+import { useWalletBalances } from '@/hooks/useWalletBalances';
 import { activityService } from '@/services/activityService';
+import { apiClient } from '@/services/apiClient';
 import { securityGuard } from '@/services/securityGuard';
 import { executeSwap, fetchSwapQuote, SwapQuote } from '@/services/swap';
 import { useLocaleStore } from '@/store/localeStore';
 import { useSecurityStore } from '@/store/securityStore';
 import { useWalletStore } from '@/store/walletStore';
-import { formatFiatValue, formatTokenAmount } from '@/utils/formatting';
+import { formatCompactNumber, formatFiatValue, formatTokenAmount } from '@/utils/formatting';
 import { useLocalSearchParams, usePathname, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -56,40 +58,10 @@ export default function SwapScreen() {
 
     // --- State Management ---
     const [activeTab, setActiveTab] = useState<SwapTabKey>('swap');
-    const [fromChain, setFromChain] = useState<ChainOption | null>({
-        id: 56,
-        name: 'BNB Chain',
-        icon: require('@/assets/home/chains/ethereum.svg'), // Temporary, synced in useEffect
-    });
-    const [toChain, setToChain] = useState<ChainOption | null>({
-        id: 56,
-        name: 'BNB Chain',
-        icon: require('@/assets/home/chains/ethereum.svg'),
-    });
-    const [fromToken, setFromToken] = useState<TokenOption | null>({
-        id: '0x0000000000000000000000000000000000000000',
-        symbol: 'BNB',
-        name: 'BNB',
-        icon: undefined,
-        tvl: '$0',
-        balanceFiat: '$0',
-        balanceToken: '0.00 BNB',
-        address: '0x0000000000000000000000000000000000000000',
-        chainId: 56,
-        decimals: 18
-    });
-    const [toToken, setToToken] = useState<TokenOption | null>({
-        id: '0xDA1060158F7D593667cCE0a15DB346BB3FfB3596',
-        symbol: 'TWC',
-        name: 'TIWI CAT',
-        icon: require('@/assets/home/tiwicat-token.svg'),
-        tvl: '$0',
-        balanceFiat: '$0',
-        balanceToken: '0.00 TWC',
-        address: '0xDA1060158F7D593667cCE0a15DB346BB3FfB3596',
-        chainId: 56,
-        decimals: 9
-    });
+    const [fromChain, setFromChain] = useState<ChainOption | null>(null);
+    const [toChain, setToChain] = useState<ChainOption | null>(null);
+    const [fromToken, setFromToken] = useState<TokenOption | null>(null);
+    const [toToken, setToToken] = useState<TokenOption | null>(null);
     const [fromAmount, setFromAmount] = useState('');
     const [toAmount, setToAmount] = useState('');
     const [fromFiatAmount, setFromFiatAmount] = useState('$0.00');
@@ -136,8 +108,103 @@ export default function SwapScreen() {
 
     const { address } = useWalletStore();
     const { isTransactionRiskEnabled } = useSecurityStore();
+    const { data: balanceData } = useWalletBalances();
 
-    // Pre-populate from params if coming from asset detail
+    // 1. Sync Balances for selected tokens
+    useEffect(() => {
+        if (!balanceData) return;
+
+        if (fromToken) {
+            const walletToken = balanceData.tokens.find(
+                t => t.address.toLowerCase() === fromToken.address?.toLowerCase() && t.chainId === fromToken.chainId
+            );
+            if (walletToken) {
+                setFromToken(prev => prev ? {
+                    ...prev,
+                    balanceToken: `${parseFloat(walletToken.balanceFormatted || '0').toFixed(6)} ${prev.symbol}`,
+                    balanceFiat: `$${parseFloat(walletToken.usdValue || '0').toFixed(2)}`
+                } : null);
+            }
+        }
+
+        if (toToken) {
+            const walletToken = balanceData.tokens.find(
+                t => t.address.toLowerCase() === toToken.address?.toLowerCase() && t.chainId === toToken.chainId
+            );
+            if (walletToken) {
+                setToToken(prev => prev ? {
+                    ...prev,
+                    balanceToken: `${parseFloat(walletToken.balanceFormatted || '0').toFixed(6)} ${prev.symbol}`,
+                    balanceFiat: `$${parseFloat(walletToken.usdValue || '0').toFixed(2)}`
+                } : null);
+            }
+        }
+    }, [balanceData, fromToken?.address, fromToken?.chainId, toToken?.address, toToken?.chainId]);
+
+    // 2. Fetch Default Tokens (BNB & TWC) if no params provided
+    useEffect(() => {
+        // Only fetch if no tokens set and no params from navigation
+        if (params.symbol || params.assetId || fromToken || toToken) return;
+        const fetchDefaults = async () => {
+            try {
+                const [bnbRes, twcRes] = await Promise.all([
+                    apiClient.getTokens({ query: '0x0000000000000000000000000000000000000000', chains: [56], limit: 1 }),
+                    apiClient.getTokens({ query: '0xDA1060158F7D593667cCE0a15DB346BB3FfB3596', chains: [56], limit: 1 })
+                ]);
+                console.log("🚀 ~ fetchDefaults ~ twcRes:", twcRes)
+
+                if (bnbRes.tokens && bnbRes.tokens.length > 0) {
+                    const bnb = bnbRes.tokens[0];
+                    setFromToken({
+                        id: bnb.address || 'bnb',
+                        symbol: bnb.symbol,
+                        name: bnb.name,
+                        icon: bnb.logoURI ? { uri: bnb.logoURI } : undefined,
+                        tvl: bnb.marketCap ? `$${formatCompactNumber(bnb.marketCap)}` : '$0',
+                        balanceFiat: '$0.00',
+                        balanceToken: `0.00 ${bnb.symbol}`,
+                        address: bnb.address,
+                        chainId: bnb.chainId,
+                        decimals: bnb.decimals || 18,
+                        priceUSD: bnb.priceUSD
+                    });
+                    setFromChain({
+                        id: bnb.chainId,
+                        name: 'BNB Chain',
+                        icon: undefined // Will be synced by the other useEffect
+                    });
+                }
+
+                if (twcRes.tokens && twcRes.tokens.length > 0) {
+                    const twc = twcRes.tokens[0];
+                    setToToken({
+                        id: twc.address || 'twc',
+                        symbol: twc.symbol,
+                        name: twc.name,
+                        icon: twc.logoURI ? { uri: twc.logoURI } : require('@/assets/home/tiwicat-token.svg'),
+                        tvl: twc.marketCap ? `$${formatCompactNumber(twc.marketCap)}` : '$0',
+                        balanceFiat: '$0.00',
+                        balanceToken: `0.00 ${twc.symbol}`,
+                        address: twc.address,
+                        chainId: twc.chainId,
+                        decimals: twc.decimals || 9,
+                        priceUSD: twc.priceUSD
+                    });
+                    setToChain({
+                        id: twc.chainId,
+                        name: 'BNB Chain',
+                        icon: undefined
+                    });
+                }
+            } catch (err) {
+                console.error('[SwapScreen] Failed to fetch defaults:', err);
+            }
+        };
+
+        fetchDefaults();
+    }, [params.symbol, params.assetId, chains]);
+
+    // 2. Pre-populate from params if coming from asset detail
     useEffect(() => {
         if (params.symbol && params.chainId && chains) {
             const chain = chains.find(c => String(c.id) === params.chainId);
@@ -330,7 +397,6 @@ export default function SwapScreen() {
             const result = await executeSwap(fromAmount, fromToken, toToken, address, address, swapQuote);
 
             // Log transaction to backend
-            const { apiClient } = require('@/services/apiClient');
             const txHash = result?.txHash || `mock-hash-e${Date.now()}`;
             const chainId = typeof fromChain?.id === 'number' ? fromChain.id : 56;
 
@@ -383,7 +449,8 @@ export default function SwapScreen() {
         }
     };
 
-    console.log("🚀 ~ SwapScreen ~:", { fromChain, toChain })
+
+    console.log("🚀 ~ SwapScreen ~ toToken?.balanceToken:", toToken?.balanceToken)
     return (
         <View style={styles.container}>
             <CustomStatusBar />
@@ -487,7 +554,7 @@ export default function SwapScreen() {
                                     chainBadgeIcon={toChain?.icon}
                                     amount={formatTokenAmount(toAmount)}
                                     fiatAmount={toFiatAmount}
-                                    balanceText={toToken ? '0.00' : '0.00'}
+                                    balanceText={toToken?.balanceToken || '0.00'}
                                     onTokenPress={() => handleOpenAssetSheet('to', 'tokens')}
                                     isLoadingQuote={isLoadingQuote}
                                     isRefreshing={isRefreshing}

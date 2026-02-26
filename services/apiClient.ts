@@ -478,7 +478,6 @@ class TiwiApiClient {
 
     private async fetcher<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
         const url = `${this.baseUrl}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
-
         try {
             const response = await fetch(url, {
                 ...options,
@@ -561,7 +560,7 @@ class TiwiApiClient {
         const query = new URLSearchParams();
         if (params.address) query.append('address', params.address);
         if (params.query) query.append('query', params.query);
-        if (params.chains) query.append('chainIds', params.chains.join(','));
+        if (params.chains) query.append('chains', params.chains.join(','));
         if (params.limit) query.append('limit', params.limit.toString());
 
         const response = await this.fetcher<TokensResponse>(`/api/v1/tokens?${query.toString()}`);
