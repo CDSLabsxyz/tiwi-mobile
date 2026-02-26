@@ -1,8 +1,11 @@
+import { ReferralQRCodeModal } from '@/components/modals/ReferralQRCodeModal';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { SettingsHeader } from '@/components/ui/settings-header';
 import { colors } from '@/constants/colors';
+import { apiClient } from '@/services/apiClient';
 import { useWalletStore } from '@/store/walletStore';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { useQuery } from '@tanstack/react-query';
 import * as Clipboard from 'expo-clipboard';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
@@ -15,8 +18,8 @@ const imgFrameReferral = require('../../assets/home/frame-referral.png');
 const imgCopy01 = require('../../assets/referral/copy-01.svg');
 const imgShare01 = require('../../assets/referral/share-01.svg');
 
-// Mock leaderboard data
-const leaderboardData = [
+// Static leaderboard tier data (Standard for Tiwi)
+const rebateTierData = [
     { level: 1, volumeRange: '<$100,5000', rebateShare: '30%', color: '#B1F128' },
     { level: 2, volumeRange: '>$100,000', rebateShare: '35%', color: '#B1F128' },
     { level: 3, volumeRange: '>$5,000,0000', rebateShare: '40%', color: '#B1F128' },
@@ -55,30 +58,52 @@ export default function ReferralPositionScreen() {
     const { address } = useWalletStore();
 
     const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
+    const [activeTab, setActiveTab] = useState<'leaderboard' | 'rebate'>('leaderboard');
+    const [qrModalVisible, setQrModalVisible] = useState(false);
 
-    // Mock data - replace with actual API calls
-    const recentEarnings = '20.61 USDT';
-    const recentReferrer = '0x09...879';
-    const totalInvites = 0;
-    const claimableRewards = '$0.00';
-    const totalBonuses = '0.0000';
-    const referralCode = 'TIWI01034';
-    const referralLink = 'https://www.tiwipro...';
-    const currentLevel = 1;
-    const spotRebate = '30%';
-    const perpRebate = 'My Perp Rebate';
+    // Live Stats Fetching
+    const { data: stats } = useQuery({
+        queryKey: ['referralStats', address],
+        queryFn: () => address ? apiClient.getReferralStats(address) : null,
+        enabled: !!address
+    });
+
+    const { data: rebateStats } = useQuery({
+        queryKey: ['rebateStats', address],
+        queryFn: () => address ? apiClient.getRebateStats(address) : null,
+        enabled: !!address
+    });
+
+    const { data: leaderboard } = useQuery({
+        queryKey: ['referralLeaderboard'],
+        queryFn: () => apiClient.getReferralLeaderboard(10)
+    });
+
+    // Activity Fetching for Banner
+    const { data: activity, isLoading: activityLoading } = useQuery({
+        queryKey: ['recentReferralActivity', address],
+        queryFn: () => address ? apiClient.getRecentReferralActivity(1, address) : []
+    });
+
+    const displayActivity = activity && activity.length > 0 ? activity[0] : null;
+
+    const referralCode = stats?.referralCode || '...';
+    const referralLink = stats?.referralLink || '...';
 
     const handleCopyCode = async () => {
-        await Clipboard.setStringAsync(referralCode);
+        if (!stats?.referralCode) return;
+        await Clipboard.setStringAsync(stats.referralCode);
         Alert.alert('Copied', 'Referral code copied to clipboard!');
     };
 
     const handleCopyLink = async () => {
-        await Clipboard.setStringAsync(referralLink);
+        if (!stats?.referralLink) return;
+        await Clipboard.setStringAsync(stats.referralLink);
         Alert.alert('Copied', 'Referral link copied to clipboard!');
     };
 
     const handleShare = async () => {
+        if (!referralLink) return;
         try {
             await Share.share({
                 message: `Join me on TIWI Protocol! Use my code ${referralCode} to get started: ${referralLink}`,
@@ -113,15 +138,10 @@ export default function ReferralPositionScreen() {
             >
                 {/* Hero Card */}
                 <View style={styles.heroCard}>
-                    <View style={styles.heroTextContainer}>
-                        <Text style={styles.heroTitle}>
-                            Invite Friends,{'\n'}Unlock{'\n'}Rewards.
-                        </Text>
-                    </View>
                     <Image
                         source={imgFrameReferral}
                         style={styles.heroImage}
-                        contentFit="contain"
+                        contentFit="fill"
                     />
                 </View>
 
@@ -129,14 +149,16 @@ export default function ReferralPositionScreen() {
                 <View style={styles.earningsBanner}>
                     <View style={styles.earningsLeft}>
                         <Text style={styles.earningsLabel}>
-                            {recentReferrer} has recently invited ...
+                            {displayActivity ? `${displayActivity.walletAddress.slice(0, 6)}...${displayActivity.walletAddress.slice(-4)}` : (activityLoading ? 'Loading activity...' : 'Latest protocol activity...')} has recently invited ...
                         </Text>
-                        <Text style={styles.earningsAmount}>{recentEarnings}</Text>
+                        <Text style={styles.earningsAmount}>
+                            {displayActivity ? `${displayActivity.reward.toFixed(2)} USDT` : '0.00 USDT'}
+                        </Text>
                     </View>
-                    <TouchableOpacity style={styles.positionButton} activeOpacity={0.7}>
-                        <Text style={styles.positionText}>Position</Text>
-                        <Ionicons name="arrow-forward" size={16} color={colors.titleText} />
-                    </TouchableOpacity>
+                    <View style={styles.positionButton}>
+                        <Text style={styles.positionText}>Live</Text>
+                        <View style={styles.liveDot} />
+                    </View>
                 </View>
 
                 {/* How To Invite Section */}
@@ -150,10 +172,12 @@ export default function ReferralPositionScreen() {
                             <Text style={styles.howToLabel}>Share Your{'\n'}Link</Text>
                         </View>
                         <View style={styles.howToItem}>
-                            <View style={styles.howToIconWrapper}>
-                                <Ionicons name="person-add" size={24} color={colors.primaryCTA} />
+                            <View style={styles.howToItem}>
+                                <View style={styles.howToIconWrapper}>
+                                    <Ionicons name="person-add" size={24} color={colors.primaryCTA} />
+                                </View>
+                                <Text style={styles.howToLabel}>Friend{'\n'}Signs Up</Text>
                             </View>
-                            <Text style={styles.howToLabel}>Friend{'\n'}Signs Up</Text>
                         </View>
                         <View style={styles.howToItem}>
                             <View style={styles.howToIconWrapper}>
@@ -170,17 +194,22 @@ export default function ReferralPositionScreen() {
                     <View style={styles.statsGrid}>
                         <View style={styles.statCard}>
                             <Text style={styles.statLabel}>Total Invites</Text>
-                            <Text style={styles.statValue}>{totalInvites}</Text>
+                            <Text style={styles.statValue}>{stats?.totalInvites || 0}</Text>
                         </View>
                         <View style={styles.statCard}>
                             <Text style={styles.statLabel}>Claimable Rewards</Text>
-                            <Text style={styles.statValue}>{claimableRewards}</Text>
+                            <Text style={styles.statValue}>${stats?.claimableRewards?.toFixed(2) || '0.00'}</Text>
                         </View>
                     </View>
                     <View style={styles.bonusCard}>
                         <Text style={styles.bonusLabel}>Total Bonuses (USDT)</Text>
-                        <Text style={styles.bonusValue}>{totalBonuses}</Text>
-                        <TouchableOpacity style={styles.claimButton} activeOpacity={0.8}>
+                        <Text style={styles.bonusValue}>{stats?.totalBonuses?.toFixed(4) || '0.0000'}</Text>
+                        <TouchableOpacity
+                            style={[styles.claimButton, (!stats?.claimableRewards || stats.claimableRewards <= 0) && { opacity: 0.5 }]}
+                            activeOpacity={0.8}
+                            disabled={!stats?.claimableRewards || stats.claimableRewards <= 0}
+                            onPress={() => Alert.alert('Claims', 'Claims open every 28th of the month.')}
+                        >
                             <Text style={styles.claimButtonText}>Claim</Text>
                         </TouchableOpacity>
                     </View>
@@ -208,58 +237,89 @@ export default function ReferralPositionScreen() {
                     </View>
                 </View>
 
-                {/* Referral Leaderboard */}
+                {/* Referral Leaderboard & Rebate Tabs */}
                 <View style={styles.leaderboardSection}>
-                    <View style={styles.leaderboardHeader}>
-                        <Text style={styles.sectionTitle}>Referral Leaderboard</Text>
-                        <Text style={styles.sectionTitle}>Rebate Level</Text>
+                    <View style={styles.tabContainer}>
+                        <TouchableOpacity
+                            style={[styles.tabButton, activeTab === 'leaderboard' && styles.activeTabButton]}
+                            onPress={() => setActiveTab('leaderboard')}
+                        >
+                            <Text style={[styles.tabText, activeTab === 'leaderboard' && styles.activeTabText]}>Leaderboard</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[styles.tabButton, activeTab === 'rebate' && styles.activeTabButton]}
+                            onPress={() => setActiveTab('rebate')}
+                        >
+                            <Text style={[styles.tabText, activeTab === 'rebate' && styles.activeTabText]}>Rebate Level</Text>
+                        </TouchableOpacity>
                     </View>
 
-                    <View style={styles.currentLevelCard}>
-                        <Text style={styles.currentLevelLabel}>My Rebate Level: {currentLevel}</Text>
-                    </View>
-
-                    <View style={styles.rebateGrid}>
-                        <View style={styles.rebateCard}>
-                            <Text style={styles.rebateLabel}>Invited Frens</Text>
-                            <Text style={styles.rebateValue}>Frens' Spot Vol</Text>
-                            <Text style={styles.rebateValue}>Frens' Perp Vol</Text>
-                        </View>
-                        <View style={styles.rebateCard}>
-                            <Text style={styles.rebateLabel}>My Spot Rebate</Text>
-                            <Text style={styles.rebateValue}>{spotRebate}</Text>
-                        </View>
-                        <View style={styles.rebateCard}>
-                            <Text style={styles.rebateLabel}>{perpRebate}</Text>
-                        </View>
-                    </View>
-
-                    {/* Leaderboard Table */}
-                    <View style={styles.leaderboardTable}>
-                        <View style={styles.tableHeader}>
-                            <Text style={styles.tableHeaderText}>Level</Text>
-                            <Text style={styles.tableHeaderText}>28 day referee{'\n'}spot/perp vol</Text>
-                            <Text style={styles.tableHeaderText}>Rebate share{'\n'}adjusted to{'\n'}0.25% fee</Text>
-                        </View>
-                        {leaderboardData.map((item, index) => (
-                            <View
-                                key={index}
-                                style={[
-                                    styles.tableRow,
-                                    item.level === currentLevel && styles.tableRowActive
-                                ]}
-                            >
-                                <View style={styles.levelCell}>
-                                    {item.level === currentLevel && (
-                                        <View style={styles.levelDot} />
-                                    )}
-                                    <Text style={styles.tableCellText}>Level {item.level}</Text>
-                                </View>
-                                <Text style={styles.tableCellText}>{item.volumeRange}</Text>
-                                <Text style={[styles.tableCellText, styles.rebateText]}>{item.rebateShare}</Text>
+                    {activeTab === 'rebate' ? (
+                        <>
+                            <View style={styles.currentLevelCard}>
+                                <Text style={styles.currentLevelLabel}>My Rebate Level: {rebateStats?.rebateLevel || 1}</Text>
                             </View>
-                        ))}
-                    </View>
+
+                            <View style={styles.rebateGrid}>
+                                <View style={styles.rebateCard}>
+                                    <Text style={styles.rebateLabel}>Invited Frens</Text>
+                                    <Text style={styles.rebateValue}>{rebateStats?.invitedFrens || 0}</Text>
+                                </View>
+                                <View style={styles.rebateCard}>
+                                    <Text style={styles.rebateLabel}>Frens' Spot Vol</Text>
+                                    <Text style={styles.rebateValue}>${rebateStats?.frensSpotVol?.toLocaleString() || '0'}</Text>
+                                </View>
+                                <View style={styles.rebateCard}>
+                                    <Text style={styles.rebateLabel}>My Spot Rebate</Text>
+                                    <Text style={styles.rebateValue}>{rebateStats?.mySpotRebate || '30'}%</Text>
+                                </View>
+                            </View>
+
+                            {/* Tiers Table */}
+                            <View style={styles.leaderboardTable}>
+                                <View style={styles.tableHeader}>
+                                    <Text style={styles.tableHeaderText}>Level</Text>
+                                    <Text style={styles.tableHeaderText}>28 day referee{'\n'}spot/perp vol</Text>
+                                    <Text style={styles.tableHeaderText}>Rebate share</Text>
+                                </View>
+                                {rebateTierData.map((item, index) => (
+                                    <View
+                                        key={index}
+                                        style={[
+                                            styles.tableRow,
+                                            item.level === rebateStats?.rebateLevel && styles.tableRowActive
+                                        ]}
+                                    >
+                                        <View style={styles.levelCell}>
+                                            {item.level === rebateStats?.rebateLevel && (
+                                                <View style={styles.levelDot} />
+                                            )}
+                                            <Text style={styles.tableCellText}>Level {item.level}</Text>
+                                        </View>
+                                        <Text style={styles.tableCellText}>{item.volumeRange}</Text>
+                                        <Text style={[styles.tableCellText, styles.rebateText]}>{item.rebateShare}</Text>
+                                    </View>
+                                ))}
+                            </View>
+                        </>
+                    ) : (
+                        <View style={styles.leaderboardTable}>
+                            <View style={styles.tableHeader}>
+                                <Text style={styles.tableHeaderText}>Rank</Text>
+                                <Text style={[styles.tableHeaderText, { flex: 2 }]}>Wallet Address</Text>
+                                <Text style={styles.tableHeaderText}>Invites</Text>
+                                <Text style={styles.tableHeaderText}>Rewards</Text>
+                            </View>
+                            {leaderboard?.map((item, index) => (
+                                <View key={index} style={styles.tableRow}>
+                                    <Text style={styles.tableCellText}>{item.rank}</Text>
+                                    <Text style={[styles.tableCellText, { flex: 2 }]}>{`${item.walletAddress.slice(0, 6)}...${item.walletAddress.slice(-4)}`}</Text>
+                                    <Text style={styles.tableCellText}>{item.invites}</Text>
+                                    <Text style={[styles.tableCellText, styles.rebateText]}>${item.rewards.toFixed(2)}</Text>
+                                </View>
+                            ))}
+                        </View>
+                    )}
                 </View>
 
                 {/* FAQs Section */}
@@ -299,10 +359,22 @@ export default function ReferralPositionScreen() {
                     <Ionicons name="person-add" size={20} color="#000" />
                     <Text style={styles.inviteButtonText}>Invite Friend</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.qrButton} activeOpacity={0.8}>
+                <TouchableOpacity
+                    style={styles.qrButton}
+                    activeOpacity={0.8}
+                    onPress={() => setQrModalVisible(true)}
+                >
                     <Ionicons name="qr-code" size={24} color={colors.titleText} />
                 </TouchableOpacity>
             </View>
+
+            {/* QR Code Modal */}
+            <ReferralQRCodeModal
+                visible={qrModalVisible}
+                onClose={() => setQrModalVisible(false)}
+                referralLink={referralLink}
+                referralCode={referralCode}
+            />
         </View>
     );
 }
@@ -321,32 +393,13 @@ const styles = StyleSheet.create({
     },
     heroCard: {
         width: '100%',
-        height: 120,
-        backgroundColor: colors.primaryCTA,
-        borderRadius: 16,
+        aspectRatio: 375 / 120,
         marginBottom: 16,
         overflow: 'hidden',
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingLeft: 24,
-    },
-    heroTextContainer: {
-        flex: 1,
-    },
-    heroTitle: {
-        fontFamily: 'Manrope-Bold',
-        fontSize: 24,
-        lineHeight: 32,
-        color: '#000000',
-        letterSpacing: -0.5,
     },
     heroImage: {
-        width: 160,
-        height: 120,
-        position: 'absolute',
-        right: 0,
-        top: 0,
+        width: '100%',
+        height: '100%',
     },
     earningsBanner: {
         width: '100%',
@@ -689,5 +742,38 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         borderWidth: 1,
         borderColor: colors.bgStroke,
+    },
+    tabContainer: {
+        flexDirection: 'row',
+        backgroundColor: colors.bgCards,
+        borderRadius: 12,
+        padding: 4,
+        marginBottom: 16,
+        borderWidth: 1,
+        borderColor: colors.bgStroke,
+    },
+    tabButton: {
+        flex: 1,
+        paddingVertical: 10,
+        alignItems: 'center',
+        borderRadius: 8,
+    },
+    activeTabButton: {
+        backgroundColor: colors.primaryCTA,
+    },
+    tabText: {
+        fontFamily: 'Manrope-Bold',
+        fontSize: 14,
+        color: colors.mutedText,
+    },
+    activeTabText: {
+        color: '#000000',
+    },
+    liveDot: {
+        width: 8,
+        height: 8,
+        borderRadius: 4,
+        backgroundColor: '#FF3B30',
+        marginLeft: 4,
     },
 });

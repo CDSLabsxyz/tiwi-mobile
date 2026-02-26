@@ -2,7 +2,9 @@ import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { SettingsHeader } from '@/components/ui/settings-header';
 import { colors } from '@/constants/colors';
 import { useTranslation } from '@/hooks/useLocalization';
+import { apiClient } from '@/services/apiClient';
 import { useWalletStore } from '@/store/walletStore';
+import { useQuery } from '@tanstack/react-query';
 import * as Clipboard from 'expo-clipboard';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
@@ -25,32 +27,76 @@ export default function ReferralScreen() {
     const { bottom } = useSafeAreaInsets();
     const { address } = useWalletStore();
 
-    const [referralCode, setReferralCode] = useState('');
-    const [generatedCode, setGeneratedCode] = useState('');
+    const [referralCodeInput, setReferralCodeInput] = useState('');
+    const [isProcessing, setIsProcessing] = useState(false);
 
-    // Mock data - replace with actual API calls
-    const recentEarnings = '20.61 USDT';
-    const recentReferrer = '0x09...879';
+    // Fetch Stats (Includes personal referral code)
+    const { data: stats, isLoading: statsLoading, refetch: refetchStats } = useQuery({
+        queryKey: ['referralStats', address],
+        queryFn: () => address ? apiClient.getReferralStats(address) : null,
+        enabled: !!address
+    });
+
+    // Fetch Recent Activity for the banner
+    const { data: activity } = useQuery({
+        queryKey: ['recentReferralActivity', address],
+        queryFn: () => address ? apiClient.getRecentReferralActivity(3, address) : [],
+        refetchInterval: 30000,
+        enabled: !!address
+    });
+
+    const hasCode = !!stats?.referralCode;
+    const displayActivity = activity && activity.length > 0 ? activity[0] : null;
 
     const handlePaste = async () => {
         const text = await Clipboard.getStringAsync();
-        setReferralCode(text);
+        setReferralCodeInput(text);
     };
 
-    const handleConfirm = () => {
-        if (!referralCode.trim()) {
+    const handleConfirm = async () => {
+        if (!referralCodeInput.trim() || !address) {
             Alert.alert('Error', 'Please enter a referral code');
             return;
         }
-        // TODO: Submit referral code to backend
-        Alert.alert('Success', 'Referral code confirmed!');
+
+        setIsProcessing(true);
+        try {
+            const res = await apiClient.applyReferralCode(address, referralCodeInput.trim());
+            if (res.success) {
+                Alert.alert('Success', 'Referral code applied successfully!');
+                setReferralCodeInput('');
+                refetchStats();
+            } else {
+                Alert.alert('Error', res.message || 'Failed to apply code');
+            }
+        } catch (error: any) {
+            Alert.alert('Error', error.message || 'An unexpected error occurred');
+        } finally {
+            setIsProcessing(false);
+        }
     };
 
-    const handleGenerateCode = () => {
-        // Generate code based on wallet address
-        const code = address ? `TIWI${address.slice(-6).toUpperCase()}` : `TIWI${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-        setGeneratedCode(code);
-        Alert.alert('Code Generated', `Your referral code: ${code}`);
+    const handleGenerateCode = async () => {
+        if (!address) return;
+
+        setIsProcessing(true);
+        try {
+            // By default we auto-generate, but we could allow a custom code later if requested
+            const res = await apiClient.createReferralCode(address);
+            if (res.success) {
+                Alert.alert('Code Generated', `Your referral code: ${res.code}`);
+                refetchStats();
+            }
+        } catch (error: any) {
+            Alert.alert('Error', error.message || 'Failed to generate code');
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    const handleCopy = async (text: string, label: string) => {
+        await Clipboard.setStringAsync(text);
+        Alert.alert('Copied', `${label} copied to clipboard!`);
     };
 
     return (
@@ -69,15 +115,10 @@ export default function ReferralScreen() {
             >
                 {/* Hero Card */}
                 <View style={styles.heroCard}>
-                    {/* <View style={styles.heroTextContainer}>
-                        <Text style={styles.heroTitle}>
-                            Invite Friends,{'\n'}Unlock{'\n'}Rewards.
-                        </Text>
-                    </View> */}
                     <Image
                         source={imgFrameReferral}
                         style={styles.heroImage}
-                        contentFit="contain"
+                        contentFit="fill"
                     />
                 </View>
 
@@ -85,9 +126,11 @@ export default function ReferralScreen() {
                 <View style={styles.earningsBanner}>
                     <View style={styles.earningsLeft}>
                         <Text style={styles.earningsLabel}>
-                            {recentReferrer} recently invited ...
+                            {displayActivity ? `${displayActivity.walletAddress.slice(0, 6)}...${displayActivity.walletAddress.slice(-4)}` : (statsLoading ? 'Loading activity...' : 'Latest protocol activity...')}
                         </Text>
-                        <Text style={styles.earningsAmount}>{recentEarnings}</Text>
+                        <Text style={styles.earningsAmount}>
+                            {displayActivity ? `${displayActivity.reward.toFixed(2)} USDT` : '0.00 USDT'}
+                        </Text>
                     </View>
                     <TouchableOpacity
                         style={styles.positionButton}
@@ -99,40 +142,86 @@ export default function ReferralScreen() {
                     </TouchableOpacity>
                 </View>
 
-                {/* Enter Referral Code Section */}
-                <View style={styles.inputSection}>
-                    <Text style={styles.inputLabel}>Enter Referral Code (Optional)</Text>
-                    <View style={styles.inputRow}>
-                        <View style={styles.inputWrapper}>
-                            <TextInput
-                                value={referralCode}
-                                onChangeText={setReferralCode}
-                                placeholder="Enter Referral Code"
-                                placeholderTextColor={colors.mutedText}
-                                style={styles.input}
-                            />
-                            <TouchableOpacity onPress={handlePaste} style={styles.pasteButton}>
-                                <Image source={imgCopy01} style={styles.pasteIcon} contentFit="contain" />
-                            </TouchableOpacity>
+                {/* Main Logic: Toolkit or Registration */}
+                {hasCode ? (
+                    <View style={styles.toolkitSection}>
+                        <Text style={styles.inputLabel}>My Referral Toolkit</Text>
+                        <View style={styles.toolkitCard}>
+                            <View style={styles.toolkitRow}>
+                                <View style={styles.toolkitInfo}>
+                                    <Text style={styles.toolkitLabel}>Your Code</Text>
+                                    <Text style={styles.toolkitValue}>{stats.referralCode}</Text>
+                                </View>
+                                <TouchableOpacity
+                                    onPress={() => handleCopy(stats.referralCode!, 'Code')}
+                                    style={styles.toolkitCopy}
+                                >
+                                    <Image source={imgCopy01} style={styles.pasteIcon} contentFit="contain" />
+                                </TouchableOpacity>
+                            </View>
+
+                            <View style={[styles.toolkitRow, { borderTopWidth: 1, borderTopColor: colors.bgStroke, marginTop: 12, paddingTop: 12 }]}>
+                                <View style={styles.toolkitInfo}>
+                                    <Text style={styles.toolkitLabel}>Referral Link</Text>
+                                    <Text style={styles.toolkitValue} numberOfLines={1}>{stats.referralLink}</Text>
+                                </View>
+                                <TouchableOpacity
+                                    onPress={() => handleCopy(stats.referralLink!, 'Link')}
+                                    style={styles.toolkitCopy}
+                                >
+                                    <Image source={imgCopy01} style={styles.pasteIcon} contentFit="contain" />
+                                </TouchableOpacity>
+                            </View>
                         </View>
                         <TouchableOpacity
-                            style={styles.confirmButton}
-                            onPress={handleConfirm}
+                            style={[styles.generateButton, { marginTop: 16 }]}
+                            onPress={() => router.push('/referral/position' as any)}
                             activeOpacity={0.8}
                         >
-                            <Text style={styles.confirmText}>Confirm</Text>
+                            <Text style={styles.generateText}>View My Position</Text>
                         </TouchableOpacity>
                     </View>
-                </View>
+                ) : (
+                    <>
+                        {/* Enter Referral Code Section */}
+                        <View style={styles.inputSection}>
+                            <Text style={styles.inputLabel}>Enter Referral Code (Optional)</Text>
+                            <View style={styles.inputRow}>
+                                <View style={styles.inputWrapper}>
+                                    <TextInput
+                                        value={referralCodeInput}
+                                        onChangeText={setReferralCodeInput}
+                                        placeholder="Enter Referral Code"
+                                        placeholderTextColor={colors.mutedText}
+                                        style={styles.input}
+                                        editable={!isProcessing}
+                                    />
+                                    <TouchableOpacity onPress={handlePaste} style={styles.pasteButton} disabled={isProcessing}>
+                                        <Image source={imgCopy01} style={styles.pasteIcon} contentFit="contain" />
+                                    </TouchableOpacity>
+                                </View>
+                                <TouchableOpacity
+                                    style={[styles.confirmButton, isProcessing && { opacity: 0.5 }]}
+                                    onPress={handleConfirm}
+                                    activeOpacity={0.8}
+                                    disabled={isProcessing}
+                                >
+                                    <Text style={styles.confirmText}>{isProcessing ? '...' : 'Confirm'}</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </View>
 
-                {/* Generate Referral Code Button */}
-                <TouchableOpacity
-                    style={styles.generateButton}
-                    onPress={handleGenerateCode}
-                    activeOpacity={0.8}
-                >
-                    <Text style={styles.generateText}>Generate Referral Code</Text>
-                </TouchableOpacity>
+                        {/* Generate Referral Code Button */}
+                        <TouchableOpacity
+                            style={[styles.generateButton, isProcessing && { opacity: 0.5 }]}
+                            onPress={handleGenerateCode}
+                            activeOpacity={0.8}
+                            disabled={isProcessing}
+                        >
+                            <Text style={styles.generateText}>{isProcessing ? 'Generating...' : 'Generate Referral Code'}</Text>
+                        </TouchableOpacity>
+                    </>
+                )}
 
                 {/* Referral Rules */}
                 <View style={styles.rulesSection}>
@@ -230,14 +319,9 @@ const styles = StyleSheet.create({
     },
     heroCard: {
         width: '100%',
-        height: 120,
-        borderRadius: 16,
+        aspectRatio: 375 / 120, // Match Figma banner ratio
         marginBottom: 16,
         overflow: 'hidden',
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingLeft: 24,
     },
     heroTextContainer: {
         flex: 1,
@@ -250,12 +334,8 @@ const styles = StyleSheet.create({
         letterSpacing: -0.5,
     },
     heroImage: {
-        // width: 160,
         width: '100%',
-        height: 120,
-        position: 'absolute',
-        right: 0,
-        top: 0,
+        height: '100%',
     },
     earningsBanner: {
         width: '100%',
@@ -368,6 +448,39 @@ const styles = StyleSheet.create({
     },
     rulesSection: {
         width: '100%',
+    },
+    toolkitSection: {
+        width: '100%',
+        marginBottom: 24,
+    },
+    toolkitCard: {
+        backgroundColor: colors.bgCards,
+        borderRadius: 12,
+        padding: 16,
+        borderWidth: 1,
+        borderColor: colors.bgStroke,
+    },
+    toolkitRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+    },
+    toolkitInfo: {
+        flex: 1,
+    },
+    toolkitLabel: {
+        fontFamily: 'Manrope-Medium',
+        fontSize: 12,
+        color: colors.mutedText,
+        marginBottom: 4,
+    },
+    toolkitValue: {
+        fontFamily: 'Manrope-Bold',
+        fontSize: 14,
+        color: colors.titleText,
+    },
+    toolkitCopy: {
+        padding: 8,
     },
     rulesTitle: {
         fontFamily: 'Manrope-Bold',

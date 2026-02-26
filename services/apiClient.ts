@@ -456,17 +456,30 @@ export interface APINFT {
 }
 
 export interface NFTActivity {
-    id: string;
-    type: 'received' | 'sent' | 'listed' | 'unlisted' | 'sold' | 'bought';
-    nftName: string;
-    amount?: string;
-    timestamp: number;
+    type: 'received' | 'sent' | 'mint' | 'burn' | 'list' | 'sale' | 'transfer' | 'listing' | 'purchase' | 'unlisted';
     date: string;
+    timestamp: number;
+    nftName: string;
+    price?: string;
+    priceUSD?: string;
+    from?: string;
+    to?: string;
+    transactionHash: string;
+    id?: string;
 }
 
 export interface APINFTDetail extends APINFT {
-    isVerified?: boolean;
     activities?: NFTActivity[];
+}
+
+export interface NFTActivityResponse {
+    activities: NFTActivity[];
+    total: number;
+    address: string;
+    contractAddress: string;
+    tokenId: string;
+    chainId: number;
+    timestamp: number;
 }
 
 class TiwiApiClient {
@@ -762,23 +775,23 @@ class TiwiApiClient {
     }
 
     /**
-     * Get NFT activities for a wallet
+     * Get NFT activities for a specific NFT
      */
-    async getNFTActivities(params: {
+    async getNFTActivity(params: {
         address: string;
-        chainId?: number;
-        contractAddress?: string;
-        tokenId?: string;
+        chainId: number;
+        contractAddress: string;
+        tokenId: string;
         limit?: number;
-    }): Promise<{ activities: TransactionHistoryItem[] }> {
+    }): Promise<NFTActivityResponse> {
         const query = new URLSearchParams();
         query.append('address', params.address);
-        if (params.chainId) query.append('chainId', params.chainId.toString());
-        if (params.contractAddress) query.append('contractAddress', params.contractAddress);
-        if (params.tokenId) query.append('tokenId', params.tokenId);
+        query.append('chainId', params.chainId.toString());
+        query.append('contractAddress', params.contractAddress);
+        query.append('tokenId', params.tokenId);
         if (params.limit) query.append('limit', params.limit.toString());
 
-        return this.fetcher<{ activities: TransactionHistoryItem[] }>(`/api/v1/nft/activities?${query.toString()}`);
+        return this.fetcher<NFTActivityResponse>(`/api/v1/nft/activity?${query.toString()}`);
     }
 
     /**
@@ -802,8 +815,13 @@ class TiwiApiClient {
     /**
      * Get recent referral activity
      */
-    async getRecentReferralActivity(limit: number = 5): Promise<RecentReferralActivity[]> {
-        const response = await this.fetcher<{ activity: RecentReferralActivity[] }>(`/api/v1/referrals?action=activity&limit=${limit}`);
+    async getRecentReferralActivity(limit: number = 5, walletAddress?: string): Promise<RecentReferralActivity[]> {
+        const query = new URLSearchParams();
+        query.append('action', 'activity');
+        query.append('limit', limit.toString());
+        if (walletAddress) query.append('walletAddress', walletAddress);
+
+        const response = await this.fetcher<{ activity: RecentReferralActivity[] }>(`/api/v1/referrals?${query.toString()}`);
         return response.activity;
     }
 
@@ -818,35 +836,32 @@ class TiwiApiClient {
     /**
      * Get rebate stats for a wallet
      */
-    async getReferralRebateStats(walletAddress: string): Promise<ReferralRebateStats> {
+    async getRebateStats(walletAddress: string): Promise<ReferralRebateStats> {
         const response = await this.fetcher<{ rebateStats: ReferralRebateStats }>(`/api/v1/referrals?walletAddress=${walletAddress}&action=rebate`);
         return response.rebateStats;
     }
 
     /**
-     * Apply a referral code to a wallet
-     */
-    async applyReferralCode(walletAddress: string, referralCode: string): Promise<{ success: boolean; message?: string; referrerWallet?: string }> {
-        return this.fetcher('/api/v1/referrals', {
-            method: 'POST',
-            body: JSON.stringify({
-                action: 'apply',
-                walletAddress,
-                referralCode,
-            }),
-        });
-    }
-
-    /**
-     * Create or get a referral code for a wallet
+     * Create a referral code for a wallet
      */
     async createReferralCode(walletAddress: string, customCode?: string): Promise<{ success: boolean; code: string; link: string }> {
-        return this.fetcher('/api/v1/referrals', {
+        return this.fetcher<{ success: boolean; code: string; link: string }>('/api/v1/referrals', {
             method: 'POST',
             body: JSON.stringify({
                 action: 'create',
                 walletAddress,
-                customCode,
+                customCode
+            }),
+        });
+    }
+
+    async applyReferralCode(walletAddress: string, referralCode: string): Promise<{ success: boolean; message: string }> {
+        return this.fetcher<{ success: boolean; message: string }>('/api/v1/referrals', {
+            method: 'POST',
+            body: JSON.stringify({
+                action: 'apply',
+                walletAddress,
+                referralCode
             }),
         });
     }

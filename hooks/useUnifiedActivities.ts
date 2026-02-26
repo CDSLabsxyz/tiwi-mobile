@@ -44,24 +44,45 @@ export function useUnifiedActivities(limit = 100) {
                     return { transactions: [] };
                 });
 
-                // 2. Fetch NFT Activities (Mints, Sales, Transfers)
-                const nftPromise = apiClient.getNFTActivities({
-                    address: activeAddress,
-                    limit,
-                }).catch(err => {
-                    console.error('[useUnifiedActivities] NFT activities fetch failed:', err);
-                    return { activities: [] };
-                });
+                // 2. Fetch NFTs first, then their activities (following super-app pattern)
+                const fetchNFTActivityData = async () => {
+                    try {
+                        const nfts = await apiClient.getNFTs(activeAddress);
+                        if (!nfts || nfts.length === 0) return [];
 
-                // 3. Fetch Local Activities (Rewards, Security Notifications from Supabase)
+                        // Parallel fetch activities for EACH NFT (singular endpoint requires contractAddress/tokenId)
+                        const nftActivityPromises = nfts.map(nft =>
+                            apiClient.getNFTActivity({
+                                address: activeAddress,
+                                chainId: nft.chainId,
+                                contractAddress: nft.contractAddress,
+                                tokenId: nft.tokenId,
+                                limit: 10,
+                            }).then(res => ({
+                                nft,
+                                activities: res.activities || []
+                            })).catch(err => {
+                                console.warn(`[useUnifiedActivities] Failed for NFT ${nft.contractAddress}:`, err);
+                                return { nft, activities: [] };
+                            })
+                        );
+
+                        return await Promise.all(nftActivityPromises);
+                    } catch (err) {
+                        console.error('[useUnifiedActivities] NFT list fetch failed:', err);
+                        return [];
+                    }
+                };
+
+                // 3. Fetch Local Activities (Supabase)
                 const localPromise = activityService.getActivities(activeAddress, limit).catch(err => {
                     console.error('[useUnifiedActivities] Local activities fetch failed:', err);
                     return [];
                 });
 
-                const [globalData, nftData, localData] = await Promise.all([
+                const [globalData, nftActivityData, localData] = await Promise.all([
                     globalPromise,
-                    nftPromise,
+                    fetchNFTActivityData(),
                     localPromise
                 ]);
 
@@ -69,7 +90,7 @@ export function useUnifiedActivities(limit = 100) {
                 const mappedGlobal: UnifiedActivity[] = (globalData.transactions || []).map(tx => ({
                     id: tx.id,
                     type: 'transaction',
-                    category: tx.type, // "Swap", "Sent", "Received", "Stake", etc.
+                    category: tx.type,
                     title: tx.type === 'Swap' ? `Swapped ${tx.tokenSymbol}` : `${tx.type} ${tx.tokenSymbol}`,
                     message: `${tx.type} transaction on chain ${tx.chainId}`,
                     timestamp: tx.timestamp,
@@ -83,23 +104,25 @@ export function useUnifiedActivities(limit = 100) {
                     chainId: tx.chainId
                 }));
 
-                // Map NFT Activities
-                const mappedNFT: UnifiedActivity[] = (nftData.activities || []).map(nft => ({
-                    id: nft.id,
-                    type: 'transaction',
-                    category: nft.type, // "Mint", "Sale", "Listing", "NFT_Transfer", etc.
-                    title: `${nft.type} NFT`,
-                    message: `${nft.tokenSymbol || 'NFT'} activity`,
-                    timestamp: nft.timestamp,
-                    date: new Date(nft.timestamp).toLocaleDateString(),
-                    amount: nft.amountFormatted,
-                    tokenSymbol: nft.tokenSymbol,
-                    usdValue: nft.usdValue,
-                    status: nft.status,
-                    isLocal: false,
-                    hash: nft.hash,
-                    chainId: nft.chainId
-                }));
+                // Map NFT Activities (Flattened)
+                const mappedNFT: UnifiedActivity[] = nftActivityData.flatMap(({ nft, activities }) =>
+                    activities.map(act => ({
+                        id: `nft-${nft.contractAddress}-${nft.tokenId}-${act.timestamp}`,
+                        type: 'transaction',
+                        category: act.type.charAt(0).toUpperCase() + act.type.slice(1),
+                        title: `${act.type.toUpperCase()} ${nft.name || 'NFT'}`,
+                        message: `${nft.name || 'NFT'} activity`,
+                        timestamp: act.timestamp,
+                        date: act.date || new Date(act.timestamp).toLocaleDateString(),
+                        amount: act.price || '0',
+                        tokenSymbol: nft.name || 'NFT',
+                        usdValue: act.priceUSD || '$0.00',
+                        status: 'completed',
+                        isLocal: false,
+                        hash: act.transactionHash,
+                        chainId: nft.chainId
+                    }))
+                );
 
                 // Map Local Activities
                 const mappedLocal: UnifiedActivity[] = localData.map(act => ({
@@ -116,12 +139,13 @@ export function useUnifiedActivities(limit = 100) {
                     metadata: act.metadata
                 }));
 
-                // Interleave and sort by newest first
+                // Interleave and sort
                 return [...mappedGlobal, ...mappedNFT, ...mappedLocal].sort((a, b) => b.timestamp - a.timestamp);
             } catch (error) {
                 console.error('[useUnifiedActivities] Unification critical failure:', error);
                 return [];
             }
+
         },
         enabled: !!activeAddress,
         staleTime: 10000,
