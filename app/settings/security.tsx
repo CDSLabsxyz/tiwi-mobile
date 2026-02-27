@@ -8,11 +8,11 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // Security Icons
-const ResetPasswordIcon = require('../../assets/settings/reset-password.svg');
-const BiometricAccessIcon = require('../../assets/settings/biometric-access.svg');
-const Timer02Icon = require('../../assets/settings/timer-02.svg');
-const AlertSquareIcon = require('../../assets/wallet/alert-square.svg');
-const AddressBookIcon = require('../../assets/settings/address-book.svg');
+const ResetPasswordIcon = require('@/assets/settings/reset-password.svg');
+const BiometricAccessIcon = require('@/assets/settings/biometric-access.svg');
+const Timer02Icon = require('@/assets/settings/timer-02.svg');
+const AlertSquareIcon = require('@/assets/settings/alert-square.svg');
+const AddressBookIcon = require('@/assets/settings/address-book.svg');
 
 import { useSecurityStore } from '@/store/securityStore';
 import * as Haptics from 'expo-haptics';

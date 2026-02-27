@@ -7,15 +7,15 @@ import { BackHandler, ScrollView, StyleSheet, View } from 'react-native';
 import { useTranslation } from '../../hooks/useLocalization';
 
 // Settings Icons
-const imgUserCircle = require('../../assets/settings/user-circle.svg');
-const imgSecurityLock = require('../../assets/settings/security-lock.svg');
-const imgPhoneDeveloperMode = require('../../assets/settings/phone-developer-mode.svg');
-const imgLanguageSkill = require('../../assets/settings/language-skill.svg');
-const imgNotification02 = require('../../assets/settings/notification-02.svg');
-const imgDownload03 = require('../../assets/settings/download-03.svg');
-const imgCustomerSupport = require('../../assets/settings/customer-support.svg');
-const imgAddSquare = require('../../assets/settings/add-square.svg');
-const imgCloudDownload = require('../../assets/settings/cloud-download.svg');
+const imgUserCircle = require('@/assets/settings/user-circle.svg');
+const imgSecurityLock = require('@/assets/settings/security-lock.svg');
+const imgPhoneDeveloperMode = require('@/assets/settings/phone-developer-mode.svg');
+const imgLanguageSkill = require('@/assets/settings/language-skill.svg');
+const imgNotification02 = require('@/assets/settings/notification-02.svg');
+const imgDownload03 = require('@/assets/settings/download-03.svg');
+const imgCustomerSupport = require('@/assets/settings/customer-support.svg');
+const imgAddSquare = require('@/assets/settings/add-square.svg');
+const imgCloudDownload = require('@/assets/settings/cloud-download.svg');
 
 interface SettingsSection {
     id: string;

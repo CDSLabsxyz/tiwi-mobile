@@ -16,13 +16,13 @@ import QRCode from 'react-native-qrcode-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // Assets
-const ChevronLeftIcon = require('../../assets/swap/arrow-left-02.svg');
-const PencilEditIcon = require('../../assets/settings/pencil-edit-01.svg');
-const CloudUploadIcon = require('../../assets/settings/cloud-upload.svg');
-const LogoutIcon = require('../../assets/wallet/logout-01.svg');
-const CopyIcon = require('../../assets/wallet/copy-01.svg');
-const IrisScanIcon = require('../../assets/home/iris-scan.svg');
-const ChainIcon = require('../../assets/home/chains/bsc.svg');
+const ChevronLeftIcon = require('@/assets/settings/arrow-left-02.svg');
+const PencilEditIcon = require('@/assets/settings/pencil-edit-01.svg');
+const CloudUploadIcon = require('@/assets/settings/cloud-upload.svg');
+const LogoutIcon = require('@/assets/wallet/logout-01.svg');
+const CopyIcon = require('@/assets/wallet/copy-01.svg');
+const IrisScanIcon = require('@/assets/home/iris-scan.svg');
+const ChainIcon = require('@/assets/home/chains/bsc.svg');
 
 export default function AccountSettingsScreen() {
     const { top, bottom } = useSafeAreaInsets();

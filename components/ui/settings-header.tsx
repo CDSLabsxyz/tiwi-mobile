@@ -2,11 +2,10 @@ import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import React from 'react';
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ThemedText } from '../themed-text';
 import { CustomStatusBar } from './custom-status-bar';
 
-const ChevronLeftIcon = require('../../assets/swap/arrow-left-02.svg');
+const ChevronLeftIcon = require('@/assets/settings/arrow-left-02.svg');
 
 interface SettingsHeaderProps {
     title: string;
@@ -41,6 +40,7 @@ export function SettingsHeader({ title, onBack, showBack = true }: SettingsHeade
                             source={ChevronLeftIcon}
                             style={styles.icon24}
                             contentFit="contain"
+                            tintColor="#FFFFFF"
                         />
                     </TouchableOpacity>
                 ) : (

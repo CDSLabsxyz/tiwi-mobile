@@ -38,7 +38,12 @@ export function SettingsItem({
             <View style={styles.leftContent}>
                 {icon && (
                     <View style={styles.iconWrapper}>
-                        <Image source={icon} style={styles.icon} contentFit="contain" />
+                        <Image
+                            source={icon}
+                            style={styles.icon}
+                            contentFit="contain"
+                            tintColor={destructive ? colors.error : colors.titleText}
+                        />
                     </View>
                 )}
                 <ThemedText
@@ -85,8 +90,8 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     icon: {
-        width: '100%',
-        height: '100%',
+        width: 24,
+        height: 24,
     },
     label: {
         fontSize: 18,

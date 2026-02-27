@@ -7,11 +7,11 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // Assets
-const LiveStreamingIcon = require('../../assets/settings/live-streaming-01.svg');
-const HelpSquareIcon = require('../../assets/settings/help-square.svg');
-const ComputerVideoIcon = require('../../assets/settings/computer-video.svg');
-const ComplaintIcon = require('../../assets/settings/complaint.svg');
-const CustomerSupportIcon = require('../../assets/settings/customer-support.svg');
+const LiveStreamingIcon = require('@/assets/settings/live-streaming-01.svg');
+const HelpSquareIcon = require('@/assets/settings/help-square.svg');
+const ComputerVideoIcon = require('@/assets/settings/computer-video.svg');
+const ComplaintIcon = require('@/assets/settings/complaint.svg');
+const CustomerSupportIcon = require('@/assets/settings/customer-support.svg');
 
 interface SupportOption {
     id: string;

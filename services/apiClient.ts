@@ -218,6 +218,75 @@ export interface ChartHistoryResponse {
     errmsg?: string;
 }
 
+export interface FAQ {
+    id: string;
+    question: string;
+    answer: string;
+    category: 'General' | 'Transactions' | 'Chains' | 'Lending' | 'Staking' | 'Liquidity' | 'NFTs' | 'Referrals' | 'Security' | 'Troubleshooting';
+    createdAt: string;
+    updatedAt: string;
+}
+
+export interface FAQsAPIResponse {
+    faqs: FAQ[];
+    total: number;
+}
+
+export interface Tutorial {
+    id: string;
+    title: string;
+    description: string;
+    category: 'Trading' | 'Liquidity' | 'Staking' | 'NFTs' | 'Social' | 'Security' | 'Getting Started' | 'Advanced';
+    link: string;
+    thumbnailUrl?: string;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export interface TutorialsAPIResponse {
+    tutorials: Tutorial[];
+    total: number;
+}
+
+export interface LiveStatus {
+    id: string;
+    service: string;
+    status: 'operational' | 'degraded' | 'down' | 'maintenance';
+    updatedAt: string;
+    description?: string;
+}
+
+export interface BugReport {
+    id: string;
+    userWallet: string;
+    description: string;
+    screenshot?: string;
+    logFile?: string;
+    deviceInfo?: any;
+    status: 'pending' | 'reviewed' | 'resolved' | 'dismissed';
+    createdAt: string;
+    reviewedAt?: string;
+    reviewedBy?: string;
+}
+
+export interface CreateBugReportRequest {
+    userWallet: string;
+    description: string;
+    screenshot?: string;
+    logFile?: string;
+    deviceInfo?: any;
+}
+
+export interface BugReportsAPIResponse {
+    bugReports: BugReport[];
+    total: number;
+}
+
+export interface LiveStatusResponse {
+    statuses: LiveStatus[];
+    total: number;
+}
+
 export interface TokenMetadata extends Omit<APIToken, 'balance' | 'balanceFormatted' | 'priceChange24h'> {
     circulatingSupply?: number;
     totalSupply?: number;
@@ -1034,6 +1103,76 @@ class TiwiApiClient {
         }));
 
         return enrichedTokens;
+    }
+
+    /**
+     * Get live status for all protocol services
+     */
+    async getLiveStatus(): Promise<LiveStatusResponse> {
+        return this.fetcher<LiveStatusResponse>('/api/v1/live-status');
+    }
+
+    /**
+     * Get FAQs from the support service
+     */
+    async getFAQs(): Promise<FAQsAPIResponse> {
+        return this.fetcher<FAQsAPIResponse>('/api/v1/support/faqs');
+    }
+
+    /**
+     * Get Tutorials from the support service
+     */
+    async getTutorials(): Promise<TutorialsAPIResponse> {
+        return this.fetcher<TutorialsAPIResponse>('/api/v1/support/tutorials');
+    }
+
+    /**
+     * Upload a file to the backend
+     */
+    async uploadFile(fileUri: string, fileName: string, fileType: string, folder: string = 'bug-reports'): Promise<{ url: string } | null> {
+        try {
+            const formData = new FormData();
+            // @ts-ignore - React Native FormData expects an object for file
+            formData.append('file', {
+                uri: fileUri,
+                name: fileName,
+                type: fileType,
+            });
+            formData.append('folder', folder);
+
+            const response = await fetch(`${this.baseUrl}/api/v1/upload`, {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'Accept': 'application/json',
+                    // Note: In React Native, don't set Content-Type for FormData, it sets it automatically with boundary
+                },
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error || `Upload Error: ${response.status}`);
+            }
+
+            const data = await response.json();
+            return { url: data.url };
+        } catch (error) {
+            console.error('[TiwiAPI] uploadFile failed:', error);
+            return null;
+        }
+    }
+
+    /**
+     * Report a bug
+     */
+    async reportBug(data: CreateBugReportRequest): Promise<{ success: boolean; bugReport: BugReport }> {
+        return this.fetcher<{ success: boolean; bugReport: BugReport }>('/api/v1/bug-reports', {
+            method: 'POST',
+            body: JSON.stringify(data),
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        });
     }
 }
 
