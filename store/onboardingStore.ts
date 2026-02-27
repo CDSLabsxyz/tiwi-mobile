@@ -10,15 +10,20 @@ const ONBOARDING_KEY = '@tiwi_onboarding_completed';
 
 interface OnboardingState {
   hasCompletedOnboarding: boolean;
+  hasSeenOnboardingInSession: boolean;
   isLoading: boolean;
   checkOnboardingStatus: () => Promise<void>;
+  setSeenOnboardingInSession: (val: boolean) => void;
   completeOnboarding: () => Promise<void>;
   resetOnboarding: () => Promise<void>;
 }
 
 export const useOnboardingStore = create<OnboardingState>((set) => ({
   hasCompletedOnboarding: false,
+  hasSeenOnboardingInSession: false,
   isLoading: true,
+
+  setSeenOnboardingInSession: (val: boolean) => set({ hasSeenOnboardingInSession: val }),
 
   checkOnboardingStatus: async () => {
     try {

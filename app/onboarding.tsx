@@ -32,7 +32,7 @@ export default function OnboardingScreen() {
     const { t } = useTranslation();
     const flatListRef = useRef<FlatList>(null);
     const [currentIndex, setCurrentIndex] = useState(0);
-    const { completeOnboarding } = useOnboardingStore();
+    const { completeOnboarding, setSeenOnboardingInSession } = useOnboardingStore();
 
     const slides: OnboardingSlide[] = [
         {
@@ -65,7 +65,8 @@ export default function OnboardingScreen() {
 
     const handleComplete = async () => {
         await completeOnboarding();
-        router.replace('/welcome' as any);
+        setSeenOnboardingInSession(true);
+        router.replace('/wallet' as any);
     };
 
     const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {

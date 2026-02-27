@@ -68,18 +68,10 @@ function WelcomeScreen() {
                 <View style={styles.buttonGroup}>
                     <TouchableOpacity
                         activeOpacity={0.8}
-                        onPress={handleConnectWallet}
+                        onPress={handleCreateWallet}
                         style={[styles.button, styles.primaryButton]}
                     >
-                        <Text style={styles.primaryButtonText}>{t('welcome.connect_wallet')}</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        activeOpacity={0.8}
-                        onPress={handleCreateWallet}
-                        style={[styles.button, styles.secondaryButton]}
-                    >
-                        <Text style={styles.secondaryButtonText}>{t('welcome.connect_app_wallet')}</Text>
+                        <Text style={styles.primaryButtonText}>{t('welcome.connect_app_wallet')}</Text>
                     </TouchableOpacity>
                 </View>
 

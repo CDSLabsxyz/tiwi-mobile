@@ -1,7 +1,6 @@
 import { colors } from '@/constants/colors';
 import { typography } from '@/constants/typography';
 import { ChainType } from '@/store/walletStore';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import React, { useEffect, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -24,7 +23,7 @@ const TronLogo = require('../../assets/home/chains/tron.png');
 const BscLogo = require('../../assets/home/chains/bsc.svg');
 const PolyLogo = require('../../assets/home/chains/polygon.svg');
 const BaseLogo = require('../../assets/home/chains/base.png');
-const OptimismLogo = require('../../assets/home/chains/optimism.png');
+const AllNetworkLogo = require('../../assets/swap/all-networks.svg');
 
 interface NetworkOption {
     id: ChainType | 'MULTI';
@@ -39,43 +38,48 @@ interface NetworkSelectionModalProps {
     onClose: () => void;
     onSelect: (network: ChainType | 'MULTI') => void;
     mode: 'mnemonic' | 'privateKey';
+    compatibleChains?: ChainType[];
 }
 
 const NETWORK_OPTIONS: NetworkOption[] = [
     {
         id: 'MULTI',
-        label: 'Standard Multi-Chain Wallet',
-        subtext: 'One seed, all ecosystems. (Primarily EVM)',
-        icons: [EthLogo, SolLogo, TonLogo, TronLogo],
+        label: 'Multi-Chain Wallet',
+        subtext: 'One seed, all ecosystems. (Recommended)',
+        icons: [AllNetworkLogo],
         isTall: true,
     },
     {
         id: 'EVM',
-        label: 'EVM-compatible network',
-        subtext: 'Supports Ethereum, BNB Chain, Base, Optimism, and 20+ other EVM networks.',
-        icons: [EthLogo, BscLogo, BaseLogo, OptimismLogo],
+        label: 'EVM-Compatible',
+        subtext: 'Supports Ethereum, BNB Chain, Base, OP, and more.',
+        icons: [AllNetworkLogo],
         isTall: true,
     },
     {
         id: 'SOLANA',
         label: 'Solana',
+        // subtext: 'Fast, secure, and scalable high-performance network.',
         icons: [SolLogo],
-    },
-    {
-        id: 'SUI',
-        label: 'Sui',
-        icons: [SuiLogo],
     },
     {
         id: 'TON',
         label: 'Ton',
+        // subtext: 'Telegram Open Network (Next-gen L1).',
         icons: [TonLogo],
     },
     {
         id: 'TRON',
         label: 'Tron',
+        // subtext: 'Decentralized web ecosystem with low fees.',
         icons: [TronLogo],
     },
+    // {
+    //     id: 'SUI',
+    //     label: 'Sui',
+    //     subtext: 'Object-centric L1 for high throughput.',
+    //     icons: [SuiLogo],
+    // },
 ];
 
 export const NetworkSelectionModal: React.FC<NetworkSelectionModalProps> = ({
@@ -83,6 +87,7 @@ export const NetworkSelectionModal: React.FC<NetworkSelectionModalProps> = ({
     onClose,
     onSelect,
     mode,
+    compatibleChains = [],
 }) => {
     const { bottom } = useSafeAreaInsets();
     const [selected, setSelected] = useState<ChainType | 'MULTI' | null>(null);
@@ -167,69 +172,81 @@ export const NetworkSelectionModal: React.FC<NetworkSelectionModalProps> = ({
                             contentContainerStyle={styles.optionsContainer}
                             showsVerticalScrollIndicator={false}
                             bounces={true}
-                            scrollEnabled={true}
                         >
-                                {NETWORK_OPTIONS.map((option) => {
-                                    const isSelected = selected === option.id;
-                                    const isDisabled = mode === 'privateKey' && option.id === 'MULTI';
-                                    const isMulti = option.id === 'MULTI' || option.id === 'EVM';
+                            {NETWORK_OPTIONS.map((option) => {
+                                const isSelected = selected === option.id;
+                                const isDisabled = mode === 'privateKey' && option.id === 'MULTI';
 
-                                    if (isDisabled) return null;
+                                // Filter based on compatibility if in privateKey mode
+                                const isCompatible = mode === 'mnemonic' ||
+                                    option.id === 'MULTI' ||
+                                    compatibleChains.includes(option.id as ChainType);
 
-                                    return (
-                                        <TouchableOpacity
-                                            key={option.id}
-                                            style={[
-                                                styles.optionCard,
-                                                option.isTall && !isMulti && styles.tallCard,
-                                                isSelected && styles.selectedCard,
-                                            ]}
-                                            onPress={() => setSelected(option.id)}
-                                            activeOpacity={0.7}
-                                        >
-                                            <View style={styles.optionHeader}>
+                                if (isDisabled || !isCompatible) return null;
+
+                                const isStacked = option.icons.length > 1;
+
+                                return (
+                                    <TouchableOpacity
+                                        key={option.id}
+                                        style={[
+                                            styles.optionCard,
+                                            isSelected && styles.selectedCard,
+                                        ]}
+                                        onPress={() => setSelected(option.id)}
+                                        activeOpacity={0.7}
+                                    >
+                                        <View style={styles.optionContent}>
+                                            <View style={styles.iconWrapper}>
                                                 <View style={styles.iconContainer}>
                                                     {option.icons.map((icon, idx) => (
                                                         <View
                                                             key={idx}
                                                             style={[
-                                                                isMulti ? styles.miniIconCircle : styles.iconCircle,
-                                                                { marginLeft: idx > 0 ? (isMulti ? -8 : -12) : 0, }
+                                                                styles.iconCircle,
+                                                                isStacked && styles.stackedIcon,
+                                                                isStacked && { left: idx * 16, zIndex: 10 - idx }
                                                             ]}
                                                         >
                                                             <Image
                                                                 source={icon}
                                                                 style={styles.chainIcon}
-                                                                contentFit="contain"
+                                                                contentFit="cover"
                                                             />
                                                         </View>
                                                     ))}
                                                 </View>
-                                                <Text 
-                                                    style={[
-                                                        styles.optionLabel, 
-                                                        isMulti && styles.multiLabel,
-                                                        isSelected && styles.selectedLabel
-                                                    ]}
-                                                    numberOfLines={1}
-                                                    ellipsizeMode="tail"
-                                                >
+                                            </View>
+
+                                            <View style={styles.textWrapper}>
+                                                <Text style={[
+                                                    styles.optionLabel,
+                                                    isSelected && styles.selectedLabel
+                                                ]}>
                                                     {option.label}
                                                 </Text>
-                                                {isSelected && (
-                                                    <MaterialCommunityIcons name="check" size={20} color={colors.primaryCTA} />
+                                                {option.subtext && (
+                                                    <Text style={styles.subtext} numberOfLines={1}>
+                                                        {option.subtext}
+                                                    </Text>
                                                 )}
                                             </View>
 
-                                            {!isMulti && option.subtext && (
-                                                <Text style={styles.subtext}>{option.subtext}</Text>
-                                            )}
-                                        </TouchableOpacity>
-                                    );
-                                })}
+                                            <View style={styles.radioContainer}>
+                                                <View style={[
+                                                    styles.radioButton,
+                                                    isSelected && styles.radioActive
+                                                ]}>
+                                                    {isSelected && <View style={styles.radioInner} />}
+                                                </View>
+                                            </View>
+                                        </View>
+                                    </TouchableOpacity>
+                                );
+                            })}
                         </ScrollView>
 
-                        <View style={[styles.footer, { paddingBottom: 12 }]}>
+                        <View style={[styles.footer, { paddingBottom: bottom || 24 }]}>
                             <TouchableOpacity
                                 style={[styles.confirmButton, !selected && styles.disabledButton]}
                                 onPress={handleConfirm}
@@ -239,9 +256,9 @@ export const NetworkSelectionModal: React.FC<NetworkSelectionModalProps> = ({
                             </TouchableOpacity>
                         </View>
                     </Animated.View>
-                {/* </Animated.View> */}
-            </View>
-        </GestureHandlerRootView>
+                    {/* </Animated.View> */}
+                </View>
+            </GestureHandlerRootView>
         </Modal >
     );
 };
@@ -259,66 +276,82 @@ const styles = StyleSheet.create({
         backgroundColor: colors.bgSemi,
         borderTopLeftRadius: 32,
         borderTopRightRadius: 32,
-        paddingHorizontal: 24,
+        paddingHorizontal: 16,
         paddingTop: 12,
-        maxHeight: '75%',
+        maxHeight: '70%',
         width: '100%',
+        borderTopWidth: 1,
+        borderLeftWidth: 1,
+        borderRightWidth: 1,
+        borderColor: colors.bgStroke,
     },
     dragArea: {
         width: '100%',
-        paddingTop: 12,
-        // No vertical padding here to keep handle and title close
+        paddingVertical: 12,
     },
     handle: {
-        width: 40,
-        height: 4,
+        width: 36,
+        height: 5,
         backgroundColor: colors.bgStroke,
-        borderRadius: 2,
+        borderRadius: 2.5,
         alignSelf: 'center',
-        marginBottom: 16, // Reduced margin
+        marginBottom: 20,
     },
     title: {
         fontFamily: typography.fontFamily.bold,
-        fontSize: typography.fontSize.xl,
+        fontSize: 22,
         color: colors.titleText,
-        marginBottom: 20, // Reduced margin
+        paddingHorizontal: 8,
     },
     scrollArea: {
-        flexGrow: 1,
-        flexShrink: 1,
         width: '100%',
-        maxHeight: 450,
     },
     optionsContainer: {
-        gap: 12,
-        paddingBottom: 32,
+        gap: 8,
+        paddingBottom: 40,
+        paddingHorizontal: 8,
     },
     optionCard: {
         backgroundColor: colors.bgCards,
-        borderRadius: 16,
+        borderRadius: 20,
         borderWidth: 1,
         borderColor: colors.bgStroke,
         padding: 16,
+        height: 72,
+        justifyContent: 'center',
     },
     tallCard: {
         paddingVertical: 20,
     },
     selectedCard: {
         borderColor: colors.primaryCTA,
-        backgroundColor: 'rgba(177, 241, 40, 0.05)',
+        backgroundColor: 'rgba(177, 241, 40, 0.08)',
     },
     optionHeader: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 12,
     },
-    iconContainer: {
+    optionContent: {
         flexDirection: 'row',
         alignItems: 'center',
     },
+    iconWrapper: {
+        width: 64, // Sufficient space for stacked icons
+        marginRight: 12,
+    },
+    iconContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        position: 'relative',
+    },
     iconCircle: {
-        width: 32,
-        height: 32,
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: colors.bg,
+        borderWidth: 2,
+        borderColor: colors.bgCards,
         justifyContent: 'center',
         alignItems: 'center',
         overflow: 'hidden',
@@ -330,16 +363,25 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         overflow: 'hidden',
     },
-    chainIcon: {
+    stackedIcon: {
+        position: 'absolute',
+        width: 32,
+        height: 32,
         borderRadius: 16,
+    },
+    chainIcon: {
         width: '100%',
         height: '100%',
     },
-    optionLabel: {
+    textWrapper: {
         flex: 1,
+        justifyContent: 'center',
+    },
+    optionLabel: {
         fontFamily: typography.fontFamily.semibold,
-        fontSize: typography.fontSize.md,
+        fontSize: 16,
         color: colors.titleText,
+        marginBottom: 2,
     },
     multiLabel: {
         fontSize: 14, // Smaller text for multi-chain one-liners
@@ -348,11 +390,31 @@ const styles = StyleSheet.create({
         color: colors.primaryCTA,
     },
     subtext: {
-        fontFamily: typography.fontFamily.regular,
-        fontSize: typography.fontSize.xs,
-        color: colors.bodyText,
-        marginTop: 8,
-        lineHeight: 18,
+        fontFamily: typography.fontFamily.medium,
+        fontSize: 12,
+        color: colors.mutedText,
+    },
+    radioContainer: {
+        width: 24,
+        alignItems: 'flex-end',
+    },
+    radioButton: {
+        width: 20,
+        height: 20,
+        borderRadius: 10,
+        borderWidth: 2,
+        borderColor: colors.bgStroke,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    radioActive: {
+        borderColor: colors.primaryCTA,
+    },
+    radioInner: {
+        width: 10,
+        height: 10,
+        borderRadius: 5,
+        backgroundColor: colors.primaryCTA,
     },
     confirmButton: {
         backgroundColor: colors.primaryCTA,
@@ -360,18 +422,26 @@ const styles = StyleSheet.create({
         borderRadius: 28,
         justifyContent: 'center',
         alignItems: 'center',
+        shadowColor: colors.primaryCTA,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.2,
+        shadowRadius: 8,
+        elevation: 4,
     },
     footer: {
         paddingTop: 16,
+        paddingBottom: 24,
+        paddingHorizontal: 8,
         width: '100%',
     },
     disabledButton: {
         backgroundColor: colors.bgStroke,
-        opacity: 0.5,
+        shadowOpacity: 0,
+        elevation: 0,
     },
     confirmText: {
         fontFamily: typography.fontFamily.bold,
-        fontSize: typography.fontSize.md,
+        fontSize: 18,
         color: colors.bg,
     },
 });

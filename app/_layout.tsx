@@ -140,7 +140,7 @@ export default function RootLayout() {
   //   setIsMounted(true);
   // }, []);
 
-  const { hasCompletedOnboarding, isLoading: isOnboardingLoading, checkOnboardingStatus } = useOnboardingStore();
+  const { hasCompletedOnboarding, hasSeenOnboardingInSession, isLoading: isOnboardingLoading, checkOnboardingStatus } = useOnboardingStore();
   const { isConnected, address, _hasHydrated: isWalletHydrated } = useWalletStore();
   const {
     isLocked,
@@ -237,8 +237,8 @@ export default function RootLayout() {
     const inWalletFlow = firstSegment === 'wallet';
     const isRoot = segmentsArray.length === 0;
 
-    // Step 1: Handle Carousel Onboarding
-    if (!hasCompletedOnboarding) {
+    // Step 1: Handle Carousel Onboarding - Always show on fresh launch
+    if (!hasSeenOnboardingInSession) {
       if (!inOnboarding) router.replace('/onboarding' as any);
       return;
     }
@@ -247,7 +247,7 @@ export default function RootLayout() {
     switch (setupPhase) {
       case 'WELCOME':
         if (!inWelcome && !inWalletFlow) {
-          router.replace('/welcome' as any);
+          router.replace('/wallet' as any);
         }
         break;
 

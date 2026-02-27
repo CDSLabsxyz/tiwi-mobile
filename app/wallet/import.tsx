@@ -3,6 +3,7 @@ import { QRScanner } from '@/components/ui/QRScanner';
 import { NetworkSelectionModal } from '@/components/wallet/NetworkSelectionModal';
 import { colors } from '@/constants/colors';
 import {
+    getCompatibleChains,
     importWalletByMnemonic,
     importWalletByPrivateKey,
     validateMnemonic,
@@ -57,12 +58,16 @@ export default function ImportWalletScreen() {
             return { isValid: false, type: 'mnemonic', error: 'The seed phrase is invalid' };
         }
 
-        // If it looks like a PK but invalid
         if (text.length > 30) {
             return { isValid: false, type: 'privateKey', error: 'The private key is invalid' };
         }
 
         return { isValid: false, type: null, error: null };
+    }, [inputText]);
+
+    // Detect compatible chains for the current input
+    const compatibleChains = useMemo(() => {
+        return getCompatibleChains(inputText);
     }, [inputText]);
 
     const handlePaste = async () => {
@@ -204,6 +209,7 @@ export default function ImportWalletScreen() {
                 onClose={() => setShowNetworkModal(false)}
                 onSelect={handleNetworkSelect}
                 mode={validation.type === 'mnemonic' ? 'mnemonic' : 'privateKey'}
+                compatibleChains={compatibleChains}
             />
 
             <ProcessingOverlay

@@ -12,9 +12,9 @@ import { HDKey } from '@scure/bip32';
 import { generateMnemonic, mnemonicToSeedSync } from '@scure/bip39';
 import { wordlist } from '@scure/bip39/wordlists/english.js';
 import { Keypair } from '@solana/web3.js';
+import * as bs58 from "bs58";
 import * as SecureStore from 'expo-secure-store';
 import { mnemonicToAccount, privateKeyToAccount } from 'viem/accounts';
-import * as bs58 from "bs58"
 
 export interface CreatedWallet {
     address: string; // Master/Primary (EVM)
@@ -177,6 +177,37 @@ export function validateMnemonic(mnemonic: string): boolean {
     } catch {
         return false;
     }
+}
+
+/**
+ * Detect compatible chains for a given input (private key or mnemonic)
+ */
+export function getCompatibleChains(input: string): ChainType[] {
+    const text = input.trim();
+    if (!text) return [];
+
+    // 1. Check if it's a mnemonic
+    if (validateMnemonic(text)) {
+        return ['EVM', 'SOLANA', 'TRON', 'SUI', 'TON'];
+    }
+
+    const compatible: ChainType[] = [];
+
+    // 2. Check for EVM/TRON (64-char Hex)
+    if (validatePrivateKey(text, 'EVM')) {
+        compatible.push('EVM');
+        compatible.push('TRON');
+    }
+
+    // 3. Check for Solana (Base58)
+    if (validatePrivateKey(text, 'SOLANA')) {
+        compatible.push('SOLANA');
+    }
+
+    // 4. Check for TON/SUI (Placeholders for now, usually Base64 or specific lengths)
+    // For now we use EVM validation as fallback or specific checks if available
+
+    return compatible;
 }
 
 /**
