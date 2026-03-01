@@ -1,5 +1,5 @@
-import { formatUnits, parseUnits } from 'viem';
-import { apiClient } from './apiClient';
+
+import { acrossService } from './acrossService';
 import { SwapQuote, TokenMinimal } from './swap/types';
 import { unifiedSwapManager } from './swap/UnifiedSwapManager';
 
@@ -14,80 +14,41 @@ export async function fetchSwapQuote(
     fromToken: TokenMinimal,
     toToken: TokenMinimal,
     fromAddress: string,
-    recipient: string
+    recipient: string,
+    slippage?: number
 ): Promise<SwapQuote> {
     if (!fromAmount || parseFloat(fromAmount) <= 0) {
         throw new Error('Invalid amount');
     }
 
     try {
-        const params = {
-            fromChainId: fromToken.chainId,
-            toChainId: toToken.chainId,
+        // HARDCODED: Remove Tiwi backend dependency, use Across SDK directly
+        const acrossQuote = await acrossService.fetchAcrossQuote(
+            fromAmount,
             fromToken,
             toToken,
-            fromAmount,
             fromAddress,
             recipient,
-            slippage: 0.5
-        };
+            slippage
+        );
 
-        const response = await apiClient.fetchRoute(params);
-        console.log("🚀 ~ fetchSwapQuote ~ response:", response)
-        const route = response.route;
-
-
-        // Extract USD values
-        const fromFiat = route.fromToken.amountUSD || '0';
-        const toFiat = route.toToken.amountUSD || '0';
-        const gasFee = route.fees?.gasUSD ? `$${parseFloat(route.fees.gasUSD).toFixed(2)}` : '0.001%';
-
-        // Extract execution data
-        const txTo = route.transactionRequest?.to || route.raw?.routerAddress || route.toToken.address;
-        const txData = route.transactionRequest?.data || route.transactionData || '0x';
-        const txValue = route.transactionRequest?.value || '0';
-
-        // Fix: Use raw.amountOut if toToken.amount has a decimal point, as BigInt() fails on decimals
-        let toAmountFormatted = route.toToken.amount;
-        if (route.toToken.amount.includes('.')) {
-            // It's already human readable
-            toAmountFormatted = route.toToken.amount;
-        } else {
-            // It's atomic/integer, format it
-            try {
-                toAmountFormatted = formatUnits(BigInt(route.toToken.amount), toToken.decimals);
-            } catch (e) {
-                // If BigInt still fails (e.g. empty string), use a fallback
-                toAmountFormatted = '0';
-            }
+        if (acrossQuote) {
+            console.log("🚀 ~ fetchSwapQuote ~ acrossQuote:", acrossQuote)
+            return acrossQuote;
         }
 
-        return {
-            toAmount: toAmountFormatted,
-            fiatAmount: toFiat,
-            fromAmountUSD: fromFiat,
-            toAmountUSD: toFiat,
-            slippage: route.slippage ? parseFloat(route.slippage) : 0.5,
-            gasEstimate: route.fees?.gas || '0.001',
-            gasFee: gasFee,
-            twcFee: '0.40%',
-            source: [route.router || 'Best', 'Tiwi Router'],
-            txTo,
-            txData,
-            txValue,
-            raw: route.raw, // Preserve raw for client-side encoding if needed
-            router: route.router, // Store router for the executor
-        };
+        throw new Error('Across failed to provide a quote');
     } catch (error) {
-        console.error('[SwapService] fetchSwapQuote failed, using fallback:', error);
+        console.error('[SwapService] fetchSwapQuote failed:', error);
         return {
             toAmount: fromAmount,
             fiatAmount: '0',
             slippage: 0.5,
             gasEstimate: '0.001',
-            gasFee: '0.001%',
-            twcFee: '0.40%',
-            source: ['Fallback', 'Tiwi'],
+            gasFee: '0',
+            twcFee: '0.00%',
+            source: ['Error', 'Across'],
+            router: 'error',
         };
     }
 }

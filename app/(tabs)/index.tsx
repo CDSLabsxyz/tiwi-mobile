@@ -9,7 +9,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ThemedView } from '@/components/themed-view';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { Header } from '@/components/ui/header';
-import { WalletModal } from '@/components/ui/wallet-modal';
 import { colors } from '@/constants/colors';
 
 
@@ -64,8 +63,7 @@ export default function HomeScreen() {
     prefetchMarkets();
   }, [queryClient]);
 
-  const { isConnected, disconnect } = useWalletStore();
-  const [isWalletModalVisible, setIsWalletModalVisible] = useState(false);
+  const { isConnected, disconnect, setWalletModalVisible } = useWalletStore();
   const [refreshing, setRefreshing] = useState(false);
 
   // Queries (Moved up so formatted variables can access them)
@@ -204,28 +202,14 @@ export default function HomeScreen() {
     };
   }, [spotlightTokens, isLoadingSpotlight, chains, twcToken, isLoadingChains, isLoadingTWCToken, smartMarkets, isLoadingSmartMarkets, formattedTWCPrice, formattedTWCMcap, formattedTWCVol, t]);
 
-  const handleOpenWallet = () => {
-    setIsWalletModalVisible(true);
-  };
+  const handleOpenWallet = useCallback(() => {
+    console.log('[HomeScreen] Opening Global Wallet Modal...');
+    setWalletModalVisible(true);
+  }, [setWalletModalVisible]);
 
-  const handleCloseWallet = () => {
-    setIsWalletModalVisible(false);
-  };
+  // Modal logic is now handled in TabLayout
+  // But we keep handleOpenWallet as a legacy delegate for the Header
 
-  const handleWalletHistory = () => {
-    setIsWalletModalVisible(false);
-    router.push('/activities' as any);
-  };
-
-  const handleWalletSettings = () => {
-    setIsWalletModalVisible(false);
-    router.push('/settings' as any);
-  };
-
-  const handleDisconnect = () => {
-    setIsWalletModalVisible(false);
-    disconnect();
-  };
 
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
@@ -274,13 +258,7 @@ export default function HomeScreen() {
           onSettingsPress={() => router.push('/settings' as any)}
         />
 
-        <WalletModal
-          visible={isWalletModalVisible}
-          onClose={handleCloseWallet}
-          onHistoryPress={handleWalletHistory}
-          onSettingsPress={handleWalletSettings}
-          onDisconnectPress={handleDisconnect}
-        />
+
 
         <ScrollView
           style={styles.scrollView}
@@ -310,17 +288,17 @@ export default function HomeScreen() {
                 isLoading={homeData.isLoading}
                 onTokenPress={(token) => {
                   const marketId = token.pair || token.symbol;
-                router.push({
-                  pathname: `/market/spot/${marketId}` as any,
-                  params: {
-                    symbol: marketId,
-                    address: (token as any).address,
-                    chainId: (token as any).chainId || 56,
-                    provider: 'onchain'
-                  }
-                });
-              }}
-            />
+                  router.push({
+                    pathname: `/market/spot/${marketId}` as any,
+                    params: {
+                      symbol: marketId,
+                      address: (token as any).address,
+                      chainId: (token as any).chainId || 56,
+                      provider: 'onchain'
+                    }
+                  });
+                }}
+              />
             )}
             <MarketSection isLoading={homeData.isLoading} />
             <TradeStatsSection stats={homeData.stats} chains={chains} isLoading={homeData.isLoading} />
@@ -344,6 +322,8 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </Animated.View>
         </GestureDetector>
+
+        {/* WalletModal moved to Layout */}
       </ThemedView>
     </GestureHandlerRootView>
   );

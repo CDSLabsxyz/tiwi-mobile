@@ -15,7 +15,8 @@ import * as Clipboard from 'expo-clipboard';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, usePathname, useRouter } from 'expo-router';
 import React, { useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { TIWILoader } from '@/components/ui/TIWILoader';
 import QRCode from 'react-native-qrcode-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -312,7 +313,7 @@ export default function ReceiveScreen() {
                     {/* Token List */}
                     {isFetchingTokens ? (
                         <View style={styles.loadingContainer}>
-                            <ActivityIndicator color={colors.primaryCTA} />
+                            <TIWILoader size={100} />
                             <Text style={styles.loadingText}>Searching tokens...</Text>
                         </View>
                     ) : (

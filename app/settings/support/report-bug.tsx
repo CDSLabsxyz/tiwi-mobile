@@ -9,7 +9,6 @@ import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
-    ActivityIndicator,
     Alert,
     KeyboardAvoidingView,
     Platform,
@@ -21,6 +20,7 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
+import { TIWILoader } from '@/components/ui/TIWILoader';
 import Animated, { useAnimatedStyle, withSpring } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -274,7 +274,7 @@ export default function ReportBugScreen() {
                         activeOpacity={0.9}
                     >
                         {isSubmitting ? (
-                            <ActivityIndicator color="#010501" />
+                            <TIWILoader size={40} />
                         ) : (
                             <Text style={styles.submitButtonText}>Submit Bug Report</Text>
                         )}

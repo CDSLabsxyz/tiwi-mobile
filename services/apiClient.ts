@@ -424,6 +424,8 @@ export interface FetchRouteParams {
     recipient?: string;
     order?: 'RECOMMENDED' | 'FASTEST' | 'CHEAPEST';
     liquidityUSD?: number;
+    useRelayer?: boolean;
+    gasToken?: string;
 }
 
 export interface RouteAPIResponse {
@@ -577,7 +579,7 @@ class TiwiApiClient {
             const data = await response.json();
             return data
         } catch (error) {
-            console.error(`[TiwiAPI] Error fetching ${endpoint}:`, error);
+            console.warn(`[TiwiAPI] Error fetching ${endpoint}:`, error);
             throw error;
         }
     }
@@ -797,6 +799,21 @@ class TiwiApiClient {
      */
     async fetchRoute(params: FetchRouteParams): Promise<RouteAPIResponse> {
         return this.fetcher<RouteAPIResponse>('/api/v1/route', {
+            method: 'POST',
+            body: JSON.stringify(params),
+        });
+    }
+
+    /**
+     * Submit a signed swap to the relayer
+     */
+    async executeRelayerSwap(params: {
+        signature: string;
+        quoteId: string;
+        chainId: number;
+        fromAddress: string;
+    }): Promise<{ success: boolean; txHash?: string; error?: string }> {
+        return this.fetcher<{ success: boolean; txHash?: string; error?: string }>('/api/v1/relayer/execute', {
             method: 'POST',
             body: JSON.stringify(params),
         });

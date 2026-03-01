@@ -78,9 +78,7 @@ const settingsSections: SettingsSection[] = [
         id: 'import-wallet',
         title: 'Import Wallet',
         icon: imgCloudDownload,
-        onPress: () => {
-            console.log('Import Wallet pressed');
-        },
+        route: '/wallet/import',
     },
 ];
 
@@ -142,9 +140,7 @@ export default function SettingsScreen() {
             id: 'import-wallet',
             title: t('settings.import_wallet'),
             icon: imgCloudDownload,
-            onPress: () => {
-                console.log('Import Wallet pressed');
-            },
+            route: '/wallet/import',
         }
     ];
 

@@ -9,7 +9,7 @@ import { useSendStore } from "@/store/sendStore";
 import { validateAddresses, validateAmount } from "@/utils/addressValidation";
 import { isValidCSVFile, parseCSVAddresses } from "@/utils/csvParser";
 import * as DocumentPicker from "expo-document-picker";
-import * as FileSystem from "expo-file-system";
+import { File } from "expo-file-system";
 import { Image } from "expo-image";
 import React, { useEffect, useState } from "react";
 import { Alert, Platform, Text, TextInput, TouchableOpacity, View } from "react-native";
@@ -131,7 +131,7 @@ export const MultiSendForm: React.FC<MultiSendFormProps> = ({ onNext }) => {
       }
 
       // Read file content
-      const fileContent = await FileSystem.readAsStringAsync(file.uri);
+      const fileContent = await new File(file.uri).text();
 
       // Parse addresses from CSV
       const extractedAddresses = parseCSVAddresses(fileContent);

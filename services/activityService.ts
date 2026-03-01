@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import type { PostgrestResponse } from '@supabase/supabase-js';
 
 export type ActivityType = 'transaction' | 'reward' | 'governance' | 'security' | 'system';
 
@@ -14,27 +15,49 @@ export interface UserActivity {
     created_at?: string;
 }
 
+// Database-specific row interface to match schema precisely
+interface ActivityRow {
+    user_wallet: string;
+    type: ActivityType;
+    category: string;
+    title: string;
+    message: string;
+    metadata: any;
+    is_read: boolean;
+    created_at: string;
+}
+
 class ActivityService {
+    private readonly TABLE_NAME = 'user_activities';
+
     /**
      * Log a new user activity to Supabase
      */
     async logActivity(activity: UserActivity): Promise<boolean> {
         try {
-            const { error } = await supabase
-                .from('user_activities')
-                .insert([{
-                    ...activity,
-                    user_wallet: activity.user_wallet.toLowerCase(),
-                    created_at: new Date().toISOString()
-                }]);
+            const payload: ActivityRow = {
+                user_wallet: activity.user_wallet.toLowerCase(),
+                type: activity.type,
+                category: activity.category,
+                title: activity.title,
+                message: activity.message,
+                metadata: activity.metadata || {},
+                is_read: activity.is_read || false,
+                created_at: new Date().toISOString()
+            };
 
-            if (error) {
-                console.error('[ActivityService] Error logging activity:', error);
-                return false;
-            }
+            const { error } = await supabase
+                .from(this.TABLE_NAME)
+                .insert([payload]);
+
+            if (error) throw error;
             return true;
-        } catch (error) {
-            console.error('[ActivityService] Exception logging activity:', error);
+        } catch (error: any) {
+            if (error?.message?.includes('Network request failed')) {
+                console.warn('[ActivityService] Log: Network unreachable.');
+            } else {
+                console.error('[ActivityService] Exception logging activity:', error);
+            }
             return false;
         }
     }
@@ -44,20 +67,21 @@ class ActivityService {
      */
     async getActivities(walletAddress: string, limit = 20): Promise<UserActivity[]> {
         try {
-            const { data, error } = await supabase
-                .from('user_activities')
+            const { data, error }: PostgrestResponse<UserActivity> = await supabase
+                .from(this.TABLE_NAME)
                 .select('*')
                 .eq('user_wallet', walletAddress.toLowerCase())
                 .order('created_at', { ascending: false })
                 .limit(limit);
 
-            if (error) {
-                console.error('[ActivityService] Error fetching activities:', error);
-                return [];
-            }
+            if (error) throw error;
             return data || [];
-        } catch (error) {
-            console.error('[ActivityService] Exception fetching activities:', error);
+        } catch (error: any) {
+            if (error?.message?.includes('Network request failed')) {
+                console.warn('[ActivityService] Fetch: Network unreachable.');
+            } else {
+                console.error('[ActivityService] Exception fetching activities:', error);
+            }
             return [];
         }
     }
@@ -68,17 +92,18 @@ class ActivityService {
     async markAsRead(activityId: string): Promise<boolean> {
         try {
             const { error } = await supabase
-                .from('user_activities')
+                .from(this.TABLE_NAME)
                 .update({ is_read: true })
                 .eq('id', activityId);
 
-            if (error) {
-                console.error('[ActivityService] Error marking as read:', error);
-                return false;
-            }
+            if (error) throw error;
             return true;
-        } catch (error) {
-            console.error('[ActivityService] Exception marking as read:', error);
+        } catch (error: any) {
+            if (error?.message?.includes('Network request failed')) {
+                console.warn('[ActivityService] MarkRead: Network unreachable.');
+            } else {
+                console.error('[ActivityService] Exception marking as read:', error);
+            }
             return false;
         }
     }
@@ -89,18 +114,19 @@ class ActivityService {
     async markAllAsRead(walletAddress: string): Promise<boolean> {
         try {
             const { error } = await supabase
-                .from('user_activities')
+                .from(this.TABLE_NAME)
                 .update({ is_read: true })
                 .eq('user_wallet', walletAddress.toLowerCase())
                 .eq('is_read', false);
 
-            if (error) {
-                console.error('[ActivityService] Error marking all as read:', error);
-                return false;
-            }
+            if (error) throw error;
             return true;
-        } catch (error) {
-            console.error('[ActivityService] Exception marking all as read:', error);
+        } catch (error: any) {
+            if (error?.message?.includes('Network request failed')) {
+                console.warn('[ActivityService] MarkAllRead: Network unreachable.');
+            } else {
+                console.error('[ActivityService] Exception marking all as read:', error);
+            }
             return false;
         }
     }
@@ -115,7 +141,7 @@ class ActivityService {
         message: string,
         txHash?: string,
         metadata: Record<string, any> = {}
-    ) {
+    ): Promise<boolean> {
         return this.logActivity({
             user_wallet: walletAddress,
             type: 'transaction',
@@ -135,7 +161,7 @@ class ActivityService {
         title: string,
         message: string,
         metadata: Record<string, any> = {}
-    ) {
+    ): Promise<boolean> {
         return this.logActivity({
             user_wallet: walletAddress,
             type: 'security',

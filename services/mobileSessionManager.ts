@@ -49,8 +49,12 @@ class MobileSessionManager {
             }
 
             return session;
-        } catch (error) {
-            console.error('[MobileSessionManager] Sync Error:', error);
+        } catch (error: any) {
+            if (error?.message?.includes('Network request failed')) {
+                console.warn('[MobileSessionManager] Sync failed due to network unreachable. Skipping cloud sync.');
+            } else {
+                console.error('[MobileSessionManager] Sync Error:', error);
+            }
             return null;
         }
     }

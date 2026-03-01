@@ -2,7 +2,7 @@ import { apiClient } from '@/services/apiClient';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 
-const TOP_CHAINS = [1, 56, 7565164, 8453, 1100, 728126428, 10, 42161, 98865, 137, 43114]; // Eth, BNB, Solana, Base, TON, TRON, Optimism, Arbitrum, Hyperliquid, Polygon, Avalanche
+const TOP_CHAINS = [1, 56, 7565164, 8453, 1100, 728126428, 10, 42161, 137, 43114]; // Eth, BNB, Solana, Base, TON, TRON, Optimism, Arbitrum, Polygon, Avalanche
 
 /**
  * Hook to prefetch tokens for the most popular chains and a global list.

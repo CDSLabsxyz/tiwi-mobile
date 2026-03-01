@@ -3,17 +3,17 @@ import { SettingsHeader } from '@/components/ui/settings-header';
 import { SettingsItem } from '@/components/ui/settings-item';
 import { colors } from '@/constants/colors';
 import { BlurView } from 'expo-blur';
-import { cacheDirectory, deleteAsync, readDirectoryAsync } from 'expo-file-system';
+import { Paths, Directory, File } from 'expo-file-system';
 import * as Linking from 'expo-linking';
 import React, { useState } from 'react';
 import {
-    ActivityIndicator,
     Alert,
     Platform,
     ScrollView,
     StyleSheet,
     View,
 } from 'react-native';
+import { TIWILoader } from '@/components/ui/TIWILoader';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // Assets
@@ -49,15 +49,17 @@ export default function AppUpdatesCacheScreen() {
     const handleClearCache = async () => {
         setIsClearingCache(true);
         try {
-            if (cacheDirectory) {
-                const files = await readDirectoryAsync(cacheDirectory);
-                for (const file of files) {
-                    await deleteAsync(`${cacheDirectory}${file}`, { idempotent: true });
+            const cacheDir = Paths.cache;
+            if (cacheDir.exists) {
+                const contents = cacheDir.list();
+                for (const item of contents) {
+                    item.delete();
                 }
             }
             Alert.alert('Success', 'Cache cleared successfully');
         } catch (error) {
             console.error('Error clearing cache:', error);
+            Alert.alert('Error', 'Failed to clear cache');
         } finally {
             setIsClearingCache(false);
         }
@@ -66,17 +68,19 @@ export default function AppUpdatesCacheScreen() {
     const handleResetTemporaryFiles = async () => {
         setIsResettingFiles(true);
         try {
-            if (cacheDirectory) {
-                const files = await readDirectoryAsync(cacheDirectory);
-                for (const file of files) {
-                    if (file.startsWith('temp_') || file.endsWith('.tmp')) {
-                        await deleteAsync(`${cacheDirectory}${file}`, { idempotent: true });
+            const cacheDir = Paths.cache;
+            if (cacheDir.exists) {
+                const contents = cacheDir.list();
+                for (const item of contents) {
+                    if (item.name.startsWith('temp_') || item.name.endsWith('.tmp')) {
+                        item.delete();
                     }
                 }
             }
             Alert.alert('Success', 'Temporary files reset successfully');
         } catch (error) {
             console.error('Error resetting temporary files:', error);
+            Alert.alert('Error', 'Failed to reset temporary files');
         } finally {
             setIsResettingFiles(false);
         }
@@ -150,7 +154,7 @@ export default function AppUpdatesCacheScreen() {
                                 icon={option.icon}
                                 onPress={option.disabled ? () => { } : option.action}
                                 showChevron={!option.disabled && !option.loading}
-                                rightElement={option.loading && <ActivityIndicator size="small" color={colors.primaryCTA} />}
+                                rightElement={option.loading && <TIWILoader size={30} />}
                                 destructive={false}
                             />
                             {option.disabled && (

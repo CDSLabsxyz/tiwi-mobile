@@ -2,7 +2,8 @@ import { colors } from '@/constants/colors';
 import { useMarketTrades } from '@/hooks/useMarketTrades';
 import { formatCompactNumber } from '@/utils/formatting';
 import React from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
+import { TIWILoader } from '@/components/ui/TIWILoader';
 import { MarketEmptyState } from './MarketEmptyState';
 
 interface RecentTradesProps {
@@ -66,7 +67,7 @@ export const RecentTrades: React.FC<RecentTradesProps> = ({
     if (isLoading && trades.length === 0 && !showEmpty) {
         return (
             <View style={[styles.container, styles.center]}>
-                <ActivityIndicator color={colors.primaryCTA} size="small" />
+                <TIWILoader size={60} />
                 <Text style={styles.loadingText}>SYNCING TRADES...</Text>
             </View>
         );

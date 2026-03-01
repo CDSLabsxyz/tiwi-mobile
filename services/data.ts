@@ -108,7 +108,11 @@ export const fetchHomeData = async (): Promise<HomeData> => {
       isLoading: false,
     };
   } catch (error) {
-    console.error("fetchHomeData failed", error);
+    if (error instanceof Error && error.message.includes('Network request failed')) {
+      console.warn('[DataService] fetchHomeData: Network unreachable. Using fallbacks.');
+    } else {
+      console.error("fetchHomeData failed", error);
+    }
     // Fallback to empty shell or last known data
     return {
       newsfeed: mockNewsfeed,

@@ -46,8 +46,15 @@ class CloudSessionService {
 
             if (error) throw error;
             return data as CloudSession;
-        } catch (error) {
-            console.error('[CloudSessionService] Register Error:', error);
+        } catch (error: any) {
+            // "Network request failed" usually means the Supabase host is unreachable
+            // (e.g. project paused, invalid URL, or no internet).
+            // We use console.warn to avoid the disruptive Expo red screen in development.
+            if (error?.message === 'TypeError: Network request failed' || error?.message?.includes('Network request failed')) {
+                console.warn('[CloudSessionService] Network unreachable. Cloud sessions will not sync.');
+            } else {
+                console.error('[CloudSessionService] Register Error:', error);
+            }
             return null;
         }
     }
@@ -67,8 +74,12 @@ class CloudSessionService {
 
             if (error) throw error;
             return true;
-        } catch (error) {
-            console.error('[CloudSessionService] Terminate Error:', error);
+        } catch (error: any) {
+            if (error?.message?.includes('Network request failed')) {
+                console.warn('[CloudSessionService] Terminate: Network unreachable.');
+            } else {
+                console.error('[CloudSessionService] Terminate Error:', error);
+            }
             return false;
         }
     }
@@ -90,8 +101,12 @@ class CloudSessionService {
 
             if (error) throw error;
             return true;
-        } catch (error) {
-            console.error('[CloudSessionService] Terminate All Error:', error);
+        } catch (error: any) {
+            if (error?.message?.includes('Network request failed')) {
+                console.warn('[CloudSessionService] Terminate All: Network unreachable.');
+            } else {
+                console.error('[CloudSessionService] Terminate All Error:', error);
+            }
             return false;
         }
     }
@@ -112,8 +127,12 @@ class CloudSessionService {
 
             if (error) throw error;
             return (data as CloudSession[]) || [];
-        } catch (error) {
-            console.error('[CloudSessionService] Fetch Error:', error);
+        } catch (error: any) {
+            if (error?.message?.includes('Network request failed')) {
+                console.warn('[CloudSessionService] Fetch: Network unreachable.');
+            } else {
+                console.error('[CloudSessionService] Fetch Error:', error);
+            }
             return [];
         }
     }

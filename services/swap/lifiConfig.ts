@@ -22,7 +22,7 @@ export async function initializeLiFi() {
                     if (!address) throw new Error('No wallet connected');
 
                     console.log(`[LiFi] Requesting WalletClient for chain ${chainId} and address ${address}`);
-                    return await signerController.getWalletClient(chainId || 56, address);
+                    return await signerController.getWalletClient(chainId || 56, address, { skipAuthorize: true });
                 },
                 switchChain: async (chainId: number) => {
                     // In a mobile app with a local signer, "switching chains" 

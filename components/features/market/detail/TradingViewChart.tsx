@@ -2,8 +2,9 @@ import { colors } from '@/constants/colors';
 import { useMarketTrades } from '@/hooks/useMarketTrades';
 import { apiClient, BASE_URL } from '@/services/apiClient';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { WebView } from 'react-native-webview';
+import { TIWILoader } from '@/components/ui/TIWILoader';
 
 const imgArrowDown = "http://localhost:3845/assets/0e836a617eebbb1ad1003c8ec4eee1d931781d9a.svg";
 const timeframes = ['1m', '5m', '15m', '1h', '4h', '1D', 'More'];
@@ -169,7 +170,7 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
                 />
                 {!isChartReady && (
                     <View style={styles.debugOverlay}>
-                        <ActivityIndicator color={colors.primaryCTA} />
+                        <TIWILoader size={80} />
                         <Text style={styles.debugTitle}>LINKING TO TIWI ENGINE...</Text>
                         {debugLogs.map((log, i) => (
                             <Text key={i} style={styles.debugText}>› {log}</Text>

@@ -1,5 +1,6 @@
 import { ProcessingOverlay } from '@/components/ui/ProcessingOverlay';
 import { QRScanner } from '@/components/ui/QRScanner';
+import { TIWILoader } from '@/components/ui/TIWILoader';
 import { NetworkSelectionModal } from '@/components/wallet/NetworkSelectionModal';
 import { colors } from '@/constants/colors';
 import {
@@ -16,7 +17,6 @@ import * as Clipboard from 'expo-clipboard';
 import { useRouter } from 'expo-router';
 import React, { useMemo, useState } from 'react';
 import {
-    ActivityIndicator,
     KeyboardAvoidingView,
     Platform,
     SafeAreaView,
@@ -75,7 +75,7 @@ export default function ImportWalletScreen() {
         setInputText(text);
     };
 
-    const { setSetupPhase } = useSecurityStore();
+    const { setupPhase, setSetupPhase } = useSecurityStore();
 
     const handleContinue = async () => {
         if (!validation.isValid) return;
@@ -100,19 +100,22 @@ export default function ImportWalletScreen() {
             await timer;
 
             addWalletGroup({
-                id: Date.now().toString(),
-                name: 'Wallet 1',
+                id: importedWallet.address.toLowerCase(),
+                name: `Wallet ${useWalletStore.getState().walletGroups.length + 1}`,
                 type: validation.type === 'mnemonic' ? 'mnemonic' : 'privateKey',
                 primaryChain: (selected === 'MULTI' ? 'EVM' : selected) as ChainType,
                 addresses: importedWallet.addresses,
                 source: 'imported'
             });
 
-            // Update setup phase to persist progress
-            setSetupPhase('WALLET_READY');
-
-            // Redirect directly to Security flow
-            router.push('/security' as any);
+            // Update setup phase ONLY if we haven't completed it yet
+            if (setupPhase !== 'COMPLETED') {
+                setSetupPhase('WALLET_READY');
+                router.push('/security' as any);
+            } else {
+                // If already setup, go explicitly to tabs to ensure we hit the dashboard
+                router.replace('/(tabs)' as any);
+            }
         } catch (error) {
             console.error('Import failed', error);
         } finally {
@@ -174,7 +177,7 @@ export default function ImportWalletScreen() {
                     {/* Paste Button */}
                     <TouchableOpacity style={[styles.pasteButton, { marginBottom: 40 }]} onPress={handlePaste}>
                         <Text style={styles.pasteText}>Paste</Text>
-                        <Ionicons name="copy-outline" size={16} color={colors.primaryCTA} />
+                        <Ionicons name="clipboard-outline" size={16} color={colors.primaryCTA} />
                     </TouchableOpacity>
 
                     {/* Footer Button */}
@@ -188,7 +191,7 @@ export default function ImportWalletScreen() {
                             disabled={!validation.isValid || isLoading}
                         >
                             {isLoading ? (
-                                <ActivityIndicator color="#010501" />
+                                <TIWILoader size={40} />
                             ) : (
                                 <Text style={styles.continueButtonText}>Continue</Text>
                             )}

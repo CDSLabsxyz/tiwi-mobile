@@ -1,6 +1,7 @@
 import { colors } from '@/constants/colors';
 import React from 'react';
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { TIWILoader } from '@/components/ui/TIWILoader';
 import type { SwapTabKey } from './SwapTabs';
 
 interface SwapConfirmButtonProps {
@@ -66,7 +67,7 @@ export const SwapConfirmButton: React.FC<SwapConfirmButtonProps> = ({
                 ]}
             >
                 {loading ? (
-                    <ActivityIndicator color={colors.bg} />
+                    <TIWILoader size={40} />
                 ) : (
                     <Text style={styles.buttonText}>
                         {displayLabel}

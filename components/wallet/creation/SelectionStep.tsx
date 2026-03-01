@@ -19,7 +19,21 @@ export default function SelectionStep({ onSelect }: SelectionStepProps) {
                     <Text style={styles.activeStepText}>Select Creation Method</Text>
                 </View>
 
-                <View style={[styles.connectorLine, { backgroundColor: colors.primaryCTA }]} />
+                <View style={[styles.connectorLine, { backgroundColor: '#1F261E' }]} />
+
+                <View style={styles.stepRow}>
+                    <View style={styles.inactiveStepIcon} />
+                    <Text style={styles.inactiveStepText}>Save Seed Phrase</Text>
+                </View>
+
+                <View style={[styles.connectorLine, { backgroundColor: '#1F261E' }]} />
+
+                <View style={styles.stepRow}>
+                    <View style={styles.inactiveStepIcon} />
+                    <Text style={styles.inactiveStepText}>Confirm Seed Phrase</Text>
+                </View>
+
+                <View style={[styles.connectorLine, { backgroundColor: '#1F261E' }]} />
 
                 <View style={styles.stepRow}>
                     <View style={styles.inactiveStepIcon} />
@@ -85,7 +99,7 @@ const styles = StyleSheet.create({
     },
     connectorLine: {
         width: 2,
-        height: 24,
+        height: 16,
         marginLeft: 9,
         marginVertical: 4,
     },

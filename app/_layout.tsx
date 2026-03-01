@@ -7,6 +7,7 @@
 // 1. IMPORT POLYFILLS FIRST (CRITICAL)
 import '@/utils/polyfills';
 
+import { AnimatedSplashScreen } from '@/components/ui/AnimatedSplashScreen';
 import { TransactionToast } from '@/components/ui/TransactionToast';
 import { appKit, wagmiAdapter } from '@/config/AppKitConfig';
 import { useTokenPrefetch } from '@/hooks/useTokenPrefetch';
@@ -155,7 +156,23 @@ export default function RootLayout() {
     resetSecurity
   } = useSecurityStore();
 
-  const isHydrated = isWalletHydrated && isSecurityHydrated;
+  const [isForcedReady, setIsForcedReady] = useState(false);
+  const isHydrated = (isWalletHydrated && isSecurityHydrated) || isForcedReady;
+
+  // Safety: If hydration or init takes more than 5 seconds, forced-initialize
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (!isAppInitialized || !isHydrated) {
+        console.warn('[RootLayout] Boot timeout reached! Forcing app ready.');
+        setIsForcedReady(true);
+        setIsAppInitialized(true);
+        setIsNavigationReady(true);
+        SplashScreen.hideAsync().catch(() => { });
+      }
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [isAppInitialized, isHydrated]);
+
   const isReadyForApp = isAppInitialized && isHydrated && isNavigationReady;
 
   SplashScreen.setOptions({
@@ -167,23 +184,31 @@ export default function RootLayout() {
   // 1. Initialize app state
   useEffect(() => {
     const init = async () => {
+      console.log('[RootLayout] Starting initialization...');
       try {
-        SplashScreen.preventAutoHideAsync()
-        // await AsyncStorage.clear();
-        // await resetSecurity()
+        await SplashScreen.preventAutoHideAsync().catch(() => { });
+
+        // Block only on essential local status checks
         await Promise.all([
-          checkOnboardingStatus(),
-          currencyService.init(),
-          deviceService.registerSession(),
-          initializeLiFi()
-        ]);
+          checkOnboardingStatus().catch(e => console.warn('Onboarding check failed', e)),
+          initializeLiFi().catch(e => console.warn('LiFi init failed', e))
+        ]).catch(e => console.error('Essential init failed', e));
+
+        // Background initializations
+        currencyService.init();
+        deviceService.registerSession();
+
       } catch (e) {
-        console.error('Initialization error', e);
+        console.error('[RootLayout] Initialization error', e);
       } finally {
+        console.log('[RootLayout] Essential steps complete.');
         setIsNavigationReady(true);
         setIsAppInitialized(true);
-        // Hide native splash once our animated splash is ready to take over
-        SplashScreen.hideAsync();
+
+        // Safety timeout to hide native splash
+        setTimeout(() => {
+          SplashScreen.hideAsync().catch(() => { });
+        }, 3000);
       }
     };
     init();
@@ -239,7 +264,10 @@ export default function RootLayout() {
 
     // Step 1: Handle Carousel Onboarding - Always show on fresh launch
     if (!hasSeenOnboardingInSession) {
-      if (!inOnboarding) router.replace('/onboarding' as any);
+      if (!inOnboarding) {
+        console.log('[Guard] Redirecting to onboarding...');
+        router.replace('/onboarding' as any);
+      }
       return;
     }
 
@@ -247,7 +275,7 @@ export default function RootLayout() {
     switch (setupPhase) {
       case 'WELCOME':
         if (!inWelcome && !inWalletFlow) {
-          router.replace('/wallet' as any);
+          router.replace('/welcome' as any);
         }
         break;
 
@@ -259,12 +287,8 @@ export default function RootLayout() {
         break;
 
       case 'SECURITY_READY':
-        // User has passcode but hasn't finished notifications/final step.
-        // Depending on the app flow, we might want to let them continue 
-        // but let's see where they are.
         if (!inSecurity && !inLock && !firstSegment?.includes('(tabs)')) {
-          // If they are not in security and not in tabs, send them back to finish
-          router.replace('/security/biometrics' as any); // Or wherever you want them to resume
+          router.replace('/security/biometrics' as any);
         }
         break;
 
@@ -276,12 +300,12 @@ export default function RootLayout() {
         }
 
         // If they are in setup screens but completed, move to tabs
-        if (inOnboarding || inWelcome || inSecurity || inLock || isRoot) {
+        if ((inOnboarding || inWelcome) && !inWalletFlow) {
           router.replace('/(tabs)' as any);
         }
         break;
     }
-  }, [hasCompletedOnboarding, isConnected, isOnboardingLoading, isNavigationReady, segments, hasPasscode, isLocked, isSetupComplete, setupPhase, isHydrated]);
+  }, [hasSeenOnboardingInSession, hasCompletedOnboarding, isConnected, isOnboardingLoading, isNavigationReady, segments, hasPasscode, isLocked, isSetupComplete, setupPhase, isHydrated]);
 
   // 4. Cloud Session Sync & Kill Switch
   useEffect(() => {
@@ -316,7 +340,15 @@ export default function RootLayout() {
     };
   }, [isConnected, address]);
   const { address: activeAddress, activeChain, walletGroups, } = useWalletStore();
-  // console.log("🚀 ~ RootLayout ~ :", { activeAddress, hasCompletedOnboarding, isConnected, isOnboardingLoading, isNavigationReady, segments, hasPasscode, isLocked, isSetupComplete, setupPhase, isHydrated, activeChain, walletGroups: walletGroups, })
+  console.log("🚀 ~ RootLayout ~ :", {
+    isReadyForApp,
+    isHydrated,
+    isAppInitialized,
+    isNavigationReady,
+    isSplashComplete,
+    setupPhase,
+    segments: Array.from(segments)
+  });
 
 
   return (
@@ -327,12 +359,16 @@ export default function RootLayout() {
             <QueryClientProvider client={queryClient}>
               <AppContent />
               <TransactionToast />
-              {/* {!isSplashComplete && (
+              {!isSplashComplete && (
                 <AnimatedSplashScreen
                   isReady={isReadyForApp}
                   onAnimationComplete={() => setIsSplashComplete(true)}
+                  onLoaded={() => {
+                    // Hide the static native splash screen as soon as the GIF is ready to play
+                    SplashScreen.hideAsync();
+                  }}
                 />
-              )} */}
+              )}
             </QueryClientProvider>
           </AppKitProvider>
         </WagmiProvider>

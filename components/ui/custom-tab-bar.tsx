@@ -10,7 +10,7 @@ const HomeIcon = require('@/assets/home/home-01.svg');
 const MarketIcon = require('@/assets/home/market-analysis.svg');
 const EarnIcon = require('@/assets/home/stake_icon.svg');
 const WalletIcon = require('@/assets/home/wallet-03.svg');
-const MainCompIcon = require('@/assets/home/main comp.svg');
+const MenuSwapGif = require('@/assets/GIF/Menu_swap.gif');
 
 /**
  * Custom Tab Bar - Exact implementation of Figma Design (node-id: 3331:39287)
@@ -114,7 +114,7 @@ export const CustomTabBar: React.FC<BottomTabBarProps> = ({ state, descriptors, 
                 style={[styles.floatingButton, { bottom: insets.bottom + 20 }]}
             >
                 <Image
-                    source={MainCompIcon}
+                    source={MenuSwapGif}
                     style={styles.fullSize}
                     contentFit="contain"
                 />
@@ -199,6 +199,13 @@ const styles = StyleSheet.create({
         height: 72,
         alignItems: 'center',
         justifyContent: 'center',
+        borderRadius: 36,
+        // Soft green glow
+        shadowColor: colors.primaryCTA,
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.8,
+        shadowRadius: 15,
+        elevation: 10,
     },
     fullSize: {
         width: '100%',

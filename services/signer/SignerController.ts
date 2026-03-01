@@ -21,7 +21,7 @@ export class SignerController {
      * Executes a single transaction.
      * Biometric security is handled at the Engine level to ensure consistency.
      */
-    async executeTransaction(tx: TransactionRequest, address: string): Promise<ExecutionResult> {
+    async executeTransaction(tx: TransactionRequest, address: string, options?: { skipAuthorize?: boolean }): Promise<ExecutionResult> {
         const walletStore = useWalletStore.getState();
 
         // 1. Identify Wallet Source
@@ -36,8 +36,8 @@ export class SignerController {
             // 2. Select Engine based on Chain Family
             const engine = tx.chainFamily === 'evm' ? this.evmEngine : this.solanaEngine;
 
-            // 3. Execute (Engine will prompt for biometrics)
-            return await engine.sendTransaction(tx, address);
+            // 3. Execute (Engine will prompt for biometrics unless skipAuthorize is true)
+            return await engine.sendTransaction(tx, address, options);
         } else {
             // 4. Handle External Signer
             try {
@@ -57,9 +57,9 @@ export class SignerController {
      * Provides a viem WalletClient that can be injected into 3rd-party SDKs.
      * The internal account of this client is "securely wrapped" to prompt biometrics.
      */
-    async getWalletClient(chainId: number, address: string) {
+    async getWalletClient(chainId: number, address: string, options?: { skipAuthorize?: boolean }) {
         // We only support EVM WalletClient for now
-        return await this.evmEngine.getWalletClient(chainId, address);
+        return await this.evmEngine.getWalletClient(chainId, address, options);
     }
 }
 

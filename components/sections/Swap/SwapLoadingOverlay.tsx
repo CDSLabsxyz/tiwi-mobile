@@ -1,7 +1,8 @@
 import { colors } from '@/constants/colors';
 import { BlurView } from 'expo-blur';
 import React from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { TIWILoader } from '@/components/ui/TIWILoader';
 
 interface SwapLoadingOverlayProps {
     visible: boolean;
@@ -19,7 +20,7 @@ export const SwapLoadingOverlay: React.FC<SwapLoadingOverlayProps> = ({
     return (
         <View style={styles.container}>
             <BlurView intensity={20} tint="dark" style={styles.blur}>
-                <ActivityIndicator size="large" color={colors.primaryCTA} />
+                <TIWILoader size={150} />
             </BlurView>
         </View>
     );

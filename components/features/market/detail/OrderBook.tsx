@@ -3,7 +3,8 @@ import { useOrderBook } from '@/hooks/useOrderBook';
 import { formatCompactNumber } from '@/utils/formatting';
 import { Image } from 'expo-image';
 import React, { useMemo } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
+import { TIWILoader } from '@/components/ui/TIWILoader';
 import { MarketEmptyState } from './MarketEmptyState';
 
 const imgArrowDown = "http://localhost:3845/assets/0e836a617eebbb1ad1003c8ec4eee1d931781d9a.svg";
@@ -116,7 +117,7 @@ export const OrderBook: React.FC<OrderBookProps> = ({
     if (isLoading && !data && !showEmpty) {
         return (
             <View style={[styles.container, styles.center]}>
-                <ActivityIndicator color={colors.primaryCTA} size="small" />
+                <TIWILoader size={60} />
                 <Text style={styles.loadingText}>Connecting...</Text>
             </View>
         );

@@ -5,13 +5,7 @@ import { Image } from 'expo-image';
 import * as Linking from 'expo-linking';
 import React, { useEffect } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import Animated, {
-    Easing,
-    useAnimatedStyle,
-    useSharedValue,
-    withRepeat,
-    withTiming
-} from 'react-native-reanimated';
+import { TIWILoader } from './TIWILoader';
 
 interface WalletConnectionContentProps {
     wallet: WalletConnectWallet | null;
@@ -26,24 +20,7 @@ export const WalletConnectionContent: React.FC<WalletConnectionContentProps> = (
     onRetry,
     isConnecting
 }) => {
-    // Rotation animation for loader
-    const rotation = useSharedValue(0);
 
-    useEffect(() => {
-        if (isConnecting) {
-            rotation.value = withRepeat(
-                withTiming(360, { duration: 1500, easing: Easing.linear }),
-                -1,
-                false
-            );
-        } else {
-            rotation.value = 0;
-        }
-    }, [isConnecting]);
-
-    const animatedStyle = useAnimatedStyle(() => ({
-        transform: [{ rotate: `${rotation.value}deg` }],
-    }));
 
     if (!wallet) return null;
 
@@ -71,9 +48,9 @@ export const WalletConnectionContent: React.FC<WalletConnectionContentProps> = (
 
                 {/* Animated Loading Ring */}
                 {isConnecting && (
-                    <Animated.View style={[styles.loaderRing, animatedStyle]}>
-                        <View style={styles.loaderArc} />
-                    </Animated.View>
+                    <View style={styles.loaderRing}>
+                        <TIWILoader size={110} />
+                    </View>
                 )}
             </View>
 

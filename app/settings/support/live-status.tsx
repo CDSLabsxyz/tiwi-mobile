@@ -5,7 +5,8 @@ import { apiClient, LiveStatus } from '@/services/apiClient';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import React from 'react';
-import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { TIWILoader } from '@/components/ui/TIWILoader';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 /**
@@ -91,7 +92,7 @@ export default function LiveStatusScreen() {
 
             {isLoading ? (
                 <View style={styles.centerContainer}>
-                    <ActivityIndicator size="large" color={colors.primaryCTA} />
+                    <TIWILoader size={100} />
                 </View>
             ) : isError ? (
                 <View style={styles.centerContainer}>

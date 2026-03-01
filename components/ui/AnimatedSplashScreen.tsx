@@ -1,60 +1,49 @@
 import { Image } from 'expo-image';
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Dimensions, Easing, StyleSheet } from 'react-native';
+import { Animated, Dimensions, StyleSheet } from 'react-native';
 
-const TiwiLogo = require('@/assets/logo/full logo.svg');
+const IntroGif = require('../../assets/GIF/intro_animation.gif');
 const { width, height } = Dimensions.get('window');
+
+// Optimized duration for much faster startup
+const GIF_DURATION = 1800;
 
 interface AnimatedSplashScreenProps {
     isReady: boolean;
     onAnimationComplete: () => void;
+    onLoaded?: () => void;
 }
 
-export const AnimatedSplashScreen: React.FC<AnimatedSplashScreenProps> = ({ isReady, onAnimationComplete }) => {
-    const fadeAnim = useRef(new Animated.Value(0)).current;
-    const scaleAnim = useRef(new Animated.Value(0.85)).current;
+export const AnimatedSplashScreen: React.FC<AnimatedSplashScreenProps> = ({ isReady, onAnimationComplete, onLoaded }) => {
+    const fadeAnim = useRef(new Animated.Value(1)).current;
     const [animationFinished, setAnimationFinished] = useState(false);
+    const [gifDurationPassed, setGifDurationPassed] = useState(false);
 
     useEffect(() => {
-        // Entrance Animation
-        Animated.parallel([
-            Animated.timing(fadeAnim, {
-                toValue: 1,
-                duration: 800,
-                easing: Easing.out(Easing.back(1.5)),
-                useNativeDriver: true,
-            }),
-            Animated.timing(scaleAnim, {
-                toValue: 1,
-                duration: 1000,
-                easing: Easing.out(Easing.back(1.5)),
-                useNativeDriver: true,
-            })
-        ]).start();
+        // Wait for the full GIF duration (1.8s) before allowing exit
+        const maxTimer = setTimeout(() => {
+            setGifDurationPassed(true);
+        }, GIF_DURATION);
+
+        return () => {
+            clearTimeout(maxTimer);
+        };
     }, []);
 
     useEffect(() => {
-        if (isReady && !animationFinished) {
-            // Exit Animation: Zoom in and fade out
-            Animated.parallel([
-                Animated.timing(fadeAnim, {
-                    toValue: 0,
-                    duration: 600,
-                    easing: Easing.in(Easing.quad),
-                    useNativeDriver: true,
-                }),
-                Animated.timing(scaleAnim, {
-                    toValue: 2.5, // Zoom into the screen
-                    duration: 700,
-                    easing: Easing.in(Easing.quad),
-                    useNativeDriver: true,
-                })
-            ]).start(() => {
+        // We only exit when BOTH the GIF has played (1.8s) AND the app is ready.
+        if (isReady && gifDurationPassed) {
+            // Exit Animation: Fade out
+            Animated.timing(fadeAnim, {
+                toValue: 0,
+                duration: 400,
+                useNativeDriver: true,
+            }).start(() => {
                 setAnimationFinished(true);
                 onAnimationComplete();
             });
         }
-    }, [isReady]);
+    }, [isReady, gifDurationPassed]);
 
     if (animationFinished) return null;
 
@@ -65,13 +54,19 @@ export const AnimatedSplashScreen: React.FC<AnimatedSplashScreenProps> = ({ isRe
                 { opacity: fadeAnim }
             ]}
         >
-            <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
-                <Image
-                    source={TiwiLogo}
-                    style={styles.logo}
-                    contentFit="contain"
-                />
-            </Animated.View>
+            <Image
+                source={IntroGif}
+                style={styles.logo}
+                contentFit="contain"
+                onLoad={() => {
+                    // Notify parent that the GIF is loaded and ready to be seen
+                    if (onLoaded) onLoaded();
+                }}
+                onError={(e) => {
+                    console.error("SplashScreen GIF Error:", e);
+                    if (onLoaded) onLoaded(); // Still notify so native splash hides
+                }}
+            />
         </Animated.View>
     );
 };
@@ -82,10 +77,10 @@ const styles = StyleSheet.create({
         backgroundColor: '#000000',
         justifyContent: 'center',
         alignItems: 'center',
-        zIndex: 99999,
+        zIndex: 999999,
     },
     logo: {
-        width: width * 0.5, // 50% of screen width (much larger)
-        height: width * 0.5,
+        width: width,
+        height: height,
     },
 });

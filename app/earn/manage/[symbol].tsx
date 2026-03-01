@@ -21,17 +21,12 @@ import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    NativeSyntheticEvent,
-    ScrollView,
     StyleSheet,
     Text,
-    TextInput,
-    TextInputSelectionChangeEventData,
     TouchableOpacity,
     View
 } from 'react-native';
+import { TIWILoader } from '@/components/ui/TIWILoader';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { parseUnits } from 'viem';
 import { useAccount } from 'wagmi';
@@ -449,7 +444,7 @@ export default function ManageStakeScreen() {
                     activeOpacity={0.9}
                 >
                     {isTransactionPending ? (
-                        <ActivityIndicator color="#000000" size="small" />
+                        <TIWILoader size={40} />
                     ) : (
                         <Text style={styles.confirmButtonText}>
                             {activeTab === 'Boost' ? (needsApproval ? 'Approve Token' : 'Boost Stake') : 'Unstake Now'}

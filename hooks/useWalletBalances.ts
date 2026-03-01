@@ -1,91 +1,70 @@
-import { apiClient, APIToken } from '@/services/apiClient';
+import { moralisService } from '@/services/moralisService';
 import { useWalletStore } from '@/store/walletStore';
 import { useQuery } from '@tanstack/react-query';
 
+// Major chains supported by Moralis/Tiwi
+const SUPPORTED_CHAIN_IDS = [1, 56, 137, 42161, 8453, 10]; // ETH, BSC, Polygon, Arb, Base, OP
+
 export function useWalletBalances() {
-    const { activeAddress, activeChain, walletGroups } = useWalletStore();
+    const { activeAddress, _hasHydrated } = useWalletStore();
 
-    // Safety check for initialization
-    const identities = walletGroups || [];
-
-    // Logic: If we have an active address, we fetch balance for it.
-    // In Phase 3, we want to optimize and typically only fetch the active identity's data
-    // to save Moralis/RPC units.
     const queryAddresses = activeAddress ? [activeAddress] : [];
+    console.log(`[useWalletBalances] Hook called. Hydrated: ${_hasHydrated}, Active: ${activeAddress}`);
 
     return useQuery({
-        queryKey: ['walletBalances', queryAddresses, activeChain],
+        queryKey: ['walletBalances', queryAddresses, SUPPORTED_CHAIN_IDS],
         queryFn: async () => {
+            if (!_hasHydrated) return { tokens: [], totalNetWorthUsd: '0.00', portfolioChange: { amount: '0.00', percent: '0.00' } };
             if (queryAddresses.length === 0) {
+                console.log('[useWalletBalances] No address to query');
                 return { tokens: [], totalNetWorthUsd: '0.00', portfolioChange: { amount: '0.00', percent: '0.00' } };
             }
 
             try {
-                // Currently optimized to fetch only the active address balance
-                // This drastically reduces API usage compared to fetching all connected wallets
-                const results = await Promise.all(
-                    queryAddresses.map(address => apiClient.getWalletBalances(address))
-                );
+                const address = queryAddresses[0];
+                console.log(`[useWalletBalances] Starting Moralis scan for: ${address}`);
 
-                // Aggregate tokens and calculate total USD value
-                const allTokens: APIToken[] = [];
+                // Fetch from Moralis directly
+                const allTokens = await moralisService.getWalletBalances(address, SUPPORTED_CHAIN_IDS);
+                console.log(`[useWalletBalances] Moralis returned ${allTokens.length} tokens for ${address}`);
+
                 let totalUSD = 0;
                 let yesterdayTotalUSD = 0;
 
-                results.forEach(res => {
-                    // Filter verified tokens only
-                    const verifiedBalances = res.balances.filter(token => token.verified !== false);
-                    allTokens.push(...verifiedBalances);
+                allTokens.forEach(token => {
+                    const currentVal = parseFloat(token.usdValue || '0');
+                    totalUSD += currentVal;
+                    console.log(` - Token: ${token.symbol}, Value: ${currentVal}`);
 
-                    verifiedBalances.forEach(token => {
-                        const currentVal = parseFloat(token.usdValue || '0');
-                        totalUSD += currentVal;
-
-                        const changePercent = parseFloat(token.priceChange24h || '0');
-                        const historicalVal = currentVal / (1 + (changePercent / 100));
-                        yesterdayTotalUSD += historicalVal;
-                    });
+                    const changePercent = parseFloat(token.priceChange24h || '0');
+                    const historicalVal = currentVal / (1 + (changePercent / 100));
+                    yesterdayTotalUSD += historicalVal;
                 });
 
-                const changeAmount = totalUSD - yesterdayTotalUSD;
-                const changePercent = yesterdayTotalUSD > 0 ? (changeAmount / yesterdayTotalUSD) * 100 : 0;
+                console.log(`[useWalletBalances] Final Total USD: ${totalUSD}`);
 
-                const consolidatedTokens = allTokens.reduce((acc, token) => {
-                    const key = `${token.chainId}-${token.address}`;
-                    if (!acc[key]) {
-                        const tokenClone = { ...token };
-                        const rawBalance = BigInt(token.balance || '0');
-                        const divisor = BigInt(10 ** token.decimals);
-                        const actualBalance = Number(rawBalance) / Number(divisor);
-                        tokenClone.balanceFormatted = actualBalance.toString();
-                        acc[key] = tokenClone;
-                    } else {
-                        const currentRaw = BigInt(acc[key].balance || '0');
-                        const newRaw = BigInt(token.balance || '0');
-                        const totalRaw = currentRaw + newRaw;
-                        acc[key].balance = totalRaw.toString();
-                        acc[key].usdValue = (parseFloat(acc[key].usdValue || '0') + parseFloat(token.usdValue || '0')).toString();
-                        const divisor = BigInt(10 ** token.decimals);
-                        const actualBalance = Number(totalRaw) / Number(divisor);
-                        acc[key].balanceFormatted = actualBalance.toString();
-                    }
-                    return acc;
-                }, {} as Record<string, APIToken>);
+                // Filter the UI list to only show VERIFIED tokens, but the total balance includes ALL
+                const filteredTokens = allTokens.filter(t => t.verified === true);
+                console.log(`[useWalletBalances] Filtered to ${filteredTokens.length} verified tokens for UI`);
 
-                return {
-                    tokens: Object.values(consolidatedTokens),
+                const finalResult = {
+                    tokens: filteredTokens.sort((a, b) => parseFloat(b.usdValue || '0') - parseFloat(a.usdValue || '0')),
                     totalNetWorthUsd: totalUSD.toFixed(2),
                     portfolioChange: {
-                        amount: changeAmount.toFixed(2),
-                        percent: changePercent.toFixed(2),
+                        amount: (totalUSD - yesterdayTotalUSD).toFixed(2),
+                        percent: yesterdayTotalUSD > 0 ? (((totalUSD - yesterdayTotalUSD) / yesterdayTotalUSD) * 100).toFixed(2) : '0.00',
                     }
                 };
+                console.log('[useWalletBalances] Returning total balance:', finalResult.totalNetWorthUsd);
+                return finalResult;
             } catch (error) {
-                console.error('Failed to fetch wallet balances:', error);
+                console.error('[useWalletBalances] Moralis fetch failed:', error);
                 return { tokens: [], totalNetWorthUsd: '0.00', portfolioChange: { amount: '0.00', percent: '0.00' } };
             }
         },
-        enabled: queryAddresses.length > 0,
-        staleTime: 1000 * 60 * 2, // Reduced to 2 minutes for more "real-time" feel in Phase 3
+        enabled: _hasHydrated && queryAddresses.length > 0,
+        refetchOnMount: true,
+        refetchOnWindowFocus: true,
+        staleTime: 1000 * 60, // 1 min for Moralis to save on API calls
     });
 }

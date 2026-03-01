@@ -7,7 +7,8 @@ import { getColorFromSeed, } from '@/utils/formatting';
 import { Ionicons } from '@expo/vector-icons';
 import { Image as ExpoImage } from 'expo-image';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Dimensions, FlatList, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Dimensions, FlatList, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { TIWILoader } from '@/components/ui/TIWILoader';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { SelectionBottomSheet } from './SelectionBottomSheet';
 
@@ -229,7 +230,7 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
         if (isLoadingChains) {
             return (
                 <View style={styles.loaderContainer}>
-                    <ActivityIndicator color={colors.primaryCTA} />
+                    <TIWILoader size={100} />
                 </View>
             );
         }

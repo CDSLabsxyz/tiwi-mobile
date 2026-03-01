@@ -11,7 +11,8 @@ import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Sharing from 'expo-sharing';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, BackHandler, Platform, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Alert, BackHandler, Platform, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { TIWILoader } from '@/components/ui/TIWILoader';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const ChevronLeftIcon = require('../../../../assets/swap/arrow-left-02.svg');
@@ -154,7 +155,7 @@ export default function ExportPrivateKeyDisplayScreen() {
             {/* Content */}
             <View style={styles.content}>
                 {isLoading ? (
-                    <ActivityIndicator size="large" color={colors.primaryCTA} style={{ marginTop: 50 }} />
+                    <TIWILoader size={100} style={{ marginTop: 50 }} />
                 ) : (
                     <>
                         {/* Private Key Display Box */}

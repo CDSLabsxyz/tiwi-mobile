@@ -1,5 +1,4 @@
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
-import { colors } from '@/constants/colors';
 import { useSecurityStore } from '@/store/securityStore';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
@@ -232,7 +231,7 @@ export default function AutoLockTimerScreen() {
                     {/* Bottom Sheet */}
                     <GestureDetector gesture={panGesture}>
                         <Animated.View style={[styles.bottomSheet, sheetStyle, { paddingBottom: (bottom || 24) + 24 }]}>
-                            <Pressable onPress={(e) => e.stopPropagation()} style={styles.sheetContent}>
+                            <Pressable onPress={() => { }} style={styles.sheetContent}>
                                 <View style={styles.sheetHandle} />
                                 <View style={styles.radioList}>
                                     {TIMER_OPTIONS.map((option) => (

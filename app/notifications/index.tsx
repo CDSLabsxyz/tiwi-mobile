@@ -8,7 +8,6 @@ import { formatDistanceToNow } from 'date-fns';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
-    ActivityIndicator,
     FlatList,
     RefreshControl,
     StyleSheet,
@@ -16,6 +15,7 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
+import { TIWILoader } from '@/components/ui/TIWILoader';
 
 const CATEGORIES: { label: string; value: ActivityType | 'all' | 'announcement' }[] = [
     { label: 'All', value: 'all' },
@@ -204,7 +204,7 @@ export default function NotificationsScreen() {
             {/* List */}
             {loading ? (
                 <View style={styles.centerContainer}>
-                    <ActivityIndicator color={colors.primaryCTA} />
+                    <TIWILoader size={100} />
                 </View>
             ) : filteredList.length === 0 ? (
                 <View style={styles.centerContainer}>

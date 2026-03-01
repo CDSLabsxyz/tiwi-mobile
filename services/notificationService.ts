@@ -62,8 +62,12 @@ class NotificationService {
                     lightColor: '#FF231F7C',
                 });
             }
-        } catch (error) {
-            console.error('[NotificationService] Error registering for push notifications:', error);
+        } catch (error: any) {
+            if (error?.message?.includes('Network request failed')) {
+                console.warn('[NotificationService] Register: Network unreachable.');
+            } else {
+                console.error('[NotificationService] Error registering for push notifications:', error);
+            }
         }
 
         return token;
@@ -87,11 +91,12 @@ class NotificationService {
                     onConflict: 'push_token'
                 });
 
-            if (error) {
-                console.error('[NotificationService] Error saving token to backend:', error);
+        } catch (error: any) {
+            if (error?.message?.includes('Network request failed')) {
+                console.warn('[NotificationService] SaveToken: Network unreachable.');
+            } else {
+                console.error('[NotificationService] Exception saving token to backend:', error);
             }
-        } catch (error) {
-            console.error('[NotificationService] Exception saving token to backend:', error);
         }
     }
 
@@ -133,11 +138,12 @@ class NotificationService {
                 .update({ is_active: false })
                 .eq('push_token', token);
 
-            if (error) {
-                console.error('[NotificationService] Error deactivating token:', error);
+        } catch (error: any) {
+            if (error?.message?.includes('Network request failed')) {
+                console.warn('[NotificationService] Deactivate: Network unreachable.');
+            } else {
+                console.error('[NotificationService] Exception deactivating token:', error);
             }
-        } catch (error) {
-            console.error('[NotificationService] Exception deactivating token:', error);
         }
     }
 }

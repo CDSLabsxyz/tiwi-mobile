@@ -7,7 +7,6 @@ import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import React, { useMemo, useState } from 'react';
 import {
-    ActivityIndicator,
     FlatList,
     LayoutAnimation,
     Platform,
@@ -18,6 +17,7 @@ import {
     UIManager,
     View,
 } from 'react-native';
+import { TIWILoader } from '@/components/ui/TIWILoader';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 /* 
@@ -173,7 +173,7 @@ export default function FaqsScreen() {
 
                 {isLoading && !data ? (
                     <View style={styles.loaderContainer}>
-                        <ActivityIndicator color={colors.primaryCTA} size="large" />
+                        <TIWILoader size={100} />
                     </View>
                 ) : (
                     <FlatList

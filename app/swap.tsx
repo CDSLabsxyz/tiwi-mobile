@@ -1,5 +1,6 @@
 import {
     ChainOption,
+    ChainSelectSheet,
     ChainSelectorCard,
     ExpiresSection,
     LimitAssetSheet,
@@ -9,6 +10,7 @@ import {
     SwapDirectionButton,
     SwapHeader,
     SwapLoadingOverlay,
+    SwapSettingsSheet,
     SwapSuccessModal,
     SwapTabs,
     SwapTokenCard,
@@ -81,6 +83,14 @@ export default function SwapScreen() {
         setWhenPrice,
         expiresOption,
         setExpiresOption,
+        slippage,
+        setSlippage,
+        useRelayer,
+        setUseRelayer,
+        isChainSheetVisible,
+        openChainSheet,
+        closeChainSheet,
+        chainSheetTarget,
     } = useSwapStore();
 
     const [fromFiatAmount, setFromFiatAmount] = useState('$0.00');
@@ -88,7 +98,11 @@ export default function SwapScreen() {
     const { currency, region } = useLocaleStore();
 
     // UI state
-    const [isWalletModalVisible, setIsWalletModalVisible] = useState(false);
+    const {
+        isWalletModalVisible: isGlobalWalletModalVisible,
+        setWalletModalVisible: setGlobalWalletModalVisible
+    } = useWalletStore();
+    const [isSettingsSheetVisible, setIsSettingsSheetVisible] = useState(false);
     const [assetSheetTarget, setAssetSheetTarget] = useState<'from' | 'to' | null>(null);
     const [assetSheetInitialStep, setAssetSheetInitialStep] = useState<'chains' | 'tokens'>('chains');
     const [isLimitAssetSheetVisible, setIsLimitAssetSheetVisible] = useState(false);
@@ -228,6 +242,22 @@ export default function SwapScreen() {
         handleCloseAssetSheet();
     };
 
+    const handleChainOptionSelect = (option: any) => {
+        const chain: ChainOption = {
+            id: option.id,
+            name: option.name,
+            icon: option.icon,
+        };
+
+        if (chainSheetTarget === 'from') {
+            setFromChain(chain);
+        } else if (chainSheetTarget === 'to') {
+            setToChain(chain);
+        }
+        setSwapQuote(null);
+        closeChainSheet();
+    };
+
     const handleLimitAssetSelect = (target: 'from' | 'to') => {
         setWhenPriceTarget(target);
         setIsLimitAssetSheetVisible(false);
@@ -255,7 +285,7 @@ export default function SwapScreen() {
             setIsStale(false); // Reset stale on manual change
         }
         try {
-            const fetchedQuote = await fetchSwapQuote(fromAmount, fromToken, toToken, address || '', address || '');
+            const fetchedQuote = await fetchSwapQuote(fromAmount, fromToken, toToken, address || '', address || '', slippage);
 
             if (fetchedQuote) {
                 setSwapQuote(fetchedQuote);
@@ -408,11 +438,23 @@ export default function SwapScreen() {
 
             <View style={styles.flex1}>
                 <WalletModal
-                    visible={isWalletModalVisible}
-                    onClose={() => setIsWalletModalVisible(false)}
-                    onHistoryPress={() => { setIsWalletModalVisible(false); router.push('/wallet' as any); }}
-                    onSettingsPress={() => { setIsWalletModalVisible(false); router.push('/settings' as any); }}
-                    onDisconnectPress={() => { setIsWalletModalVisible(false); }}
+                    visible={isGlobalWalletModalVisible}
+                    onClose={() => setGlobalWalletModalVisible(false)}
+                    onHistoryPress={() => { setGlobalWalletModalVisible(false); router.push('/wallet' as any); }}
+                    onSettingsPress={() => { setGlobalWalletModalVisible(false); router.push('/settings' as any); }}
+                    onDisconnectPress={() => { setGlobalWalletModalVisible(false); }}
+                />
+
+                <SwapSettingsSheet
+                    visible={isSettingsSheetVisible}
+                    onClose={() => setIsSettingsSheetVisible(false)}
+                />
+
+                <ChainSelectSheet
+                    visible={isChainSheetVisible}
+                    selectedChainId={chainSheetTarget === 'from' ? fromChain?.id : toChain?.id}
+                    onSelect={handleChainOptionSelect}
+                    onClose={closeChainSheet}
                 />
 
                 <UnifiedAssetSelectSheet
@@ -459,7 +501,10 @@ export default function SwapScreen() {
                     ]}
                     showsVerticalScrollIndicator={false}
                 >
-                    <SwapHeader onWalletPress={() => setIsWalletModalVisible(true)} />
+                    <SwapHeader
+                        onWalletPress={() => setGlobalWalletModalVisible(true)}
+                        onSettingsPress={() => setIsSettingsSheetVisible(true)}
+                    />
 
                     <View style={styles.contentPadding}>
                         <SwapTabs activeTab={activeTab} onChange={setActiveTab} />
@@ -469,7 +514,7 @@ export default function SwapScreen() {
                         <ChainSelectorCard
                             chainName={fromChain?.name || 'Select Chain'}
                             chainIcon={fromChain?.icon || require('@/assets/home/chains/ethereum.svg')}
-                            onPress={() => handleOpenAssetSheet('from', 'chains')}
+                            onPress={() => openChainSheet('from')}
                         />
 
                         <View style={styles.sectionLabelWrapper}>
@@ -534,7 +579,7 @@ export default function SwapScreen() {
 
                         <SwapDetailsCard
                             gasFee={swapQuote?.gasFee}
-                            slippageTolerance={`${swapQuote?.slippage || 0}%`}
+                            slippageTolerance={`${swapQuote?.slippage || slippage}%`}
                             twcFee={swapQuote?.twcFee}
                             source={swapQuote?.source}
                             isLoading={isLoadingQuote}

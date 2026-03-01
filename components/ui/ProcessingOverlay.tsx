@@ -4,16 +4,12 @@ import { Image } from 'expo-image';
 import React, { useEffect, useState } from 'react';
 import { Dimensions, StyleSheet, Text, View } from 'react-native';
 import Animated, {
-    Easing,
     FadeIn,
     FadeInDown,
     FadeOut,
-    FadeOutUp,
-    useSharedValue,
-    withRepeat,
-    withSequence,
-    withTiming
+    FadeOutUp
 } from 'react-native-reanimated';
+import { TIWILoader } from './TIWILoader';
 
 const TiwiLogo = require('@/assets/logo/tiwi-logo.svg');
 const { width, height } = Dimensions.get('window');
@@ -41,26 +37,7 @@ export const ProcessingOverlay: React.FC<ProcessingOverlayProps> = ({
     title = "Processing...",
     subtitles = DEFAULT_SUBTITLES
 }) => {
-    const pulseScale = useSharedValue(1);
     const [subIndex, setSubIndex] = useState(0);
-
-    // Heartbeat Pulse Animation
-    useEffect(() => {
-        if (isVisible) {
-            pulseScale.value = withRepeat(
-                withSequence(
-                    withTiming(1.15, { duration: 800, easing: Easing.out(Easing.quad) }),
-                    withTiming(1, { duration: 1000, easing: Easing.inOut(Easing.quad) })
-                ),
-                -1,
-                false
-            );
-        } else {
-            pulseScale.value = withTiming(1, { duration: 300 });
-        }
-    }, [isVisible]);
-
-    // Subtitle Rotation Cycle
     useEffect(() => {
         if (isVisible && subtitles.length > 1) {
             const timer = setInterval(() => {
@@ -79,19 +56,9 @@ export const ProcessingOverlay: React.FC<ProcessingOverlayProps> = ({
             style={styles.container}
         >
             <View style={styles.topSection}>
-                <Animated.View
-                    style={[
-                        styles.logoWrapper,
-                        { transform: [{ scale: pulseScale }] }
-                    ]}
-                >
-                    <Image
-                        source={TiwiLogo}
-                        style={styles.logo}
-                        tintColor={colors.primaryCTA}
-                        contentFit="contain"
-                    />
-                </Animated.View>
+                <View style={styles.logoWrapper}>
+                    <TIWILoader size={200} />
+                </View>
             </View>
 
             <View style={styles.bottomSection}>

@@ -19,8 +19,6 @@ import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
     ScrollView,
     StyleSheet,
     Text,
@@ -28,6 +26,7 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
+import { TIWILoader } from '@/components/ui/TIWILoader';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { parseUnits } from 'viem';
 import { useAccount } from 'wagmi';
@@ -415,7 +414,7 @@ export default function StakeScreen() {
                     activeOpacity={0.9}
                 >
                     {isTransactionPending ? (
-                        <ActivityIndicator color={colors.bg} size="small" />
+                        <TIWILoader size={40} />
                     ) : (
                         <Text style={styles.confirmButtonText}>
                             {needsApproval ? 'Approve Token' : 'Stake Now'}

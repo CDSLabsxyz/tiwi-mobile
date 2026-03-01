@@ -6,7 +6,8 @@ import { Feather } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { TIWILoader } from '@/components/ui/TIWILoader';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const NotificationIcon = require('@/assets/security/notification.svg');
@@ -87,7 +88,7 @@ export default function NotificationsScreen() {
                     disabled={loading}
                 >
                     {loading ? (
-                        <ActivityIndicator color="#000000" />
+                        <TIWILoader size={40} />
                     ) : (
                         <Text style={styles.primaryButtonText}>Enable Notifications</Text>
                     )}

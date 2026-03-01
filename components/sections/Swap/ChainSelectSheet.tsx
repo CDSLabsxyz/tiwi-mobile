@@ -2,8 +2,9 @@ import { colors } from '@/constants/colors';
 import { useChains } from '@/hooks/useChains';
 import { Image } from 'expo-image';
 import React from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SelectionBottomSheet } from './SelectionBottomSheet';
+import { TIWILoader } from '@/components/ui/TIWILoader';
 
 const CheckmarkIcon = require('@/assets/swap/checkmark-circle-01.svg');
 
@@ -47,7 +48,7 @@ export const ChainSelectSheet: React.FC<ChainSelectSheetProps> = ({
         >
             {isLoading ? (
                 <View style={styles.loaderContainer}>
-                    <ActivityIndicator color={colors.primaryCTA} />
+                    <TIWILoader size={60} />
                 </View>
             ) : (
                 <ScrollView

@@ -45,8 +45,12 @@ class AdminNotificationService {
                 notifications: (data.notifications as AdminNotification[]) || [],
                 unreadCount: data.unreadCount || 0
             };
-        } catch (error) {
-            console.error('[AdminNotificationService] Exception fetching via API:', error);
+        } catch (error: any) {
+            if (error?.message?.includes('Network request failed')) {
+                console.warn('[AdminNotificationService] Fetch: Network unreachable.');
+            } else {
+                console.error('[AdminNotificationService] Exception fetching via API:', error);
+            }
             return { notifications: [], unreadCount: 0 };
         }
     }
@@ -75,8 +79,12 @@ class AdminNotificationService {
             if (!response.ok) {
                 console.warn('[AdminNotificationService] Mark viewed failed:', response.status);
             }
-        } catch (error) {
-            console.error('[AdminNotificationService] Exception marking viewed via API:', error);
+        } catch (error: any) {
+            if (error?.message?.includes('Network request failed')) {
+                console.warn('[AdminNotificationService] MarkRead: Network unreachable.');
+            } else {
+                console.error('[AdminNotificationService] Exception marking viewed via API:', error);
+            }
         }
     }
 }

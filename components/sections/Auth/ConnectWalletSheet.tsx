@@ -21,7 +21,8 @@ import { useSecurityStore } from '@/store/securityStore';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { FlatList, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { TIWILoader } from '@/components/ui/TIWILoader';
 import { SelectionBottomSheet } from '../Swap';
 
 // Extract WalletItem to a memoized component for better performance with large lists
@@ -57,7 +58,7 @@ const WalletItem = React.memo(({
 
             <View style={styles.iconContainer}>
                 {isConnecting ? (
-                    <ActivityIndicator size="small" color={colors.primaryCTA} />
+                    <TIWILoader size={24} />
                 ) : (
                     <Image
                         source={ChevronRightIcon}

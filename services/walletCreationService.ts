@@ -33,9 +33,6 @@ const MNEMONIC_PREFIX = 'tiwi_wallet_mnem_';
 export const DERIVATION_PATHS: Record<ChainType, string> = {
     EVM: "m/44'/60'/0'/0/0",
     SOLANA: "m/44'/501'/0'/0'",
-    TRON: "m/44'/195'/0'/0/0",
-    SUI: "m/44'/784'/0'/0'/0'",
-    TON: "m/44'/607'/0'/0'/0'",
 };
 
 /**
@@ -75,16 +72,6 @@ export function deriveMultiChainAddressesFromMnemonic(mnemonic: string): Record<
     const seed = mnemonicToSeedSync(mnemonic);
     const solanaKeypair = Keypair.fromSeed(seed.slice(0, 32)); // Standard Solana derivation from seed
     addresses.SOLANA = solanaKeypair.publicKey.toBase58();
-
-    // 3. TRON
-    // Tron uses same curve as EVM, we can derive the same private key
-    // For now, we store the same hex address or implement Tron Base58 later
-    // TRON address derivation logic usually involves public key -> Keccak256 -> Base58Check
-    addresses.TRON = ethAccount.address; // Placeholder: In a full implementation, convert ETH address to Tron format
-
-    // 4. SUI & TON (Placeholders for now, using ETH address as identifier or deriving raw hex)
-    addresses.SUI = ethAccount.address;
-    addresses.TON = ethAccount.address;
 
     return addresses;
 }
@@ -188,24 +175,20 @@ export function getCompatibleChains(input: string): ChainType[] {
 
     // 1. Check if it's a mnemonic
     if (validateMnemonic(text)) {
-        return ['EVM', 'SOLANA', 'TRON', 'SUI', 'TON'];
+        return ['EVM', 'SOLANA'];
     }
 
     const compatible: ChainType[] = [];
 
-    // 2. Check for EVM/TRON (64-char Hex)
+    // 2. Check for EVM (64-char Hex)
     if (validatePrivateKey(text, 'EVM')) {
         compatible.push('EVM');
-        compatible.push('TRON');
     }
 
     // 3. Check for Solana (Base58)
     if (validatePrivateKey(text, 'SOLANA')) {
         compatible.push('SOLANA');
     }
-
-    // 4. Check for TON/SUI (Placeholders for now, usually Base64 or specific lengths)
-    // For now we use EVM validation as fallback or specific checks if available
 
     return compatible;
 }

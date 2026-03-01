@@ -71,6 +71,11 @@ interface SwapState {
   swapQuote: SwapQuote | null;
   toFiatAmount: string;
 
+  // Settings state
+  slippage: number;
+  useRelayer: boolean;
+  gasPaymentToken: TokenOption | null;
+
   // Actions - Form
   setActiveTab: (tab: SwapTabKey) => void;
   setFromAmount: (amount: string) => void;
@@ -94,6 +99,11 @@ interface SwapState {
   // Actions - Quote
   setSwapQuote: (quote: SwapQuote | null) => void;
   setToFiatAmount: (amount: string) => void;
+
+  // Actions - Settings
+  setSlippage: (slippage: number) => void;
+  setUseRelayer: (useRelayer: boolean) => void;
+  setGasPaymentToken: (token: TokenOption | null) => void;
 
   // Actions - Complex operations
   swapDirection: () => void;
@@ -126,6 +136,11 @@ export const useSwapStore = create<SwapState>((set, get) => ({
   swapQuote: null,
   toFiatAmount: "$0",
 
+  // Settings implementation
+  slippage: 0.5,
+  useRelayer: false,
+  gasPaymentToken: null,
+
   // Actions - Form
   setActiveTab: (tab) => set({ activeTab: tab }),
   setFromAmount: (amount) => set({ fromAmount: amount }),
@@ -157,6 +172,11 @@ export const useSwapStore = create<SwapState>((set, get) => ({
   setSwapQuote: (quote) => set({ swapQuote: quote }),
   setToFiatAmount: (amount) => set({ toFiatAmount: amount }),
 
+  // Actions - Settings implementation
+  setSlippage: (slippage) => set({ slippage }),
+  setUseRelayer: (useRelayer) => set({ useRelayer }),
+  setGasPaymentToken: (token) => set({ gasPaymentToken: token }),
+
   // Actions - Complex operations
   swapDirection: () => {
     const state = get();
@@ -181,6 +201,9 @@ export const useSwapStore = create<SwapState>((set, get) => ({
     expiresOption: "never",
     swapQuote: null,
     toFiatAmount: "$0",
+    slippage: 0.5,
+    useRelayer: false,
+    gasPaymentToken: null,
   }),
 
   // Computed selectors

@@ -71,7 +71,7 @@ export const Header: React.FC<HeaderProps> = ({
                     activeOpacity={disableWalletModal ? 1 : 0.7}
                 >
                     <Text style={styles.walletText}>
-                        {displayAddress}
+                        {fullAddress ? displayAddress : 'Connect Wallet'}
                     </Text>
                     {!disableWalletModal && (
                         <Image

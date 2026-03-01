@@ -1,5 +1,7 @@
 import { ProcessingOverlay } from '@/components/ui/ProcessingOverlay';
 import FinalizeStep from '@/components/wallet/creation/FinalizeStep';
+import SeedConfirmStep from '@/components/wallet/creation/SeedConfirmStep';
+import SeedDisplayStep from '@/components/wallet/creation/SeedDisplayStep';
 import SelectionStep from '@/components/wallet/creation/SelectionStep';
 import { colors } from '@/constants/colors';
 import { CreatedWallet, generateNewWallet } from '@/services/walletCreationService';
@@ -11,7 +13,7 @@ import React, { useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-type CreateStep = 'selection' | 'finalize';
+type CreateStep = 'selection' | 'display_seed' | 'confirm_seed' | 'finalize';
 
 export default function CreateWalletScreen() {
     const router = useRouter();
@@ -19,40 +21,37 @@ export default function CreateWalletScreen() {
     const [wallet, setWallet] = useState<CreatedWallet | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const { addWalletGroup } = useWalletStore();
+    const { setSetupPhase } = useSecurityStore();
 
     const handleBack = () => {
         if (step === 'selection') {
             router.back();
-        } else {
+        } else if (step === 'display_seed') {
             setStep('selection');
+            setWallet(null);
+        } else if (step === 'confirm_seed') {
+            setStep('display_seed');
+        } else if (step === 'finalize') {
+            // Once in finalize, the wallet is written. Prevent going back to steps.
+            router.push('/security' as any);
         }
     };
 
     const handleSelectMethod = async () => {
         setIsLoading(true);
-
         // Allow one frame for the overlay to mount before starting heavy generation
         await new Promise(resolve => setTimeout(resolve, 50));
+        // Artificial delay for premium high-fidelity feel
+        const timer = new Promise(resolve => setTimeout(resolve, 2000));
 
-        // Artificial delay for premium high-fidelity feel (3s)
-        const timer = new Promise(resolve => setTimeout(resolve, 3000));
         try {
-            // 1. Generate new wallet
+            // 1. Generate new wallet in memory
             const newWallet = generateNewWallet();
-
-            // 2. Derive & Save Securely (Address, PK, Mnemonic)
-            const { derivePrivateKeyFromMnemonic, saveSecureWallet, saveSecureMnemonic } = await import('@/services/walletCreationService');
-            const privateKey = `0x${derivePrivateKeyFromMnemonic(newWallet.mnemonic)}`;
-
-            await saveSecureWallet(newWallet.address, privateKey);
-            await saveSecureMnemonic(newWallet.address, newWallet.mnemonic);
-
-            // Ensure we wait for the timer
             await timer;
 
-            // 3. Set wallet state and move to finalize
+            // 2. Set wallet state and proceed to display seed
             setWallet(newWallet);
-            setStep('finalize');
+            setStep('display_seed');
         } catch (error) {
             console.error('Failed to create wallet:', error);
         } finally {
@@ -60,31 +59,61 @@ export default function CreateWalletScreen() {
         }
     };
 
-    const { setSetupPhase } = useSecurityStore();
+    const handleConfirmSeed = async () => {
+        if (!wallet) return;
+        setIsLoading(true);
+
+        try {
+            // 1. Derive & Save Securely (Address, PK, Mnemonic)
+            const { derivePrivateKeyFromMnemonic, saveSecureWallet, saveSecureMnemonic } = await import('@/services/walletCreationService');
+            const privateKey = `0x${derivePrivateKeyFromMnemonic(wallet.mnemonic)}`;
+
+            await saveSecureWallet(wallet.address, privateKey);
+            await saveSecureMnemonic(wallet.address, wallet.mnemonic);
+
+            // 2. Move to finalize
+            setStep('finalize');
+        } catch (error) {
+            console.error('Failed to securely save wallet:', error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
     const handleFinalize = async () => {
         if (wallet) {
+            const { setupPhase, setSetupPhase } = useSecurityStore.getState();
+
             addWalletGroup({
-                id: Date.now().toString(),
-                name: 'Wallet 1',
+                id: wallet.address.toLowerCase(),
+                name: `Wallet ${useWalletStore.getState().walletGroups.length + 1}`,
                 type: 'mnemonic',
                 primaryChain: 'EVM',
                 addresses: wallet.addresses,
                 source: 'internal'
             });
-            // Update setup phase to persist progress
-            setSetupPhase('WALLET_READY');
-            // Redirect directly to Security flow
-            router.push('/security' as any);
+
+            // Update setup phase ONLY if we haven't completed it yet
+            if (setupPhase !== 'COMPLETED') {
+                setSetupPhase('WALLET_READY');
+                router.push('/security' as any);
+            } else {
+                // If already setup, go explicitly to tabs to ensure we hit the dashboard
+                router.replace('/(tabs)' as any);
+            }
         }
     };
 
     return (
         <SafeAreaView style={styles.container}>
             <View style={styles.header}>
-                <TouchableOpacity onPress={handleBack} style={styles.backButton}>
-                    <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
-                </TouchableOpacity>
+                {step !== 'finalize' ? (
+                    <TouchableOpacity onPress={handleBack} style={styles.backButton}>
+                        <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+                    </TouchableOpacity>
+                ) : (
+                    <View style={{ width: 40 }} />
+                )}
                 <Text style={styles.headerTitle}>Create Wallet</Text>
                 <View style={{ width: 40 }} />
             </View>
@@ -93,6 +122,18 @@ export default function CreateWalletScreen() {
                 {step === 'selection' && (
                     <SelectionStep onSelect={handleSelectMethod} />
                 )}
+                {step === 'display_seed' && wallet && (
+                    <SeedDisplayStep
+                        mnemonic={wallet.mnemonic}
+                        onContinue={() => setStep('confirm_seed')}
+                    />
+                )}
+                {step === 'confirm_seed' && wallet && (
+                    <SeedConfirmStep
+                        mnemonic={wallet.mnemonic}
+                        onConfirm={handleConfirmSeed}
+                    />
+                )}
                 {step === 'finalize' && wallet && (
                     <FinalizeStep address={wallet.address} onComplete={handleFinalize} />
                 )}
@@ -100,7 +141,7 @@ export default function CreateWalletScreen() {
 
             <ProcessingOverlay
                 isVisible={isLoading}
-                title="Creating wallet..."
+                title={step === 'confirm_seed' ? "Securing wallet..." : "Creating wallet..."}
                 subtitles={[
                     "Your decentralized identity is being born.",
                     "Securing your assets with industrial-grade encryption.",

@@ -1,5 +1,6 @@
 import { colors } from '@/constants/colors';
 import { truncateAddress } from '@/utils/wallet';
+import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import React from 'react';
@@ -12,6 +13,7 @@ const ArrowLeft02 = require('@/assets/swap/arrow-left-02.svg');
 interface SwapHeaderProps {
     walletAddress?: string;
     onWalletPress?: () => void;
+    onSettingsPress?: () => void;
 }
 
 import { useWalletStore } from '@/store/walletStore';
@@ -23,6 +25,7 @@ import { useWalletStore } from '@/store/walletStore';
 export const SwapHeader: React.FC<SwapHeaderProps> = ({
     walletAddress,
     onWalletPress,
+    onSettingsPress,
 }) => {
     const router = useRouter();
     const { address } = useWalletStore();
@@ -52,6 +55,13 @@ export const SwapHeader: React.FC<SwapHeaderProps> = ({
                 <View style={styles.titleContainer}>
                     <Text style={styles.title}>Swap</Text>
                 </View>
+                <TouchableOpacity
+                    onPress={onSettingsPress}
+                    activeOpacity={0.7}
+                    style={styles.settingsButton}
+                >
+                    <Ionicons name="settings-outline" size={24} color={colors.titleText} />
+                </TouchableOpacity>
             </View>
 
             {/* Wallet identity row centered below */}
@@ -101,6 +111,14 @@ const styles = StyleSheet.create({
     backButton: {
         position: 'absolute',
         left: 0,
+        width: 32,
+        height: 32,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    settingsButton: {
+        position: 'absolute',
+        right: 0,
         width: 32,
         height: 32,
         alignItems: 'center',

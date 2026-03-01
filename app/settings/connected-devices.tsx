@@ -65,8 +65,12 @@ export default function ConnectedDevicesScreen() {
             // Fetch all sessions from cloud
             const data = await cloudSessionService.getSessions(supabase, address);
             setSessions(data);
-        } catch (error) {
-            console.error('[ConnectedDevices] Load Error:', error);
+        } catch (error: any) {
+            if (error?.message?.includes('Network request failed')) {
+                console.warn('[ConnectedDevices] Offline or network error while loading sessions.');
+            } else {
+                console.error('[ConnectedDevices] Load Error:', error);
+            }
         } finally {
             setIsLoading(false);
         }

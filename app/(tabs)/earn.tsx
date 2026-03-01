@@ -15,12 +15,13 @@ import {
 } from '@/components/sections/Earn';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { Header } from '@/components/ui/header';
+import { TIWILoader } from '@/components/ui/TIWILoader';
 import { colors } from '@/constants/colors';
 import { stakingService, type StakingPool, type UserStake } from '@/services/stakingService';
 import { useWalletStore } from '@/store/walletStore';
 import { usePathname, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // Mock token icon - in production, use actual token logo
@@ -46,7 +47,7 @@ export default function EarnScreen() {
     };
 
     const handleWalletPress = () => {
-        // This usually opens the wallet selection modal
+        useWalletStore.getState().setWalletModalVisible(true);
     };
 
     const { address: walletAddress } = useWalletStore();
@@ -218,7 +219,7 @@ export default function EarnScreen() {
                             {stakingSubTab === 'stake' && (
                                 <View style={styles.cardsList}>
                                     {isLoading ? (
-                                        <ActivityIndicator color={colors.primaryCTA} style={{ marginTop: 20 }} />
+                                        <TIWILoader size={80} style={{ marginTop: 20 }} />
                                     ) : stakingTokens.length > 0 ? (
                                         stakingTokens.map((token, index) => (
                                             <StakingTokenCard
@@ -243,7 +244,7 @@ export default function EarnScreen() {
                             {stakingSubTab === 'active' && (
                                 <View style={styles.cardsList}>
                                     {isLoading ? (
-                                        <ActivityIndicator color={colors.primaryCTA} style={{ marginTop: 20 }} />
+                                        <TIWILoader size={80} style={{ marginTop: 20 }} />
                                     ) : myStakes.length > 0 ? (
                                         myStakes.map((stake, index) => (
                                             <MyStakeCard
@@ -267,7 +268,7 @@ export default function EarnScreen() {
                             {stakingSubTab === 'my-stakes' && (
                                 <View style={styles.cardsList}>
                                     {isLoading ? (
-                                        <ActivityIndicator color={colors.primaryCTA} style={{ marginTop: 20 }} />
+                                        <TIWILoader size={80} style={{ marginTop: 20 }} />
                                     ) : myStakes.length > 0 ? (
                                         myStakes.map((stake, index) => (
                                             <MyStakeCard

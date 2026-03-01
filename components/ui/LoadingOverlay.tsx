@@ -1,16 +1,7 @@
 import { BlurView } from 'expo-blur';
-import { Image } from 'expo-image';
 import React, { useEffect } from 'react';
 import { BackHandler, Modal, StyleSheet, View } from 'react-native';
-import Animated, {
-    useAnimatedStyle,
-    useSharedValue,
-    withRepeat,
-    withSequence,
-    withTiming
-} from 'react-native-reanimated';
-
-const TIWI_LOGO = require('../../assets/images/full logo.svg');
+import { TIWILoader } from './TIWILoader';
 
 interface LoadingOverlayProps {
     visible: boolean;
@@ -18,38 +9,15 @@ interface LoadingOverlayProps {
     onCancel?: () => void;
 }
 
+/**
+ * Global TIWI Loading Overlay
+ * Uses the custom themed GIF animation
+ */
 export const LoadingOverlay: React.FC<LoadingOverlayProps> = ({
     visible,
     mode = 'glass',
     onCancel
 }) => {
-    const scale = useSharedValue(1);
-    const opacity = useSharedValue(0.8);
-
-    useEffect(() => {
-        if (visible) {
-            scale.value = withRepeat(
-                withSequence(
-                    withTiming(1.15, { duration: 800 }),
-                    withTiming(1, { duration: 800 })
-                ),
-                -1,
-                true
-            );
-            opacity.value = withRepeat(
-                withSequence(
-                    withTiming(1, { duration: 800 }),
-                    withTiming(0.6, { duration: 800 })
-                ),
-                -1,
-                true
-            );
-        } else {
-            scale.value = 1;
-            opacity.value = 0.8;
-        }
-    }, [visible]);
-
     // Handle Back Button (Android)
     useEffect(() => {
         const backAction = () => {
@@ -67,11 +35,6 @@ export const LoadingOverlay: React.FC<LoadingOverlayProps> = ({
 
         return () => backHandler.remove();
     }, [visible, onCancel]);
-
-    const animatedStyle = useAnimatedStyle(() => ({
-        transform: [{ scale: scale.value }],
-        opacity: opacity.value,
-    }));
 
     if (!visible) return null;
 
@@ -93,13 +56,7 @@ export const LoadingOverlay: React.FC<LoadingOverlayProps> = ({
                     <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(1, 5, 1, 0.95)' }]} />
                 )}
 
-                <Animated.View style={[styles.pulseContainer, animatedStyle]}>
-                    <Image
-                        source={TIWI_LOGO}
-                        style={styles.logo}
-                        contentFit="contain"
-                    />
-                </Animated.View>
+                <TIWILoader size={180} />
             </View>
         </Modal>
     );
@@ -110,13 +67,5 @@ const styles = StyleSheet.create({
         flex: 1,
         alignItems: 'center',
         justifyContent: 'center',
-    },
-    pulseContainer: {
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    logo: {
-        width: 140,
-        height: 140,
     },
 });

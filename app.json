@@ -4,18 +4,19 @@
     "slug": "tiwi-mobile-app",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/tiwi_protocol_icon.png",
+    "icon": "./assets/logo/image.png",
     "scheme": "tiwiprotocol",
     "userInterfaceStyle": "dark",
     "backgroundColor": "#010501",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "app.tiwiprotocol.xyz"
     },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#010501",
-        "foregroundImage": "./assets/images/tiwi-protocol-android-icon-foreground.png",
+        "foregroundImage": "./assets/logo/image.png",
         "monochromeImage": "./assets/images/tiwi-protocol-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
@@ -28,14 +29,14 @@
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/tiwi_protocol_icon.png"
+      "favicon": "./assets/logo/image.png"
     },
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/tiwi-protocol-splash-icon.png",
+          "image": "./assets/logo/image.png",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#010501",

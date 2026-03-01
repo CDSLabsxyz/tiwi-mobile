@@ -7,7 +7,8 @@ import { truncateAddress } from '@/utils/wallet';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import React, { useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { TIWILoader } from '@/components/ui/TIWILoader';
 import type { ChainId } from './ChainSelectSheet';
 import { SelectionBottomSheet } from './SelectionBottomSheet';
 
@@ -129,7 +130,7 @@ export const TokenSelectSheet: React.FC<TokenSelectSheetProps> = ({
 
                 {isLoading ? (
                     <View style={styles.loaderContainer}>
-                        <ActivityIndicator color={colors.primaryCTA} />
+                        <TIWILoader size={60} />
                     </View>
                 ) : (
                     <ScrollView

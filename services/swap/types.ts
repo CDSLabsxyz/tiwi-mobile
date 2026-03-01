@@ -23,6 +23,7 @@ export interface SwapQuote {
     toAmountUSD?: string;
     raw?: any;
     router?: string;
+    quoteId?: string;
 }
 
 export interface ExecuteSwapParams {

@@ -36,7 +36,9 @@ export class DexExecutor {
         const publicClient = this.getPublicClient(fromToken.chainId);
 
         try {
-            // const routerAddress = quote.raw.routerAddress as Address;
+            if (!quote.raw) {
+                throw new Error("Invalid quote: Missing raw transaction data. Please refresh the quote.");
+            }
             const routerAddress = quote.raw.routerAddress as Address;
             if (!routerAddress) throw new Error("Router address is missing from quote");
 
@@ -52,7 +54,7 @@ export class DexExecutor {
                     functionName: 'allowance',
                     args: [getAddress(fromAddress), getAddress(routerAddress)],
                 }) as bigint;
-                console.log("🚀 ~ DexExecutor ~ execute ~ allowance:", {allowance, amountIn})
+                console.log("🚀 ~ DexExecutor ~ execute ~ allowance:", { allowance, amountIn })
 
                 if (allowance < amountIn) {
                     console.log("[DexExecutor] Insufficient allowance, triggering approval...");
@@ -143,7 +145,7 @@ export class DexExecutor {
                 value: txValue,
                 data: txData,
                 chainId: fromToken.chainId,
-            }, fromAddress);
+            }, fromAddress, { skipAuthorize: true });
 
             if (result.status === 'success') {
                 return { success: true, txHash: result.hash };

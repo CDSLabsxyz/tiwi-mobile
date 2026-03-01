@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
-export type ChainType = 'EVM' | 'SOLANA' | 'SUI' | 'TON' | 'TRON';
+export type ChainType = 'EVM' | 'SOLANA';
 
 export interface WalletGroup {
   id: string;
@@ -52,6 +52,10 @@ interface WalletState {
   disconnect: () => void;
   _hasHydrated: boolean;
   setHasHydrated: (state: boolean) => void;
+
+  // Global Modal Control
+  isWalletModalVisible: boolean;
+  setWalletModalVisible: (visible: boolean) => void;
 }
 
 export const useWalletStore = create<WalletState>()(
@@ -83,13 +87,14 @@ export const useWalletStore = create<WalletState>()(
 
         // If it's a new connection, create or update a WalletGroup
         if (address && isConnected) {
+          const lowerAddr = address.toLowerCase();
           const exists = state.walletGroups.some(g =>
-            Object.values(g.addresses).some(addr => addr?.toLowerCase() === address.toLowerCase())
+            Object.values(g.addresses).some(addr => addr?.toLowerCase() === lowerAddr)
           );
 
           if (!exists) {
             const newGroup: WalletGroup = {
-              id: Date.now().toString(),
+              id: lowerAddr, // Use address as ID for stability
               name: finalName,
               type: type || 'external',
               primaryChain: 'EVM',
@@ -104,24 +109,49 @@ export const useWalletStore = create<WalletState>()(
 
       addWalletGroup: (newGroup) => {
         const state = get();
+
+        // Robust duplicate check by address across all groups
+        const primaryAddr = newGroup.addresses[newGroup.primaryChain];
+        const lowerPrimaryAddr = primaryAddr?.toLowerCase();
+
+        // 1. Check if this address already exists in ANY existing group
+        const existingGroup = state.walletGroups.find(g =>
+          Object.values(g.addresses).some(addr => addr?.toLowerCase() === lowerPrimaryAddr)
+        );
+
+        if (existingGroup) {
+          // If it exists, switch to it and STOP. Don't add a new duplicate.
+          get().setActiveGroup(existingGroup.id);
+          return;
+        }
+
+        // 2. PRUNE EXISTING DUPLICATES (One-time cleanup for old buggy data)
+        // Keep only unique addresses to clean up the user's current messy list
+        const seenAddresses = new Set<string>();
+        const uniqueGroups = state.walletGroups.filter(g => {
+          const addr = g.addresses[g.primaryChain]?.toLowerCase();
+          if (!addr || seenAddresses.has(addr)) return false;
+          seenAddresses.add(addr);
+          return true;
+        });
+
         const updatedGroups = [
-          ...state.walletGroups.filter(g => g.id !== newGroup.id),
+          ...uniqueGroups.filter(g => g.id !== newGroup.id),
           newGroup
         ];
 
         set({
           walletGroups: updatedGroups,
           activeGroupId: newGroup.id,
-          activeAddress: newGroup.addresses[newGroup.primaryChain] || null,
+          activeAddress: primaryAddr || null,
           activeChain: newGroup.primaryChain,
           isConnected: true,
           // Legacy sync
-          address: newGroup.addresses[newGroup.primaryChain] || null,
+          address: primaryAddr || null,
           name: newGroup.name
         });
 
         // Register the primary address with backend
-        const primaryAddr = newGroup.addresses[newGroup.primaryChain];
         if (primaryAddr) {
           let apiSource = newGroup.source;
           if (apiSource === 'internal' || apiSource === 'imported') apiSource = 'local';
@@ -183,6 +213,10 @@ export const useWalletStore = create<WalletState>()(
       }),
       _hasHydrated: false,
       setHasHydrated: (state) => set({ _hasHydrated: state }),
+
+      // Global Modal Implementation
+      isWalletModalVisible: false,
+      setWalletModalVisible: (visible) => set({ isWalletModalVisible: visible }),
     }),
     {
       name: 'tiwi-wallet-storage',

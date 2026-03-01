@@ -1,4 +1,5 @@
 import { colors } from '@/constants/colors';
+import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -20,7 +21,7 @@ export default function FinalizeStep({ address, onComplete }: FinalizeStepProps)
             <View style={styles.stepperContainer}>
                 <View style={styles.stepRow}>
                     <View style={styles.completedStepIcon}>
-                        <View style={styles.activeInnerCircle} />
+                        <Ionicons name="checkmark" size={14} color="#0B0F0A" />
                     </View>
                     <Text style={styles.completedStepText}>Select Creation Method</Text>
                 </View>
@@ -29,6 +30,24 @@ export default function FinalizeStep({ address, onComplete }: FinalizeStepProps)
 
                 <View style={styles.stepRow}>
                     <View style={styles.completedStepIcon}>
+                        <Ionicons name="checkmark" size={14} color="#0B0F0A" />
+                    </View>
+                    <Text style={styles.completedStepText}>Save Seed Phrase</Text>
+                </View>
+
+                <View style={[styles.connectorLine, { backgroundColor: colors.primaryCTA }]} />
+
+                <View style={styles.stepRow}>
+                    <View style={styles.completedStepIcon}>
+                        <Ionicons name="checkmark" size={14} color="#0B0F0A" />
+                    </View>
+                    <Text style={styles.completedStepText}>Confirm Seed Phrase</Text>
+                </View>
+
+                <View style={[styles.connectorLine, { backgroundColor: colors.primaryCTA }]} />
+
+                <View style={styles.stepRow}>
+                    <View style={styles.activeStepIcon}>
                         <View style={styles.activeInnerCircle} />
                     </View>
                     <Text style={styles.activeStepText}>Get Wallet</Text>
@@ -77,6 +96,14 @@ const styles = StyleSheet.create({
         width: 20,
         height: 20,
         borderRadius: 10,
+        backgroundColor: colors.primaryCTA,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    activeStepIcon: {
+        width: 20,
+        height: 20,
+        borderRadius: 10,
         borderWidth: 2,
         borderColor: colors.primaryCTA,
         justifyContent: 'center',
@@ -90,7 +117,7 @@ const styles = StyleSheet.create({
     },
     connectorLine: {
         width: 2,
-        height: 24,
+        height: 16,
         marginLeft: 9,
         marginVertical: 4,
     },

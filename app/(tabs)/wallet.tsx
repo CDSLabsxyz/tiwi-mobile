@@ -151,7 +151,7 @@ export default function WalletScreen() {
 
             {/* Header */}
             <Header
-                disableWalletModal={true}
+                onWalletPress={() => useWalletStore.getState().setWalletModalVisible(true)}
                 onSettingsPress={() => router.push('/settings')}
                 onScanPress={() => { }}
             />

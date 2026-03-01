@@ -17,9 +17,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 const TiwiLogo = require('../../assets/home/tiwicat.svg');
 const EthLogo = require('../../assets/home/chains/ethereum.svg');
 const SolLogo = require('../../assets/home/chains/solana.jpg');
-const SuiLogo = require('../../assets/home/chains/sui.svg');
-const TonLogo = require('../../assets/home/chains/ton.jpg');
-const TronLogo = require('../../assets/home/chains/tron.png');
 const BscLogo = require('../../assets/home/chains/bsc.svg');
 const PolyLogo = require('../../assets/home/chains/polygon.svg');
 const BaseLogo = require('../../assets/home/chains/base.png');
@@ -46,14 +43,14 @@ const NETWORK_OPTIONS: NetworkOption[] = [
         id: 'MULTI',
         label: 'Multi-Chain Wallet',
         subtext: 'One seed, all ecosystems. (Recommended)',
-        icons: [AllNetworkLogo],
+        icons: [EthLogo, SolLogo],
         isTall: true,
     },
     {
         id: 'EVM',
         label: 'EVM-Compatible',
         subtext: 'Supports Ethereum, BNB Chain, Base, OP, and more.',
-        icons: [AllNetworkLogo],
+        icons: [EthLogo, BscLogo, PolyLogo],
         isTall: true,
     },
     {
@@ -62,24 +59,6 @@ const NETWORK_OPTIONS: NetworkOption[] = [
         // subtext: 'Fast, secure, and scalable high-performance network.',
         icons: [SolLogo],
     },
-    {
-        id: 'TON',
-        label: 'Ton',
-        // subtext: 'Telegram Open Network (Next-gen L1).',
-        icons: [TonLogo],
-    },
-    {
-        id: 'TRON',
-        label: 'Tron',
-        // subtext: 'Decentralized web ecosystem with low fees.',
-        icons: [TronLogo],
-    },
-    // {
-    //     id: 'SUI',
-    //     label: 'Sui',
-    //     subtext: 'Object-centric L1 for high throughput.',
-    //     icons: [SuiLogo],
-    // },
 ];
 
 export const NetworkSelectionModal: React.FC<NetworkSelectionModalProps> = ({
@@ -192,6 +171,7 @@ export const NetworkSelectionModal: React.FC<NetworkSelectionModalProps> = ({
                                         style={[
                                             styles.optionCard,
                                             isSelected && styles.selectedCard,
+                                            option.isTall && styles.tallCard,
                                         ]}
                                         onPress={() => setSelected(option.id)}
                                         activeOpacity={0.7}
@@ -211,7 +191,8 @@ export const NetworkSelectionModal: React.FC<NetworkSelectionModalProps> = ({
                                                             <Image
                                                                 source={icon}
                                                                 style={styles.chainIcon}
-                                                                contentFit="cover"
+                                                                contentFit="contain"
+                                                                priority="high"
                                                             />
                                                         </View>
                                                     ))}
@@ -349,9 +330,9 @@ const styles = StyleSheet.create({
         width: 40,
         height: 40,
         borderRadius: 20,
-        backgroundColor: colors.bg,
-        borderWidth: 2,
-        borderColor: colors.bgCards,
+        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        borderWidth: 1.5,
+        borderColor: colors.bgStroke,
         justifyContent: 'center',
         alignItems: 'center',
         overflow: 'hidden',

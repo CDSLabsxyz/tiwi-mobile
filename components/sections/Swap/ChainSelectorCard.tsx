@@ -26,8 +26,7 @@ export const ChainSelectorCard: React.FC<ChainSelectorCardProps> = ({
 
             <TouchableOpacity
                 activeOpacity={0.8}
-                onPress={() => {}}
-                // onPress={onPress}
+                onPress={onPress}
                 style={styles.selector}
             >
                 <View style={styles.chainInfo}>

@@ -9,6 +9,7 @@ export * from './SwapDetailsCard';
 export * from './SwapDirectionButton';
 export * from './SwapHeader';
 export * from './SwapLoadingOverlay';
+export * from './SwapSettingsSheet';
 export * from './SwapSuccessModal';
 export * from './SwapTabs';
 export * from './SwapTokenCard';
