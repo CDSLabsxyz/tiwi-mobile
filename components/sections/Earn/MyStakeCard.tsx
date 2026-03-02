@@ -12,15 +12,19 @@ import { colors } from '@/constants/colors';
 interface MyStakeCardProps {
     symbol: string;
     apy: string;
+    stakedAmount?: string;
+    rewardsEarned?: string;
     icon: any;
     onPress: () => void;
 }
 
-const ArrowIcon = require('../../../assets/home/arrow-down-01.svg'); // Using arrow-down as per design, though navigation usually implies right
+const ChevronRightIcon = require('../../../assets/home/arrow-down-01.svg'); // Design specified this icon
 
 export const MyStakeCard: React.FC<MyStakeCardProps> = ({
     symbol,
     apy,
+    stakedAmount = "0",
+    rewardsEarned = "0",
     icon,
     onPress
 }) => {
@@ -30,34 +34,37 @@ export const MyStakeCard: React.FC<MyStakeCardProps> = ({
             onPress={onPress}
             style={styles.container}
         >
-            {/* Left: Token Info */}
-            <View style={styles.leftContent}>
-                <Image
-                    source={icon}
-                    style={styles.tokenIcon}
-                    contentFit="cover"
-                />
-                <Text style={styles.symbolText}>{symbol}</Text>
+            {/* Top Row: Token, APY, Chevron */}
+            <View style={styles.topRow}>
+                <View style={styles.leftContent}>
+                    <Image
+                        source={icon}
+                        style={styles.tokenIcon}
+                        contentFit="cover"
+                    />
+                    <Text style={styles.symbolText}>{symbol}</Text>
+                </View>
+
+                <View style={styles.rightHeader}>
+                    <Text style={styles.apyText}>{apy}</Text>
+                    <Image
+                        source={ChevronRightIcon}
+                        style={styles.actionIcon}
+                        contentFit="contain"
+                    />
+                </View>
             </View>
 
-            {/* Center: APY */}
-            <View style={styles.centerContent}>
-                <Text style={styles.apyText}>{apy}</Text>
-            </View>
-
-            {/* Right: Action Icon */}
-            <View style={styles.rightContent}>
-                <Image
-                    source={ArrowIcon}
-                    style={styles.actionIcon}
-                    contentFit="contain"
-                    // Rotate to point right if it's a navigation item, 
-                    // looking at the design `arrow-down-01` suggests maybe it's an accordion?
-                    // But context implies navigation. I'll transform it for now to -90deg to point right?
-                    // Or keep it as is if it's strictly matching Figma.
-                    // Let's keep it as is, but usually list items have chevron right.
-                    // The figma shows "arrow-down-01".
-                />
+            {/* Bottom Row: Stats */}
+            <View style={styles.statsRow}>
+                <View style={styles.statItem}>
+                    <Text style={styles.statLabel}>STAKED</Text>
+                    <Text style={styles.statValue}>{stakedAmount}</Text>
+                </View>
+                <View style={styles.statItem}>
+                    <Text style={styles.statLabel}>REWARDS</Text>
+                    <Text style={[styles.statValue, { color: colors.primaryCTA }]}>{rewardsEarned}</Text>
+                </View>
             </View>
         </TouchableOpacity>
     );
@@ -66,50 +73,65 @@ export const MyStakeCard: React.FC<MyStakeCardProps> = ({
 const styles = StyleSheet.create({
     container: {
         width: '100%',
-        height: 72,
         backgroundColor: colors.bgSemi,
         borderRadius: 16,
+        padding: 16,
+        gap: 12,
+        marginBottom: 8,
+    },
+    topRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 16,
-        paddingVertical: 16,
         justifyContent: 'space-between',
-        marginBottom: 8,
     },
     leftContent: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 8,
-        flex: 1, // Take up space
     },
     tokenIcon: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
+        width: 32,
+        height: 32,
+        borderRadius: 16,
     },
     symbolText: {
         fontFamily: 'Manrope-SemiBold',
         fontSize: 14,
         color: colors.titleText,
     },
-    centerContent: {
-        flex: 1,
+    rightHeader: {
+        flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'center',
+        gap: 8,
     },
     apyText: {
         fontFamily: 'Manrope-Regular',
         fontSize: 14,
         color: colors.titleText,
     },
-    rightContent: {
-        flex: 1,
-        alignItems: 'flex-end',
-        justifyContent: 'center',
-    },
     actionIcon: {
-        width: 24,
-        height: 24,
-        tintColor: colors.mutedText, // Assuming it might need tinting, or keep original
+        width: 20,
+        height: 20,
+        tintColor: colors.mutedText,
+    },
+    statsRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        paddingTop: 8,
+        borderTopWidth: 0.5,
+        borderTopColor: 'rgba(255,255,255,0.05)',
+    },
+    statItem: {
+        gap: 2,
+    },
+    statLabel: {
+        fontFamily: 'Manrope-Medium',
+        fontSize: 10,
+        color: colors.mutedText,
+    },
+    statValue: {
+        fontFamily: 'Manrope-Bold',
+        fontSize: 13,
+        color: 'white',
     },
 });

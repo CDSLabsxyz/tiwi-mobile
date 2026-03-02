@@ -19,6 +19,8 @@ import FontAwesome6 from '@expo/vector-icons/FontAwesome6';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useToastStore } from '@/store/useToastStore';
+import { formatCompactNumber } from '@/utils/formatting';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
     StyleSheet,
@@ -52,6 +54,7 @@ export default function ManageStakeScreen() {
     const { connectedWallets, address: activeAddress } = useWalletStore();
     const { data: balanceData } = useWalletBalances();
     const [userStake, setUserStake] = useState<UserStake | null>(null);
+    const { showToast } = useToastStore();
     const [isLoading, setIsLoading] = useState(true);
     const inputRef = useRef<TextInput>(null);
 
@@ -129,10 +132,12 @@ export default function ManageStakeScreen() {
     }, [userTokenBalance, stakingData.userStakedFormatted]);
 
     const totalBalance = useMemo(() => {
-        return `${parseFloat(totalBalanceNumeric).toFixed(4)} ${symbol}`;
+        const val = parseFloat(totalBalanceNumeric);
+        return `${formatCompactNumber(val, { decimals: 2 })} ${symbol}`;
     }, [totalBalanceNumeric, symbol]);
 
-    const { isConnected } = useAccount();
+    const { isConnected: isWagmiConnected } = useAccount();
+    const isConnected = !!activeAddress || isWagmiConnected;
 
     const needsApproval = useMemo(() => {
         if (activeTab !== 'Boost') {
@@ -222,36 +227,50 @@ export default function ManageStakeScreen() {
 
     const handleConfirm = async () => {
         if (!isConnected) {
-            Alert.alert('Connect Wallet', 'Please connect your wallet to continue.');
+            showToast('Connect Wallet: Please connect your wallet to continue.', 'error');
             return;
         }
 
         if (!amount || parseFloat(amount) <= 0) {
-            Alert.alert('Invalid Amount', 'Please enter a valid amount.');
+            showToast('Invalid Amount: Please enter a valid amount.', 'error');
             return;
         }
 
         try {
             if (activeTab === 'Boost') {
                 if (needsApproval) {
+                    // Phase 1: Approve
                     await approve();
-                    Alert.alert('Success', 'Token approved successfully!');
+                    showToast('Token Approved! Proceeding to Boost...', 'pending');
+                    
+                    // Phase 2: Action (Stake/Boost)
+                    setTimeout(async () => {
+                        try {
+                            await stake(amount);
+                            showToast('Successfully boosted stake!', 'success');
+                            setAmount('');
+                            refetchStaking();
+                        } catch (err: any) {
+                            console.error('[ManageStake] Chained boost error:', err);
+                        }
+                    }, 1000);
                 } else {
                     await stake(amount);
-                    Alert.alert('Success', 'Successfully boosted stake!');
+                    showToast('Successfully boosted stake!', 'success');
                     setAmount('');
+                    refetchStaking();
                 }
             } else {
                 await unstake(amount);
-                Alert.alert('Success', 'Successfully unstaked tokens!');
+                showToast('Successfully unstaked tokens!', 'success');
                 setAmount('');
+                refetchStaking();
             }
-            refetchStaking();
         } catch (error: any) {
             console.error('[ManageStake] Transaction error:', error);
             const errorMsg = error?.message || 'Transaction failed. Please try again.';
             if (!errorMsg.includes('User rejected')) {
-                Alert.alert('Transaction Failed', errorMsg);
+                showToast(`Transaction Failed: ${errorMsg}`, 'error');
             }
         }
     };

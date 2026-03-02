@@ -98,34 +98,26 @@ export class LocalSignerEngine implements SignerEngine {
                 txArgs.data = tx.data as `0x${string}`;
             }
 
-            // --- GAS ESTIMATION WITH BUFFER ---
+            // Standard Engineering Safety: Silent gas buffering for high reliability
+            // We apply a 20% price premium and 30% limit buffer.
             try {
-                const publicClient = createPublicClient({ chain, transport: http() });
-                let estimate = await publicClient.estimateGas({
-                    account,
+                const publicClient = await this.getPublicClient(Number(tx.chainId) || 1);
+                
+                // 1. Gas Price Buffer (20% above network base)
+                const networkPrice = await publicClient.getGasPrice();
+                txArgs.gasPrice = (networkPrice * 120n) / 100n;
+
+                // 2. Gas Limit Buffer (30% above network estimate)
+                const estimate = await publicClient.estimateGas({
+                    account: walletClient.account!,
                     to: txArgs.to,
                     data: txArgs.data,
                     value: txArgs.value,
                 });
-
-                const isBsc = chain.id === 56;
-                const bufferPercent = isBsc ? 140n : 120n; // 40% for BSC, 20% others
-                txArgs.gas = (estimate * bufferPercent) / 100n;
-
-                // On BSC, swaps often fail if gas limit is too tight. Ensure a floor for data txs.
-                if (isBsc && txArgs.data && txArgs.data !== '0x' && txArgs.gas < 250000n) {
-                    txArgs.gas = 250000n;
-                }
-
-                // Force legacy gas price for BSC to avoid EIP-1559 simulation issues
-                if (isBsc) {
-                    const gasPrice = await publicClient.getGasPrice();
-                    txArgs.gasPrice = (gasPrice * 110n) / 100n; // 10% premium on gas price too
-                }
-
-                console.log(`[LocalSignerEngine] Chain: ${chain.id}, Estimated: ${estimate.toString()} -> Final: ${txArgs.gas.toString()}`);
-            } catch (estError: any) {
-                console.warn('[LocalSignerEngine] Gas estimation failed, allowing default:', estError.message);
+                txArgs.gas = (estimate * 130n) / 100n;
+                console.log(`[SmartSigner] Using buffered gas: ${txArgs.gas} and price: ${txArgs.gasPrice}`);
+            } catch (estError) {
+                console.warn("[SmartSigner] Estimation failed, allowing provider to handle gas defaults.");
             }
 
             const hash = await walletClient.sendTransaction(txArgs);
@@ -141,95 +133,24 @@ export class LocalSignerEngine implements SignerEngine {
         }
     }
 
-    /**
-     * Exposes a WalletClient for use by external SDKs (like LI.FI).
-     * The account inside this client is wrapped with biometric security by default.
-     */
+    async getPublicClient(chainId: number) {
+        const chain = getChainById(chainId);
+        return createPublicClient({
+            chain,
+            transport: http()
+        });
+    }
+
     async getWalletClient(chainId: number, address: string, options?: { skipAuthorize?: boolean }) {
         const account = options?.skipAuthorize
             ? await this.getRawAccount(address)
             : await this.createSecureAccount(address);
 
-        const chain = getChainById(Number(chainId) || 1);
-
-        const walletClient = createWalletClient({
+        const chain = getChainById(chainId);
+        return createWalletClient({
             account,
             chain,
             transport: http()
         });
-
-        // Wrap the walletClient to add an AGGRESSIVE gas buffer strategy 
-        const baseSend = walletClient.sendTransaction.bind(walletClient);
-        const wrappedSend: any = async (args: any) => {
-            console.log(`[SignerEngine] Intercepted sendTransaction on chain ${chain.id}`);
-            const isBsc = chain.id === 56;
-            const isPoly = chain.id === 137;
-
-            // 1. If gas is ALREADY provided, we still buffer it
-            if (args.gas) {
-                const buffer = isBsc ? 200n : 130n; 
-                args.gas = (BigInt(args.gas) * buffer) / 100n;
-                console.log(`[SignerEngine] Buffering PROVIDED gas: ${args.gas.toString()}`);
-            }
-
-            // 2. If gas is NOT provided, perform our custom estimation
-            if (!args.gas) {
-                try {
-                    const pc = createPublicClient({ chain, transport: http() });
-                    const estimate = await pc.estimateGas({
-                        account: args.account || account,
-                        to: args.to,
-                        data: args.data,
-                        value: args.value,
-                    });
-                    
-                    const bufferPercent = isBsc ? 250n : 150n; // 2.5x for BSC, 1.5x others
-                    args.gas = (estimate * bufferPercent) / 100n;
-                } catch (e: any) {
-                    console.warn('[SignerEngine] Estimation failed, using extreme fallback:', e.message);
-                    args.gas = isBsc ? 1000000n : 500000n; // 1M for BSC fallback
-                }
-            }
-
-            // 3. Enforce Strong Floors for BSC/Poly Swap/Contract calls
-            if ((isBsc || isPoly) && args.data && args.data !== '0x') {
-                const floor = isBsc ? 600000n : 400000n; // 600k floor for BSC
-                if (BigInt(args.gas) < floor) {
-                    args.gas = floor;
-                }
-            }
-
-            // 4. Force High Priority Gas Price with 70% premium
-            if (isBsc || isPoly) {
-                try {
-                    const pc = createPublicClient({ chain, transport: http() });
-                    const gp = await pc.getGasPrice();
-                    args.gasPrice = (gp * 170n) / 100n; // 70% premium
-                    console.log(`[SignerEngine] Priority GasPrice: ${args.gasPrice.toString()}`);
-                    
-                    // Clear EIP-1559 fields to ensure legacy usage
-                    delete args.maxFeePerGas;
-                    delete args.maxPriorityFeePerGas;
-                } catch (e) {
-                    console.warn('[SignerEngine] Failed to set priority gas price');
-                }
-            }
-
-            console.log(`[SignerEngine] FINAL TX: To=${args.to}, Value=${args.value || 0}, Gas=${args.gas}`);
-            return baseSend(args);
-        };
-
-        walletClient.sendTransaction = wrappedSend;
-
-        // Also wrap writeContract just in case SDK uses it directly
-        if ((walletClient as any).writeContract) {
-            const baseWrite = (walletClient as any).writeContract.bind(walletClient);
-            (walletClient as any).writeContract = async (args: any) => {
-                console.log(`[SignerEngine] Intercepted writeContract`);
-                return baseWrite(args);
-            };
-        }
-
-        return walletClient;
     }
 }

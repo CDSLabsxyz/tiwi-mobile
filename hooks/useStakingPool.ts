@@ -3,10 +3,12 @@ import { STAKING_FACTORY_ADDRESSES } from '@/constants/contracts';
 import { currencyService } from '@/services/currencyService';
 import { useToastStore } from '@/store/useToastStore';
 import { formatCompactNumber } from '@/utils/formatting';
-import { useCallback, useEffect, useMemo } from 'react';
-import { formatUnits, parseUnits } from 'viem';
-import { useAccount, useChainId, useReadContract, useSwitchChain, useWaitForTransactionReceipt, useWriteContract } from 'wagmi';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useAccount, useChainId, useReadContract, useSwitchChain, usePublicClient, useWriteContract } from 'wagmi';
 import { useMarketPrice } from './useMarketPrice';
+import { useWalletStore } from '@/store/walletStore';
+import { signerController } from '@/services/signer/SignerController';
+import { encodeFunctionData, formatUnits, parseUnits } from 'viem';
 
 export interface OnChainPoolStats {
     totalStaked: bigint | null;
@@ -20,6 +22,8 @@ export interface OnChainPoolStats {
     stakingToken: `0x${string}` | null;
     apr: string;
     tvlUsd: string;
+    tvlCompact: string;
+    maxTvlCompact: string;
     limitsFormatted: string;
     lockPeriod: string;
     isLoading: boolean;
@@ -32,11 +36,15 @@ const SECONDS_PER_YEAR = 31536000n;
 
 /**
  * Hook to interact with a TIWI Staking Pool (Read & Write)
- * Enhanced with Phase 4: Protocol Polishing & Safety
+ * Enhanced with Hybrid Signer Support & unified transaction tracking
  */
 export function useStakingPool(poolId?: number | string, decimals: number = 9) {
     const chainId = useChainId();
-    const { address } = useAccount();
+    const publicClient = usePublicClient({ chainId: STAKING_CHAIN_ID });
+    const { address: wagmiAddress } = useAccount();
+    const activeAddress = useWalletStore(state => state.activeAddress);
+    const effectiveAddress = activeAddress || wagmiAddress;
+
     const { switchChainAsync } = useSwitchChain();
     const { showToast, hideToast } = useToastStore();
     const { data: priceData } = useMarketPrice('TWC-USDT', STAKING_CHAIN_ID);
@@ -46,6 +54,18 @@ export function useStakingPool(poolId?: number | string, decimals: number = 9) {
 
     // Always use BSC addresses for staking logic
     const factoryAddress = STAKING_FACTORY_ADDRESSES[STAKING_CHAIN_ID];
+
+    // --- TRANSACTION STATE ---
+    const [localTxHash, setLocalTxHash] = useState<`0x${string}` | undefined>();
+    const [isInternalPending, setIsInternalPending] = useState(false);
+    const [isInternalSuccess, setIsInternalSuccess] = useState(false);
+    const [internalError, setInternalError] = useState<any>(null);
+
+    const { writeContractAsync, data: wagmiTxHash, isPending: isWagmiPending, error: wagmiError, reset: resetWagmi } = useWriteContract();
+
+    // Unified States
+    const txHash = wagmiTxHash || localTxHash;
+    const isTransactionPending = isInternalPending || isWagmiPending;
 
     // --- READS ---
 
@@ -58,6 +78,7 @@ export function useStakingPool(poolId?: number | string, decimals: number = 9) {
         abi: STAKING_FACTORY_ABI,
         functionName: 'getPoolInfo',
         args: poolId !== undefined && !isMock ? [BigInt(poolId)] : undefined,
+        chainId: STAKING_CHAIN_ID,
         query: {
             enabled: !!factoryAddress && poolId !== undefined && !isMock,
         }
@@ -75,9 +96,10 @@ export function useStakingPool(poolId?: number | string, decimals: number = 9) {
         address: factoryAddress,
         abi: STAKING_FACTORY_ABI,
         functionName: 'getUserInfo',
-        args: poolId !== undefined && address && !isMock ? [BigInt(poolId), address] : undefined,
+        args: poolId !== undefined && effectiveAddress && !isMock ? [BigInt(poolId), effectiveAddress as `0x${string}`] : undefined,
+        chainId: STAKING_CHAIN_ID,
         query: {
-            enabled: !!factoryAddress && poolId !== undefined && !!address && !isMock,
+            enabled: !!factoryAddress && poolId !== undefined && !!effectiveAddress && !isMock,
             refetchInterval: 10000,
         }
     });
@@ -90,21 +112,12 @@ export function useStakingPool(poolId?: number | string, decimals: number = 9) {
         address: stakingToken,
         abi: ERC20_ABI,
         functionName: 'allowance',
-        args: address && factoryAddress ? [address, factoryAddress] : undefined,
+        args: effectiveAddress && factoryAddress ? [effectiveAddress as `0x${string}`, factoryAddress] : undefined,
+        chainId: STAKING_CHAIN_ID,
         query: {
-            enabled: !!stakingToken && !!address && !!factoryAddress,
+            enabled: !!stakingToken && !!effectiveAddress && !!factoryAddress,
         }
     });
-
-    // --- WRITES ---
-
-    const { writeContractAsync, data: txHash, isPending: isWritePending, error: writeError, reset } = useWriteContract();
-
-    const { isLoading: isTxWaiting, isSuccess: isTxSuccess, error: waitError } = useWaitForTransactionReceipt({
-        hash: txHash,
-    });
-
-    const isTransactionPending = isWritePending || isTxWaiting;
 
     const refetchAll = useCallback(() => {
         refetchPool();
@@ -112,70 +125,42 @@ export function useStakingPool(poolId?: number | string, decimals: number = 9) {
         refetchAllowance();
     }, [refetchPool, refetchUser, refetchAllowance]);
 
-    // Phase 4: Auto-refresh data on transaction success
-    useEffect(() => {
-        if (isTxSuccess) {
-            const handleLogging = async () => {
-                console.log('[useStakingPool] Transaction confirmed, refreshing data and logging activity...');
-                showToast('Transaction Successful!', 'success', txHash);
-                refetchAll();
+    // --- TRANSACTION HELPERS ---
 
-                // Log to backend for referral rewards
-                if (txHash && address && poolId !== undefined) {
-                    try {
-                        const { apiClient } = require('@/services/apiClient');
+    const resetStates = useCallback(() => {
+        setLocalTxHash(undefined);
+        setIsInternalPending(false);
+        setIsInternalSuccess(false);
+        setInternalError(null);
+        resetWagmi();
+    }, [resetWagmi]);
 
-                        // Determine transaction type and details
-                        // We use a simplified mapping for now as we don't track the exact calling function here
-                        // but we can infer 'Stake' or 'Unstake' or 'Claim' based on context if we added a state.
-                        // For now, let's log it as a generic DeFi/Stake activity if we can't distinguish.
-                        // IMPROVEMENT: Distinguish between stake/unstake/claim.
+    const handleTxConfirmed = useCallback(async (hash: `0x${string}`, type: string, amount: string = '0') => {
+        showToast('Transaction Successful!', 'success', hash);
+        refetchAll();
 
-                        await apiClient.logTransaction({
-                            walletAddress: address,
-                            transactionHash: txHash,
-                            chainId: STAKING_CHAIN_ID,
-                            type: 'DeFi',
-                            amount: '0', // Amount is handled by backend from tx receipt usually, or we could pass it
-                            amountFormatted: 'Staking activity',
-                            routerName: 'Tiwi Staking',
-                        });
-                    } catch (e) {
-                        console.error('[useStakingPool] Failed to log activity:', e);
-                    }
-                }
-
-                // Hide toast after 4 seconds
-                setTimeout(hideToast, 4000);
-            };
-
-            handleLogging();
-        }
-    }, [isTxSuccess, refetchAll, showToast, hideToast, txHash, address, poolId]);
-
-    // Handle Errors in Toast
-    useEffect(() => {
-        if (writeError || waitError) {
-            const error = writeError || waitError;
-            console.error('[useStakingPool] Transaction error:', error);
-
-            let message = 'Transaction Failed';
-            if (error?.message?.includes('User rejected')) {
-                message = 'Transaction Rejected';
-            } else if (error?.message?.includes('insufficient funds')) {
-                message = 'Insufficient Gas';
+        if (effectiveAddress) {
+            try {
+                const { apiClient } = require('@/services/apiClient');
+                await apiClient.logTransaction({
+                    walletAddress: effectiveAddress,
+                    transactionHash: hash,
+                    chainId: STAKING_CHAIN_ID,
+                    type: type, // 'Stake', 'Unstake', 'Approve'
+                    amount: amount, 
+                    amountFormatted: `${amount} TWC`,
+                    routerName: 'Tiwi Staking',
+                });
+                console.log(`[useStakingPool] Successfully logged ${type} transaction to backend.`);
+            } catch (e) {
+                console.error('[useStakingPool] Failed to log activity:', e);
             }
-
-            showToast(message, 'error');
-            setTimeout(hideToast, 4000);
-            reset(); // Clear write state
         }
-    }, [writeError, waitError, showToast, hideToast, reset]);
+        setTimeout(hideToast, 4000);
+    }, [effectiveAddress, refetchAll, showToast, hideToast]);
 
-    // Phase 4: Network Intelligence (Ensure Correct Chain)
     const ensureCorrectChain = useCallback(async () => {
         if (chainId !== STAKING_CHAIN_ID) {
-            console.log(`[useStakingPool] Switching chain from ${chainId} to ${STAKING_CHAIN_ID}`);
             showToast('Switching to BSC...', 'pending');
             try {
                 await switchChainAsync({ chainId: STAKING_CHAIN_ID });
@@ -188,49 +173,119 @@ export function useStakingPool(poolId?: number | string, decimals: number = 9) {
         }
     }, [chainId, switchChainAsync, showToast, hideToast]);
 
+    const executeWrite = useCallback(async (params: { address: `0x${string}`, abi: any, functionName: string, args: any[], value?: bigint }, type: string, amount: string) => {
+        resetStates();
+        const walletStore = useWalletStore.getState();
+        const activeWallet = walletStore.walletGroups.find(g =>
+            Object.values(g.addresses).some(addr => addr?.toLowerCase() === walletStore.activeAddress?.toLowerCase())
+        );
+
+        const isLocal = activeWallet?.type === 'mnemonic' || activeWallet?.type === 'privateKey' || activeWallet?.source === 'local' || activeWallet?.source === 'internal' || activeWallet?.source === 'imported';
+
+        try {
+            if (isLocal && walletStore.activeAddress) {
+                setIsInternalPending(true);
+                const result = await signerController.executeTransaction({
+                    chainFamily: 'evm',
+                    to: params.address,
+                    data: encodeFunctionData({
+                        abi: params.abi,
+                        functionName: params.functionName,
+                        args: params.args
+                    }),
+                    value: params.value?.toString(),
+                    chainId: STAKING_CHAIN_ID
+                }, walletStore.activeAddress);
+
+                if (result.status === 'success' && result.hash) {
+                    const hash = result.hash as `0x${string}`;
+                    setLocalTxHash(hash);
+                    
+                    if (publicClient) {
+                        try {
+                            await publicClient.waitForTransactionReceipt({ hash });
+                        } catch (e) {
+                            console.warn('[useStakingPool] Receipt wait failed, but hash exists.');
+                        }
+                    }
+                    
+                    setIsInternalSuccess(true);
+                    setIsInternalPending(false);
+                    handleTxConfirmed(hash, type, amount);
+                    return hash;
+                }
+                throw new Error(result.error || 'Transaction failed');
+            } else {
+                if (!wagmiAddress) {
+                    throw new Error('Wallet not connected via AppKit. Please check your connection.');
+                }
+                const hash = await writeContractAsync({
+                    ...params,
+                    chainId: STAKING_CHAIN_ID
+                });
+                
+                if (publicClient && hash) {
+                    try {
+                        await publicClient.waitForTransactionReceipt({ hash });
+                        handleTxConfirmed(hash, type, amount);
+                    } catch (e) {
+                        console.warn('[useStakingPool] Receipt wait failed for external.');
+                    }
+                }
+                return hash;
+            }
+        } catch (error: any) {
+            setIsInternalPending(false);
+            setInternalError(error);
+            
+            let message = 'Transaction Failed';
+            if (error?.message?.includes('User rejected')) {
+                message = 'Transaction Rejected';
+            } else if (error?.message?.includes('insufficient funds')) {
+                message = 'Insufficient Gas';
+            }
+            showToast(message, 'error');
+            setTimeout(hideToast, 4000);
+            throw error;
+        }
+    }, [wagmiAddress, writeContractAsync, publicClient, handleTxConfirmed, resetStates, hideToast, showToast]);
+
+    // --- ACTIONS ---
+
     const stake = useCallback(async (amount: string) => {
         await ensureCorrectChain();
         const amountWei = parseUnits(amount, decimals);
-
         showToast('Confirm Staking in Wallet...', 'pending');
-        const hash = await writeContractAsync({
-            address: factoryAddress,
+        return await executeWrite({
+            address: factoryAddress as `0x${string}`,
             abi: STAKING_FACTORY_ABI,
             functionName: 'deposit',
             args: [BigInt(poolId!), amountWei],
-        });
-        showToast('Stake/Unstake Processing...', 'confirmed', hash);
-        return hash;
-    }, [factoryAddress, poolId, decimals, writeContractAsync, ensureCorrectChain, showToast]);
+        }, 'Stake', amount);
+    }, [factoryAddress, poolId, decimals, executeWrite, ensureCorrectChain, showToast]);
 
     const unstake = useCallback(async (amount: string) => {
         await ensureCorrectChain();
         const amountWei = parseUnits(amount, decimals);
-
         showToast('Confirm Unstaking in Wallet...', 'pending');
-        const hash = await writeContractAsync({
-            address: factoryAddress,
+        return await executeWrite({
+            address: factoryAddress as `0x${string}`,
             abi: STAKING_FACTORY_ABI,
             functionName: 'withdraw',
             args: [BigInt(poolId!), amountWei],
-        });
-        showToast('Stake/Unstake Processing...', 'confirmed', hash);
-        return hash;
-    }, [factoryAddress, poolId, decimals, writeContractAsync, ensureCorrectChain, showToast]);
+        }, 'Unstake', amount);
+    }, [factoryAddress, poolId, decimals, executeWrite, ensureCorrectChain, showToast]);
 
     const claimRewards = useCallback(async () => {
         await ensureCorrectChain();
-
         showToast('Confirm Claim in Wallet...', 'pending');
-        const hash = await writeContractAsync({
-            address: factoryAddress,
+        return await executeWrite({
+            address: factoryAddress as `0x${string}`,
             abi: STAKING_FACTORY_ABI,
             functionName: 'claim',
             args: [BigInt(poolId!)],
-        });
-        showToast('Rewards Distribution Processing...', 'confirmed', hash);
-        return hash;
-    }, [factoryAddress, poolId, writeContractAsync, ensureCorrectChain, showToast]);
+        }, 'Claim', '0');
+    }, [factoryAddress, poolId, executeWrite, ensureCorrectChain, showToast]);
 
     const approve = useCallback(async (amount?: string) => {
         await ensureCorrectChain();
@@ -241,54 +296,17 @@ export function useStakingPool(poolId?: number | string, decimals: number = 9) {
             : BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff');
 
         showToast('Confirm Approval in Wallet...', 'pending');
-        const hash = await writeContractAsync({
+        return await executeWrite({
             address: stakingToken,
             abi: ERC20_ABI,
             functionName: 'approve',
-            args: [factoryAddress, amountWei],
-        });
-        showToast('Token Approval Processing...', 'confirmed', hash);
-        return hash;
-    }, [stakingToken, factoryAddress, decimals, writeContractAsync, ensureCorrectChain, showToast]);
+            args: [factoryAddress as `0x${string}`, amountWei],
+        }, 'Approve', amount || 'Max');
+    }, [stakingToken, factoryAddress, decimals, executeWrite, ensureCorrectChain, showToast]);
 
-    const stats: OnChainPoolStats = useMemo(() => {
-        // --- MATH ENGINE ---
+    // --- VIEW LOGIC ---
 
-        const price = priceData?.priceUSD || 0;
-        const totalStaked = poolState?.totalStaked || 0n;
-        const userStaked = userInfo?.[0] || 0n;
-        const pendingRewards = userInfo?.[3] || 0n;
-        const maxTvl = poolConfig?.maxTvl || 0n;
-
-        // Contract may provide rewardPerSecond or we calculate from poolReward/duration
-        const poolReward = poolConfig?.poolReward || 0n;
-        const duration = poolConfig?.rewardDurationSeconds || 0n;
-        const rewardPerSec = poolConfig?.rewardPerSecond || (duration > 0n ? poolReward / duration : 0n);
-
-        // APR Calculation Logic:
-        // 1. Fixed/Conservative: Use maxTvl as denominator (Minimum Guaranteed APR)
-        // 2. Flexible/Dynamic: Use totalStaked as denominator (Current Real-time APR)
-        // We will default to the user's requested formula (maxTvl) but fallback to totalStaked if maxTvl is 0.
-
-        let aprValue = '0.00%';
-        if (rewardPerSec > 0n) {
-            const yearlyReward = rewardPerSec * SECONDS_PER_YEAR;
-            const denominator = maxTvl > 0n ? maxTvl : (totalStaked > 0n ? totalStaked : 0n);
-
-            if (denominator > 0n) {
-                const aprNum = (Number(formatUnits(yearlyReward, decimals)) / Number(formatUnits(denominator, decimals))) * 100;
-                // Cap displayed APR at 99,999% to avoid UI distortion if capacity is tiny
-                aprValue = aprNum > 99999 ? '> 99,999%' : `${aprNum.toFixed(2)}%`;
-            }
-        }
-
-        // TVL USD: totalStaked * price
-        const totalStakedNum = Number(formatUnits(totalStaked, decimals));
-        const tvlUsd = currencyService.format(totalStakedNum * price, 'USD');
-
-        const totalStakedCompact = formatCompactNumber(totalStakedNum);
-
-        // If it's a mock pool, we provide realistic simulated data
+    const stats = useMemo(() => {
         if (isMock) {
             return {
                 totalStaked: parseUnits('213111612', decimals),
@@ -302,12 +320,44 @@ export function useStakingPool(poolId?: number | string, decimals: number = 9) {
                 stakingToken: null,
                 apr: '12.45%',
                 tvlUsd: '$1.4M',
+                tvlCompact: '1.4M',
+                maxTvlCompact: '10M',
                 limitsFormatted: '1M - 10M TWC',
                 isLoading: false,
                 isTransactionPending: false,
                 refetch: () => console.log('Mock refetch')
             };
         }
+
+        const totalStaked = (poolState as any)?.[0] || (poolState as any)?.totalStaked || 0n;
+        const userStaked = (userInfo as any)?.[0] || (userInfo as any)?.amount || 0n;
+        const pendingRewards = (userInfo as any)?.[3] || (userInfo as any)?.pending || 0n;
+        const totalStakedCompact = formatCompactNumber(Number(formatUnits(totalStaked, decimals)));
+
+        let aprValue = 'N/A';
+        let tvlUsd = '$0.00';
+        let maxTvlCompact = 'N/A';
+
+        if (poolConfig && poolState) {
+            const rewardDuration = Number(poolConfig.rewardDurationSeconds);
+            const poolReward = Number(formatUnits(poolConfig.poolReward || 0n, decimals));
+            const totalStakedNum = Number(formatUnits(totalStaked, decimals));
+            const maxTvl = Number(formatUnits(poolConfig.maxTvl || 0n, decimals));
+            maxTvlCompact = formatCompactNumber(maxTvl);
+
+            const tvlForCalculation = maxTvl > 0 ? maxTvl : (totalStakedNum > 0 ? totalStakedNum : 1);
+            const rewardPerTokenPerSec = poolReward / (tvlForCalculation * rewardDuration);
+            const apr = rewardPerTokenPerSec * Number(SECONDS_PER_YEAR) * 100;
+            aprValue = `~${apr.toFixed(2)}%`;
+
+            if (priceData?.priceUSD) {
+                tvlUsd = `$${formatCompactNumber(totalStakedNum * parseFloat(priceData.priceUSD))}`;
+            }
+        }
+
+        const duration = poolConfig?.minStakingPeriod || 0n;
+        const lockPeriodDays = Number(duration) / 86400;
+        const lockPeriodFormatted = lockPeriodDays > 0 ? `${lockPeriodDays} days` : 'No Lock';
 
         return {
             totalStaked,
@@ -318,11 +368,13 @@ export function useStakingPool(poolId?: number | string, decimals: number = 9) {
             pendingRewards,
             pendingRewardsFormatted: formatUnits(pendingRewards, decimals),
             allowance: (allowance as bigint) || 0n,
-            stakingToken: stakingToken || null,
+            stakingToken: (stakingToken as `0x${string}`) || null,
             apr: aprValue,
             tvlUsd,
-            limitsFormatted: 'N/A',
-            lockPeriod: '30 Days', // Default based on pool configuration
+            tvlCompact: totalStakedCompact,
+            maxTvlCompact,
+            limitsFormatted: poolConfig ? `${formatCompactNumber(Number(formatUnits(poolConfig.minStakeAmount || 0n, decimals)))}-${formatCompactNumber(Number(formatUnits(poolConfig.maxStakeAmount || 0n, decimals)))} TWC` : 'N/A',
+            lockPeriod: lockPeriodFormatted,
             isLoading: isPoolLoading || isUserLoading || isAllowanceLoading,
             isTransactionPending,
             refetch: refetchAll

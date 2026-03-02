@@ -11,6 +11,7 @@ import {
     MyStakeCard,
     StakingCarousel,
     StakingTokenCard,
+    TotalStakedCard,
     type EarnTabKey
 } from '@/components/sections/Earn';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
@@ -21,7 +22,7 @@ import { stakingService, type StakingPool, type UserStake } from '@/services/sta
 import { useWalletStore } from '@/store/walletStore';
 import { usePathname, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // Mock token icon - in production, use actual token logo
@@ -52,35 +53,61 @@ export default function EarnScreen() {
 
     const { address: walletAddress } = useWalletStore();
     const [isLoading, setIsLoading] = useState(false);
+    const [refreshing, setRefreshing] = useState(false);
     const [stakingTokens, setStakingTokens] = useState<StakingPool[]>([]);
     const [myStakes, setMyStakes] = useState<UserStake[]>([]);
-    const [totalStaked, setTotalStaked] = useState('Loading...');
+    const [stakingStats, setStakingStats] = useState<any>({
+        overallTvl: '...',
+        maxTvl: '...',
+        totalTwcStaked: '...',
+        activePoolsCount: 0,
+        activeStakersCount: '...'
+    });
 
     // Fetch data from backend
     const fetchData = async () => {
-        setIsLoading(true);
         try {
-            // Fetch total staked once on mount or when sub-tab changes
-            stakingService.getTotalTwcStaked().then(setTotalStaked);
+            // Fetch global staking stats and pool data in parallel
+            const [stats, pools] = await Promise.all([
+                stakingService.getGlobalStakingStats(),
+                stakingService.getActivePools()
+            ]);
 
-            if (stakingSubTab === 'stake') {
-                const pools = await stakingService.getActivePools();
-                setStakingTokens(pools);
-            } else {
-                if (walletAddress) {
-                    const status = stakingSubTab === 'active' ? 'active' : undefined;
-                    const stakes = await stakingService.getUserStakes(walletAddress, status);
-                    setMyStakes(stakes);
-                }
+            setStakingStats(stats);
+            setStakingTokens(pools);
+
+            if (walletAddress) {
+                const status = stakingSubTab === 'active' ? 'active' : undefined;
+                const stakes = await stakingService.getUserStakes(walletAddress, status);
+                setMyStakes(stakes);
             }
-        } finally {
-            setIsLoading(false);
+        } catch (error) {
+            console.error('[Earn] Data fetch failed:', error);
         }
     };
 
+    const loadData = async (showLoading = true) => {
+        if (showLoading) setIsLoading(true);
+        await fetchData();
+        if (showLoading) setIsLoading(false);
+    };
+
+    const onRefresh = async () => {
+        setRefreshing(true);
+        await fetchData();
+        setRefreshing(false);
+    };
+
     useEffect(() => {
-        fetchData();
-    }, [stakingSubTab, walletAddress]);
+        loadData();
+
+        // Real-time auto-refresh every 30 seconds
+        const intervalId = setInterval(() => {
+            fetchData();
+        }, 30000);
+
+        return () => clearInterval(intervalId);
+    }, [stakingSubTab, walletAddress, activeTab]);
 
     // Helper for contextual empty states
     const getEmptyStateMessages = (tab: StakingSubTab) => {
@@ -130,90 +157,96 @@ export default function EarnScreen() {
                     { paddingBottom: bottom + 100 } // Extra padding for tab bar
                 ]}
                 showsVerticalScrollIndicator={false}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={refreshing}
+                        onRefresh={onRefresh}
+                        tintColor={colors.primaryCTA}
+                        colors={[colors.primaryCTA]}
+                    />
+                }
             >
                 <View style={styles.mainContent}>
-                    {/* Tab Switcher */}
-                    <EarnTabSwitcher activeTab={activeTab} onTabChange={setActiveTab} />
+                    {/* Top Level Category Tabs (Staking, Farming, etc) */}
+                    <View style={{ marginBottom: 8, width: '100%' }}>
+                        <EarnTabSwitcher activeTab={activeTab} onTabChange={setActiveTab} />
+                    </View>
 
                     {/* Staking Tab Content */}
                     {activeTab === 'staking' && (
                         <View style={styles.tabContent}>
-                            {/* Total TWC Staked Card */}
-                            <View style={styles.totalStakedCard}>
-                                {/* Vertical Divider */}
-                                {/* <View style={styles.divider} /> */}
+                            {/* Total Staked Card (Web-style mobile grid) */}
+                            <TotalStakedCard
+                                overallTvl={stakingStats.overallTvl}
+                                maxTvl={stakingStats.maxTvl}
+                                activePoolsCount={stakingStats.activePoolsCount}
+                                totalTwcStaked={stakingStats.totalTwcStaked}
+                                activeStakersCount={stakingStats.activeStakersCount}
+                                isLoading={isLoading}
+                                tokenSymbol="TWC"
+                            />
 
-                                {/* Left: Label */}
-                                <View style={[styles.column, { borderRightColor: "#273024", borderRightWidth: 1 }]}>
-                                    <Text style={styles.labelTWC}>
-                                        Total TWC Staked
-                                    </Text>
-                                </View>
-
-                                {/* Right: Amount */}
-                                <View style={[styles.column, { borderLeftColor: "#273024", borderLeftWidth: 1 }]}>
-                                    <Text style={styles.amountText}>
-                                        {totalStaked}
-                                    </Text>
-                                </View>
-                            </View>
-
-                            {/* Staking Carousel */}
-                            <StakingCarousel />
-
-                            {/* Staking Sub Tabs */}
-                            <View style={styles.subTabsContainer}>
-                                {/* Stake Tab */}
+                            {/* Staking Sub Tabs (Matches ActionButtons on Web) */}
+                            <ScrollView
+                                horizontal
+                                showsHorizontalScrollIndicator={false}
+                                contentContainerStyle={styles.subTabsContainer}
+                            >
                                 <TouchableOpacity
                                     activeOpacity={0.8}
                                     onPress={() => setStakingSubTab('stake')}
-                                    style={styles.subTab}
+                                    style={[
+                                        styles.subTabButton,
+                                        { backgroundColor: stakingSubTab === 'stake' ? '#081f02' : '#0b0f0a' }
+                                    ]}
                                 >
                                     <Text
                                         style={[
                                             styles.subTabText,
-                                            { color: stakingSubTab === 'stake' ? colors.titleText : colors.mutedText }
+                                            { color: stakingSubTab === 'stake' ? '#b1f128' : '#b5b5b5' }
                                         ]}
                                     >
                                         Stake
                                     </Text>
-                                    {stakingSubTab === 'stake' && <View style={styles.activeIndicator} />}
                                 </TouchableOpacity>
 
-                                {/* Active Positions Tab */}
                                 <TouchableOpacity
                                     activeOpacity={0.8}
                                     onPress={() => setStakingSubTab('active')}
-                                    style={styles.subTab}
+                                    style={[
+                                        styles.subTabButton,
+                                        { backgroundColor: stakingSubTab === 'active' ? '#081f02' : '#0b0f0a' }
+                                    ]}
                                 >
                                     <Text
                                         style={[
                                             styles.subTabText,
-                                            { color: stakingSubTab === 'active' ? colors.titleText : colors.mutedText }
+                                            { color: stakingSubTab === 'active' ? '#b1f128' : '#b5b5b5' }
                                         ]}
                                     >
                                         Active Positions
                                     </Text>
-                                    {stakingSubTab === 'active' && <View style={styles.activeIndicator} />}
                                 </TouchableOpacity>
 
-                                {/* My Stakes Tab */}
                                 <TouchableOpacity
                                     activeOpacity={0.8}
                                     onPress={() => setStakingSubTab('my-stakes')}
-                                    style={styles.subTab}
+                                    style={[
+                                        styles.subTabButton,
+                                        { backgroundColor: stakingSubTab === 'my-stakes' ? '#081f02' : '#0b0f0a' }
+                                    ]}
                                 >
                                     <Text
                                         style={[
                                             styles.subTabText,
-                                            { color: stakingSubTab === 'my-stakes' ? colors.titleText : colors.mutedText }
+                                            { color: stakingSubTab === 'my-stakes' ? '#b1f128' : '#b5b5b5' }
                                         ]}
                                     >
                                         My Stakes
                                     </Text>
-                                    {stakingSubTab === 'my-stakes' && <View style={styles.activeIndicator} />}
                                 </TouchableOpacity>
-                            </View>
+                            </ScrollView>
+
 
                             {/* Staking Token Cards */}
                             {stakingSubTab === 'stake' && (
@@ -227,6 +260,8 @@ export default function EarnScreen() {
                                                 tokenSymbol={token.tokenSymbol}
                                                 tokenName={token.tokenName}
                                                 apy={token.displayApy}
+                                                tvl={token.tvl}
+                                                activeStakers={token.activeStakers}
                                                 tokenIcon={token.tokenLogo ? { uri: token.tokenLogo } : TWCIcon}
                                                 onPress={() => router.push(`/earn/stake/${token.tokenSymbol}` as any)}
                                             />
@@ -251,6 +286,8 @@ export default function EarnScreen() {
                                                 key={stake.id}
                                                 symbol={stake.pool.tokenSymbol}
                                                 apy={stake.displayApy}
+                                                stakedAmount={stake.displayStakedAmount}
+                                                rewardsEarned={stake.displayRewardsEarned}
                                                 icon={stake.pool.tokenLogo ? { uri: stake.pool.tokenLogo } : TWCIcon}
                                                 onPress={() => router.push(`/earn/manage/${stake.pool.tokenSymbol}` as any)}
                                             />
@@ -275,6 +312,8 @@ export default function EarnScreen() {
                                                 key={stake.id}
                                                 symbol={stake.pool.tokenSymbol}
                                                 apy={stake.displayApy}
+                                                stakedAmount={stake.displayStakedAmount}
+                                                rewardsEarned={stake.displayRewardsEarned}
                                                 icon={stake.pool.tokenLogo ? { uri: stake.pool.tokenLogo } : TWCIcon}
                                                 onPress={() => router.push(`/earn/manage/${stake.pool.tokenSymbol}` as any)}
                                             />
@@ -294,6 +333,7 @@ export default function EarnScreen() {
                     {(activeTab === 'farming' ||
                         activeTab === 'lend-borrow' ||
                         activeTab === 'nft-staking') && <ComingSoon />}
+
                 </View>
             </ScrollView>
         </View>
@@ -322,51 +362,23 @@ const styles = StyleSheet.create({
         flexDirection: 'column',
         gap: 24,
     },
-    totalStakedCard: {
-        backgroundColor: colors.bgSemi,
-        borderWidth: 0.5,
-        borderColor: '#273024',
-        height: 56,
-        borderRadius: 12,
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 16,
-        position: 'relative',
-    },
-    column: {
-        flex: 1,
-        alignItems: 'center',
-    },
-    labelTWC: {
-        fontFamily: 'Manrope-Medium',
-        fontSize: 16,
-        color: colors.primaryCTA,
-        letterSpacing: -0.64,
-    },
-    amountText: {
-        fontFamily: 'Manrope-Medium',
-        fontSize: 16,
-        color: colors.titleText,
-        letterSpacing: -0.64,
-    },
     subTabsContainer: {
         flexDirection: 'row',
-        alignItems: 'flex-start',
-        gap: 8,
-    },
-    subTab: {
-        flexDirection: 'column',
         alignItems: 'center',
-        gap: 4,
+        gap: 8,
+        paddingBottom: 4,
+    },
+    subTabButton: {
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        borderRadius: 8,
+        alignItems: 'center',
+        justifyContent: 'center',
+        minWidth: 80,
     },
     subTabText: {
-        fontFamily: 'Manrope-Medium',
+        fontFamily: 'Manrope-SemiBold',
         fontSize: 14,
-    },
-    activeIndicator: {
-        height: 1,
-        width: 16,
-        backgroundColor: colors.primaryCTA,
     },
     cardsList: {
         flexDirection: 'column',

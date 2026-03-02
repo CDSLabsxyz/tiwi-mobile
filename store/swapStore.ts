@@ -137,7 +137,7 @@ export const useSwapStore = create<SwapState>((set, get) => ({
   toFiatAmount: "$0",
 
   // Settings implementation
-  slippage: 0.5,
+  slippage: 3.0,
   useRelayer: false,
   gasPaymentToken: null,
 

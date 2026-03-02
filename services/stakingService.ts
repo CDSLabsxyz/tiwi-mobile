@@ -4,19 +4,32 @@ import { formatCompactNumber } from '@/utils/formatting';
 import { createPublicClient, formatUnits, http } from 'viem';
 import { bsc } from 'viem/chains';
 import { apiClient, APIStakingPool, APIUserStake } from './apiClient';
+import { RPC_CONFIG, RPC_TRANSPORT_OPTIONS } from '@/constants/rpc';
 
 // Toggle this to enable/disable mocks globally for staking
 const USE_MOCK_FALLBACK = false;
 
 // TWC Token Address on BSC
 const TWC_ADDRESS_BSC = '0xDA1060158F7D593667cCE0a15DB346BB3FfB3596';
-// BSC Factory Address
-const BSC_FACTORY_ADDRESS = '0x9178044f7cC0DD0dB121E7fCD4b068a0d1B76b07';
+// BSC Factory Address - Updated to match official production address for TWC
+const BSC_FACTORY_ADDRESS = '0x8505c412Ba61e5B260686a260C5213905DAAa130';
+
+const SECONDS_PER_YEAR = 31536000;
+
+export interface StakingStats {
+    overallTvl: string;
+    maxTvl: string;
+    totalTwcStaked: string;
+    activePoolsCount: number;
+    activeStakersCount: string;
+}
 
 export interface StakingPool extends APIStakingPool {
     displayApy: string;
     displayLimits?: string;
     minStakingPeriod?: string;
+    tvl?: string;
+    activeStakers?: string;
 }
 
 export interface UserStake extends APIUserStake {
@@ -26,8 +39,6 @@ export interface UserStake extends APIUserStake {
     minStakingPeriod?: string;
 }
 
-import { RPC_CONFIG, RPC_TRANSPORT_OPTIONS } from '@/constants/rpc';
-
 class StakingService {
     private bscClient = createPublicClient({
         chain: bsc,
@@ -35,35 +46,96 @@ class StakingService {
     });
 
     /**
-     * Helper to map pool to UI format
+     * Utility to calculate APR for a pool based on on-chain config
      */
-    private mapPool(pool: APIStakingPool): StakingPool {
-        const apyValue = typeof pool.apy === 'number' ? `~${pool.apy.toFixed(2)}%` : 'N/A';
+    private calculateAPRFromPoolConfig(
+        poolReward: number,
+        totalStakedTokens: number,
+        rewardDurationSeconds: number
+    ): string {
+        if (totalStakedTokens <= 0 || rewardDurationSeconds <= 0) return '0.00%';
 
-        // Compact Limits Formatting: 1,000,000 -> 1M
+        // Formula: reward / (staked * time) * year
+        const rewardRatePerTokenPerSecond = poolReward / (totalStakedTokens * rewardDurationSeconds);
+        const apr = rewardRatePerTokenPerSecond * SECONDS_PER_YEAR * 100;
+
+        return `~${apr.toFixed(2)}%`;
+    }
+
+    /**
+     * Helper to map pool to UI format with on-chain enrichment
+     */
+    private async mapPool(pool: APIStakingPool): Promise<StakingPool> {
+        let apyValue = typeof pool.apy === 'number' ? `~${pool.apy.toFixed(2)}%` : 'N/A';
+        let tvl = pool.tvl || 'N/A';
+        let activeStakers = pool.activeStakers || '0';
+
+        // ON-CHAIN ENRICHMENT: Fetch real-time TVL and APY if we have a factory and poolId
+        if (pool.chainId === 56 && pool.poolId !== undefined) {
+            try {
+                const poolInfo = await this.bscClient.readContract({
+                    address: BSC_FACTORY_ADDRESS as `0x${string}`,
+                    abi: STAKING_FACTORY_ABI,
+                    functionName: 'getPoolInfo',
+                    args: [BigInt(pool.poolId)],
+                }) as any;
+
+                if (poolInfo) {
+                    const config = poolInfo[0];
+                    const state = poolInfo[1];
+                    const decimals = pool.decimals || (config.stakingToken.toLowerCase() === TWC_ADDRESS_BSC.toLowerCase() ? 9 : 18);
+
+                    const totalStaked = Number(formatUnits(state.totalStaked, decimals));
+                    const poolReward = Number(formatUnits(config.poolReward, decimals));
+                    const maxTvl = Number(formatUnits(config.maxTvl, decimals));
+                    const rewardDuration = Number(config.rewardDurationSeconds);
+
+                    // Update TVL
+                    tvl = formatCompactNumber(totalStaked, { decimals: 2 });
+
+                    // Recalculate APY (On-chain is more accurate than DB)
+                    // Matches web logic: use maxTvl if available, otherwise current totalStaked
+                    const tvlForCalculation = maxTvl > 0 ? maxTvl : (totalStaked > 0 ? totalStaked : 1);
+                    apyValue = this.calculateAPRFromPoolConfig(poolReward, tvlForCalculation, rewardDuration);
+
+                    // Fetch active stakers for THIS specific pool from API
+                    try {
+                        const poolStakes = await apiClient.getUserStakes(undefined, 'active', pool.id);
+                        const uniqueWallets = new Set((poolStakes || []).map((s: any) => s.userWallet?.toLowerCase())).size;
+                        activeStakers = uniqueWallets.toLocaleString();
+                    } catch (e: any) {
+                        console.warn(`[StakingService] Failed to fetch stakers for pool ${pool.id}`, e.message);
+                    }
+                }
+            } catch (e: any) {
+                console.warn(`[StakingService] Enrichment failed for pool ${pool.poolId}:`, e.message);
+            }
+        }
+
+        // Compact Limits Formatting
         let displayLimits = 'N/A';
         if (pool.minStakeAmount && pool.maxStakeAmount) {
             const minStr = formatCompactNumber(pool.minStakeAmount, { decimals: 0 });
             const maxStr = formatCompactNumber(pool.maxStakeAmount, { decimals: 0 });
             displayLimits = `${minStr}-${maxStr} ${pool.tokenSymbol}`;
-        } else if (pool.minStakeAmount) {
-            displayLimits = `Min: ${formatCompactNumber(pool.minStakeAmount, { decimals: 0 })} ${pool.tokenSymbol}`;
         }
 
         return {
             ...pool,
             displayApy: apyValue,
             displayLimits,
-            minStakingPeriod: pool.minStakingPeriod || '30 days' // Fallback to 30 days based on backend data
+            minStakingPeriod: pool.minStakingPeriod || '30 days',
+            tvl: tvl,
+            activeStakers: activeStakers
         };
     }
 
     /**
-     * Fetches the total TWC staked across all factory pools on BSC
+     * Fetches global staking statistics from BSC
      */
-    async getTotalTwcStaked(): Promise<string> {
+    async getGlobalStakingStats(): Promise<StakingStats> {
         try {
-            // Get all pool IDs from factory
+            // Get all active pool IDs from factory
             const allPoolIds = await this.bscClient.readContract({
                 address: BSC_FACTORY_ADDRESS as `0x${string}`,
                 abi: STAKING_FACTORY_ABI,
@@ -71,16 +143,21 @@ class StakingService {
             }) as bigint[];
 
             if (!allPoolIds || allPoolIds.length === 0) {
-                return '0 TWC';
+                return {
+                    overallTvl: '0',
+                    maxTvl: '0',
+                    totalTwcStaked: '0',
+                    activePoolsCount: 0,
+                    activeStakersCount: '0'
+                };
             }
 
-            let totalStaked = BigInt(0);
+            let totalStakedValueNum = 0;
+            let totalMaxTvlValueNum = 0;
+            let twcStakedValueNum = 0;
 
             // Query pool info for all active pools
-            // In a production app, this would be optimized via multicall or indexing service
-            const poolsToQuery = allPoolIds.slice(-20); // Query last 20 for performance
-
-            await Promise.all(poolsToQuery.map(async (poolId) => {
+            await Promise.all(allPoolIds.map(async (poolId) => {
                 try {
                     const poolInfo = await this.bscClient.readContract({
                         address: BSC_FACTORY_ADDRESS as `0x${string}`,
@@ -89,40 +166,51 @@ class StakingService {
                         args: [poolId],
                     }) as any;
 
-                    // poolInfo returns [config, state]
                     const config = poolInfo[0];
                     const state = poolInfo[1];
 
+                    const poolDecimals = (config.stakingToken.toLowerCase() === TWC_ADDRESS_BSC.toLowerCase()) ? 9 : 18;
+                    const staked = Number(formatUnits(state.totalStaked, poolDecimals));
+                    const maxTvl = Number(formatUnits(config.maxTvl, poolDecimals));
+
+                    totalStakedValueNum += staked;
+                    totalMaxTvlValueNum += maxTvl;
+
                     if (config.stakingToken.toLowerCase() === TWC_ADDRESS_BSC.toLowerCase()) {
-                        totalStaked += state.totalStaked;
+                        twcStakedValueNum += staked;
                     }
                 } catch (e) {
                     console.warn(`[StakingService] Failed to fetch info for pool ${poolId}`, e);
                 }
             }));
 
-            const formatted = formatUnits(totalStaked, 9);
-            const num = Number(formatted);
-            const compact = formatCompactNumber(num, { decimals: 0 });
-            return `${compact} TWC`;
-        } catch (error) {
-            console.error('[StakingService] Error fetching total TWC staked:', error);
-            return '0 TWC';
-        }
-    }
+            // Fetch active stakers count from API (global)
+            let stakersCount = '0';
+            try {
+                const stakes = await apiClient.getUserStakes(undefined, 'active');
+                const uniqueWallets = new Set((stakes || []).map((s: any) => s.userWallet?.toLowerCase())).size;
+                stakersCount = uniqueWallets.toLocaleString();
+            } catch (e: any) {
+                console.warn('[StakingService] Failed to fetch global stakers count:', e.message);
+            }
 
-    /**
-     * Helper to map stake to UI format
-     */
-    private mapStake(stake: APIUserStake): UserStake {
-        const apyValue = stake.pool && typeof stake.pool.apy === 'number' ? `~${stake.pool.apy.toFixed(2)}%` : 'N/A';
-        return {
-            ...stake,
-            displayApy: apyValue,
-            displayStakedAmount: `${stake.stakedAmount} ${stake.pool?.tokenSymbol || ''}`,
-            displayRewardsEarned: `${stake.rewardsEarned} ${stake.pool?.tokenSymbol || ''}`,
-            minStakingPeriod: stake.pool?.minStakingPeriod || '30 days'
-        };
+            return {
+                overallTvl: formatCompactNumber(totalStakedValueNum, { decimals: 2 }),
+                maxTvl: formatCompactNumber(totalMaxTvlValueNum, { decimals: 2 }),
+                totalTwcStaked: formatCompactNumber(twcStakedValueNum, { decimals: 2 }),
+                activePoolsCount: allPoolIds.length,
+                activeStakersCount: stakersCount
+            };
+        } catch (error) {
+            console.error('[StakingService] Error fetching global staking stats:', error);
+            return {
+                overallTvl: '0',
+                maxTvl: '0',
+                totalTwcStaked: '0',
+                activePoolsCount: 0,
+                activeStakersCount: '0'
+            };
+        }
     }
 
     /**
@@ -136,11 +224,13 @@ class StakingService {
                 pools = MOCK_STAKING_POOLS;
             }
 
-            return (pools || []).map(pool => this.mapPool(pool));
+            // Map and enrich sequentially to avoid RPC spam, though Promise.all is faster
+            const enrichedPools = await Promise.all((pools || []).map(pool => this.mapPool(pool)));
+            return enrichedPools;
         } catch (error) {
             console.error('[StakingService] Error fetching active pools:', error);
             if (USE_MOCK_FALLBACK) {
-                return MOCK_STAKING_POOLS.map(pool => this.mapPool(pool));
+                return Promise.all(MOCK_STAKING_POOLS.map(pool => this.mapPool(pool)));
             }
             return [];
         }
@@ -158,58 +248,29 @@ class StakingService {
                 stakes = MOCK_USER_STAKES.filter((s: APIUserStake) => !status || s.status === status);
             }
 
-            return (stakes || []).map(stake => this.mapStake(stake));
+            return (stakes || []).map(stake => {
+                const apyValue = stake.pool && typeof stake.pool.apy === 'number' ? `~${stake.pool.apy.toFixed(2)}%` : 'N/A';
+                return {
+                    ...stake,
+                    displayApy: apyValue,
+                    displayStakedAmount: `${stake.stakedAmount} ${stake.pool?.tokenSymbol || ''}`,
+                    displayRewardsEarned: `${stake.rewardsEarned} ${stake.pool?.tokenSymbol || ''}`,
+                    minStakingPeriod: stake.pool?.minStakingPeriod || '30 days'
+                };
+            });
         } catch (error) {
             console.error('[StakingService] Error fetching user stakes:', error);
-            if (USE_MOCK_FALLBACK) {
-                return MOCK_USER_STAKES
-                    .filter((s: APIUserStake) => !status || s.status === status)
-                    .map(stake => this.mapStake(stake));
-            }
             return [];
         }
     }
 
     /**
      * Get a specific pool by symbol or ID
-     * DISCOVERY: If pool not in API cache, attempt to find its ID on BSC on-chain
      */
     async getPoolBySymbol(symbol: string): Promise<StakingPool | undefined> {
         try {
             const pools = await this.getActivePools();
-            const pool = pools.find(p => p.tokenSymbol.toLowerCase() === symbol.toLowerCase());
-
-            if (pool) return pool;
-
-            // ON-CHAIN DISCOVERY FALLBACK
-            // In a pro app, we'd resolve the symbol to an address first.
-            // For Tiwi, we typically stake 'TWC' or major assets with 'TWC' as rewards.
-            if (symbol.toUpperCase() === 'TWC') {
-                const discoveredIds = await this.discoverPoolsOnChain(TWC_ADDRESS_BSC, TWC_ADDRESS_BSC);
-                if (discoveredIds.length > 0) {
-                    // Fetch full info for the found ID
-                    const poolInfo = await this.bscClient.readContract({
-                        address: BSC_FACTORY_ADDRESS as `0x${string}`,
-                        abi: STAKING_FACTORY_ABI,
-                        functionName: 'getPoolInfo',
-                        args: [discoveredIds[0]],
-                    }) as any;
-
-                    return this.mapPool({
-                        id: `discovered-${discoveredIds[0]}`,
-                        tokenSymbol: 'TWC',
-                        tokenName: 'Tiwi Token',
-                        apy: 0, // State-based APR calculation would go here
-                        contractAddress: BSC_FACTORY_ADDRESS,
-                        chainId: bsc.id,
-                        tokenAddress: TWC_ADDRESS_BSC,
-                        poolId: Number(discoveredIds[0]),
-                        status: 'active'
-                    });
-                }
-            }
-
-            return undefined;
+            return pools.find(p => p.tokenSymbol.toLowerCase() === symbol.toLowerCase());
         } catch (error) {
             console.error('[StakingService] Error fetching pool by symbol:', error);
             return undefined;
@@ -217,38 +278,7 @@ class StakingService {
     }
 
     /**
-     * Get user's stake for a specific pool by symbol
-     */
-    async getUserStakeBySymbol(walletAddress: string, symbol: string): Promise<UserStake | undefined> {
-        try {
-            const stakes = await this.getUserStakes(walletAddress, 'active');
-            return stakes.find(s => s.pool.tokenSymbol.toLowerCase() === symbol.toLowerCase());
-        } catch (error) {
-            console.error('[StakingService] Error fetching user stake by symbol:', error);
-            return undefined;
-        }
-    }
-
-    /**
-     * DISCOVERY: Find pool IDs for a specific token pair on-chain
-     */
-    async discoverPoolsOnChain(stakingToken: string, rewardToken: string): Promise<bigint[]> {
-        try {
-            const poolIds = await this.bscClient.readContract({
-                address: BSC_FACTORY_ADDRESS as `0x${string}`,
-                abi: STAKING_FACTORY_ABI,
-                functionName: 'getPoolsByTokenPair',
-                args: [stakingToken, rewardToken],
-            }) as bigint[];
-            return poolIds || [];
-        } catch (error) {
-            console.error('[StakingService] On-chain discovery failed:', error);
-            return [];
-        }
-    }
-
-    /**
-     * READINESS: Check ERC20 allowance for a token against the factory
+     * READINESS: Check ERC20 allowance
      */
     async getAllowance(tokenAddress: string, ownerAddress: string): Promise<bigint> {
         try {

@@ -32,7 +32,9 @@ export const STAKING_FACTORY_ABI = [
                 components: [
                     { internalType: 'uint256', name: 'totalStaked', type: 'uint256' },
                     { internalType: 'uint256', name: 'accRewardPerShare', type: 'uint256' },
-                    { internalType: 'uint256', name: 'lastRewardTime', type: 'uint256' }
+                    { internalType: 'uint256', name: 'lastRewardTime', type: 'uint256' },
+                    { internalType: 'uint256', name: 'rewardBalance', type: 'uint256' },
+                    { internalType: 'bool', name: 'funded', type: 'bool' }
                 ],
                 internalType: 'struct TiwiStakingPoolFactory.PoolState',
                 name: 'state',
@@ -45,6 +47,18 @@ export const STAKING_FACTORY_ABI = [
     {
         inputs: [],
         name: 'getActivePoolIds',
+        outputs: [
+            { internalType: 'uint256[]', name: '', type: 'uint256[]' }
+        ],
+        stateMutability: 'view',
+        type: 'function'
+    },
+    {
+        inputs: [
+            { internalType: 'address', name: '_stakingToken', type: 'address' },
+            { internalType: 'address', name: '_rewardToken', type: 'address' }
+        ],
+        name: 'getPoolsByTokenPair',
         outputs: [
             { internalType: 'uint256[]', name: '', type: 'uint256[]' }
         ],
@@ -78,7 +92,6 @@ export const STAKING_FACTORY_ABI = [
         stateMutability: 'view',
         type: 'function'
     },
-    // Write functions for Phase 3 (added now for completeness)
     {
         inputs: [
             { internalType: 'uint256', name: '_poolId', type: 'uint256' },
@@ -108,7 +121,6 @@ export const STAKING_FACTORY_ABI = [
         stateMutability: 'nonpayable',
         type: 'function'
     }
-
 ] as const;
 
 export const ERC20_ABI = [

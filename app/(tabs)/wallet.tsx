@@ -138,7 +138,7 @@ export default function WalletScreen() {
     }, [supportedEcosystems]);
 
     // Pre-warm React Query cache for tokens and chains
-    useChains(supportedEcosystems);
+    const { data: chainsData } = useChains(supportedEcosystems);
     useTokens({
         chains: supportedChainIds,
         enabled: supportedChainIds.length > 0 && !!address,
@@ -203,18 +203,49 @@ export default function WalletScreen() {
                     {/* Asset / NFT List */}
                     {activeTab === 'assets' ? (
                         <View style={styles.assetList}>
-                            {filteredTokens.map((token: any) => (
-                                <AssetListItem
-                                    key={`${token.chainId}-${token.address}`}
-                                    asset={{
-                                        ...token,
-                                        id: token.address,
-                                        logo: token.logoURI,
-                                        change24h: parseFloat(token.priceChange24h || '0')
-                                    }}
-                                    onPress={() => handleAssetPress(token)}
-                                />
-                            ))}
+                            {filteredTokens.map((token: any) => {
+                                // Fallback mapping for common chains to ensure they NEVER show "Ether" or empty
+                                const FALLBACK_NAMES: Record<number, string> = {
+                                    1: 'Ethereum',
+                                    56: 'BNB Chain',
+                                    137: 'Polygon',
+                                    42161: 'Arbitrum',
+                                    8453: 'Base',
+                                    10: 'Optimism',
+                                };
+
+                                const FALLBACK_LOGOS: Record<number, string> = {
+                                    1: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png',
+                                    56: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/binance/info/logo.png',
+                                    137: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/polygon/info/logo.png',
+                                    42161: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/arbitrum/info/logo.png',
+                                    8453: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/base/info/logo.png',
+                                    10: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/optimism/info/logo.png',
+                                };
+
+                                // Find the chain logo and name from the chains data with fallback
+                                const tokenChain = (chainsData || []).find(c => Number(c.id) === Number(token.chainId));
+
+                                const chainName = tokenChain?.name || FALLBACK_NAMES[token.chainId] || 'Unknown';
+
+                                // Priority: dynamic logo > fallback require > token.logoURI (fallback to token's own logo if somehow nothing else)
+                                const chainLogo = tokenChain?.logoURI || tokenChain?.logo || FALLBACK_LOGOS[token.chainId];
+
+                                return (
+                                    <AssetListItem
+                                        key={`${token.chainId}-${token.address}`}
+                                        asset={{
+                                            ...token,
+                                            id: token.address,
+                                            logo: token.logoURI,
+                                            change24h: parseFloat(token.priceChange24h || '0'),
+                                            chainLogo: chainLogo,
+                                            chainName: chainName
+                                        }}
+                                        onPress={() => handleAssetPress(token)}
+                                    />
+                                );
+                            })}
                         </View>
                     ) : (
                         <NFTList nfts={filteredNFTs} isLoading={isLoadingNFTs} onNFTPress={handleNFTPress} />

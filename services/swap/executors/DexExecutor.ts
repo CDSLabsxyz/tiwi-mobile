@@ -92,7 +92,7 @@ export class DexExecutor {
                 console.log("[DexExecutor] Missing calldata, constructing locally...");
                 const path = quote.raw?.path || this.getDefaultPath(fromToken, toToken);
                 const amountIn = parseUnits(fromAmount, fromToken.decimals);
-                const amountOutMin = this.calculateAmountOutMin(quote.toAmount, toToken.decimals, quote.slippage);
+                const amountOutMin = this.calculateAmountOutMin(quote.toAmount, toToken.decimals, quote.slippage, toToken.address);
                 console.log("🚀 ~ DexExecutor ~ execute ~ amountOutMin:", amountOutMin)
                 const deadline = BigInt(Math.floor(Date.now() / 1000) + 60 * 20); // 20 mins
                 let fnName
@@ -159,9 +159,9 @@ export class DexExecutor {
         }
     }
 
-    private calculateAmountOutMin(toAmount: string, decimals: number, slippage: number): bigint {
+    private calculateAmountOutMin(toAmount: string, decimals: number, slippage: number, toTokenAddress?: string): bigint {
         const amount = parseUnits(toAmount, decimals);
-        const slippageBps = BigInt(Math.floor(slippage * 100)); // 0.5% -> 50 bps
+        const slippageBps = BigInt(Math.floor(slippage * 100)); 
         return (amount * (BigInt(10000) - slippageBps)) / BigInt(10000);
     }
 

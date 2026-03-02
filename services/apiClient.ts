@@ -389,6 +389,8 @@ export interface APIStakingPool {
     factoryAddress?: string;
     status: 'active' | 'completed' | 'withdrawn';
     minStakingPeriod?: string;
+    tvl?: string;
+    activeStakers?: string;
 }
 
 export interface APIUserStake {
@@ -962,11 +964,16 @@ class TiwiApiClient {
     /**
      * Get user stakes from the backend
      */
-    async getUserStakes(userWallet: string, status?: string): Promise<APIUserStake[]> {
+    async getUserStakes(userWallet?: string, status?: string, poolId?: string): Promise<APIUserStake[]> {
         const query = new URLSearchParams();
-        query.append('userWallet', userWallet);
+        if (userWallet && userWallet !== '0x') {
+            query.append('userWallet', userWallet);
+        }
         if (status) {
             query.append('status', status);
+        }
+        if (poolId) {
+            query.append('poolId', poolId);
         }
         const response = await this.fetcher<{ stakes: APIUserStake[] }>(`/api/v1/user-stakes?${query.toString()}`);
         return response.stakes;

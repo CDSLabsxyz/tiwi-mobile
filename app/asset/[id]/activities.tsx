@@ -59,9 +59,13 @@ export default function AssetActivitiesScreen() {
 
     // Handlers
     const handleBackPress = () => {
-        // Navigate back to asset detail screen
-        const tabParam = tab ? `?tab=${tab}` : "";
-        router.push(`/asset/${id}${tabParam}` as any);
+        if (router.canGoBack()) {
+            router.back();
+        } else {
+            // Navigate back to asset detail screen if no history
+            const tabParam = tab ? `?tab=${tab}` : "";
+            router.push(`/asset/${id}${tabParam}` as any);
+        }
     };
 
     const handleIrisScanPress = () => {

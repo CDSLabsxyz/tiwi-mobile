@@ -1,5 +1,6 @@
 
 import { acrossService } from './acrossService';
+import { relayService } from './relayService';
 import { SwapQuote, TokenMinimal } from './swap/types';
 import { unifiedSwapManager } from './swap/UnifiedSwapManager';
 
@@ -22,22 +23,29 @@ export async function fetchSwapQuote(
     }
 
     try {
-        // HARDCODED: Remove Tiwi backend dependency, use Across SDK directly
-        const acrossQuote = await acrossService.fetchAcrossQuote(
-            fromAmount,
-            fromToken,
-            toToken,
-            fromAddress,
-            recipient,
-            slippage
-        );
+    // 1. Fetch from best sources in parallel for speed
+    console.log(`[SwapService] Parallel quoting for ${fromToken.symbol} -> ${toToken.symbol}`);
+    const results = await Promise.allSettled([
+        acrossService.fetchAcrossQuote(fromAmount, fromToken, toToken, fromAddress, recipient, slippage),
+        relayService.fetchRelayQuote(fromAmount, fromToken, toToken, fromAddress, recipient, slippage)
+    ]);
 
-        if (acrossQuote) {
-            console.log("🚀 ~ fetchSwapQuote ~ acrossQuote:", acrossQuote)
-            return acrossQuote;
-        }
+    const acrossQuote = (results[0].status === 'fulfilled' && results[0].value?.router !== 'error') ? results[0].value : null;
+    const relayQuote = (results[1].status === 'fulfilled' && results[1].value?.router !== 'error') ? results[1].value : null;
 
-        throw new Error('Across failed to provide a quote');
+    // 2. Selection logic: 
+    // Always prefer Across as Priority 1 (best for aggregators/taxes)
+    // Fallback to Relay for others.
+    if (acrossQuote) {
+        console.log("[SwapService] Selecting Across Quote (Primary Route)");
+        return acrossQuote;
+    }
+    if (relayQuote) {
+        console.log("[SwapService] Selecting Relay Quote (Secondary Route)");
+        return relayQuote;
+    }
+
+    throw new Error('No swap route found for this pair. Try a different amount or asset.');
     } catch (error) {
         console.error('[SwapService] fetchSwapQuote failed:', error);
         return {

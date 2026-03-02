@@ -103,7 +103,7 @@ class MoralisService {
 
                                 // Use the conventional 0x0...0 for native, as requested by project consistency
                                 const NATIVE_ADDR = '0x0000000000000000000000000000000000000000';
-                                
+
                                 nativeToken = {
                                     address: NATIVE_ADDR,
                                     symbol: meta.symbol,
@@ -111,7 +111,7 @@ class MoralisService {
                                     decimals: meta.decimals,
                                     balance: nativeData.balance,
                                     balanceFormatted: formatUnits(BigInt(nativeData.balance), meta.decimals),
-                                    usdValue: '0', 
+                                    usdValue: '0',
                                     priceUSD: '0',
                                     chainId: chainId,
                                     verified: true,

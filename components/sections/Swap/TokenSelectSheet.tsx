@@ -2,7 +2,7 @@ import { colors } from '@/constants/colors';
 import { useChains } from '@/hooks/useChains';
 import { useTokens } from '@/hooks/useTokens';
 import { useWalletBalances } from '@/hooks/useWalletBalances';
-import { getColorFromSeed } from '@/utils/formatting';
+import { getColorFromSeed, formatTokenQuantity, formatUSDPrice } from '@/utils/formatting';
 import { truncateAddress } from '@/utils/wallet';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
@@ -61,8 +61,47 @@ export const TokenSelectSheet: React.FC<TokenSelectSheetProps> = ({
         if (!tokens) return [];
 
         const TWC_ADDRESS = '0xda1060158f7d593667cce0a15db346bb3ffb3596'.toLowerCase();
+        const NATIVE_ADDRS = ['0x0000000000000000000000000000000000000000', '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'];
 
-        const mapped = tokens.map(t => {
+        // Filtering: Smart Heuristic Scam Filter
+        const filteredTokens = tokens.filter(t => {
+            const isOnChain = (typeof chainId === 'number') ? t.chainId === chainId : true;
+            if (!isOnChain) return false;
+
+            const name = t.name?.toLowerCase() || '';
+            const symbol = t.symbol?.toLowerCase() || '';
+            const address = t.address?.toLowerCase() || '';
+
+            const isTWC = address.toLowerCase() === TWC_ADDRESS;
+
+            // Get native symbol from chains data
+            const chInfo = chains?.find(c => c.id === t.chainId);
+            const nativeSym = chInfo?.nativeCurrency?.symbol?.toLowerCase();
+            const isNativeToken = NATIVE_ADDRS.includes(address.toLowerCase()) || (nativeSym && symbol === nativeSym);
+
+            // CRITICAL: Always allow Native Tokens (BNB, ETH, etc) and TWC through
+            if (isNativeToken || isTWC) return true;
+
+            // 1. Pump.fun Filter
+            if (address.endsWith('pump') || name.includes('pump.fun')) return false;
+
+            // 2. Chinese/Spam Script Filter (Scanner garbage)
+            const isChinese = /[\u4e00-\u9fa5]/.test(name) || /[\u4e00-\u9fa5]/.test(symbol);
+            if (isChinese) return false;
+
+            // 3. Phishing/Ad Keywords
+            const spamKeywords = ['.com', '.xyz', '.net', 'claim', 'airdrop', 'visit', 'free', 'reward', 'voucher'];
+            if (spamKeywords.some(k => name.includes(k) || symbol.includes(k))) return false;
+
+            // 4. Impersonation Filter: Escape fake "BSC", "ETH", "USDT" etc.
+            const coreNames = ['ethereum', 'usdt', 'usdc', 'weth', 'bnb', 'solana', 'wrapped bnb', 'bitcoin', 'tether', 'bsc', 'binance'];
+            const isFakeCore = !t.verified && coreNames.some(cn => name === cn || symbol === cn);
+            if (isFakeCore) return false;
+
+            return true;
+        });
+
+        const mapped = filteredTokens.map(t => {
             // Find if this token has a balance in our wallet
             const walletToken = balanceData?.tokens.find(
                 wt => wt.address.toLowerCase() === t.address.toLowerCase() && wt.chainId === t.chainId
@@ -72,6 +111,11 @@ export const TokenSelectSheet: React.FC<TokenSelectSheetProps> = ({
             const chainInfo = chains?.find(c => c.id === t.chainId);
             const chainIcon = chainInfo?.logoURI || chainInfo?.logo;
 
+            const hasBal = !!walletToken;
+            const balNum = parseFloat(walletToken?.balanceFormatted || '0');
+            const prcNum = parseFloat(t.priceUSD || '0');
+            const totUSD = balNum * prcNum;
+
             return {
                 id: `${t.chainId}-${t.address}`,
                 symbol: t.symbol,
@@ -79,24 +123,38 @@ export const TokenSelectSheet: React.FC<TokenSelectSheetProps> = ({
                 icon: t.logoURI,
                 chainIcon: chainIcon,
                 tvl: t.liquidity ? `$${t.liquidity.toLocaleString()}` : 'N/A',
-                balanceFiat: walletToken?.usdValue ? `$${parseFloat(walletToken.usdValue).toFixed(2)}` : '$0.00',
-                balanceToken: walletToken?.balanceFormatted || `0.00 ${t.symbol}`,
+                balanceFiat: totUSD > 0 ? formatUSDPrice(totUSD) : '$0.00',
+                balanceToken: hasBal ? `${formatTokenQuantity(walletToken.balanceFormatted)} ${t.symbol}` : `0 ${t.symbol}`,
                 address: t.address,
                 chainId: t.chainId,
                 decimals: t.decimals,
                 priceUSD: t.priceUSD,
-                isOwned: !!walletToken,
-                usdValueNum: parseFloat(walletToken?.usdValue || '0'),
+                isOwned: hasBal,
+                usdValueNum: totUSD,
             };
         });
 
-        // Sorting Logic: TWC -> Owned -> Others
+        // Sorting Logic: Native -> TWC -> Owned -> Others
         return mapped.sort((a, b) => {
+            const chainInfo = chains?.find(c => c.id === a.chainId);
+            const nativeSymbol = chainInfo?.nativeCurrency?.symbol;
+
+            // 1. Native Token is absolute priority (#1)
+            const isANative = NATIVE_ADDRS.includes(a.address.toLowerCase()) || 
+                             (nativeSymbol && a.symbol.toUpperCase() === nativeSymbol.toUpperCase());
+            const isBNative = NATIVE_ADDRS.includes(b.address.toLowerCase()) || 
+                             (nativeSymbol && b.symbol.toUpperCase() === nativeSymbol.toUpperCase());
+
+            if (isANative && !isBNative) return -1;
+            if (!isANative && isBNative) return 1;
+
+            // 2. TWC Protocol Token (#2)
             const isATWC = a.address.toLowerCase() === TWC_ADDRESS;
             const isBTWC = b.address.toLowerCase() === TWC_ADDRESS;
-            if (isATWC) return -1;
-            if (isBTWC) return 1;
+            if (isATWC && !isBTWC) return -1;
+            if (!isATWC && isBTWC) return 1;
 
+            // 3. Owned tokens (balance > 0)
             if (a.isOwned && !b.isOwned) return -1;
             if (!a.isOwned && b.isOwned) return 1;
 
@@ -179,8 +237,8 @@ export const TokenSelectSheet: React.FC<TokenSelectSheetProps> = ({
                                         {/* Right: balances + checkmark */}
                                         <View style={styles.rightInfo}>
                                             <View style={styles.balanceColumn}>
-                                                <Text style={styles.fiatBalance}>{token.balanceFiat}</Text>
                                                 <Text style={styles.tokenBalance}>{token.balanceToken}</Text>
+                                                <Text style={styles.fiatBalance}>{token.balanceFiat}</Text>
                                             </View>
 
                                             {isActive && (
@@ -313,12 +371,12 @@ const styles = StyleSheet.create({
         alignItems: 'flex-end',
         gap: 4,
     },
-    fiatBalance: {
+    tokenBalance: {
         fontFamily: 'Manrope-SemiBold',
-        fontSize: 16,
+        fontSize: 14,
         color: colors.titleText,
     },
-    tokenBalance: {
+    fiatBalance: {
         fontFamily: 'Manrope-Medium',
         fontSize: 12,
         color: colors.bodyText,

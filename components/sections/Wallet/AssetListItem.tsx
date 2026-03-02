@@ -15,7 +15,13 @@ import React, { useMemo } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 interface AssetListItemProps {
-    asset: PortfolioItem & { priceUSD?: string; change24h: number; balanceFormatted: string };
+    asset: PortfolioItem & {
+        priceUSD?: string;
+        change24h: number;
+        balanceFormatted: string;
+        chainLogo?: string;
+        chainName?: string; // Add chainName from parent
+    };
     onPress?: () => void;
 }
 
@@ -50,39 +56,55 @@ export const AssetListItem: React.FC<AssetListItemProps> = ({
 
     const sparkData = useMemo(() => generateSparklineData(asset.change24h), [asset.change24h]);
 
+    // Get chain badge, if the token is on a non-Ethereum mainnet chain (unless Ethereum logo itself is wanted)
+    const chainBadge = asset.chainId !== 1 ? asset.chainLogo : null;
+
     return (
         <TouchableOpacity
             activeOpacity={0.8}
             onPress={onPress}
             style={styles.container}
         >
-            {/* Left: Icon + Symbol/Name */}
+            {/* Left: Icon + Symbol/Subtitle */}
             <View style={styles.leftSection}>
-                {/* Asset Icon */}
-                <View style={styles.iconContainer}>
-                    {asset.logo ? (
-                        <Image
-                            source={asset.logo}
-                            style={styles.iconImage}
-                            contentFit="cover"
-                        />
-                    ) : (
-                        <View style={[styles.iconImage, styles.fallbackCircle, { backgroundColor: getColorFromSeed(asset.symbol) }]}>
-                            <Text style={styles.fallbackText}>{asset.symbol.charAt(0).toUpperCase()}</Text>
+                {/* Asset Icon Wrapper */}
+                <View style={styles.iconWrapper}>
+                    <View style={styles.iconContainer}>
+                        {asset.logo ? (
+                            <Image
+                                source={asset.logo}
+                                style={styles.iconImage}
+                                contentFit="cover"
+                            />
+                        ) : (
+                            <View style={[styles.iconImage, styles.fallbackCircle, { backgroundColor: getColorFromSeed(asset.symbol) }]}>
+                                <Text style={styles.fallbackText}>{asset.symbol.charAt(0).toUpperCase()}</Text>
+                            </View>
+                        )}
+                    </View>
+
+                    {/* Chain Badge (Floating) */}
+                    {chainBadge && (
+                        <View style={styles.badgeContainer}>
+                            <Image
+                                source={chainBadge}
+                                style={styles.badgeImage}
+                                contentFit="contain"
+                            />
                         </View>
                     )}
                 </View>
 
-                {/* Symbol + Name */}
+                {/* Symbol + Chain Name Subtitle */}
                 <View style={styles.nameContainer}>
                     {/* Symbol */}
                     <Text style={styles.symbol}>
                         {asset.symbol}
                     </Text>
 
-                    {/* Name */}
-                    <Text style={styles.name} numberOfLines={1}>
-                        {asset.name}
+                    {/* Network Name (e.g., BNB Chain) instead of token name */}
+                    <Text style={styles.subtitle} numberOfLines={1}>
+                        {asset.chainName || asset.name}
                     </Text>
                 </View>
             </View>
@@ -132,18 +154,49 @@ const styles = StyleSheet.create({
     leftSection: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 8,
-        width: 142,
+        gap: 12,
+        flex: 1,
+    },
+    iconWrapper: {
+        position: 'relative',
+        width: 38,
+        height: 38,
+        justifyContent: 'center',
     },
     iconContainer: {
         width: 32,
         height: 32,
         borderRadius: 16,
         overflow: 'hidden',
+        backgroundColor: '#FFFFFF', // Image 1 shows a white background circle for most logos
     },
     iconImage: {
         width: '100%',
         height: '100%',
+    },
+    badgeContainer: {
+        position: 'absolute',
+        bottom: -4,
+        right: -2,
+        backgroundColor: '#000000', // Image 1 shows a black background for the badge
+        borderRadius: 10,
+        width: 18,
+        height: 18,
+        padding: 2,
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 1.5,
+        borderColor: '#1D2125', // Use a dark border for contrast
+        elevation: 3, // For Android
+        shadowColor: '#000000', // For iOS
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.3,
+        shadowRadius: 2,
+    },
+    badgeImage: {
+        width: '100%',
+        height: '100%',
+        borderRadius: 10,
     },
     fallbackCircle: {
         justifyContent: 'center',
@@ -159,56 +212,45 @@ const styles = StyleSheet.create({
         flexDirection: 'column',
         alignItems: 'flex-start',
         justifyContent: 'center',
-        gap: 2,
+        gap: 0,
     },
     symbol: {
         fontFamily: 'Manrope-Medium',
-        fontSize: 14,
-        lineHeight: 20,
+        fontSize: 16,
+        lineHeight: 22,
         color: colors.titleText,
     },
-    name: {
+    subtitle: {
         fontFamily: 'Manrope-Regular',
-        fontSize: 12,
-        lineHeight: 20,
-        color: '#8A929A',
+        fontSize: 13,
+        lineHeight: 18,
+        color: '#8A929A', // Corresponds to the gray subtitle in Image 1
     },
     chartContainer: {
         width: 70,
         height: 32,
         alignItems: 'center',
         justifyContent: 'center',
-        marginHorizontal: 0,
-    },
-    chartImage: {
-        width: '100%',
-        height: '100%',
-    },
-    chartPlaceholder: {
-        width: '100%',
-        height: '100%',
-        backgroundColor: colors.bgStroke,
-        borderRadius: 4,
+        marginHorizontal: 12,
     },
     rightSection: {
         flexDirection: 'column',
         alignItems: 'flex-end',
         justifyContent: 'center',
-        gap: 2,
-        minWidth: 120,
-        maxWidth: 120,
+        gap: 0,
+        minWidth: 100,
     },
     balance: {
         fontFamily: 'Manrope-Medium',
-        fontSize: 14,
-        lineHeight: 20,
+        fontSize: 15,
+        lineHeight: 22,
         color: colors.titleText,
         textAlign: 'right',
     },
     usdValue: {
         fontFamily: 'Manrope-Regular',
         fontSize: 12,
-        lineHeight: 20,
+        lineHeight: 18,
         color: '#8A929A',
         textAlign: 'right',
     },

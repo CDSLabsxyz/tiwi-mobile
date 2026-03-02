@@ -115,9 +115,13 @@ export default function AssetDetailScreen() {
 
   // Handlers
   const handleBackPress = () => {
-    // Navigate back to wallet screen with the preserved tab
-    const tabParam = tab ? `?tab=${tab}` : "";
-    router.push(`/wallet${tabParam}` as any);
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      // Fallback if no history (e.g. direct link)
+      const tabParam = tab ? `?tab=${tab}` : "";
+      router.push(`/wallet${tabParam}` as any);
+    }
   };
 
   const handleIrisScanPress = () => {

@@ -6,7 +6,7 @@
 
 import { colors } from '@/constants/colors';
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export type EarnTabKey = 'staking' | 'farming' | 'lend-borrow' | 'nft-staking';
 
@@ -30,7 +30,11 @@ export const EarnTabSwitcher: React.FC<EarnTabSwitcherProps> = ({
     onTabChange,
 }) => {
     return (
-        <View style={styles.container}>
+        <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.container}
+        >
             {TABS.map((tab) => {
                 const isActive = activeTab === tab.key;
                 return (
@@ -38,6 +42,13 @@ export const EarnTabSwitcher: React.FC<EarnTabSwitcherProps> = ({
                         key={tab.key}
                         activeOpacity={0.8}
                         onPress={() => onTabChange(tab.key)}
+                        style={[
+                            styles.tabItem,
+                            {
+                                backgroundColor: isActive ? '#121712' : 'transparent',
+                                borderColor: isActive ? 'rgba(255,255,255,0.1)' : 'transparent'
+                            }
+                        ]}
                     >
                         <Text
                             style={[
@@ -50,7 +61,7 @@ export const EarnTabSwitcher: React.FC<EarnTabSwitcherProps> = ({
                     </TouchableOpacity>
                 );
             })}
-        </View>
+        </ScrollView>
     );
 };
 
@@ -59,9 +70,19 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         gap: 8,
+        paddingHorizontal: 0,
+        paddingBottom: 4,
+    },
+    tabItem: {
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        borderRadius: 40,
+        borderWidth: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     tabText: {
-        fontFamily: 'Manrope-Medium',
-        fontSize: 16,
+        fontFamily: 'Manrope-SemiBold',
+        fontSize: 14,
     },
 });

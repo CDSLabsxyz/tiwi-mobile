@@ -3,7 +3,7 @@ import { colors } from '@/constants/colors';
 import { useChains } from '@/hooks/useChains';
 import { useTokens } from '@/hooks/useTokens';
 import { useWalletBalances } from '@/hooks/useWalletBalances';
-import { getColorFromSeed, } from '@/utils/formatting';
+import { getColorFromSeed, formatTokenQuantity, formatUSDPrice } from '@/utils/formatting';
 import { Ionicons } from '@expo/vector-icons';
 import { Image as ExpoImage } from 'expo-image';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -131,12 +131,53 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
     const tokenOptions: TokenOption[] = useMemo(() => {
         if (!tokens) return [];
 
-        // Strict client-side filtering to ensure placeholders/cache don't show tokens from other chains
-        const filteredTokens = (selectedChain && selectedChain.id !== 'all')
-            ? tokens.filter(t => t.chainId === selectedChain.id)
-            : tokens;
-
         const TWC_ADDRESS = '0xda1060158f7d593667cce0a15db346bb3ffb3596'.toLowerCase();
+
+        const NATIVE_ADDRS = [
+            '0x0000000000000000000000000000000000000000',
+            '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
+        ];
+
+        // Filtering: Smart Heuristic Scam Filter
+        const filteredTokens = tokens.filter(t => {
+            const isOnChain = (selectedChain && selectedChain.id !== 'all') 
+                ? t.chainId === selectedChain.id 
+                : true;
+            
+            if (!isOnChain) return false;
+
+            const name = t.name?.toLowerCase() || '';
+            const symbol = t.symbol?.toLowerCase() || '';
+            const address = t.address?.toLowerCase() || '';
+
+            const isTWC = address === TWC_ADDRESS;
+            
+            // Get native symbol from chains data
+            const chainInfo = chains?.find(c => c.id === t.chainId);
+            const nativeSymbol = chainInfo?.nativeCurrency?.symbol?.toLowerCase();
+            const isNative = NATIVE_ADDRS.includes(address) || (nativeSymbol && symbol === nativeSymbol);
+
+            // CRITICAL: Always allow Native Tokens (BNB, ETH, etc) and TWC through
+            if (isNative || isTWC) return true;
+
+            // 1. Pump.fun Filter
+            if (address.endsWith('pump') || name.includes('pump.fun')) return false;
+
+            // 2. Chinese/Spam Script Filter (Scanner garbage)
+            const isChinese = /[\u4e00-\u9fa5]/.test(name) || /[\u4e00-\u9fa5]/.test(symbol);
+            if (isChinese) return false;
+
+            // 3. Phishing/Ad Keywords
+            const spamKeywords = ['.com', '.xyz', '.net', 'claim', 'airdrop', 'visit', 'free', 'reward', 'voucher'];
+            if (spamKeywords.some(k => name.includes(k) || symbol.includes(k))) return false;
+
+            // 4. Impersonation Filter: Capture fake "BSC", "ETH", "USDT" etc.
+            const coreNames = ['ethereum', 'usdt', 'usdc', 'weth', 'bnb', 'solana', 'wrapped bnb', 'bitcoin', 'tether', 'bsc', 'binance'];
+            const isFakeCore = !t.verified && coreNames.some(cn => name === cn || symbol === cn);
+            if (isFakeCore) return false;
+
+            return true;
+        });
 
         const mapped = filteredTokens.map(t => {
             const walletToken = balanceData?.tokens.find(
@@ -147,6 +188,11 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
             const chainInfo = chains?.find(c => c.id === t.chainId);
             const chainIcon = chainInfo?.logoURI || chainInfo?.logo;
 
+            const hasBalance = !!walletToken;
+            const balanceNum = parseFloat(walletToken?.balanceFormatted || '0');
+            const priceNum = parseFloat(t.priceUSD || '0');
+            const totalUSD = balanceNum * priceNum;
+
             return {
                 id: `${t.chainId}-${t.address}`,
                 symbol: t.symbol,
@@ -154,27 +200,43 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
                 icon: t.logoURI,
                 chainIcon: chainIcon,
                 tvl: t.liquidity ? `$${t.liquidity.toLocaleString()}` : 'N/A',
-                balanceFiat: walletToken?.usdValue ? `$${parseFloat(walletToken.usdValue).toFixed(2)}` : '$0.00',
-                balanceToken: walletToken?.balanceFormatted || `0.00 ${t.symbol}`,
+                balanceFiat: totalUSD > 0 ? formatUSDPrice(totalUSD) : '$0.00',
+                balanceToken: hasBalance ? `${formatTokenQuantity(walletToken.balanceFormatted)} ${t.symbol}` : `0 ${t.symbol}`,
                 address: t.address,
                 chainId: t.chainId,
                 decimals: t.decimals,
                 priceUSD: t.priceUSD,
-                isOwned: !!walletToken,
-                usdValueNum: parseFloat(walletToken?.usdValue || '0'),
+                isOwned: hasBalance,
+                usdValueNum: totalUSD,
             };
         });
 
         // Sorting Logic:
-        // 1. TWC always at the absolute top
-        // 2. Owned tokens (balance > 0)
-        // 3. Others (by liquidity/API default)
+        // 1. Native Token (Asset of the chain) first
+        // 2. TWC (Protocol Token) second
+        // 3. Owned tokens (balance > 0)
+        // 4. Others (by liquidity/API default)
+
         return mapped.sort((a, b) => {
+            const chainInfo = chains?.find(c => c.id === a.chainId);
+            const nativeSymbol = chainInfo?.nativeCurrency?.symbol;
+
+            // 1. Native Token is absolute priority (#1)
+            const isANative = NATIVE_ADDRS.includes(a.address.toLowerCase()) || 
+                             (nativeSymbol && a.symbol.toUpperCase() === nativeSymbol.toUpperCase());
+            const isBNative = NATIVE_ADDRS.includes(b.address.toLowerCase()) || 
+                             (nativeSymbol && b.symbol.toUpperCase() === nativeSymbol.toUpperCase());
+
+            if (isANative && !isBNative) return -1;
+            if (!isANative && isBNative) return 1;
+
+            // 2. TWC Protocol Token (#2)
             const isATWC = a.address.toLowerCase() === TWC_ADDRESS;
             const isBTWC = b.address.toLowerCase() === TWC_ADDRESS;
-            if (isATWC) return -1;
-            if (isBTWC) return 1;
+            if (isATWC && !isBTWC) return -1;
+            if (!isATWC && isBTWC) return 1;
 
+            // 3. Owned tokens (balance > 0)
             if (a.isOwned && !b.isOwned) return -1;
             if (!a.isOwned && b.isOwned) return 1;
 
@@ -299,8 +361,8 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
                         </View>
                     </View>
                     <View style={styles.rightInfo}>
-                        <Text style={styles.fiatBalance}>{token.balanceFiat}</Text>
                         <Text style={styles.tokenBalance}>{token.balanceToken}</Text>
+                        <Text style={styles.fiatBalance}>{token.balanceFiat}</Text>
                     </View>
                 </View>
             </TouchableOpacity>
@@ -540,12 +602,12 @@ const styles = StyleSheet.create({
         alignItems: 'flex-end',
         gap: 4,
     },
-    fiatBalance: {
+    tokenBalance: {
         fontFamily: 'Manrope-SemiBold',
         fontSize: 16,
         color: colors.titleText,
     },
-    tokenBalance: {
+    fiatBalance: {
         fontFamily: 'Manrope-Medium',
         fontSize: 12,
         color: colors.bodyText,

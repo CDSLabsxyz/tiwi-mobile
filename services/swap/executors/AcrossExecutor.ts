@@ -8,12 +8,8 @@ import { ExecuteSwapParams, SwapExecutionResult } from "../types";
 const SUPPORTED_CHAINS = [mainnet, optimism, arbitrum, bsc, polygon, base, zksync, scroll, mantle, blast, lisk];
 
 export class AcrossExecutor {
-    private getPublicClient(chainId: number) {
-        const chain = SUPPORTED_CHAINS.find(c => c.id === chainId) || mainnet;
-        return createPublicClient({
-            chain,
-            transport: http(),
-        });
+    private async getPublicClient(chainId: number) {
+        return await signerController.getPublicClient(chainId);
     }
 
     /**
@@ -32,8 +28,8 @@ export class AcrossExecutor {
             console.log(`[AcrossExecutor] Preparing Across execution for ${fromToken.symbol} on chain ${fromToken.chainId}`);
 
             const walletClient = await signerController.getWalletClient(fromToken.chainId, fromAddress);
-            const originClient = this.getPublicClient(fromToken.chainId);
-            const destinationClient = this.getPublicClient(toToken.chainId);
+            const originClient = await this.getPublicClient(fromToken.chainId);
+            const destinationClient = await this.getPublicClient(toToken.chainId);
 
             let txHash: string | undefined;
 

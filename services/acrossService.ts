@@ -35,7 +35,7 @@ const KNOWN_ROUTERS: Record<number, string> = {
     137: '0xa5E0829CaCEd8fFDD03942105b4458a05E533b39', // QuickSwap
 };
 
-class AcrossService {
+export class AcrossService {
     public client = createAcrossClient({
         integratorId: "0x0001", // Placeholder
         chains: SUPPORTED_CHAINS,
@@ -75,6 +75,11 @@ class AcrossService {
             const isFromNative = fromToken.address === '0x0000000000000000000000000000000000000000';
             const isToNative = toToken.address === '0x0000000000000000000000000000000000000000';
 
+            // Smart Slippage: Detect taxed tokens like TWC and use safe defaults
+            const isTaxToken = fromToken.address.toLowerCase() === '0xda1060158f7d593667cce0a15db346bb3ffb3596';
+            const finalSlippage = isTaxToken ? Math.max(slippage || 0, 15.0) : (slippage || 0.5);
+            const slippageRatio = finalSlippage / 100;
+
             try {
                 // Across V3 Aggregator + Bridge
                 const quote = await this.client.getSwapQuote({
@@ -87,7 +92,7 @@ class AcrossService {
                     amount: amountIn.toString(),
                     depositor: getAddress(fromAddress),
                     recipient: getAddress(recipient),
-                    slippage: 0.10, // 10% - Aggressive slippage for maximum success
+                    slippage: slippageRatio, 
                 });
 
                 console.log(`[AcrossService] getSwapQuote Success:`, quote);
@@ -99,10 +104,10 @@ class AcrossService {
                     fiatAmount: quote.fees.total.amountUsd || "0",
                     fromAmountUSD: quote.fees.total.amountUsd || "0",
                     toAmountUSD: quote.fees.total.amountUsd || "0",
-                    slippage: 10.0,
+                    slippage: finalSlippage, // Actual slippage percentage
                     gasEstimate: quote.fees.total.amount,
                     gasFee: `$${parseFloat(quote.fees.total.amountUsd).toFixed(2)}`,
-                    twcFee: '2.00%', // Application fee logic
+                    twcFee: '0.00%', // Application fee REMOVED
                     source: ['Across', quote.crossSwapType],
                     txTo: quote.tx?.to || quote.approvalTxns?.[0]?.to || fromToken.address,
                     txData: quote.tx?.data || quote.approvalTxns?.[0]?.data || "0x",
@@ -183,23 +188,30 @@ class AcrossService {
             const publicClient = this.getPublicClient(chainId);
             const amountIn = parseUnits(fromAmount, fromToken.decimals);
 
-            // Map native to wrapped
             const fromAddr = fromToken.address === '0x0000000000000000000000000000000000000000' ? WRAPPED_NATIVE[chainId] : fromToken.address;
             const toAddr = toToken.address === '0x0000000000000000000000000000000000000000' ? WRAPPED_NATIVE[chainId] : toToken.address;
+
+            // Intelligent Path Finding: [From, WETH, To] if not native, else [From, To]
+            const weth = WRAPPED_NATIVE[chainId];
+            let path: string[] = [];
+            if (!weth || fromAddr === weth || toAddr === weth) {
+                path = [fromAddr, toAddr];
+            } else {
+                path = [fromAddr, weth, toAddr];
+            }
 
             const amounts = await publicClient.readContract({
                 address: getAddress(routerAddress),
                 abi: ROUTER_ABI,
                 functionName: 'getAmountsOut',
-                args: [amountIn, [fromAddr, toAddr]],
+                args: [amountIn, path],
             }) as bigint[];
 
             const outputAmountAtomic = amounts[amounts.length - 1];
             const toAmountFormatted = formatUnits(outputAmountAtomic, toToken.decimals);
 
-            // Standard slippage for DEX swaps. We use a high 10% default to ensure 
-            // success for taxed tokens (like TWC), or the user's custom slippage.
-            const finalSlippage = userSlippage || 10.0; 
+            // Standard slippage for DEX swaps.
+            const finalSlippage = userSlippage || 0.5; 
 
             return {
                 toAmount: toAmountFormatted,
@@ -210,7 +222,7 @@ class AcrossService {
                 twcFee: "0.00%",
                 source: ["DEX", "Local"],
                 router: "dex",
-                raw: { routerAddress } // Needed by DexExecutor
+                raw: { routerAddress, path } // Needed by DexExecutor
             };
         } catch (error: any) {
             console.warn("[AcrossService] DEX fallback failed:", error.message);

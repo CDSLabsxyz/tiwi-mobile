@@ -14,5 +14,5 @@ export const DISPERSE_CONTRACTS: Record<number, string> = {
 export const PERMIT2_ADDRESS = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
 
 export const STAKING_FACTORY_ADDRESSES: Record<number, `0x${string}`> = {
-    56: '0x9178044f7cC0DD0dB121E7fCD4b068a0d1B76b07', // BSC
+    56: '0x8505c412Ba61e5B260686a260C5213905DAAa130', // BSC Production
 };

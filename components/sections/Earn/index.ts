@@ -10,4 +10,4 @@ export type { EarnTabKey } from './EarnTabSwitcher';
 export { MyStakeCard } from './MyStakeCard';
 export { StakingCarousel } from './StakingCarousel';
 export { StakingTokenCard } from './StakingTokenCard';
-
+export { TotalStakedCard } from './TotalStakedCard';

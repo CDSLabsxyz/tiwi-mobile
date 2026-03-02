@@ -13,12 +13,15 @@ import { useStakingAllowance } from '@/hooks/useStakingAllowance';
 import { useStakingPool } from '@/hooks/useStakingPool';
 import { useWalletBalances } from '@/hooks/useWalletBalances';
 import { stakingService, type StakingPool } from '@/services/stakingService';
+import { formatCompactNumber } from '@/utils/formatting';
 import { useWalletStore } from '@/store/walletStore';
 import AntDesign from '@expo/vector-icons/AntDesign';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useToastStore } from '@/store/useToastStore';
 import React, { useEffect, useState } from 'react';
 import {
+    Alert,
     ScrollView,
     StyleSheet,
     Text,
@@ -57,6 +60,7 @@ export default function StakeScreen() {
     const { walletGroups = [], activeAddress } = useWalletStore();
     const { data: balanceData } = useWalletBalances();
     const [pool, setPool] = useState<StakingPool | null>(null);
+    const { showToast } = useToastStore();
     const [isLoading, setIsLoading] = useState(true);
 
     // Get user balance for this specific token
@@ -82,7 +86,7 @@ export default function StakeScreen() {
                     id: walletAddress,
                     name: wallet.name || (isMain ? 'Main Wallet' : 'Imported Wallet'),
                     type: 'Wallet',
-                    balance: `${isMain ? userTokenBalance : '0.00'} ${symbol}`,
+                    balance: `${formatCompactNumber(parseFloat(isMain ? userTokenBalance : '0'), { decimals: 2 })} ${symbol}`,
                     address: walletAddress
                 });
             });
@@ -110,7 +114,8 @@ export default function StakeScreen() {
     }, [symbol]);
 
     // On-Chain Read & Write
-    const stakingData = useStakingPool(pool?.poolId);
+    const poolDecimals = pool?.decimals || 9;
+    const stakingData = useStakingPool(pool?.poolId, poolDecimals);
     const {
         allowance: initialAllowance,
         isLoading: isStakingLoading,
@@ -137,7 +142,7 @@ export default function StakeScreen() {
     }, [userTokenBalance, stakingData.userStakedFormatted]);
 
     const totalBalance = React.useMemo(() => {
-        return `${parseFloat(totalBalanceNumeric).toFixed(4)} ${symbol}`;
+        return `${formatCompactNumber(parseFloat(totalBalanceNumeric), { decimals: 2 })} ${symbol}`;
     }, [totalBalanceNumeric, symbol]);
 
     const { isConnected: isWagmiConnected } = useAccount();
@@ -172,41 +177,58 @@ export default function StakeScreen() {
 
     // Stats based on real pool data
     const stats = {
-        tvl: stakingData.tvlUsd || '$0.00',
+        tvl: `${stakingData.tvlCompact} / ${stakingData.maxTvlCompact}`,
         apr: stakingData.apr || pool?.displayApy || 'N/A',
         totalStaked: stakingData.totalStakedCompact || '0 TWC',
-        lockPeriod: pool?.minStakingPeriod || stakingData.lockPeriod || 'N/A',
-        limits: pool?.displayLimits || 'N/A',
+        // Fallback to pool object (database) if on-chain is N/A or empty
+        lockPeriod: stakingData.lockPeriod && stakingData.lockPeriod !== 'N/A' && stakingData.lockPeriod !== 'No Lock'
+            ? stakingData.lockPeriod
+            : (pool?.minStakingPeriod || 'No Lock'),
+        limits: stakingData.limitsFormatted && stakingData.limitsFormatted !== 'N/A' && stakingData.limitsFormatted !== '0-0 TWC'
+            ? stakingData.limitsFormatted
+            : (pool?.displayLimits || 'N/A'),
     };
 
     const handleConfirm = async () => {
         if (!isConnected) {
-            Alert.alert('Connect Wallet', 'Please connect your wallet to continue.');
+            showToast('Connect Wallet: Please connect your wallet to continue.', 'error');
             return;
         }
 
         if (!amount || parseFloat(amount) <= 0) {
-            Alert.alert('Invalid Amount', 'Please enter a valid amount to stake.');
+            showToast('Invalid Amount: Please enter a valid amount to stake.', 'error');
             return;
         }
 
         try {
             if (needsApproval) {
+                // Phase 1: Approve
                 await approve();
-                Alert.alert('Success', 'Token approved successfully!');
-                refetchStaking();
+                showToast('Token Approved! Proceeding to Stake...', 'pending');
+                
+                // Phase 2: Action (Stake) 
+                // We add a tiny delay for state to settle, then call it direct
+                setTimeout(async () => {
+                    try {
+                        await stake(amount);
+                        showToast('Staked Successfully!', 'success');
+                        refetchStaking();
+                        setTimeout(() => router.back(), 2000);
+                    } catch (err: any) {
+                        console.error('[StakeScreen] Chained stake error:', err);
+                    }
+                }, 1000);
             } else {
                 await stake(amount);
-                Alert.alert('Success', 'Staked successfully!', [
-                    { text: 'OK', onPress: () => router.back() }
-                ]);
+                showToast('Staked Successfully!', 'success');
                 refetchStaking();
+                setTimeout(() => router.back(), 2000);
             }
         } catch (error: any) {
             console.error('[StakeScreen] Transaction error:', error);
             const errorMsg = error?.message || 'Transaction failed. Please try again.';
             if (!errorMsg.includes('User rejected')) {
-                Alert.alert('Transaction Failed', errorMsg);
+                showToast(`Transaction Failed: ${errorMsg}`, 'error');
             }
         }
     };
@@ -229,6 +251,31 @@ export default function StakeScreen() {
         setAmount(newAmount);
         const newPos = selection.start + value.length;
         setSelection({ start: newPos, end: newPos });
+    };
+
+    const handlePercentage = (percent: number) => {
+        // Base calculation on the pool's max limit as requested
+        const maxLimit = pool?.maxStakeAmount || 0;
+        const balance = parseFloat(userTokenBalance) || 0;
+
+        let targetAmount = 0;
+        if (maxLimit > 0) {
+            // "100% is 50k, 50% is 25k" implies calculation from max limit
+            targetAmount = (maxLimit * percent) / 100;
+
+            // Safety: Don't suggest more than the user actually has
+            if (targetAmount > balance) {
+                targetAmount = balance;
+            }
+        } else {
+            // Fallback to balance if no limit defined
+            targetAmount = (balance * percent) / 100;
+        }
+
+        // Format to avoid long decimals if calculation results in them
+        const finalAmountString = targetAmount % 1 === 0 ? targetAmount.toString() : targetAmount.toFixed(2);
+        setAmount(finalAmountString);
+        setSelection({ start: finalAmountString.length, end: finalAmountString.length });
     };
 
     const handleDelete = () => {
@@ -276,75 +323,45 @@ export default function StakeScreen() {
                     contentContainerStyle={{ paddingBottom: 40 }}
                     showsVerticalScrollIndicator={false}
                 >
-                    {/* Stats Card */}
+                    {/* Stats Card (MATCHING WEB 2x2 GRID) */}
                     <View style={styles.statsCardWrapper}>
                         <View style={styles.statsCard}>
-                            <View style={styles.statItem}>
-                                <Text style={styles.statLabel}>TVL</Text>
-                                <Text style={styles.statValue}>{stats.tvl}</Text>
-                            </View>
-                            <View style={styles.divider} />
-                            <View style={styles.statItem}>
-                                <Text style={styles.statLabel}>APR</Text>
-                                <Text style={styles.statValue}>{stats.apr}</Text>
-                            </View>
-                            <View style={styles.divider} />
-                            <View style={styles.statItem}>
-                                <Text style={styles.statLabel}>Lock Period</Text>
-                                <Text style={styles.statValue}>{stats.lockPeriod}</Text>
-                            </View>
-                            <View style={styles.divider} />
-                            <View style={styles.statItem}>
-                                <Text style={styles.statLabel}>Limits</Text>
-                                <Text style={styles.statValue}>{stats.limits}</Text>
+                            <View style={styles.statsGrid}>
+                                {/* Row 1 */}
+                                <View style={styles.statsRow}>
+                                    <View style={styles.statItem}>
+                                        <Text style={styles.statLabel}>TVL</Text>
+                                        <Text style={styles.statValue}>{stats.tvl}</Text>
+                                        <Text style={styles.statInfoLabel}>{symbol}</Text>
+                                    </View>
+                                    <View style={styles.gridDividerV} />
+                                    <View style={styles.statItem}>
+                                        <Text style={styles.statLabel}>APR</Text>
+                                        <Text style={[styles.statValue, { color: colors.primaryCTA }]}>{stats.apr}</Text>
+                                        <Text style={styles.statInfoLabel}>%</Text>
+                                    </View>
+                                </View>
+
+                                <View style={styles.gridDividerH} />
+
+                                {/* Row 2 */}
+                                <View style={styles.statsRow}>
+                                    <View style={styles.statItem}>
+                                        <Text style={styles.statLabel}>Total Staked</Text>
+                                        <Text style={styles.statValue}>{stats.totalStaked}</Text>
+                                        <Text style={styles.statInfoLabel}>{symbol}</Text>
+                                    </View>
+                                    <View style={styles.gridDividerV} />
+                                    <View style={styles.statItem}>
+                                        <Text style={styles.statLabel}>Limits</Text>
+                                        <Text style={styles.statValue}>{stats.limits}</Text>
+                                        <Text style={styles.statInfoLabel}>{symbol}</Text>
+                                    </View>
+                                </View>
                             </View>
                         </View>
                     </View>
 
-                    {/* Type Selection Cards */}
-                    <View style={styles.cardsContainer}>
-                        <TouchableOpacity
-                            onPress={() => setStakeType('Flexible')}
-                            activeOpacity={0.8}
-                            style={[
-                                styles.typeCard,
-                                stakeType === 'Flexible' && styles.typeCardActive
-                            ]}
-                        >
-                            <View>
-                                <Text style={[
-                                    styles.typeCardLabel,
-                                    stakeType === 'Flexible' ? styles.textActive : styles.textInactive
-                                ]}>Flexible</Text>
-                                <Text style={styles.lockInfoText}>No Lock</Text>
-                            </View>
-                            <Text style={[
-                                styles.typeCardValue,
-                                stakeType === 'Flexible' ? styles.textWhite : styles.textInactive
-                            ]}>{pool?.displayApy || '5.30%'}</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                            onPress={() => setStakeType('Fixed')}
-                            activeOpacity={0.8}
-                            style={[
-                                styles.typeCard,
-                                stakeType === 'Fixed' && styles.typeCardActive
-                            ]}
-                        >
-                            <View>
-                                <Text style={[
-                                    styles.typeCardLabel,
-                                    stakeType === 'Fixed' ? styles.textActive : styles.textInactive
-                                ]}>Fixed</Text>
-                                <Text style={styles.lockInfoText}>{stats.lockPeriod}</Text>
-                            </View>
-                            <Text style={[
-                                styles.typeCardValue,
-                                stakeType === 'Fixed' ? styles.textWhite : styles.textInactive
-                            ]}>{pool?.displayApy || '5.30%'}</Text>
-                        </TouchableOpacity>
-                    </View>
 
                     {/* Amount Input Display */}
                     <View style={styles.amountSection}>
@@ -386,14 +403,29 @@ export default function StakeScreen() {
                         </TouchableOpacity>
 
                         <View style={styles.balanceAction}>
-                            <Text style={styles.balanceValue}>{selectedAccount?.balance || userTokenBalance}</Text>
+                            <Text style={styles.balanceValue}>{formatCompactNumber(parseFloat(selectedAccount?.balance || userTokenBalance), { decimals: 2 })} {symbol}</Text>
                             <TouchableOpacity onPress={() => setIsDepositModalVisible(true)}>
                                 <AntDesign name="plus" size={16} color={colors.titleText} />
                             </TouchableOpacity>
                         </View>
                     </View>
 
-                    <View style={{ height: 30 }} />
+                    <View style={{ height: 20 }} />
+
+                    {/* Percentage Buttons Row */}
+                    <View style={styles.percentageRow}>
+                        {[25, 50, 75, 100].map((p) => (
+                            <TouchableOpacity
+                                key={p}
+                                style={styles.percentageButton}
+                                onPress={() => handlePercentage(p)}
+                            >
+                                <Text style={styles.percentageText}>{p}%</Text>
+                            </TouchableOpacity>
+                        ))}
+                    </View>
+
+                    <View style={{ height: 10 }} />
 
                     {/* Numeric Keypad right after account selection */}
                     <NumericKeypad onPress={handleKeyPress} onDelete={handleDelete} />
@@ -490,33 +522,57 @@ const styles = StyleSheet.create({
         marginTop: 20,
     },
     statsCard: {
-        flexDirection: 'row',
         backgroundColor: colors.bgSemi,
-        borderWidth: 1,
+        borderWidth: 0.5,
         borderColor: '#273024',
-        borderRadius: 12,
-        paddingVertical: 12,
+        borderRadius: 16,
+        padding: 16,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.5,
+        shadowRadius: 10,
+        elevation: 5,
+    },
+    statsGrid: {
+        width: '100%',
+    },
+    statsRow: {
+        flexDirection: 'row',
+        width: '100%',
     },
     statItem: {
         flex: 1,
         alignItems: 'center',
         justifyContent: 'center',
-        gap: 4,
+        paddingVertical: 10,
     },
     statLabel: {
         fontFamily: 'Manrope-Medium',
         fontSize: 10,
         color: colors.mutedText,
+        textTransform: 'uppercase',
+        marginBottom: 4,
     },
     statValue: {
         fontFamily: 'Manrope-SemiBold',
-        fontSize: 12,
+        fontSize: 14,
         color: colors.titleText,
     },
-    divider: {
-        width: 1,
+    statInfoLabel: {
+        fontFamily: 'Manrope-Medium',
+        fontSize: 10,
+        color: colors.mutedText,
+        marginTop: 2,
+    },
+    gridDividerV: {
+        width: 0.5,
         height: '100%',
-        backgroundColor: '#273024',
+        backgroundColor: '#1f261e',
+    },
+    gridDividerH: {
+        height: 0.5,
+        width: '100%',
+        backgroundColor: '#1f261e',
     },
     cardsContainer: {
         flexDirection: 'row',
@@ -658,5 +714,27 @@ const styles = StyleSheet.create({
     confirmButtonDisabled: {
         opacity: 0.6,
         backgroundColor: colors.bgStroke,
+    },
+    percentageRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        paddingHorizontal: 20,
+        gap: 12,
+        marginBottom: 8,
+    },
+    percentageButton: {
+        flex: 1,
+        height: 36,
+        backgroundColor: colors.bgSemi,
+        borderWidth: 1,
+        borderColor: colors.bgStroke,
+        borderRadius: 8,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    percentageText: {
+        fontFamily: 'Manrope-SemiBold',
+        fontSize: 13,
+        color: colors.mutedText,
     },
 });

@@ -61,6 +61,10 @@ export class SignerController {
         // We only support EVM WalletClient for now
         return await this.evmEngine.getWalletClient(chainId, address, options);
     }
+
+    async getPublicClient(chainId: number) {
+        return await this.evmEngine.getPublicClient(chainId);
+    }
 }
 
 export const signerController = new SignerController();
