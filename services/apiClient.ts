@@ -980,6 +980,27 @@ class TiwiApiClient {
     }
 
     /**
+     * Log a user stake to the backend
+     */
+    async logUserStake(stakeData: {
+        userWallet: string;
+        stakedAmount: string;
+        poolId: string;
+        status: 'active' | 'completed' | 'withdrawn';
+    }): Promise<boolean> {
+        try {
+            await this.fetcher('/api/v1/user-stakes', {
+                method: 'POST',
+                body: JSON.stringify(stakeData),
+            });
+            return true;
+        } catch (e) {
+            console.error('[TiwiAPI] logUserStake failed:', e);
+            return false;
+        }
+    }
+
+    /**
      * Get smart markets (DEXes and Bridges) from LI.FI API
      * Provides real-time integrations supported by the protocol.
      */

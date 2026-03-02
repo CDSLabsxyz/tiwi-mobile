@@ -12,11 +12,13 @@ import * as Clipboard from "expo-clipboard";
 import { Image } from "expo-image";
 import React, { useEffect, useState } from "react";
 import { Text, TextInput, TouchableOpacity, View } from "react-native";
+import { useToastStore } from "@/store/useToastStore";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SendTokenSelector } from "./SendTokenSelector";
 import { WhitelistSelectSheet } from "./WhitelistSelectSheet";
 
-const CopyIcon = require("@/assets/wallet/copy-01.svg");
+import { Ionicons } from "@expo/vector-icons";
+
 const CheckmarkIcon = require("@/assets/swap/checkmark-circle-01.svg");
 const WalletIcon = require("@/assets/wallet/wallet-01.svg");
 const AddressBookIcon = require("@/assets/settings/address-book.svg");
@@ -33,7 +35,7 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext }) => {
 
   const [localAddress, setLocalAddress] = useState(recipientAddress);
   const [localAmount, setLocalAmount] = useState(amount);
-  const [copied, setCopied] = useState(false);
+  const [pasted, setPasted] = useState(false);
   const [addressError, setAddressError] = useState<string | null>(null);
   const [amountError, setAmountError] = useState<string | null>(null);
   const { top, bottom } = useSafeAreaInsets();
@@ -112,13 +114,20 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext }) => {
     }
   };
 
-  const handleCopyAddress = async () => {
-    if (localAddress.trim()) {
-      await Clipboard.setStringAsync(localAddress);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+  const handlePasteAddress = async () => {
+    try {
+      const text = await Clipboard.getStringAsync();
+      if (text) {
+        handleAddressChange(text);
+        setPasted(true);
+        setTimeout(() => setPasted(false), 2000);
+      }
+    } catch (error) {
+      console.error("Failed to paste address:", error);
     }
   };
+
+  const { showToast } = useToastStore();
 
   const handleSaveToWhitelist = () => {
     if (localAddress && newAddressName.trim()) {
@@ -126,6 +135,7 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext }) => {
       setIsSavingToWhitelist(false);
       setNewAddressName("");
       setShowSaveSuggestion(false);
+      showToast("Address saved to book!", "success");
     }
   };
 
@@ -237,7 +247,7 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext }) => {
               </TouchableOpacity>
               <TouchableOpacity
                 activeOpacity={0.8}
-                onPress={handleCopyAddress}
+                onPress={handlePasteAddress}
                 style={{
                   width: 24,
                   height: 24,
@@ -246,17 +256,17 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext }) => {
                   flexShrink: 0,
                 }}
               >
-                {copied ? (
+                {pasted ? (
                   <Image
                     source={CheckmarkIcon}
                     style={{ width: 20, height: 20 }}
                     contentFit="contain"
                   />
                 ) : (
-                  <Image
-                    source={CopyIcon}
-                    style={{ width: 20, height: 20 }}
-                    contentFit="contain"
+                  <Ionicons
+                    name="clipboard-outline"
+                    size={22}
+                    color={colors.titleText}
                   />
                 )}
               </TouchableOpacity>

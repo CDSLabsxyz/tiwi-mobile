@@ -40,7 +40,7 @@ export default function SendScreen() {
     const rotation = useSharedValue(0);
     const pulse = useSharedValue(1);
 
-   
+
 
     const orbitPlanetStyle = useAnimatedStyle(() => ({
         transform: [
@@ -76,11 +76,11 @@ export default function SendScreen() {
         prePopulateFromAsset,
     } = sendStore;
 
-    const { address: walletAddress, connectedWallets } = useWalletStore();
+    const { address: walletAddress, walletGroups } = useWalletStore();
     const { data: chains } = useChains();
     const { execute, executeMulti, isExecuting } = useTransactionExecution();
 
-     useEffect(() => {
+    useEffect(() => {
         if (isExecuting) {
             rotation.value = withRepeat(
                 withTiming(360, { duration: 2000, easing: Easing.linear }),
@@ -196,7 +196,7 @@ export default function SendScreen() {
             try {
                 if (walletAddress) {
                     const res = await apiClient.getWalletBalances(walletAddress);
-                    const asset = res.balances.find((a: any) => a.symbol === token.symbol);
+                    const asset = res?.balances?.find((a: any) => a.symbol === token.symbol);
                     if (asset) {
                         const chain = chains.find(c => c.id === asset.chainId);
                         if (chain) {
@@ -236,9 +236,9 @@ export default function SendScreen() {
 
         // Check if active wallet is local or external
         console.log("🚀 ~ handleConfirmFromReview ~ walletAddress:", walletAddress)
-        const wallet = connectedWallets.find((w: any) => {
-            console.log("🚀 ~ handleConfirmFromReview ~ w:", w)
-            return w.address.toLowerCase() === walletAddress?.toLowerCase();
+        const wallet = walletGroups.find((g: any) => {
+            console.log("🚀 ~ handleConfirmFromReview ~ g:", g)
+            return Object.values(g.addresses).some((addr: any) => addr?.toLowerCase() === walletAddress?.toLowerCase());
         });
         console.log("🚀 ~ handleConfirmFromReview ~ wallet:", wallet)
         const isLocal = wallet?.source === 'local' || wallet?.source === 'internal' || wallet?.source === 'imported';
@@ -306,7 +306,7 @@ export default function SendScreen() {
 
     const handleSuccessDone = () => {
         resetSendState();
-        router.push('/wallet' as any);
+        router.replace('/(tabs)' as any);
     };
 
     // Render current step
@@ -476,7 +476,7 @@ export default function SendScreen() {
                                 <Animated.Image
                                     source={require('@/assets/images/full logo.svg')}
                                     style={[styles.orbitIcon, orbitIconStyle]}
-                                    // contentFit="contain"
+                                // contentFit="contain"
                                 />
                             </View>
                             <Text style={styles.processingTitle}>Processing Transaction</Text>

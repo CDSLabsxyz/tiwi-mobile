@@ -51,7 +51,7 @@ export default function ManageStakeScreen() {
     const [isAccountModalVisible, setIsAccountModalVisible] = useState(false);
     const [isDepositModalVisible, setIsDepositModalVisible] = useState(false);
 
-    const { connectedWallets, address: activeAddress } = useWalletStore();
+    const { walletGroups, address: activeAddress } = useWalletStore();
     const { data: balanceData } = useWalletBalances();
     const [userStake, setUserStake] = useState<UserStake | null>(null);
     const { showToast } = useToastStore();
@@ -69,20 +69,23 @@ export default function ManageStakeScreen() {
     const availableAccounts = useMemo(() => {
         const list: any[] = [];
 
-        // Add each connected wallet
-        connectedWallets.forEach(wallet => {
-            const isMain = wallet.address.toLowerCase() === activeAddress?.toLowerCase();
+        // Add each wallet group
+        walletGroups.forEach(group => {
+            const groupAddress = group.addresses[group.primaryChain];
+            if (!groupAddress) return;
+
+            const isMain = groupAddress.toLowerCase() === activeAddress?.toLowerCase();
             list.push({
-                id: wallet.address,
-                name: wallet.name || (isMain ? 'Main Wallet' : 'Imported Wallet'),
+                id: groupAddress,
+                name: group.name || (isMain ? 'Main Wallet' : 'Imported Wallet'),
                 type: 'Wallet',
                 balance: `${isMain ? userTokenBalance : '0.00'} ${symbol}`,
-                address: wallet.address
+                address: groupAddress
             });
         });
 
         return list;
-    }, [connectedWallets, activeAddress, userTokenBalance, symbol]);
+    }, [walletGroups, activeAddress, userTokenBalance, symbol]);
 
     const [selectedAccountId, setSelectedAccountId] = useState<string>(activeAddress || '');
     const selectedAccount = useMemo(() =>

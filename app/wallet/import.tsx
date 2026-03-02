@@ -14,7 +14,7 @@ import { useSecurityStore } from '@/store/securityStore';
 import { ChainType, useWalletStore } from '@/store/walletStore';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import React, { useMemo, useState } from 'react';
 import {
     KeyboardAvoidingView,
@@ -29,6 +29,7 @@ import {
 
 export default function ImportWalletScreen() {
     const router = useRouter();
+    const { mode } = useLocalSearchParams<{ mode?: string }>();
     const { addWalletGroup } = useWalletStore();
 
     const [inputText, setInputText] = useState('');
@@ -108,13 +109,12 @@ export default function ImportWalletScreen() {
                 source: 'imported'
             });
 
-            // Update setup phase ONLY if we haven't completed it yet
-            if (setupPhase !== 'COMPLETED') {
+            // If we're adding a wallet from settings OR setup is already complete, skip onboarding
+            if (mode === 'additional' || setupPhase === 'COMPLETED') {
+                router.replace('/(tabs)' as any);
+            } else {
                 setSetupPhase('WALLET_READY');
                 router.push('/security' as any);
-            } else {
-                // If already setup, go explicitly to tabs to ensure we hit the dashboard
-                router.replace('/(tabs)' as any);
             }
         } catch (error) {
             console.error('Import failed', error);

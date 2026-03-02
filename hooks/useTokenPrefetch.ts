@@ -55,5 +55,18 @@ export function useTokenPrefetch() {
             }),
             staleTime: 1000 * 60 * 60, // 1 hour
         });
+
+        // 4. Prefetch Market Pairs for instant tab transitions
+        queryClient.prefetchQuery({
+            queryKey: ['enrichedMarkets', 'spot', 250],
+            queryFn: () => apiClient.getEnrichedMarkets({ marketType: 'spot', limit: 250 }),
+            staleTime: 1000 * 60 * 5, // 5 minutes
+        });
+
+        queryClient.prefetchQuery({
+            queryKey: ['enrichedMarkets', 'perp', 250],
+            queryFn: () => apiClient.getEnrichedMarkets({ marketType: 'perp', limit: 250 }),
+            staleTime: 1000 * 60 * 5, // 5 minutes
+        });
     }, [queryClient]);
 }

@@ -11,8 +11,9 @@ import { useMarketStore } from '@/store/marketStore';
 import { useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useMemo, useState } from 'react';
-import { Dimensions, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Dimensions, FlatList, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ScrollView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -298,60 +299,38 @@ export default function MarketScreen() {
 
     const isLoading = activeSubTab === 'favourite' ? isFavLoading : isPairsLoading;
 
-    const handleTokenPress = async (token: EnrichedMarket) => {
+    // Prefetch detail data early for ultra-fast navigation
+    const handleTokenPress = useCallback(async (token: EnrichedMarket) => {
         setIsNavigating(true);
 
-        // Bridge: Save full token data for instant UI hydration on detail page
-        // setSelectedMarketToken(token);
-
-        const symbolParam = (token.displaySymbol || token.symbol).toLowerCase();
         const currentContext = marketType; // 'spot' or 'perp'
-
         const route = currentContext === 'perp'
             ? `/market/futures/${token.displaySymbol || token.symbol}`
             : `/market/spot/${token.displaySymbol || token.symbol}`;
 
-        // Prefetch detail data with unified dispatcher params
-        try {
-            // await queryClient.prefetchQuery({
-            //     queryKey: ['enrichedMarketDetail', token.symbol, token.address, currentContext],
-            //     queryFn: () => apiClient.getEnrichedMarketDetail(token.displaySymbol || token.symbol, {
-            //         address: token.contractAddress || token.baseToken?.address,
-            //         chainId: token.chainId,
-            //         marketType: currentContext,
-            //         provider: token.provider
-            //     })
-            // });
+        router.push({
+            pathname: route as any,
+            params: {
+                address: token.contractAddress || token.baseToken?.address || token.address,
+                chainId: token.chainId,
+                symbol: token.displaySymbol || token.symbol,
+                provider: token.provider,
+                name: token.name,
+                marketType: currentContext
+            }
+        });
 
-            router.push({
-                pathname: route as any,
-                params: {
-                    address: token.contractAddress || token.baseToken?.address,
-                    chainId: token.chainId,
-                    symbol: token.displaySymbol || token.symbol,
-                    provider: token.provider,
-                    name: token.name,
-                    marketType: currentContext
-                }
-            });
-        } catch (error) {
-            console.error('[MarketScreen] Prefetch error:', error);
-            // Navigate anyway, the page will handle its own loading from initialData/Zustand
-            router.push({
-                pathname: route as any,
-                params: {
-                    symbol: token.displaySymbol || token.symbol,
-                    address: token.address,
-                    chainId: token.chainId,
-                    provider: token.provider,
-                    marketType: currentContext
-                }
-            });
-        } finally {
-            // Give time for navigation to transition
-            setTimeout(() => setIsNavigating(false), 300);
-        }
-    };
+        // Small delay to let the active opacity effect finish and navigation begin
+        setTimeout(() => setIsNavigating(false), 200);
+    }, [marketType, router]);
+
+    const renderItem = useCallback(({ item }: { item: EnrichedMarket }) => (
+        <TokenListItem
+            key={item.id || `${item.chainId}-${item.address}`}
+            token={item as any}
+            onPress={() => handleTokenPress(item)}
+        />
+    ), [handleTokenPress]);
 
     const handleSearchPress = () => {
         setIsSearchVisible(true);
@@ -406,40 +385,37 @@ export default function MarketScreen() {
                     </View>
                 </View>
 
-                <ScrollView
-                    style={styles.scrollView}
+                <FlatList
+                    data={displayData}
+                    renderItem={renderItem}
+                    keyExtractor={(item) => item.id || `${item.chainId}-${item.address}`}
                     contentContainerStyle={[
                         styles.scrollContent,
                         { paddingBottom: bottom + 100 }
                     ]}
+                    initialNumToRender={10}
+                    maxToRenderPerBatch={10}
+                    windowSize={5}
+                    removeClippedSubviews={Platform.OS === 'android'}
                     showsVerticalScrollIndicator={false}
-                >
-                    <View style={{ width: "100%", maxWidth: '100%' }}>
-                        {isSearching && searchQuery.length > 0 && displayData.length === 0 ? (
+                    ListHeaderComponent={
+                        isSearching && searchQuery.length > 0 && displayData.length === 0 ? (
                             <View style={{ width: '100%' }}>
                                 {[1, 2, 3, 4, 5].map((i) => (
                                     <MarketListItemSkeleton key={i} />
                                 ))}
                             </View>
-                        ) : (
-                            <>
-                                {displayData.map((token: EnrichedMarket) => (
-                                    <TokenListItem
-                                        key={token.id || `${token.chainId}-${token.address}`}
-                                        token={token as any}
-                                        onPress={() => handleTokenPress(token)}
-                                    />
-                                ))}
-                                {isSearching && <MarketListItemSkeleton />}
-                                {!isSearching && displayData.length === 0 && (
-                                    <View style={styles.emptyState}>
-                                        <Text style={styles.emptyText}>No tokens found</Text>
-                                    </View>
-                                )}
-                            </>
-                        )}
-                    </View>
-                </ScrollView>
+                        ) : null
+                    }
+                    ListFooterComponent={isSearching ? <MarketListItemSkeleton /> : null}
+                    ListEmptyComponent={
+                        !isSearching ? (
+                            <View style={styles.emptyState}>
+                                <Text style={styles.emptyText}>No tokens found</Text>
+                            </View>
+                        ) : null
+                    }
+                />
 
                 {/* <LoadingOverlay
                     visible={isNavigating}
@@ -560,37 +536,36 @@ export default function MarketScreen() {
             </View>
 
             {/* Token List */}
-            <ScrollView
-                style={styles.scrollView}
+            <FlatList
+                data={displayData}
+                renderItem={renderItem}
+                keyExtractor={(item) => item.id || `${item.chainId}-${item.address}`}
                 contentContainerStyle={[
                     styles.scrollContent,
-                    { paddingBottom: bottom + 100 } // Extra padding for tab bar
+                    { paddingBottom: bottom + 100 }
                 ]}
+                initialNumToRender={12}
+                maxToRenderPerBatch={10}
+                windowSize={10}
+                removeClippedSubviews={Platform.OS === 'android'}
                 showsVerticalScrollIndicator={false}
-            >
-                <View style={{ width: "100%", maxWidth: '100%' }}>
-                    {isLoading ? (
+                ListHeaderComponent={
+                    isLoading ? (
                         <View style={{ width: '100%' }}>
                             {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
                                 <MarketListItemSkeleton key={i} />
                             ))}
                         </View>
-                    ) : (
-                        displayData.map((token: EnrichedMarket) => (
-                            <TokenListItem
-                                key={token.id || `${token.chainId}-${token.address}`}
-                                token={token as any}
-                                onPress={() => handleTokenPress(token)}
-                            />
-                        ))
-                    )}
-                    {!isLoading && displayData.length === 0 && (
+                    ) : null
+                }
+                ListEmptyComponent={
+                    !isLoading ? (
                         <View style={styles.emptyState}>
                             <Text style={styles.emptyText}>No tokens found</Text>
                         </View>
-                    )}
-                </View>
-            </ScrollView>
+                    ) : null
+                }
+            />
 
             <LoadingOverlay
                 visible={isNavigating}

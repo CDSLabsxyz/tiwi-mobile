@@ -27,6 +27,7 @@ const TransactionHistory = require('../../assets/home/transaction-history.svg');
 const SettingsIcon = require('../../assets/home/settings-03.svg');
 const CopyIcon = require('../../assets/wallet/copy-01.svg');
 const LogoutIcon = require('../../assets/wallet/logout-01.svg');
+const TiwiLogo = require('../../assets/logo/tiwi-logo.svg');
 
 type ModalMode = 'MAIN' | 'ADD_OPTIONS';
 
@@ -118,7 +119,7 @@ export const WalletModal: React.FC<WalletModalProps> = (props) => {
             return (
                 <View style={styles.emptyStateContainer}>
                     <View style={styles.emptyLogoContainer}>
-                        <Ionicons name="wallet-outline" size={40} color={colors.primaryCTA} />
+                        <ExpoImage source={TiwiLogo} style={{ width: 48, height: 48 }} contentFit="contain" />
                     </View>
                     <Text style={styles.emptyTitle}>No wallet connected</Text>
                     <Text style={styles.emptyText}>Add or create a wallet to start trading on Tiwi Protocol.</Text>
@@ -140,7 +141,7 @@ export const WalletModal: React.FC<WalletModalProps> = (props) => {
                 {/* Wallet Avatar and Address */}
                 <View style={[styles.userInfo, { minHeight: 100, width: '100%', marginTop: 10 }]}>
                     <View style={styles.avatarContainer}>
-                        <Ionicons name="wallet-outline" size={32} color={colors.primaryCTA} />
+                        <ExpoImage source={TiwiLogo} style={styles.iconFull} contentFit="contain" />
                     </View>
                     <View style={styles.addressContainer}>
                         <Text style={[styles.addressText, { color: colors.titleText, fontSize: 18 }]}>
@@ -179,7 +180,7 @@ export const WalletModal: React.FC<WalletModalProps> = (props) => {
                             </TouchableOpacity>
                         </View>
                         <Text style={[styles.balanceText, { color: isBalanceLoading ? '#6E7873' : colors.titleText }]}>
-                            {isBalanceLoading && displayBalance === '$0.00' ? 'Updating...' : (displayBalance === '$0.00' && !isBalanceLoading ? '$0.00 (No Data)' : displayBalance)}
+                            {isBalanceLoading && displayBalance === '$0.00' ? 'Updating...' : (displayBalance === '$0.00' && !isBalanceLoading ? '$0.00' : displayBalance)}
                         </Text>
                     </TouchableOpacity>
 
@@ -363,7 +364,7 @@ const styles = StyleSheet.create({
     // Main View
     mainInfo: { width: '100%', paddingBottom: 10 },
     userInfo: { alignItems: 'center', marginBottom: 24 },
-    avatarContainer: { width: 72, height: 72, borderRadius: 36, backgroundColor: colors.bgCards, padding: 12, marginBottom: 12 },
+    avatarContainer: { width: 72, height: 72, borderRadius: 36, backgroundColor: colors.bgCards, padding: 16, marginBottom: 12, justifyContent: 'center', alignItems: 'center' },
     avatar: { width: '100%', height: '100%' },
     addressContainer: { flexDirection: 'row', alignItems: 'center' },
     // text style fallbacks
@@ -378,7 +379,7 @@ const styles = StyleSheet.create({
     miniAddButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(177, 241, 40, 0.1)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
     miniAddText: { color: colors.primaryCTA, fontSize: 12, fontWeight: '600', marginLeft: 4 },
     cardLabel: { fontSize: 14, color: colors.bodyText, marginBottom: 4 },
-    balanceText: { fontSize: 24, color: colors.titleText, fontWeight: 'bold' },
+    balanceText: { fontSize: 24, color: colors.titleText, fontWeight: '900' },
 
     actionCardsRow: { flexDirection: 'row', width: '100%' },
     actionCard: { flex: 1, backgroundColor: colors.bgCards, borderRadius: 20, padding: 16, alignItems: 'center', borderWidth: 1, borderColor: colors.bgStroke, marginRight: 12 },

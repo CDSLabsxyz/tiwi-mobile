@@ -8,7 +8,7 @@ import { CreatedWallet, generateNewWallet } from '@/services/walletCreationServi
 import { useSecurityStore } from '@/store/securityStore';
 import { useWalletStore } from '@/store/walletStore';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import React, { useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -17,11 +17,12 @@ type CreateStep = 'selection' | 'display_seed' | 'confirm_seed' | 'finalize';
 
 export default function CreateWalletScreen() {
     const router = useRouter();
+    const { mode } = useLocalSearchParams<{ mode?: string }>();
     const [step, setStep] = useState<CreateStep>('selection');
     const [wallet, setWallet] = useState<CreatedWallet | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const { addWalletGroup } = useWalletStore();
-    const { setSetupPhase } = useSecurityStore();
+    const { setupPhase, setSetupPhase } = useSecurityStore();
 
     const handleBack = () => {
         if (step === 'selection') {
@@ -32,8 +33,13 @@ export default function CreateWalletScreen() {
         } else if (step === 'confirm_seed') {
             setStep('display_seed');
         } else if (step === 'finalize') {
-            // Once in finalize, the wallet is written. Prevent going back to steps.
-            router.push('/security' as any);
+            // Once in finalize, the wallet is written. 
+            // If already setup, go explicitly to tabs
+            if (mode === 'additional' || setupPhase === 'COMPLETED') {
+                router.replace('/(tabs)' as any);
+            } else {
+                router.push('/security' as any);
+            }
         }
     };
 
@@ -82,8 +88,6 @@ export default function CreateWalletScreen() {
 
     const handleFinalize = async () => {
         if (wallet) {
-            const { setupPhase, setSetupPhase } = useSecurityStore.getState();
-
             addWalletGroup({
                 id: wallet.address.toLowerCase(),
                 name: `Wallet ${useWalletStore.getState().walletGroups.length + 1}`,
@@ -93,13 +97,12 @@ export default function CreateWalletScreen() {
                 source: 'internal'
             });
 
-            // Update setup phase ONLY if we haven't completed it yet
-            if (setupPhase !== 'COMPLETED') {
+            // If we're adding a wallet from settings OR setup is already complete, skip onboarding
+            if (mode === 'additional' || setupPhase === 'COMPLETED') {
+                router.replace('/(tabs)' as any);
+            } else {
                 setSetupPhase('WALLET_READY');
                 router.push('/security' as any);
-            } else {
-                // If already setup, go explicitly to tabs to ensure we hit the dashboard
-                router.replace('/(tabs)' as any);
             }
         }
     };

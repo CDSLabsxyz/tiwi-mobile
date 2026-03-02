@@ -30,7 +30,7 @@ const DISPERSE_ABI = [
 ] as const;
 
 export const useTransactionExecution = () => {
-    const { connectedWallets, address: activeAddress } = useWalletStore();
+    const { address: activeAddress } = useWalletStore();
     const [isExecuting, setIsExecuting] = useState(false);
     const [lastHash, setLastHash] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -45,7 +45,10 @@ export const useTransactionExecution = () => {
         setLastHash(null);
 
         try {
-            const wallet = connectedWallets.find(w => w.address.toLowerCase() === activeAddress?.toLowerCase());
+            const { walletGroups } = useWalletStore.getState();
+            const wallet = walletGroups.find(g => 
+                Object.values(g.addresses).some(addr => addr?.toLowerCase() === activeAddress?.toLowerCase())
+            );
             const isLocal = wallet?.source === 'local' || wallet?.source === 'internal' || wallet?.source === 'imported';
 
             if (isLocal) {
@@ -109,7 +112,7 @@ export const useTransactionExecution = () => {
         } finally {
             setIsExecuting(false);
         }
-    }, [connectedWallets, activeAddress, writeContractAsync, sendTransactionAsync]);
+    }, [activeAddress, writeContractAsync, sendTransactionAsync]);
 
     const executeMulti = useCallback(async (params: Omit<SendTokenParams, 'recipientAddress' | 'amount'> & { recipients: string[]; amounts: string[] }) => {
         setIsExecuting(true);
@@ -117,7 +120,10 @@ export const useTransactionExecution = () => {
         setLastHash(null);
 
         try {
-            const wallet = connectedWallets.find(w => w.address.toLowerCase() === activeAddress?.toLowerCase());
+            const { walletGroups } = useWalletStore.getState();
+            const wallet = walletGroups.find(g => 
+                Object.values(g.addresses).some(addr => addr?.toLowerCase() === activeAddress?.toLowerCase())
+            );
             const isLocal = wallet?.source === 'local' || wallet?.source === 'internal' || wallet?.source === 'imported';
 
             if (isLocal) {
@@ -202,7 +208,7 @@ export const useTransactionExecution = () => {
         } finally {
             setIsExecuting(false);
         }
-    }, [connectedWallets, activeAddress, writeContractAsync]);
+    }, [activeAddress, writeContractAsync]);
 
     return {
         execute,

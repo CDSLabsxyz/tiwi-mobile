@@ -13,10 +13,12 @@ import { File } from "expo-file-system";
 import { Image } from "expo-image";
 import React, { useEffect, useState } from "react";
 import { Alert, Platform, Text, TextInput, TouchableOpacity, View } from "react-native";
+import * as Clipboard from "expo-clipboard";
+import { Ionicons } from "@expo/vector-icons";
+import { useToastStore } from "@/store/useToastStore";
 import { SendTokenSelector } from "./SendTokenSelector";
 import { WhitelistSelectSheet } from "./WhitelistSelectSheet";
 
-const CopyIcon = require("@/assets/wallet/copy-01.svg");
 const AttachmentIcon = require("@/assets/wallet/attachment-square.svg");
 const WalletIcon = require("@/assets/wallet/wallet-01.svg");
 const AddressBookIcon = require("@/assets/settings/address-book.svg");
@@ -33,6 +35,8 @@ export const MultiSendForm: React.FC<MultiSendFormProps> = ({ onNext }) => {
   const [localAmount, setLocalAmount] = useState(amountPerRecipient);
   const [addressErrors, setAddressErrors] = useState<string[]>([]);
   const [amountError, setAmountError] = useState<string | null>(null);
+  const [pasted, setPasted] = useState(false);
+  const { showToast } = useToastStore();
 
   // Whitelist state
   const [isWhitelistSheetVisible, setIsWhitelistSheetVisible] = useState(false);
@@ -107,7 +111,19 @@ export const MultiSendForm: React.FC<MultiSendFormProps> = ({ onNext }) => {
       setRecipients(recipients);
     }
   };
-
+  const handlePasteAddresses = async () => {
+    try {
+      const text = await Clipboard.getStringAsync();
+      if (text) {
+        handleAddressesChange(text);
+        setPasted(true);
+        setTimeout(() => setPasted(false), 2000);
+        showToast("Addresses pasted!", "success");
+      }
+    } catch (error) {
+      console.error("Failed to paste addresses:", error);
+    }
+  };
   const handleAttachCSV = async () => {
     try {
       // Request document picker
@@ -222,9 +238,9 @@ export const MultiSendForm: React.FC<MultiSendFormProps> = ({ onNext }) => {
             style={{
               backgroundColor: colors.bgSemi,
               borderRadius: 16,
-              height: 79,
+              minHeight: 120,
               paddingHorizontal: 17,
-              paddingVertical: 10,
+              paddingVertical: 12,
               borderWidth: addressErrors.length > 0 ? 1 : 0,
               borderColor: addressErrors.length > 0 ? "#EF4444" : "transparent",
             }}
@@ -232,16 +248,16 @@ export const MultiSendForm: React.FC<MultiSendFormProps> = ({ onNext }) => {
             <View
               style={{
                 flexDirection: "row",
-                alignItems: "center",
+                alignItems: "flex-start",
                 justifyContent: "space-between",
-                gap: 3,
+                gap: 8,
               }}
             >
               <View
                 style={{
                   flex: 1,
                   flexDirection: "column",
-                  gap: 3,
+                  gap: 6,
                 }}
               >
                 <Text
@@ -259,28 +275,41 @@ export const MultiSendForm: React.FC<MultiSendFormProps> = ({ onNext }) => {
                   value={addressesInput}
                   onChangeText={handleAddressesChange}
                   multiline
+                  textAlignVertical="top"
+                  numberOfLines={4}
                   style={{
                     fontFamily: "Manrope-Medium",
                     fontSize: 14,
+                    lineHeight: 20,
                     color: addressesInput ? colors.titleText : colors.bodyText,
                     flex: 1,
-                    textAlignVertical: "top",
+                    minHeight: 80,
+                    padding: 0,
+                    margin: 0,
                   }}
                 />
               </View>
               <TouchableOpacity
                 activeOpacity={0.8}
-                onPress={() => { }}
+                onPress={handlePasteAddresses}
                 style={{
                   width: 24,
                   height: 24,
+                  alignItems: "center",
+                  justifyContent: "center",
                 }}
               >
-                <Image
-                  source={CopyIcon}
-                  style={{ width: "100%", height: "100%" }}
-                  contentFit="contain"
-                />
+                {pasted ? (
+                  <View style={{ width: 20, height: 20, alignItems: 'center', justifyContent: 'center' }}>
+                    <Ionicons name="checkmark-circle" size={20} color={colors.primaryCTA} />
+                  </View>
+                ) : (
+                  <Ionicons
+                    name="clipboard-outline"
+                    size={22}
+                    color={colors.titleText}
+                  />
+                )}
               </TouchableOpacity>
             </View>
           </View>

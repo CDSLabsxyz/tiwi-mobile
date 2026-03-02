@@ -72,13 +72,13 @@ const settingsSections: SettingsSection[] = [
         id: 'add-new-wallet',
         title: 'Add New Wallet',
         icon: imgAddSquare,
-        route: '/settings/add-new-wallet',
+        route: '/wallet/create?mode=additional',
     },
     {
         id: 'import-wallet',
         title: 'Import Wallet',
         icon: imgCloudDownload,
-        route: '/wallet/import',
+        route: '/wallet/import?mode=additional',
     },
 ];
 
@@ -134,13 +134,13 @@ export default function SettingsScreen() {
             id: 'add-new-wallet',
             title: t('settings.add_new_wallet'),
             icon: imgAddSquare,
-            route: '/settings/add-new-wallet',
+            route: '/wallet/create?mode=additional',
         },
         {
             id: 'import-wallet',
             title: t('settings.import_wallet'),
             icon: imgCloudDownload,
-            route: '/wallet/import',
+            route: '/wallet/import?mode=additional',
         }
     ];
 
@@ -169,13 +169,14 @@ export default function SettingsScreen() {
             section.onPress();
         } else if (section.route) {
             const returnRoute = params.returnTo || '/settings';
-            router.push(`${section.route}?returnTo=${encodeURIComponent(returnRoute)}` as any);
+            const separator = section.route.includes('?') ? '&' : '?';
+            router.push(`${section.route}${separator}returnTo=${encodeURIComponent(returnRoute)}` as any);
         }
     };
 
     return (
         <ThemedView style={styles.container}>
-            <SettingsHeader title={t('settings.title')} onBack={handleBackPress} showBack={false} />
+            <SettingsHeader title={t('settings.title')} onBack={handleBackPress} showBack={true} />
 
             <ScrollView
                 style={styles.scrollView}
@@ -209,7 +210,7 @@ const styles = StyleSheet.create({
         flexGrow: 1,
         paddingTop: 24,
         paddingHorizontal: 18,
-        paddingBottom: 120, // Increased to clear the absolute tab bar
+        paddingBottom: 40, // Reduced since tab bar is hidden
     },
     sectionsWrapper: {
         width: '100%',

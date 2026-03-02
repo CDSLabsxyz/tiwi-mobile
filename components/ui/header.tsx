@@ -15,7 +15,7 @@ interface HeaderProps {
     onBackPress?: () => void;
 }
 
-const TiwiCat = require('../../assets/home/tiwicat.svg');
+const TiwiCat = require('../../assets/images/tiwi-logo.svg');
 const ArrowDown01 = require('../../assets/home/arrow-down-01.svg');
 const Scan = require('../../assets/home/iris-scan.svg');
 const Settings = require('../../assets/home/settings-03.svg');
@@ -44,7 +44,7 @@ export const Header: React.FC<HeaderProps> = ({
     const fullAddress = walletAddress || address || '';
     const displayAddress = truncateAddress(fullAddress);
 
-    // Use provider icon if available, otherwise fallback to TiwiCat
+    // Use provider icon if available, otherwise fallback to TiwiCat 0xa61c5bdf3cddb4cfcec2daa090ff0ad3563ad6q1
     const displayIcon = TiwiCat;
 
     return (
@@ -60,7 +60,7 @@ export const Header: React.FC<HeaderProps> = ({
                         <Image
                             source={displayIcon}
                             style={styles.logo}
-                            contentFit="cover"
+                            contentFit="contain"
                         />
                     </View>
                 )}
@@ -126,12 +126,12 @@ const styles = StyleSheet.create({
         gap: 8, // gap-2
     },
     logoContainer: {
-        width: 32, // w-8
-        height: 32,
+        width: 24, // Matches other icons (w-6)
+        height: 24,
     },
     backButton: {
-        width: 32,
-        height: 32,
+        width: 24,
+        height: 24,
         alignItems: 'center',
         justifyContent: 'center',
     },

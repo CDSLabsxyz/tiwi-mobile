@@ -8,6 +8,8 @@ import { useAccount, useChainId, useReadContract, useSwitchChain, usePublicClien
 import { useMarketPrice } from './useMarketPrice';
 import { useWalletStore } from '@/store/walletStore';
 import { signerController } from '@/services/signer/SignerController';
+import { apiClient } from '@/services/apiClient';
+import { activityService } from '@/services/activityService';
 import { encodeFunctionData, formatUnits, parseUnits } from 'viem';
 
 export interface OnChainPoolStats {
@@ -33,6 +35,7 @@ export interface OnChainPoolStats {
 
 const STAKING_CHAIN_ID = 56; // BSC Mainnet
 const SECONDS_PER_YEAR = 31536000n;
+const TWC_ADDRESS_BSC = '0xDA1060158F7D593667cCE0a15DB346BB3FfB3596';
 
 /**
  * Hook to interact with a TIWI Staking Pool (Read & Write)
@@ -135,29 +138,75 @@ export function useStakingPool(poolId?: number | string, decimals: number = 9) {
         resetWagmi();
     }, [resetWagmi]);
 
-    const handleTxConfirmed = useCallback(async (hash: `0x${string}`, type: string, amount: string = '0') => {
+    const handleTxConfirmed = useCallback(async (hash: `0x${string}`, type: string, amount: string = '0', receipt?: any) => {
+        console.log(`[useStakingPool] Transaction confirmed: ${hash} | Type: ${type} | Amount: ${amount}`);
         showToast('Transaction Successful!', 'success', hash);
         refetchAll();
 
         if (effectiveAddress) {
             try {
-                const { apiClient } = require('@/services/apiClient');
-                await apiClient.logTransaction({
-                    walletAddress: effectiveAddress,
+                // Determine token address and symbol
+                const finalTokenAddr = stakingToken || TWC_ADDRESS_BSC;
+                const tokenSymbol = stakingToken?.toLowerCase() === TWC_ADDRESS_BSC.toLowerCase() ? 'TWC' : 'Tokens';
+
+                // 1. Log to Global Transaction History
+                const logResult = await apiClient.logTransaction({
+                    walletAddress: effectiveAddress.toLowerCase(),
                     transactionHash: hash,
                     chainId: STAKING_CHAIN_ID,
                     type: type, // 'Stake', 'Unstake', 'Approve'
+                    fromTokenAddress: type === 'Stake' ? finalTokenAddr.toLowerCase() : effectiveAddress.toLowerCase(),
+                    fromTokenSymbol: type === 'Stake' ? tokenSymbol : 'BNB',
+                    toTokenAddress: type === 'Stake' ? factoryAddress.toLowerCase() : finalTokenAddr.toLowerCase(),
+                    toTokenSymbol: type === 'Stake' ? 'Factory' : tokenSymbol,
                     amount: amount, 
-                    amountFormatted: `${amount} TWC`,
+                    amountFormatted: `${amount} ${tokenSymbol}`,
                     routerName: 'Tiwi Staking',
+                    blockNumber: receipt?.blockNumber ? Number(receipt.blockNumber) : undefined,
                 });
-                console.log(`[useStakingPool] Successfully logged ${type} transaction to backend.`);
+                
+                console.log(`[useStakingPool] Global log attempt ${logResult ? 'Success' : 'Failed'}`);
+
+                // 2. Log to user_stakes table (for Active Positions)
+                if (type === 'Stake' || type === 'Unstake') {
+                    const stakeResult = await apiClient.logUserStake({
+                        userWallet: effectiveAddress.toLowerCase(),
+                        stakedAmount: amount,
+                        poolId: poolId?.toString() || '',
+                        status: type === 'Stake' ? 'active' : 'withdrawn'
+                    });
+                    console.log(`[useStakingPool] UserStake table log attempt ${stakeResult ? 'Success' : 'Failed'}`);
+                }
+
+                // 3. Log to Local Activities (Supabase)
+                await activityService.logTransaction(
+                    effectiveAddress,
+                    type,
+                    `${type} Successful`,
+                    `Your ${type.toLowerCase()} of ${amount} ${tokenSymbol} was confirmed on blockchain.`,
+                    hash,
+                    { 
+                        amount, 
+                        symbol: tokenSymbol, 
+                        poolId: poolId?.toString(),
+                        onChainPoolId: poolId?.toString()
+                    }
+                );
+
+                console.log(`[useStakingPool] Local activity log complete for ${type}.`);
+                
+                // 4. Special Case: If it's a stake, trigger an extra refetch after a delay
+                if (type === 'Stake') {
+                   setTimeout(refetchAll, 3000);
+                   setTimeout(refetchAll, 10000); // Polling for backend indexing
+                }
+
             } catch (e) {
                 console.error('[useStakingPool] Failed to log activity:', e);
             }
         }
         setTimeout(hideToast, 4000);
-    }, [effectiveAddress, refetchAll, showToast, hideToast]);
+    }, [effectiveAddress, refetchAll, showToast, hideToast, stakingToken, factoryAddress, poolId]);
 
     const ensureCorrectChain = useCallback(async () => {
         if (chainId !== STAKING_CHAIN_ID) {
@@ -201,9 +250,10 @@ export function useStakingPool(poolId?: number | string, decimals: number = 9) {
                     const hash = result.hash as `0x${string}`;
                     setLocalTxHash(hash);
                     
+                    let receipt = null;
                     if (publicClient) {
                         try {
-                            await publicClient.waitForTransactionReceipt({ hash });
+                            receipt = await publicClient.waitForTransactionReceipt({ hash });
                         } catch (e) {
                             console.warn('[useStakingPool] Receipt wait failed, but hash exists.');
                         }
@@ -211,7 +261,7 @@ export function useStakingPool(poolId?: number | string, decimals: number = 9) {
                     
                     setIsInternalSuccess(true);
                     setIsInternalPending(false);
-                    handleTxConfirmed(hash, type, amount);
+                    handleTxConfirmed(hash, type, amount, receipt);
                     return hash;
                 }
                 throw new Error(result.error || 'Transaction failed');
@@ -226,8 +276,8 @@ export function useStakingPool(poolId?: number | string, decimals: number = 9) {
                 
                 if (publicClient && hash) {
                     try {
-                        await publicClient.waitForTransactionReceipt({ hash });
-                        handleTxConfirmed(hash, type, amount);
+                        const receipt = await publicClient.waitForTransactionReceipt({ hash });
+                        handleTxConfirmed(hash, type, amount, receipt);
                     } catch (e) {
                         console.warn('[useStakingPool] Receipt wait failed for external.');
                     }

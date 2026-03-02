@@ -40,7 +40,7 @@ export default function ReceiveScreen() {
     const router = useRouter();
     const pathname = usePathname();
     const params = useLocalSearchParams<{ tokenId?: string }>();
-    const { connectedWallets } = useWalletStore();
+    const { walletGroups } = useWalletStore();
 
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedChainFilter, setSelectedChainFilter] = useState<number | null>(null);
@@ -48,9 +48,14 @@ export default function ReceiveScreen() {
     const [copied, setCopied] = useState(false);
 
     // Determine supported chain types based on connected wallets
-    const supportedChainTypes = useMemo(() =>
-        connectedWallets.map(w => w.chainType),
-        [connectedWallets]);
+    const supportedChainTypes = useMemo(() => {
+        const types = new Set<string>();
+        walletGroups.forEach(g => {
+            if (g.addresses.EVM) types.add('evm');
+            if (g.addresses.SOLANA) types.add('solana');
+        });
+        return Array.from(types) as ('evm' | 'solana' | 'bitcoin')[];
+    }, [walletGroups]);
 
     const { data: chains } = useChains(supportedChainTypes);
 
@@ -85,8 +90,19 @@ export default function ReceiveScreen() {
 
     // Get actual wallet address based on chain type
     const getAddressForToken = (token: DisplayToken) => {
-        const wallet = connectedWallets.find(w => w.chainType === token.chainType);
-        return wallet ? wallet.address : connectedWallets[0]?.address || 'No Wallet Connected';
+        const targetChain = token.chainType.toUpperCase() as any;
+        const group = walletGroups.find(g => g.addresses[targetChain]);
+        if (group && group.addresses[targetChain]) {
+            return group.addresses[targetChain]!;
+        }
+        
+        // Fallback to first available address in the first group
+        const firstGroup = walletGroups[0];
+        if (firstGroup) {
+            return firstGroup.addresses[firstGroup.primaryChain] || 'No Address';
+        }
+        
+        return 'No Wallet Connected';
     };
 
     const handleTokenSelect = (token: DisplayToken) => {
@@ -249,11 +265,11 @@ export default function ReceiveScreen() {
 
             <View style={[styles.header, { paddingTop: top || 0 }]}>
                 <WalletHeader
-                    walletAddress={connectedWallets[0]?.address || ""}
+                    walletAddress={walletGroups[0]?.addresses[walletGroups[0]?.primaryChain] || ""}
                     onIrisScanPress={handleIrisScanPress}
                     // showCopy
                     onCopyPress={() => {
-                        const addr = connectedWallets[0]?.address || "";
+                        const addr = walletGroups[0]?.addresses[walletGroups[0]?.primaryChain] || "";
                         Clipboard.setStringAsync(addr);
                         Alert.alert('Copied', 'Wallet address copied to clipboard');
                     }}
