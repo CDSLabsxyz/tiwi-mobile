@@ -23,8 +23,13 @@ import { useToastStore } from '@/store/useToastStore';
 import { formatCompactNumber } from '@/utils/formatting';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+    Alert,
+    NativeSyntheticEvent,
+    ScrollView,
     StyleSheet,
     Text,
+    TextInput,
+    TextInputSelectionChangeEventData,
     TouchableOpacity,
     View
 } from 'react-native';
@@ -58,6 +63,11 @@ export default function ManageStakeScreen() {
     const [isLoading, setIsLoading] = useState(true);
     const inputRef = useRef<TextInput>(null);
 
+    // Live rewards state
+    const [liveRewards, setLiveRewards] = useState(0);
+    const [timeStakedSeconds, setTimeStakedSeconds] = useState(0);
+    const lastUpdateTs = useRef<number>(Date.now());
+
     // Get user balance for this specific token
     const userTokenBalance = useMemo(() => {
         if (!balanceData?.tokens || !symbol) return '0';
@@ -65,15 +75,12 @@ export default function ManageStakeScreen() {
         return token?.balanceFormatted || '0';
     }, [balanceData, symbol]);
 
-    // Construct the dynamic list of accounts (Connected Wallets only)
+    // Available accounts
     const availableAccounts = useMemo(() => {
         const list: any[] = [];
-
-        // Add each wallet group
         walletGroups.forEach(group => {
             const groupAddress = group.addresses[group.primaryChain];
             if (!groupAddress) return;
-
             const isMain = groupAddress.toLowerCase() === activeAddress?.toLowerCase();
             list.push({
                 id: groupAddress,
@@ -83,7 +90,6 @@ export default function ManageStakeScreen() {
                 address: groupAddress
             });
         });
-
         return list;
     }, [walletGroups, activeAddress, userTokenBalance, symbol]);
 
@@ -96,49 +102,133 @@ export default function ManageStakeScreen() {
         const loadStake = async () => {
             if (activeAddress && symbol) {
                 const stake = await stakingService.getUserStakeBySymbol(activeAddress, symbol);
-                if (stake) {
-                    setUserStake(stake);
-                }
+                if (stake) setUserStake(stake);
                 setIsLoading(false);
             }
         };
         loadStake();
     }, [activeAddress, symbol]);
 
-    // On-Chain Read & Write
     const stakingData = useStakingPool(userStake?.pool.poolId);
     const {
         allowance: initialAllowance,
-        isLoading: isStakingLoading,
         isTransactionPending,
         approve,
         stake,
         unstake,
         claimRewards,
-        refetch: refetchStaking
+        refetch: refetchStaking,
+        earningRate,
+        stakeTime,
+        rewardDurationSeconds
     } = stakingData;
 
-    // High-frequency polling for the "Fast-Flow" button (Boost tab only)
+    // Real-time Mining & Countdown Logic
+    useEffect(() => {
+        if (stakingData.pendingRewards === null) return;
+
+        // Internal tick for smooth 'mining' feel
+        const miningInterval = setInterval(() => {
+            const now = Date.now();
+            const deltaSec = (now - lastUpdateTs.current) / 1000;
+            lastUpdateTs.current = now;
+
+            if (earningRate > 0) {
+                setLiveRewards(prev => prev + (earningRate * deltaSec));
+            }
+
+            // Also update time staked seconds
+            const nowSec = Math.floor(now / 1000);
+
+            // Fallback for stakeTime: use on-chain first, then DB createdAt
+            let finalStakeTime = stakeTime;
+            if (finalStakeTime <= 0 && userStake?.createdAt) {
+                finalStakeTime = Math.floor(new Date(userStake.createdAt).getTime() / 1000);
+            }
+
+            if (finalStakeTime > 0) {
+                setTimeStakedSeconds(nowSec - finalStakeTime);
+            }
+        }, 100);
+
+        return () => clearInterval(miningInterval);
+    }, [earningRate, stakeTime, userStake, stakingData.refetch]);
+
+    // Sync with on-chain data when it refetches
+    useEffect(() => {
+        if (stakingData.pendingRewards !== null) {
+            setLiveRewards(Number(stakingData.pendingRewardsFormatted));
+            lastUpdateTs.current = Date.now();
+        }
+    }, [stakingData.pendingRewardsFormatted]);
+
+    // Live display values
+    const displayedRewards = useMemo(() => {
+        return liveRewards.toFixed(8);
+    }, [liveRewards]);
+
+    // Consolidate current stats with fallbacks
+    const effectiveStats = useMemo(() => {
+        const onChainStaked = parseFloat(stakingData.userStakedFormatted);
+        const dbStaked = parseFloat(userStake?.stakedAmount || '0');
+        const stakedAmount = onChainStaked > 0 ? stakingData.userStakedFormatted : (dbStaked > 0 ? dbStaked.toString() : '0');
+
+        const currentEarningRate = earningRate > 0 ? earningRate : (userStake?.earningRate || 0);
+
+        // Handle period calculation (Prioritize on-chain, fallback to DB, ultimate fallback 30 days)
+        let period = rewardDurationSeconds;
+        if (period <= 0) {
+            const dbValue = userStake?.minStakingPeriod || userStake?.pool?.minStakingPeriod || '30 days';
+            const dbPeriodRaw = String(dbValue);
+
+            if (dbPeriodRaw.toLowerCase().includes('day')) {
+                period = parseInt(dbPeriodRaw) * 86400;
+            } else {
+                const parsed = parseInt(dbPeriodRaw);
+                // If the number is small (e.g. 30), assume it's days. If large (e.g. 2592000), it's seconds.
+                period = parsed > 1000 ? parsed : (parsed > 0 ? parsed * 86400 : 2592000);
+            }
+        }
+
+        return {
+            stakedAmount,
+            earningRate: currentEarningRate,
+            period: period || 2592000,
+            totalPeriodDays: Math.ceil((period || 2592000) / 86400)
+        };
+    }, [stakingData.userStakedFormatted, userStake, earningRate, rewardDurationSeconds]);
+
+    const countdownStats = useMemo(() => {
+        const period = effectiveStats.period;
+
+        const d = Math.floor(timeStakedSeconds / 86400);
+        const h = Math.floor((timeStakedSeconds % 86400) / 3600);
+        const m = Math.floor((timeStakedSeconds % 3600) / 60);
+        const s = timeStakedSeconds % 60;
+
+        const timeUntilUnlock = Math.max(0, period - timeStakedSeconds);
+        const ud = Math.floor(timeUntilUnlock / 86400);
+        const uh = Math.floor((timeUntilUnlock % 86400) / 3600);
+        const um = Math.floor((timeUntilUnlock % 3600) / 60);
+        const us = timeUntilUnlock % 60;
+
+        const progressPercent = Math.min(100, (timeStakedSeconds / Math.max(1, period)) * 100);
+
+        return {
+            timeStaked: { d, h, m, s },
+            timeUntilUnlock: { d: ud, h: uh, m: um, s: us },
+            progress: progressPercent,
+            totalPeriodDays: effectiveStats.totalPeriodDays
+        };
+    }, [timeStakedSeconds, effectiveStats]);
+
     const {
         allowance: polledAllowance,
         startPolling,
         stopPolling
     } = useStakingAllowance(userStake?.pool.tokenAddress);
 
-    // Combine for best UX
     const currentAllowance = polledAllowance > 0n ? polledAllowance : initialAllowance;
-
-    const totalBalanceNumeric = useMemo(() => {
-        const walletBal = parseFloat(userTokenBalance) || 0;
-        const vaultBal = parseFloat(stakingData.userStakedFormatted || '0') || 0;
-        return (walletBal + vaultBal).toString();
-    }, [userTokenBalance, stakingData.userStakedFormatted]);
-
-    const totalBalance = useMemo(() => {
-        const val = parseFloat(totalBalanceNumeric);
-        return `${formatCompactNumber(val, { decimals: 2 })} ${symbol}`;
-    }, [totalBalanceNumeric, symbol]);
-
     const { isConnected: isWagmiConnected } = useAccount();
     const isConnected = !!activeAddress || isWagmiConnected;
 
@@ -151,327 +241,245 @@ export default function ManageStakeScreen() {
         try {
             const amountWei = parseUnits(amount, 9);
             const isNeeded = (currentAllowance || 0n) < amountWei;
-
-            if (isNeeded) {
-                startPolling();
-            } else {
-                stopPolling();
-            }
-
+            if (isNeeded) startPolling(); else stopPolling();
             return isNeeded;
-        } catch (e) {
-            return false;
-        }
+        } catch (e) { return false; }
     }, [amount, currentAllowance, activeTab, startPolling, stopPolling]);
 
-    // Position Stats
-    const positionStats = useMemo(() => {
-        return {
-            stakedAmount: stakingData.userStaked ? `${stakingData.userStakedFormatted} ${symbol}` : (userStake?.displayStakedAmount || '0 TWC'),
-            lockPeriod: userStake?.lockPeriodDays ? `${userStake.lockPeriodDays} Days` : 'Flexible',
-            rewardsEarned: stakingData.pendingRewards ? `${stakingData.pendingRewardsFormatted} ${symbol}` : (userStake?.displayRewardsEarned || '0 TWC'),
-            apy: stakingData.apr || (userStake?.displayApy || 'N/A'),
-            totalStaked: stakingData.totalStakedCompact || '...',
-            hasRewards: (stakingData.pendingRewards || 0n) > 0n
-        };
-    }, [stakingData, userStake, symbol]);
-
-    const handleSelectionChange = (
-        event: NativeSyntheticEvent<TextInputSelectionChangeEventData>
-    ) => {
-        setSelection(event.nativeEvent.selection);
-    };
-
-    /**
-     * Inserts text at the current cursor position.
-     */
     const handleKeyPress = (value: string) => {
-        if (value === '.') {
-            if (amount.includes('.')) return;
-        }
-
-        const newAmount =
-            amount.slice(0, selection.start) +
-            value +
-            amount.slice(selection.end);
-
+        if (value === '.' && amount.includes('.')) return;
+        const newAmount = amount.slice(0, selection.start) + value + amount.slice(selection.end);
         setAmount(newAmount);
-
-        // Move cursor forward
         const newCursorPos = selection.start + 1;
         setSelection({ start: newCursorPos, end: newCursorPos });
     };
 
     const handleDelete = () => {
         if (selection.start === 0 && selection.end === 0) return;
-
-        // If there is a range selected, delete the range
         if (selection.start !== selection.end) {
             const newAmount = amount.slice(0, selection.start) + amount.slice(selection.end);
             setAmount(newAmount);
             setSelection({ start: selection.start, end: selection.start });
             return;
         }
-
-        // Delete character before cursor
         const newAmount = amount.slice(0, selection.start - 1) + amount.slice(selection.end);
         setAmount(newAmount);
-
-        // Move cursor back
         const newCursorPos = Math.max(0, selection.start - 1);
         setSelection({ start: newCursorPos, end: newCursorPos });
     };
 
     const handleMax = () => {
-        const maxVal = activeTab === 'Boost' ? totalBalanceNumeric : (stakingData.userStakedFormatted || '0');
+        const maxVal = activeTab === 'Boost' ? userTokenBalance : (stakingData.userStakedFormatted || '0');
         setAmount(maxVal);
         setSelection({ start: maxVal.length, end: maxVal.length });
     };
 
     const handleConfirm = async () => {
-        if (!isConnected) {
-            showToast('Connect Wallet: Please connect your wallet to continue.', 'error');
-            return;
-        }
-
-        if (!amount || parseFloat(amount) <= 0) {
-            showToast('Invalid Amount: Please enter a valid amount.', 'error');
-            return;
-        }
-
+        if (!isConnected) { showToast('Connect Wallet: Please connect your wallet to continue.', 'error'); return; }
+        if (!amount || parseFloat(amount) <= 0) { showToast('Invalid Amount: Please enter a valid amount.', 'error'); return; }
         try {
             if (activeTab === 'Boost') {
                 if (needsApproval) {
-                    // Phase 1: Approve
                     await approve();
                     showToast('Token Approved! Proceeding to Boost...', 'pending');
-                    
-                    // Phase 2: Action (Stake/Boost)
                     setTimeout(async () => {
-                        try {
-                            await stake(amount);
-                            showToast('Successfully boosted stake!', 'success');
-                            setAmount('');
-                            refetchStaking();
-                        } catch (err: any) {
-                            console.error('[ManageStake] Chained boost error:', err);
-                        }
+                        try { await stake(amount); setAmount(''); refetchStaking(); } catch (err) { }
                     }, 1000);
                 } else {
-                    await stake(amount);
-                    showToast('Successfully boosted stake!', 'success');
-                    setAmount('');
-                    refetchStaking();
+                    await stake(amount); setAmount(''); refetchStaking();
                 }
             } else {
-                await unstake(amount);
-                showToast('Successfully unstaked tokens!', 'success');
-                setAmount('');
-                refetchStaking();
+                await unstake(amount); setAmount(''); refetchStaking();
             }
         } catch (error: any) {
-            console.error('[ManageStake] Transaction error:', error);
-            const errorMsg = error?.message || 'Transaction failed. Please try again.';
-            if (!errorMsg.includes('User rejected')) {
-                showToast(`Transaction Failed: ${errorMsg}`, 'error');
-            }
+            const errorMsg = error?.message || 'Transaction failed.';
+            if (!errorMsg.includes('User rejected')) showToast(`Transaction Failed: ${errorMsg}`, 'error');
         }
     };
 
     const handleClaim = async () => {
-        try {
-            await claimRewards();
-            Alert.alert('Success', 'Rewards claimed successfully!');
-            refetchStaking();
-        } catch (error: any) {
-            console.error('[ManageStake] Claim error:', error);
-            const errorMsg = error?.message || 'Claim failed.';
-            if (!errorMsg.includes('User rejected')) {
-                Alert.alert('Claim Failed', errorMsg);
-            }
-        }
+        try { await claimRewards(); refetchStaking(); } catch (error: any) { }
     };
+
+    const renderCountdownBox = (value: number, label: string) => (
+        <View style={styles.countdownBox}>
+            <Text style={styles.countdownValue}>{value.toString().padStart(2, '0')}</Text>
+            <Text style={styles.countdownLabel}>{label}</Text>
+        </View>
+    );
+
+    if (isLoading && !userStake) {
+        return <View style={[styles.container, { backgroundColor: '#000' }]}><TIWILoader /></View>;
+    }
 
     return (
         <View style={[styles.container, { backgroundColor: '#000000' }]}>
             <CustomStatusBar />
 
-            {/* Header */}
             <View style={[styles.header, { paddingTop: top }]}>
-                <TouchableOpacity
-                    onPress={() => router.back()}
-                    style={styles.backButton}
-                    activeOpacity={0.8}
-                >
+                <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
                     <Image source={BackIcon} style={styles.icon} contentFit="contain" />
                 </TouchableOpacity>
 
                 <View style={styles.tokenHeader}>
                     <Image source={userStake?.pool.tokenLogo ? { uri: userStake.pool.tokenLogo } : TWCIcon} style={styles.tokenIcon} contentFit="cover" />
-                    <Text style={styles.headerSymbol}>{symbol || 'TWC'}</Text>
+                    <View>
+                        <Text style={styles.headerSymbol}>{symbol || 'TWC'}</Text>
+                        <Text style={{ color: colors.mutedText, fontSize: 12 }}>{userStake?.pool.tokenName || 'TIWICAT'}</Text>
+                    </View>
                 </View>
-                <View style={{ width: 24 }} />
+
+                <View style={styles.activeBadge}>
+                    <Text style={styles.activeBadgeText}>Active</Text>
+                </View>
+                <TouchableOpacity><Ionicons name="chevron-up" size={24} color={colors.mutedText} /></TouchableOpacity>
             </View>
 
-            <View style={{ flex: 1 }}>
-                <ScrollView
-                    style={styles.scrollView}
-                    contentContainerStyle={{ paddingBottom: 150 }}
-                    showsVerticalScrollIndicator={false}
-                >
-                    {/* Position Summary Card */}
-                    <View style={styles.positionCardWrapper}>
-                        <View style={styles.statsCard}>
-                            <View style={styles.statItem}>
-                                <Text style={styles.statLabel}>Staked</Text>
-                                <Text style={styles.statValue}>{positionStats.stakedAmount}</Text>
-                            </View>
-                            <View style={styles.statItem}>
-                                <Text style={styles.statLabel}>Lock Period</Text>
-                                <Text style={styles.statValue}>{positionStats.lockPeriod}</Text>
-                            </View>
-                            <View style={styles.statItem}>
-                                <Text style={styles.statLabel}>Rewards</Text>
-                                <Text style={styles.statValue}>{positionStats.rewardsEarned}</Text>
-                                {positionStats.hasRewards && (
-                                    <TouchableOpacity onPress={handleClaim} style={styles.claimButtonSmall}>
-                                        <Text style={styles.claimButtonTextSmall}>Claim</Text>
-                                    </TouchableOpacity>
-                                )}
-                            </View>
-                            <View style={styles.statItem}>
-                                <Text style={styles.statLabel}>APY</Text>
-                                <Text style={styles.statValue}>{positionStats.apy}</Text>
-                            </View>
+            <ScrollView style={styles.scrollView} contentContainerStyle={{ paddingBottom: 150 }} showsVerticalScrollIndicator={false}>
+                {/* Main Action Section - Match Screenshot 3 */}
+                <View style={styles.mainCard}>
+                    <View style={styles.countdownHeader}>
+                        <Ionicons name="time-outline" size={24} color="#C4F440" />
+                        <Text style={styles.countdownTitle}>Staking Countdown</Text>
+                    </View>
+
+                    <Text style={styles.sectionLabel}>Time Staked</Text>
+                    <View style={styles.countdownRow}>
+                        {renderCountdownBox(countdownStats.timeStaked.d, 'DAYS')}
+                        {renderCountdownBox(countdownStats.timeStaked.h, 'HRS')}
+                        {renderCountdownBox(countdownStats.timeStaked.m, 'MIN')}
+                        {renderCountdownBox(countdownStats.timeStaked.s, 'SEC')}
+                    </View>
+
+                    <Text style={styles.sectionLabel}>Time Until Unlock</Text>
+                    <View style={styles.countdownRow}>
+                        {renderCountdownBox(countdownStats.timeUntilUnlock.d, 'DAYS')}
+                        {renderCountdownBox(countdownStats.timeUntilUnlock.h, 'HRS')}
+                        {renderCountdownBox(countdownStats.timeUntilUnlock.m, 'MIN')}
+                        {renderCountdownBox(countdownStats.timeUntilUnlock.s, 'SEC')}
+                    </View>
+
+                    <View style={styles.progressContainer}>
+                        <View style={styles.progressTextRow}>
+                            <Text style={styles.progressLabel}>Progress</Text>
+                            <Text style={styles.progressValue}>
+                                {countdownStats.progress.toFixed(1)}% of {countdownStats.totalPeriodDays} days
+                            </Text>
+                        </View>
+                        <View style={styles.progressBarBg}>
+                            <View style={[styles.progressBarFill, { width: `${countdownStats.progress}%` }]} />
                         </View>
                     </View>
 
-                    {/* Tabs (Boost / Unstake) */}
-                    <View style={styles.tabsContainer}>
-                        <TouchableOpacity
-                            onPress={() => setActiveTab('Boost')}
-                            style={styles.tab}
-                        >
-                            <Text style={[styles.tabText, activeTab === 'Boost' ? styles.tabTextActive : styles.tabTextInactive]}>Boost</Text>
-                            {activeTab === 'Boost' && <View style={styles.activeUnderline} />}
+                    {/* Stats Grid */}
+                    <View style={styles.statsGrid}>
+                        <View style={styles.gridItem}>
+                            <View style={styles.gridLabelRow}>
+                                <Ionicons name="link-outline" size={16} color="#C4F440" />
+                                <Text style={styles.gridLabel}>Staked Amount</Text>
+                            </View>
+                            <Text style={styles.gridValue}>{formatCompactNumber(Number(effectiveStats.stakedAmount), { decimals: 2 })} <Text style={styles.gridSymbol}>{symbol}</Text></Text>
+                        </View>
+                        <View style={styles.gridItem}>
+                            <View style={styles.gridLabelRow}>
+                                <Ionicons name="trending-up-outline" size={16} color="#C4F440" />
+                                <Text style={styles.gridLabel}>Pending Rewards</Text>
+                            </View>
+                            <Text style={styles.gridValue}>{displayedRewards} <Text style={styles.gridSymbol}>{symbol}</Text></Text>
+                        </View>
+                        <View style={styles.gridItem}>
+                            <View style={styles.gridLabelRow}>
+                                <Ionicons name="lock-closed-outline" size={16} color="#C4F440" />
+                                <Text style={styles.gridLabel}>Reward Duration</Text>
+                            </View>
+                            <Text style={styles.gridValue}>{effectiveStats.totalPeriodDays} <Text style={styles.gridSymbol}>days</Text></Text>
+                        </View>
+                        <View style={styles.gridItem}>
+                            <View style={styles.gridLabelRow}>
+                                <Ionicons name="calendar-outline" size={16} color="#C4F440" />
+                                <Text style={styles.gridLabel}>Started</Text>
+                            </View>
+                            <Text style={styles.gridValue}>
+                                {stakeTime > 0
+                                    ? new Date(stakeTime * 1000).toLocaleDateString()
+                                    : (userStake?.createdAt ? new Date(userStake.createdAt).toLocaleDateString() : '...')
+                                }
+                            </Text>
+                        </View>
+                    </View>
+
+                    {/* Earning Rate Banner */}
+                    <View style={styles.earningRateBanner}>
+                        <Text style={styles.earningRateLabel}>Earning Rate</Text>
+                        <Text style={styles.earningRateValue}>+{effectiveStats.earningRate.toFixed(8)} {symbol}/sec</Text>
+                    </View>
+
+                    <View style={styles.actionButtonsRow}>
+                        <TouchableOpacity onPress={handleClaim} style={styles.claimButtonLarge}>
+                            <Text style={styles.claimButtonTextLarge}>Claim</Text>
+                            <Text style={styles.claimSubtext}>≈ {formatCompactNumber(liveRewards)} {symbol}</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
                             onPress={() => setActiveTab('Unstake')}
-                            style={styles.tab}
+                            style={[styles.unstakeButtonOutline, activeTab === 'Unstake' && { borderColor: '#C4F440' }]}
                         >
-                            <Text style={[styles.tabText, activeTab === 'Unstake' ? styles.tabTextActive : styles.tabTextInactive]}>Unstake</Text>
-                            {activeTab === 'Unstake' && <View style={styles.activeUnderline} />}
+                            <Text style={styles.unstakeButtonTextHeadline}>Unstake</Text>
                         </TouchableOpacity>
                     </View>
+                </View>
 
-                    {/* Tab-specific content */}
-                    {activeTab === 'Boost' && (
-                        <View style={{ paddingHorizontal: 20, marginTop: 16 }}>
-                            {/* Info Banner */}
-                            <View style={styles.infoBanner}>
-                                <FontAwesome6 name="bolt" size={24} color="#498F00" style={{ marginRight: 8 }} />
-                                <Text style={styles.infoBannerText}>
-                                    Boost your earnings by extending your lock period or adding more tokens.
-                                </Text>
-                                <TouchableOpacity>
-                                    <AntDesign name="close" size={16} color={colors.mutedText} />
-                                </TouchableOpacity>
-                            </View>
+                {/* Tabs */}
+                <View style={styles.tabsContainer}>
+                    <TouchableOpacity onPress={() => setActiveTab('Boost')} style={styles.tab}>
+                        <Text style={[styles.tabText, activeTab === 'Boost' ? styles.tabTextActive : styles.tabTextInactive]}>Add Stake</Text>
+                        {activeTab === 'Boost' && <View style={styles.activeUnderline} />}
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => setActiveTab('Unstake')} style={styles.tab}>
+                        <Text style={[styles.tabText, activeTab === 'Unstake' ? styles.tabTextActive : styles.tabTextInactive]}>Unstake</Text>
+                        {activeTab === 'Unstake' && <View style={styles.activeUnderline} />}
+                    </TouchableOpacity>
+                </View>
 
-                            {/* Time Boost Dropdown */}
-                            <TouchableOpacity style={styles.dropdownSelector} activeOpacity={0.8}>
-                                <Text style={styles.dropdownLabel}>Time Boost</Text>
-                                <Image source={DropdownIcon} style={{ width: 24, height: 24 }} contentFit="contain" />
-                            </TouchableOpacity>
-
-                            <Text style={[styles.dropdownLabel, { marginTop: 16, color: colors.mutedText }]}>
-                                Add more tokens
-                            </Text>
-                        </View>
-                    )}
-
-                    {activeTab === 'Unstake' && (
-                        <View style={{ paddingHorizontal: 20, marginTop: 16 }}>
-                            {/* Warning Banner for Unstake */}
-                            <View style={styles.warningBanner}>
-                                <Ionicons name="remove-circle-outline" size={16} color="#FF4D4D" style={{ marginRight: 8 }} />
-                                <Text style={styles.warningBannerText}>
-                                    Unstaking initiates a 30-day cooldown, though you can cancel at any point.
-                                </Text>
-                                <TouchableOpacity>
-                                    <AntDesign name="close" size={16} color={colors.mutedText} />
-                                </TouchableOpacity>
-                            </View>
-                        </View>
-                    )}
-
-                    {/* Amount Input Section */}
-                    <View style={styles.amountSection}>
-                        <View style={styles.amountInputContainer}>
-                            <TextInput
-                                ref={inputRef}
-                                style={styles.inputField}
-                                value={amount}
-                                showSoftInputOnFocus={false}
-                                onSelectionChange={handleSelectionChange}
-                                selection={selection}
-                                placeholder="0.000"
-                                placeholderTextColor={colors.mutedText}
-                                keyboardType="numeric"
-                            />
-
-                            {/* <Text style={styles.inputSuffix}>{symbol}</Text> */}
-
-                            <TouchableOpacity onPress={handleMax} style={styles.maxButton}>
-                                <Text style={styles.maxButtonText}>Max</Text>
-                            </TouchableOpacity>
-                        </View>
-
-                        {/* Account Selector Row below input */}
-                        <View style={styles.accountRow}>
-                            <TouchableOpacity
-                                style={styles.accountTrigger}
-                                onPress={() => setIsAccountModalVisible(true)}
-                            >
-                                <Text style={styles.accountLabel}>{selectedAccount?.name || 'Account'}</Text>
-                                <Image source={DropdownIcon} style={{ width: 16, height: 16 }} contentFit="contain" />
-                            </TouchableOpacity>
-
-                            <View style={styles.balanceContainer}>
-                                <Text style={styles.balanceText}>{selectedAccount?.balance || userTokenBalance}</Text>
-                                <TouchableOpacity onPress={() => setIsDepositModalVisible(true)}>
-                                    <AntDesign name="plus" size={16} color={colors.titleText} />
-                                </TouchableOpacity>
-                            </View>
-                        </View>
+                {/* Amount Section */}
+                <View style={styles.amountSection}>
+                    <View style={styles.amountInputContainer}>
+                        <TextInput
+                            ref={inputRef}
+                            style={styles.inputField}
+                            value={amount}
+                            showSoftInputOnFocus={false}
+                            onSelectionChange={(e) => setSelection(e.nativeEvent.selection)}
+                            selection={selection}
+                            placeholder="0.000"
+                            placeholderTextColor={colors.mutedText}
+                        />
+                        <TouchableOpacity onPress={handleMax} style={styles.maxButton}><Text style={styles.maxButtonText}>Max</Text></TouchableOpacity>
                     </View>
 
-                    <View style={{ height: 30 }} />
+                    <View style={styles.accountRow}>
+                        <TouchableOpacity style={styles.accountTrigger} onPress={() => setIsAccountModalVisible(true)}>
+                            <Text style={styles.accountLabel}>{selectedAccount?.name || 'Account'}</Text>
+                            <Image source={DropdownIcon} style={{ width: 16, height: 16 }} contentFit="contain" />
+                        </TouchableOpacity>
+                        <View style={styles.balanceContainer}>
+                            <Text style={styles.balanceText}>{selectedAccount?.balance || userTokenBalance}</Text>
+                            <TouchableOpacity onPress={() => setIsDepositModalVisible(true)}><AntDesign name="plus" size={16} color="#C4F440" /></TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
 
-                    {/* Numeric Keypad right after account selection */}
-                    <NumericKeypad onPress={handleKeyPress} onDelete={handleDelete} />
+                <NumericKeypad onPress={handleKeyPress} onDelete={handleDelete} />
+            </ScrollView>
 
-                </ScrollView>
-            </View>
-
-            {/* Bottom Action Bar */}
             <View style={[styles.bottomBar, { paddingBottom: bottom + 12 }]}>
                 <TouchableOpacity
                     onPress={handleConfirm}
                     disabled={isTransactionPending || !amount || parseFloat(amount) <= 0}
-                    style={[
-                        styles.confirmButton,
-                        (isTransactionPending || !amount || parseFloat(amount) <= 0) && styles.confirmButtonDisabled
-                    ]}
-                    activeOpacity={0.9}
+                    style={[styles.confirmButton, (isTransactionPending || !amount || parseFloat(amount) <= 0) && styles.confirmButtonDisabled]}
                 >
-                    {isTransactionPending ? (
-                        <TIWILoader size={40} />
-                    ) : (
-                        <Text style={styles.confirmButtonText}>
-                            {activeTab === 'Boost' ? (needsApproval ? 'Approve Token' : 'Boost Stake') : 'Unstake Now'}
-                        </Text>
-                    )}
+                    {isTransactionPending ? <TIWILoader size={40} /> : <Text style={styles.confirmButtonText}>
+                        {activeTab === 'Boost' ? (needsApproval ? 'Approve Token' : 'Add to Stake') : 'Unstake Now'}
+                    </Text>}
                 </TouchableOpacity>
             </View>
 
@@ -481,274 +489,71 @@ export default function ManageStakeScreen() {
                 onSelect={(account) => setSelectedAccountId(account.id)}
                 accounts={availableAccounts}
                 selectedAccountId={selectedAccountId}
-                totalBalance={totalBalance}
-            />
-
-            <DepositSelectionModal
-                visible={isDepositModalVisible}
-                onClose={() => setIsDepositModalVisible(false)}
-                onSelect={(action) => {
-                    setIsDepositModalVisible(false);
-                    if (action === 'send') router.push('/send');
-                    else if (action === 'swap') router.push('/swap');
-                    else if (action === 'receive') router.push('/receive');
-                }}
+                totalBalance={`${userTokenBalance} ${symbol}`}
             />
         </View>
     );
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-    },
-    header: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingHorizontal: 20,
-        paddingVertical: 10,
-    },
-    backButton: {
-        width: 24,
-        height: 24,
-    },
-    icon: {
-        width: '100%',
-        height: '100%',
-    },
-    tokenHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-    },
-    tokenIcon: {
-        width: 32,
-        height: 32,
-        borderRadius: 16,
-    },
-    headerSymbol: {
-        fontFamily: 'Manrope-Bold',
-        fontSize: 18,
-        color: colors.titleText,
-    },
-    scrollView: {
-        flex: 1,
-    },
-    positionCardWrapper: {
-        paddingHorizontal: 20,
-        marginTop: 20,
-    },
-    statsCard: {
-        flexDirection: 'row',
-        backgroundColor: '#0B0F0A',
-        borderWidth: 1,
-        borderColor: '#1E1E1E',
-        borderRadius: 12,
-        paddingVertical: 16,
-        paddingHorizontal: 8,
-    },
-    statItem: {
-        flex: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 6,
-    },
-    statLabel: {
-        fontFamily: 'Manrope-Medium',
-        fontSize: 11,
-        color: '#7C7C7C',
-    },
-    statValue: {
-        fontFamily: 'Manrope-SemiBold',
-        fontSize: 13,
-        color: '#FFFFFF',
-        textAlign: 'center',
-    },
-    tabsContainer: {
-        flexDirection: 'row',
-        paddingHorizontal: 20,
-        marginTop: 24,
-        gap: 24,
-    },
-    tab: {
-        paddingVertical: 8,
-        alignItems: 'center',
-    },
-    tabText: {
-        fontFamily: 'Manrope-Medium',
-        fontSize: 16,
-    },
-    tabTextActive: {
-        color: '#FFFFFF',
-    },
-    tabTextInactive: {
-        color: '#7C7C7C',
-    },
-    activeUnderline: {
-        position: 'absolute',
-        bottom: 0,
-        width: '100%',
-        height: 2,
-        backgroundColor: colors.primaryCTA,
-    },
-    infoBanner: {
-        flexDirection: 'row',
-        alignItems: 'flex-start',
-        backgroundColor: 'rgba(177, 241, 40, 0.05)',
-        borderWidth: 1,
-        borderColor: 'rgba(177, 241, 40, 0.2)',
-        borderRadius: 12,
-        padding: 12,
-        marginBottom: 16,
-    },
-    infoBannerText: {
-        flex: 1,
-        fontFamily: 'Manrope-Regular',
-        fontSize: 12,
-        color: '#498F00',
-        marginRight: 8,
-        lineHeight: 18,
-    },
-    warningBanner: {
-        flexDirection: 'row',
-        alignItems: 'flex-start',
-        backgroundColor: 'rgba(255, 77, 77, 0.05)',
-        borderWidth: 1,
-        borderColor: 'rgba(255, 77, 77, 0.2)',
-        borderRadius: 12,
-        padding: 12,
-        marginBottom: 16,
-    },
-    warningBannerText: {
-        flex: 1,
-        fontFamily: 'Manrope-Regular',
-        fontSize: 12,
-        color: '#FF4D4D',
-        marginRight: 8,
-        lineHeight: 18,
-    },
-    dropdownSelector: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        backgroundColor: '#0B0F0A',
-        borderRadius: 16,
-        padding: 16,
-        marginBottom: 8,
-    },
-    dropdownLabel: {
-        fontFamily: 'Manrope-Medium',
-        fontSize: 14,
-        color: colors.titleText,
-    },
-    amountSection: {
-        marginTop: 12,
-        paddingHorizontal: 20,
-    },
-    amountInputContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#0B0F0A',
-        borderWidth: 1,
-        borderColor: '#1E1E1E',
-        borderRadius: 16,
-        paddingHorizontal: 16,
-        paddingVertical: 4,
-        height: 64,
-    },
-    inputField: {
-        flex: 1,
-        fontFamily: 'Manrope-Regular',
-        fontSize: 16,
-        color: colors.titleText,
-        height: '100%',
-        padding: 0,
-    },
-    inputSuffix: {
-        fontFamily: 'Manrope-Medium',
-        fontSize: 16,
-        color: colors.titleText,
-        marginRight: 16,
-        marginLeft: 8,
-    },
-    maxButton: {
-        backgroundColor: colors.primaryCTA,
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        borderRadius: 100,
-    },
-    maxButtonText: {
-        fontFamily: 'Manrope-SemiBold',
-        fontSize: 14,
-        color: '#000000',
-    },
-    accountRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginTop: 12,
-    },
-    accountTrigger: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-    },
-    accountLabel: {
-        fontFamily: 'Manrope-Medium',
-        fontSize: 14,
-        color: colors.titleText,
-    },
-    balanceContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-    },
-    balanceText: {
-        fontFamily: 'Manrope-Medium',
-        fontSize: 14,
-        color: colors.titleText,
-    },
-    keypadContainer: {
-        marginTop: 10,
-        paddingBottom: 80,
-    },
-    bottomBar: {
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        backgroundColor: '#000000',
-        paddingHorizontal: 20,
-        paddingTop: 16,
-        borderTopWidth: 0,
-    },
-    confirmButton: {
-        backgroundColor: colors.primaryCTA,
-        height: 52,
-        borderRadius: 26,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    confirmButtonText: {
-        fontFamily: 'Manrope-SemiBold',
-        fontSize: 16,
-        color: '#000000',
-    },
-    confirmButtonDisabled: {
-        opacity: 0.6,
-        backgroundColor: colors.bgStroke,
-    },
-    claimButtonSmall: {
-        backgroundColor: colors.primaryCTA,
-        paddingHorizontal: 8,
-        paddingVertical: 4,
-        borderRadius: 4,
-        marginTop: 4,
-    },
-    claimButtonTextSmall: {
-        fontFamily: 'Manrope-Bold',
-        fontSize: 10,
-        color: '#000000',
-    },
+    container: { flex: 1, backgroundColor: '#000' },
+    header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 10, gap: 12 },
+    backButton: { width: 32, height: 32, justifyContent: 'center' },
+    icon: { width: 20, height: 20 },
+    tokenHeader: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
+    tokenIcon: { width: 40, height: 40, borderRadius: 20 },
+    headerSymbol: { fontFamily: 'Manrope-Bold', fontSize: 18, color: '#FFF' },
+    activeBadge: { backgroundColor: 'rgba(196, 244, 64, 0.1)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 },
+    activeBadgeText: { color: '#C4F440', fontSize: 12, fontFamily: 'Manrope-Bold' },
+    scrollView: { flex: 1 },
+    mainCard: { backgroundColor: '#0D0D0D', margin: 20, borderRadius: 24, padding: 20, borderWidth: 1, borderColor: '#1A1A1A' },
+    countdownHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 20 },
+    countdownTitle: { color: '#FFF', fontSize: 18, fontFamily: 'Manrope-Bold' },
+    sectionLabel: { color: colors.mutedText, fontSize: 12, marginBottom: 12, marginTop: 8 },
+    countdownRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
+    countdownBox: { flex: 1, backgroundColor: '#1A1A1A', borderRadius: 12, paddingVertical: 12, paddingHorizontal: 4, alignItems: 'center' },
+    countdownValue: { color: '#FFF', fontSize: 16, fontFamily: 'Manrope-Bold' },
+    countdownLabel: { color: colors.mutedText, fontSize: 8, marginTop: 4 },
+    progressContainer: { marginTop: 10, marginBottom: 20 },
+    progressTextRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
+    progressLabel: { color: colors.mutedText, fontSize: 12 },
+    progressValue: { color: colors.mutedText, fontSize: 12 },
+    progressBarBg: { height: 6, backgroundColor: '#1A1A1A', borderRadius: 3, overflow: 'hidden' },
+    progressBarFill: { height: '100%', backgroundColor: '#C4F440' },
+    statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 10 },
+    gridItem: { width: '48.5%', backgroundColor: '#141414', borderRadius: 16, padding: 12, gap: 6 },
+    gridLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    gridLabel: { color: colors.mutedText, fontSize: 10 },
+    gridValue: { color: '#FFF', fontSize: 15, fontFamily: 'Manrope-Bold' },
+    gridSymbol: { color: colors.mutedText, fontSize: 11 },
+    earningRateBanner: { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: '#141414', padding: 16, borderRadius: 12, marginTop: 16 },
+    earningRateLabel: { color: colors.mutedText, fontSize: 14 },
+    earningRateValue: { color: '#C4F440', fontSize: 14, fontFamily: 'Manrope-Bold' },
+    actionButtonsRow: { flexDirection: 'row', gap: 12, marginTop: 20 },
+    claimButtonLarge: { flex: 1, backgroundColor: '#C4F440', height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center' },
+    claimButtonTextLarge: { color: '#000', fontSize: 18, fontFamily: 'Manrope-Bold' },
+    claimSubtext: { color: '#000', fontSize: 10, opacity: 0.7 },
+    unstakeButtonOutline: { flex: 1, height: 64, borderRadius: 32, borderWidth: 1, borderColor: '#333', alignItems: 'center', justifyContent: 'center' },
+    unstakeButtonTextHeadline: { color: '#FFF', fontSize: 18, fontFamily: 'Manrope-Bold' },
+    tabsContainer: { flexDirection: 'row', paddingHorizontal: 20, marginTop: 10, gap: 24 },
+    tab: { paddingVertical: 12 },
+    tabText: { fontSize: 16, fontFamily: 'Manrope-Medium' },
+    tabTextActive: { color: '#FFF' },
+    tabTextInactive: { color: colors.mutedText },
+    activeUnderline: { position: 'absolute', bottom: 0, width: '100%', height: 2, backgroundColor: '#C4F440' },
+    amountSection: { paddingHorizontal: 20, marginTop: 20 },
+    amountInputContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0D0D0D', borderRadius: 16, paddingHorizontal: 16, paddingVertical: 12, borderWidth: 1, borderColor: '#1A1A1A' },
+    inputField: { flex: 1, color: '#FFF', fontSize: 20, fontFamily: 'Manrope-Bold' },
+    maxButton: { backgroundColor: '#C4F440', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
+    maxButtonText: { color: '#000', fontSize: 12, fontFamily: 'Manrope-Bold' },
+    accountRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 12 },
+    accountTrigger: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    accountLabel: { color: '#FFF', fontSize: 14 },
+    balanceContainer: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    balanceText: { color: '#FFF', fontSize: 14 },
+    bottomBar: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingHorizontal: 20, paddingTop: 12, backgroundColor: '#000' },
+    confirmButton: { height: 56, backgroundColor: '#C4F440', borderRadius: 28, alignItems: 'center', justifyContent: 'center' },
+    confirmButtonText: { color: '#000', fontSize: 16, fontFamily: 'Manrope-Bold' },
+    confirmButtonDisabled: { opacity: 0.3 }
 });
+

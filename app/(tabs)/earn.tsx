@@ -284,12 +284,14 @@ export default function EarnScreen() {
                                         myStakes.map((stake, index) => (
                                             <MyStakeCard
                                                 key={stake.id}
-                                                symbol={stake.pool.tokenSymbol}
+                                                symbol={stake.pool?.tokenSymbol || 'TWC'}
                                                 apy={stake.displayApy}
                                                 stakedAmount={stake.displayStakedAmount}
                                                 rewardsEarned={stake.displayRewardsEarned}
-                                                icon={stake.pool.tokenLogo ? { uri: stake.pool.tokenLogo } : TWCIcon}
-                                                onPress={() => router.push(`/earn/manage/${stake.pool.tokenSymbol}` as any)}
+                                                lockPeriod={stake.minStakingPeriod}
+                                                earningRate={stake.earningRate}
+                                                icon={stake.pool?.tokenLogo ? { uri: stake.pool.tokenLogo } : TWCIcon}
+                                                onPress={() => router.push(`/earn/manage/${stake.pool?.tokenSymbol}` as any)}
                                             />
                                         ))
                                     ) : (
@@ -310,12 +312,14 @@ export default function EarnScreen() {
                                         myStakes.map((stake, index) => (
                                             <MyStakeCard
                                                 key={stake.id}
-                                                symbol={stake.pool.tokenSymbol}
+                                                symbol={stake.pool?.tokenSymbol || 'TWC'}
                                                 apy={stake.displayApy}
                                                 stakedAmount={stake.displayStakedAmount}
                                                 rewardsEarned={stake.displayRewardsEarned}
-                                                icon={stake.pool.tokenLogo ? { uri: stake.pool.tokenLogo } : TWCIcon}
-                                                onPress={() => router.push(`/earn/manage/${stake.pool.tokenSymbol}` as any)}
+                                                lockPeriod={stake.minStakingPeriod}
+                                                earningRate={stake.earningRate}
+                                                icon={stake.pool?.tokenLogo ? { uri: stake.pool.tokenLogo } : TWCIcon}
+                                                onPress={() => router.push(`/earn/manage/${stake.pool?.tokenSymbol}` as any)}
                                             />
                                         ))
                                     ) : (

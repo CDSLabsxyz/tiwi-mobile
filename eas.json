@@ -11,7 +11,12 @@
         "buildType": "apk"
       },
       "env": {
-        "NPM_CONFIG_LEGACY_PEER_DEPS": "true"
+        "NPM_CONFIG_LEGACY_PEER_DEPS": "true",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://xndzztnzcdephprvqkzq.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_WlobSayVn1CphMqW0syD_Q_0e1265qg",
+        "EXPO_PUBLIC_GEMINI_API_KEY": "AIzaSyAtowUBD3eXeUNXOR5ZWtpmz6RARRaR45g",
+        "EXPO_PUBLIC_AI_BACKEND_URL": "https://tiwiprotocol-ai.vercel.app/api/chat",
+        "EXPO_PUBLIC_MORALIS_API_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJub25jZSI6Ijc3YjVkODFmLTI4ZmUtNGRhYi1iMDM0LTM2YzU2YjFhNDIwMiIsIm9yZ0lkIjoiNDk5MjYwIiwidXNlcklkIjoiNTEzNzQ0IiwidHlwZUlkIjoiZGQ1NGVkZGMtMzAzYi00MzEwLTgyZTAtNDA0MGRmNmE1YzM1IiwidHlwZSI6IlBST0pFQ1QiLCJpYXQiOjE3NzA1OTY0MjQsImV4cCI6NDkyNjM1NjQyNH0.93eQih4rni7TqAoG9YY2sA9C9WtbBq4Ihfq8xBprc7k"
       }
     },
     "preview": {
@@ -19,7 +24,12 @@
         "buildType": "apk"
       },
       "env": {
-        "NPM_CONFIG_LEGACY_PEER_DEPS": "true"
+        "NPM_CONFIG_LEGACY_PEER_DEPS": "true",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://xndzztnzcdephprvqkzq.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_WlobSayVn1CphMqW0syD_Q_0e1265qg",
+        "EXPO_PUBLIC_GEMINI_API_KEY": "AIzaSyAtowUBD3eXeUNXOR5ZWtpmz6RARRaR45g",
+        "EXPO_PUBLIC_AI_BACKEND_URL": "https://tiwiprotocol-ai.vercel.app/api/chat",
+        "EXPO_PUBLIC_MORALIS_API_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJub25jZSI6Ijc3YjVkODFmLTI4ZmUtNGRhYi1iMDM0LTM2YzU2YjFhNDIwMiIsIm9yZ0lkIjoiNDk5MjYwIiwidXNlcklkIjoiNTEzNzQ0IiwidHlwZUlkIjoiZGQ1NGVkZGMtMzAzYi00MzEwLTgyZTAtNDA0MGRmNmE1YzM1IiwidHlwZSI6IlBST0pFQ1QiLCJpYXQiOjE3NzA1OTY0MjQsImV4cCI6NDkyNjM1NjQyNH0.93eQih4rni7TqAoG9YY2sA9C9WtbBq4Ihfq8xBprc7k"
       }
     },
     "production": {

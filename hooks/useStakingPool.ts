@@ -1,9 +1,8 @@
 import { ERC20_ABI, STAKING_FACTORY_ABI } from '@/constants/abis';
 import { STAKING_FACTORY_ADDRESSES } from '@/constants/contracts';
-import { currencyService } from '@/services/currencyService';
 import { useToastStore } from '@/store/useToastStore';
 import { formatCompactNumber } from '@/utils/formatting';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useAccount, useChainId, useReadContract, useSwitchChain, usePublicClient, useWriteContract } from 'wagmi';
 import { useMarketPrice } from './useMarketPrice';
 import { useWalletStore } from '@/store/walletStore';
@@ -31,10 +30,16 @@ export interface OnChainPoolStats {
     isLoading: boolean;
     isTransactionPending: boolean;
     refetch: () => void;
+    // New fields for Mining/Live Stats
+    stakeTime: number;
+    rewardDurationSeconds: number;
+    earningRate: number; // rewards per second
+    poolReward: number;
+    tvl: number;
 }
 
 const STAKING_CHAIN_ID = 56; // BSC Mainnet
-const SECONDS_PER_YEAR = 31536000n;
+const SECONDS_PER_YEAR_NUM = 31536000;
 const TWC_ADDRESS_BSC = '0xDA1060158F7D593667cCE0a15DB346BB3FfB3596';
 
 /**
@@ -159,12 +164,12 @@ export function useStakingPool(poolId?: number | string, decimals: number = 9) {
                     fromTokenSymbol: type === 'Stake' ? tokenSymbol : 'BNB',
                     toTokenAddress: type === 'Stake' ? factoryAddress.toLowerCase() : finalTokenAddr.toLowerCase(),
                     toTokenSymbol: type === 'Stake' ? 'Factory' : tokenSymbol,
-                    amount: amount, 
+                    amount: amount,
                     amountFormatted: `${amount} ${tokenSymbol}`,
                     routerName: 'Tiwi Staking',
                     blockNumber: receipt?.blockNumber ? Number(receipt.blockNumber) : undefined,
                 });
-                
+
                 console.log(`[useStakingPool] Global log attempt ${logResult ? 'Success' : 'Failed'}`);
 
                 // 2. Log to user_stakes table (for Active Positions)
@@ -173,7 +178,8 @@ export function useStakingPool(poolId?: number | string, decimals: number = 9) {
                         userWallet: effectiveAddress.toLowerCase(),
                         stakedAmount: amount,
                         poolId: poolId?.toString() || '',
-                        status: type === 'Stake' ? 'active' : 'withdrawn'
+                        status: type === 'Stake' ? 'active' : 'withdrawn',
+                        transactionHash: hash
                     });
                     console.log(`[useStakingPool] UserStake table log attempt ${stakeResult ? 'Success' : 'Failed'}`);
                 }
@@ -185,20 +191,20 @@ export function useStakingPool(poolId?: number | string, decimals: number = 9) {
                     `${type} Successful`,
                     `Your ${type.toLowerCase()} of ${amount} ${tokenSymbol} was confirmed on blockchain.`,
                     hash,
-                    { 
-                        amount, 
-                        symbol: tokenSymbol, 
+                    {
+                        amount,
+                        symbol: tokenSymbol,
                         poolId: poolId?.toString(),
                         onChainPoolId: poolId?.toString()
                     }
                 );
 
                 console.log(`[useStakingPool] Local activity log complete for ${type}.`);
-                
+
                 // 4. Special Case: If it's a stake, trigger an extra refetch after a delay
                 if (type === 'Stake') {
-                   setTimeout(refetchAll, 3000);
-                   setTimeout(refetchAll, 10000); // Polling for backend indexing
+                    setTimeout(refetchAll, 3000);
+                    setTimeout(refetchAll, 10000); // Polling for backend indexing
                 }
 
             } catch (e) {
@@ -249,7 +255,7 @@ export function useStakingPool(poolId?: number | string, decimals: number = 9) {
                 if (result.status === 'success' && result.hash) {
                     const hash = result.hash as `0x${string}`;
                     setLocalTxHash(hash);
-                    
+
                     let receipt = null;
                     if (publicClient) {
                         try {
@@ -258,7 +264,7 @@ export function useStakingPool(poolId?: number | string, decimals: number = 9) {
                             console.warn('[useStakingPool] Receipt wait failed, but hash exists.');
                         }
                     }
-                    
+
                     setIsInternalSuccess(true);
                     setIsInternalPending(false);
                     handleTxConfirmed(hash, type, amount, receipt);
@@ -273,7 +279,7 @@ export function useStakingPool(poolId?: number | string, decimals: number = 9) {
                     ...params,
                     chainId: STAKING_CHAIN_ID
                 });
-                
+
                 if (publicClient && hash) {
                     try {
                         const receipt = await publicClient.waitForTransactionReceipt({ hash });
@@ -287,7 +293,7 @@ export function useStakingPool(poolId?: number | string, decimals: number = 9) {
         } catch (error: any) {
             setIsInternalPending(false);
             setInternalError(error);
-            
+
             let message = 'Transaction Failed';
             if (error?.message?.includes('User rejected')) {
                 message = 'Transaction Rejected';
@@ -356,7 +362,7 @@ export function useStakingPool(poolId?: number | string, decimals: number = 9) {
 
     // --- VIEW LOGIC ---
 
-    const stats = useMemo(() => {
+    const stats = useMemo((): OnChainPoolStats => {
         if (isMock) {
             return {
                 totalStaked: parseUnits('213111612', decimals),
@@ -375,39 +381,68 @@ export function useStakingPool(poolId?: number | string, decimals: number = 9) {
                 limitsFormatted: '1M - 10M TWC',
                 isLoading: false,
                 isTransactionPending: false,
-                refetch: () => console.log('Mock refetch')
+                refetch: () => console.log('Mock refetch'),
+                stakeTime: Math.floor(Date.now() / 1000) - 86400 * 4, // 4 days ago
+                rewardDurationSeconds: 2592000, // 30 days
+                earningRate: 0.009837963,
+                poolReward: 25500,
+                tvl: 25500,
+                lockPeriod: '30 days'
             };
         }
 
-        const totalStaked = (poolState as any)?.[0] || (poolState as any)?.totalStaked || 0n;
-        const userStaked = (userInfo as any)?.[0] || (userInfo as any)?.amount || 0n;
-        const pendingRewards = (userInfo as any)?.[3] || (userInfo as any)?.pending || 0n;
-        const totalStakedCompact = formatCompactNumber(Number(formatUnits(totalStaked, decimals)));
+        const totalStaked = (poolState as any)?.[0] ?? (poolState as any)?.totalStaked ?? 0n;
+        const userStaked = (userInfo as any)?.[0] ?? (userInfo as any)?.amount ?? 0n;
+        const pendingRewards = (userInfo as any)?.[3] ?? (userInfo as any)?.pending ?? 0n;
+        const stakeTime = Number((userInfo as any)?.[2] ?? (userInfo as any)?.stakeTime ?? 0n);
+
+        const totalStakedCompact = formatCompactNumber(Number(formatUnits(totalStaked, decimals)), {});
 
         let aprValue = 'N/A';
         let tvlUsd = '$0.00';
         let maxTvlCompact = 'N/A';
+        let rewardDurationSeconds = 0;
+        let earningRate = 0;
+        let poolRewardNum = 0;
+        let totalStakedNum = Number(formatUnits(totalStaked, decimals));
 
         if (poolConfig && poolState) {
-            const rewardDuration = Number(poolConfig.rewardDurationSeconds);
-            const poolReward = Number(formatUnits(poolConfig.poolReward || 0n, decimals));
-            const totalStakedNum = Number(formatUnits(totalStaked, decimals));
-            const maxTvl = Number(formatUnits(poolConfig.maxTvl || 0n, decimals));
-            maxTvlCompact = formatCompactNumber(maxTvl);
+            // Support both array and object responses for robustness
+            rewardDurationSeconds = Number(poolConfig[5] ?? poolConfig.rewardDurationSeconds ?? 0n);
+            poolRewardNum = Number(formatUnits(poolConfig[4] ?? poolConfig.poolReward ?? 0n, decimals));
+            const maxTvl = Number(formatUnits(poolConfig[6] ?? poolConfig.maxTvl ?? 0n, decimals));
+            const rewardPerSecondRaw = poolConfig[7] ?? poolConfig.rewardPerSecond ?? 0n;
+
+            maxTvlCompact = formatCompactNumber(maxTvl, {});
 
             const tvlForCalculation = maxTvl > 0 ? maxTvl : (totalStakedNum > 0 ? totalStakedNum : 1);
-            const rewardPerTokenPerSec = poolReward / (tvlForCalculation * rewardDuration);
-            const apr = rewardPerTokenPerSec * Number(SECONDS_PER_YEAR) * 100;
+
+            // Use rewardPerSecond from contract if available, else fallback to calculation
+            let rewardPerSecNum = 0;
+            if (rewardPerSecondRaw > 0n) {
+                rewardPerSecNum = Number(formatUnits(rewardPerSecondRaw, decimals));
+            } else if (rewardDurationSeconds > 0) {
+                rewardPerSecNum = poolRewardNum / rewardDurationSeconds;
+            }
+
+            const rewardPerTokenPerSec = rewardPerSecNum / tvlForCalculation;
+            const apr = rewardPerTokenPerSec * SECONDS_PER_YEAR_NUM * 100;
             aprValue = `~${apr.toFixed(2)}%`;
 
+            // Calculate user-specific earning rate
+            if (totalStakedNum > 0) {
+                const userStakedNum = Number(formatUnits(userStaked, decimals));
+                earningRate = (userStakedNum / totalStakedNum) * rewardPerSecNum;
+            }
+
             if (priceData?.priceUSD) {
-                tvlUsd = `$${formatCompactNumber(totalStakedNum * parseFloat(priceData.priceUSD))}`;
+                tvlUsd = `$${formatCompactNumber(totalStakedNum * priceData.priceUSD, { decimals: 2 })}`;
             }
         }
 
-        const duration = poolConfig?.minStakingPeriod || 0n;
+        const duration = poolConfig?.[5] ?? poolConfig?.rewardDurationSeconds ?? 0n;
         const lockPeriodDays = Number(duration) / 86400;
-        const lockPeriodFormatted = lockPeriodDays > 0 ? `${lockPeriodDays} days` : 'No Lock';
+        const lockPeriodFormatted = lockPeriodDays > 0 ? `${Math.ceil(lockPeriodDays)} days` : (poolConfig?.minStakingPeriod || '30 days');
 
         return {
             totalStaked,
@@ -423,11 +458,16 @@ export function useStakingPool(poolId?: number | string, decimals: number = 9) {
             tvlUsd,
             tvlCompact: totalStakedCompact,
             maxTvlCompact,
-            limitsFormatted: poolConfig ? `${formatCompactNumber(Number(formatUnits(poolConfig.minStakeAmount || 0n, decimals)))}-${formatCompactNumber(Number(formatUnits(poolConfig.maxStakeAmount || 0n, decimals)))} TWC` : 'N/A',
+            limitsFormatted: poolConfig ? `${formatCompactNumber(Number(formatUnits(poolConfig.minStakeAmount || 0n, decimals)), {})}-${formatCompactNumber(Number(formatUnits(poolConfig.maxStakeAmount || 0n, decimals)), {})} TWC` : 'N/A',
             lockPeriod: lockPeriodFormatted,
             isLoading: isPoolLoading || isUserLoading || isAllowanceLoading,
             isTransactionPending,
-            refetch: refetchAll
+            refetch: refetchAll,
+            stakeTime,
+            rewardDurationSeconds,
+            earningRate,
+            poolReward: poolRewardNum,
+            tvl: totalStakedNum
         };
     }, [isMock, poolConfig, poolState, userInfo, allowance, stakingToken, isPoolLoading, isUserLoading, isAllowanceLoading, isTransactionPending, decimals, refetchAll, priceData]);
 

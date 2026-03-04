@@ -18,17 +18,20 @@ export const AnimatedSplashScreen: React.FC<AnimatedSplashScreenProps> = ({ isRe
     const fadeAnim = useRef(new Animated.Value(1)).current;
     const [animationFinished, setAnimationFinished] = useState(false);
     const [gifDurationPassed, setGifDurationPassed] = useState(false);
+    const [hasLoaded, setHasLoaded] = useState(false);
 
     useEffect(() => {
-        // Wait for the full GIF duration (1.8s) before allowing exit
-        const maxTimer = setTimeout(() => {
-            setGifDurationPassed(true);
-        }, GIF_DURATION);
+        if (hasLoaded) {
+            // Wait for the full GIF duration (1.8s) after it has actually loaded
+            const maxTimer = setTimeout(() => {
+                setGifDurationPassed(true);
+            }, GIF_DURATION);
 
-        return () => {
-            clearTimeout(maxTimer);
-        };
-    }, []);
+            return () => {
+                clearTimeout(maxTimer);
+            };
+        }
+    }, [hasLoaded]);
 
     useEffect(() => {
         // We only exit when BOTH the GIF has played (1.8s) AND the app is ready.
@@ -36,7 +39,7 @@ export const AnimatedSplashScreen: React.FC<AnimatedSplashScreenProps> = ({ isRe
             // Exit Animation: Fade out
             Animated.timing(fadeAnim, {
                 toValue: 0,
-                duration: 400,
+                duration: 600, // Slightly smoother fade
                 useNativeDriver: true,
             }).start(() => {
                 setAnimationFinished(true);
@@ -58,13 +61,17 @@ export const AnimatedSplashScreen: React.FC<AnimatedSplashScreenProps> = ({ isRe
                 source={IntroGif}
                 style={styles.logo}
                 contentFit="contain"
+                autoplay={true}
+                cachePolicy="memory-disk"
                 onLoad={() => {
+                    setHasLoaded(true);
                     // Notify parent that the GIF is loaded and ready to be seen
                     if (onLoaded) onLoaded();
                 }}
                 onError={(e) => {
                     console.error("SplashScreen GIF Error:", e);
-                    if (onLoaded) onLoaded(); // Still notify so native splash hides
+                    setHasLoaded(true); // Allow exit on error
+                    if (onLoaded) onLoaded();
                 }}
             />
         </Animated.View>

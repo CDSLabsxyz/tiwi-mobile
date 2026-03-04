@@ -14,8 +14,10 @@ interface MyStakeCardProps {
     apy: string;
     stakedAmount?: string;
     rewardsEarned?: string;
+    lockPeriod?: string;
     icon: any;
     onPress: () => void;
+    earningRate?: number; // Optional: for real-time mining UI
 }
 
 const ChevronRightIcon = require('../../../assets/home/arrow-down-01.svg'); // Design specified this icon
@@ -25,9 +27,28 @@ export const MyStakeCard: React.FC<MyStakeCardProps> = ({
     apy,
     stakedAmount = "0",
     rewardsEarned = "0",
+    lockPeriod = "N/A",
     icon,
-    onPress
+    onPress,
+    earningRate = 0
 }) => {
+    // Local real-time mining state
+    const [liveRewards, setLiveRewards] = React.useState(parseFloat(rewardsEarned.split(' ')[0]) || 0);
+
+    React.useEffect(() => {
+        if (earningRate <= 0) return;
+
+        const interval = setInterval(() => {
+            setLiveRewards(prev => prev + (earningRate / 10)); // Increment every 100ms for smoothness
+        }, 100);
+        return () => clearInterval(interval);
+    }, [earningRate]);
+
+    // Sync with props if they change significantly
+    React.useEffect(() => {
+        setLiveRewards(parseFloat(rewardsEarned.split(' ')[0]) || 0);
+    }, [rewardsEarned]);
+
     return (
         <TouchableOpacity
             activeOpacity={0.8}
@@ -57,13 +78,19 @@ export const MyStakeCard: React.FC<MyStakeCardProps> = ({
 
             {/* Bottom Row: Stats */}
             <View style={styles.statsRow}>
-                <View style={styles.statItem}>
+                <View style={[styles.statItem, { flex: 1.2 }]}>
                     <Text style={styles.statLabel}>STAKED</Text>
                     <Text style={styles.statValue}>{stakedAmount}</Text>
                 </View>
-                <View style={styles.statItem}>
+                <View style={[styles.statItem, { flex: 1.5 }]}>
                     <Text style={styles.statLabel}>REWARDS</Text>
-                    <Text style={[styles.statValue, { color: colors.primaryCTA }]}>{rewardsEarned}</Text>
+                    <Text style={[styles.statValue, { color: colors.primaryCTA }]}>
+                        {earningRate > 0 ? liveRewards.toFixed(6) : rewardsEarned.split(' ')[0]} {symbol}
+                    </Text>
+                </View>
+                <View style={[styles.statItem, { flex: 1, alignItems: 'flex-end' }]}>
+                    <Text style={styles.statLabel}>LOCK PERIOD</Text>
+                    <Text style={styles.statValue}>{lockPeriod}</Text>
                 </View>
             </View>
         </TouchableOpacity>
@@ -135,3 +162,4 @@ const styles = StyleSheet.create({
         color: 'white',
     },
 });
+

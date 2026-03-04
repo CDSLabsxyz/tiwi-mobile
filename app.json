@@ -57,8 +57,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "2df18cdd-695e-4ba2-beea-0080de8800eb"
+        "projectId": "8548b9d9-c2bc-43ad-8f31-a7dedd0f6b58"
       }
-    }
+    },
+    "owner": "gcodes"
   }
 }

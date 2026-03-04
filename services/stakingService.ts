@@ -37,6 +37,8 @@ export interface UserStake extends APIUserStake {
     displayStakedAmount: string;
     displayRewardsEarned: string;
     minStakingPeriod?: string;
+    earningRate?: number;
+    pool: StakingPool;
 }
 
 class StakingService {
@@ -237,7 +239,7 @@ class StakingService {
     }
 
     /**
-     * Fetch user stakes and map to UI format
+     * Fetch user stakes and map to UI format with on-chain enrichment
      */
     async getUserStakes(walletAddress: string, status?: string): Promise<UserStake[]> {
         if (!walletAddress && !USE_MOCK_FALLBACK) return [];
@@ -248,20 +250,42 @@ class StakingService {
                 stakes = MOCK_USER_STAKES.filter((s: APIUserStake) => !status || s.status === status);
             }
 
-            return (stakes || []).map(stake => {
-                const apyValue = stake.pool && typeof stake.pool.apy === 'number' ? `~${stake.pool.apy.toFixed(2)}%` : 'N/A';
+            // Enrich all stakes with on-chain pool info in parallel
+            return await Promise.all((stakes || []).map(async (stake) => {
+                let enrichedPool = stake.pool;
+                if (stake.pool) {
+                    enrichedPool = await this.mapPool(stake.pool);
+                }
+
+                const stakedNum = parseFloat(stake.stakedAmount) || 0;
+                const poolReward = (enrichedPool as any)?.poolRewardNum || (enrichedPool as any)?.poolReward || 0;
+                const totalStaked = (enrichedPool as any)?.totalStakedNum || (enrichedPool as any)?.totalStaked || 1;
+                const duration = (enrichedPool as any)?.rewardDurationSeconds || 1;
+
+                const earningRate = (stakedNum / Math.max(1, Number(totalStaked))) * (Number(poolReward) / Math.max(1, Number(duration)));
+
                 return {
                     ...stake,
-                    displayApy: apyValue,
+                    pool: (enrichedPool as StakingPool) || stake.pool!,
+                    displayApy: (enrichedPool as StakingPool)?.displayApy || 'N/A',
                     displayStakedAmount: `${stake.stakedAmount} ${stake.pool?.tokenSymbol || ''}`,
                     displayRewardsEarned: `${stake.rewardsEarned} ${stake.pool?.tokenSymbol || ''}`,
-                    minStakingPeriod: stake.pool?.minStakingPeriod || '30 days'
+                    minStakingPeriod: (enrichedPool as StakingPool)?.minStakingPeriod || stake.pool?.minStakingPeriod || '30 days',
+                    earningRate
                 };
-            });
+            }));
         } catch (error) {
             console.error('[StakingService] Error fetching user stakes:', error);
             return [];
         }
+    }
+
+    /**
+     * Get a specific stake for a user by symbol
+     */
+    async getUserStakeBySymbol(walletAddress: string, symbol: string): Promise<UserStake | undefined> {
+        const stakes = await this.getUserStakes(walletAddress, 'active');
+        return stakes.find(s => s.pool?.tokenSymbol.toLowerCase() === symbol.toLowerCase());
     }
 
     /**

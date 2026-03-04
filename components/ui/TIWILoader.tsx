@@ -24,17 +24,30 @@ export const TIWILoader: React.FC<TIWILoaderProps> = ({
 }) => {
     return (
         <View style={[styles.container, style]}>
-            <Image
-                source={variant === 'intro' ? INTRO_GIF : LOADER_GIF}
-                style={{ width: size, height: size }}
-                contentFit="contain"
-            />
+            <View style={{
+                width: size,
+                height: size,
+                borderRadius: size / 2,
+                overflow: 'hidden',
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: '#000000', // Ensure overflow is hidden behind a solid color
+            }}>
+                <Image
+                    source={variant === 'intro' ? INTRO_GIF : LOADER_GIF}
+                    style={{ width: size, height: size }}
+                    contentFit="cover"
+                    autoplay={true}
+                    cachePolicy="memory-disk"
+                />
+            </View>
         </View>
     );
 };
 
 const styles = StyleSheet.create({
     container: {
+        flex: 1,
         alignItems: 'center',
         justifyContent: 'center',
     },
