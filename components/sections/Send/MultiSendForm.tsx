@@ -5,17 +5,21 @@
  */
 
 import { colors } from "@/constants";
+import { useWalletBalances } from "@/hooks/useWalletBalances";
+import { transactionService } from "@/services/transactionService";
 import { useSendStore } from "@/store/sendStore";
+import { useToastStore } from "@/store/useToastStore";
 import { validateAddresses, validateAmount } from "@/utils/addressValidation";
 import { isValidCSVFile, parseCSVAddresses } from "@/utils/csvParser";
+import { isNativeToken } from "@/utils/wallet";
+import { Ionicons } from "@expo/vector-icons";
+import * as Clipboard from "expo-clipboard";
 import * as DocumentPicker from "expo-document-picker";
 import { File } from "expo-file-system";
 import { Image } from "expo-image";
 import React, { useEffect, useState } from "react";
 import { Alert, Platform, Text, TextInput, TouchableOpacity, View } from "react-native";
-import * as Clipboard from "expo-clipboard";
-import { Ionicons } from "@expo/vector-icons";
-import { useToastStore } from "@/store/useToastStore";
+import { parseUnits } from "viem";
 import { SendTokenSelector } from "./SendTokenSelector";
 import { WhitelistSelectSheet } from "./WhitelistSelectSheet";
 
@@ -29,7 +33,7 @@ interface MultiSendFormProps {
 
 export const MultiSendForm: React.FC<MultiSendFormProps> = ({ onNext }) => {
   const sendStore = useSendStore();
-  const { selectedToken, selectedChain, amountPerRecipient, setRecipients, setAmountPerRecipient, openTokenSheet } = sendStore;
+  const { selectedToken, selectedChain, amountPerRecipient, setRecipients, setAmountPerRecipient, openTokenSheet, setInsufficientBalance, isInsufficientBalance, totalRecipients } = sendStore;
 
   const [addressesInput, setAddressesInput] = useState("");
   const [localAmount, setLocalAmount] = useState(amountPerRecipient);
@@ -40,6 +44,9 @@ export const MultiSendForm: React.FC<MultiSendFormProps> = ({ onNext }) => {
 
   // Whitelist state
   const [isWhitelistSheetVisible, setIsWhitelistSheetVisible] = useState(false);
+
+  const { data: balanceData } = useWalletBalances();
+  const { setInsufficientGas } = sendStore;
 
   // Validate addresses when they change
   useEffect(() => {
@@ -62,23 +69,113 @@ export const MultiSendForm: React.FC<MultiSendFormProps> = ({ onNext }) => {
 
   // Validate amount when it changes
   useEffect(() => {
-    if (localAmount.trim()) {
-      const result = validateAmount(localAmount);
+    const rawValue = parseRawValue(localAmount);
+    if (rawValue.trim()) {
+      const result = validateAmount(rawValue);
       setAmountError(result.isValid ? null : result.error || null);
     } else {
       setAmountError(null);
     }
   }, [localAmount]);
 
-  const handleMaxPress = () => {
-    if (selectedToken) {
-      const balance = parseFloat(selectedToken.balanceToken.split(" ")[0].replace(/,/g, "")) || 0;
-      const maxAmount = balance * 0.9995; // 99.95% to leave gas
-      const maxAmountStr = maxAmount.toFixed(8);
-      setLocalAmount(maxAmountStr);
-      setAmountPerRecipient(maxAmountStr);
-    }
+  // Comma formatting utilities
+  const formatWithCommas = (value: string) => {
+    if (!value) return "";
+    const parts = value.split(".");
+    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    return parts.join(".");
   };
+
+  const parseRawValue = (value: string) => {
+    return value.replace(/,/g, "");
+  };
+
+  const getCleanBalance = () => {
+    if (!selectedToken) return 0;
+    return parseFloat(selectedToken.balanceToken.split(" ")[0].replace(/,/g, "")) || 0;
+  };
+
+  // Real-time Gas Check (Pre-computation for Multi-Send)
+  useEffect(() => {
+    const runGasCheck = async () => {
+      const rawAmount = parseRawValue(localAmount);
+      const chainIdNum = Number(selectedChain?.id);
+
+      // Only run if addresses exist and amount is valid
+      if (selectedToken && chainIdNum && totalRecipients > 0 && parseFloat(rawAmount) > 0 && addressErrors.length === 0) {
+        try {
+          const { gasCostNative } = await transactionService.estimateGas({
+            tokenAddress: selectedToken.address,
+            symbol: selectedToken.symbol,
+            decimals: selectedToken.decimals,
+            recipientAddress: sendStore.recipients[0].address, // Estimate with first as proxy for total gas pattern
+            amount: rawAmount,
+            chainId: chainIdNum,
+            isNative: isNativeToken(selectedToken.address),
+            isMultiSend: true,
+            recipientCount: totalRecipients
+          });
+
+          // cross-check with actual balance
+          const nativeToken = balanceData?.tokens?.find(t =>
+            t.chainId === chainIdNum &&
+            (t.address === "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" ||
+              t.address === "0x0000000000000000000000000000000000000000")
+          );
+
+          if (nativeToken) {
+            const nativeBalance = BigInt(nativeToken.balance);
+            const isNative = isNativeToken(selectedToken.address);
+
+            // Total cost = (Amount * Recipients) + Gas
+            const totalTransferAmount = BigInt(parseUnits(rawAmount, selectedToken.decimals)) * BigInt(totalRecipients);
+            const totalCost = isNative ? totalTransferAmount + gasCostNative : gasCostNative;
+
+            setInsufficientGas(nativeBalance < totalCost);
+          }
+        } catch (e) {
+          console.warn("Multi-send gas check failed", e);
+        }
+      }
+    };
+
+    const timer = setTimeout(runGasCheck, 600);
+    return () => clearTimeout(timer);
+  }, [localAmount, totalRecipients, selectedToken, balanceData, addressErrors]);
+
+  // Sync insufficient balance flag to store
+  useEffect(() => {
+    const rawAmount = parseFloat(parseRawValue(localAmount) || "0");
+    const totalNeeded = rawAmount * totalRecipients;
+    const balance = getCleanBalance();
+    setInsufficientBalance(selectedToken ? totalNeeded > balance : false);
+  }, [localAmount, totalRecipients, selectedToken]);
+
+  const handlePercentagePress = (percent: number) => {
+    if (!selectedToken || totalRecipients === 0) return;
+    const balance = getCleanBalance();
+
+    let totalTarget = 0;
+    if (percent === 100) {
+      const isNative = selectedToken.address === "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" ||
+        selectedToken.symbol === "BNB" || selectedToken.symbol === "ETH";
+
+      totalTarget = isNative ? (balance * 0.995) : balance;
+    } else {
+      totalTarget = balance * (percent / 100);
+    }
+
+    const perRecipient = totalTarget / totalRecipients;
+    const amountStr = perRecipient.toFixed(6).replace(/\.?0+$/, "");
+    setLocalAmount(formatWithCommas(amountStr));
+    setAmountPerRecipient(amountStr);
+
+    // Update recipients
+    const addresses = addressesInput.split(/[\s\n,;]+/).map(a => a.trim()).filter(a => a.length > 0);
+    setRecipients(addresses.map(address => ({ address, amount: amountStr })));
+  };
+
+  const handleMaxPress = () => handlePercentagePress(100);
 
   const handleAddressesChange = (text: string) => {
     setAddressesInput(text);
@@ -95,10 +192,11 @@ export const MultiSendForm: React.FC<MultiSendFormProps> = ({ onNext }) => {
   };
 
   const handleAmountChange = (text: string) => {
+    const raw = parseRawValue(text);
     // Only allow numbers and one decimal point
-    if (text === "" || /^\d*\.?\d*$/.test(text)) {
-      setLocalAmount(text);
-      setAmountPerRecipient(text);
+    if (raw === "" || /^\d*\.?\d*$/.test(raw)) {
+      setLocalAmount(formatWithCommas(raw));
+      setAmountPerRecipient(raw);
       // Update existing recipients with new amount
       const addresses = addressesInput
         .split(/[\s\n,;]+/)
@@ -106,7 +204,7 @@ export const MultiSendForm: React.FC<MultiSendFormProps> = ({ onNext }) => {
         .filter((addr) => addr.length > 0);
       const recipients = addresses.map((address) => ({
         address,
-        amount: text,
+        amount: raw,
       }));
       setRecipients(recipients);
     }
@@ -471,20 +569,6 @@ export const MultiSendForm: React.FC<MultiSendFormProps> = ({ onNext }) => {
             >
               {selectedToken?.balanceToken.split(" ")[0] || "0"}
             </Text>
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={handleMaxPress}
-            >
-              <Text
-                style={{
-                  fontFamily: "Manrope-SemiBold",
-                  fontSize: 12,
-                  color: colors.primaryCTA,
-                }}
-              >
-                Max
-              </Text>
-            </TouchableOpacity>
           </View>
         </View>
 
@@ -502,8 +586,8 @@ export const MultiSendForm: React.FC<MultiSendFormProps> = ({ onNext }) => {
               paddingHorizontal: 17,
               paddingVertical: 10,
               justifyContent: "center",
-              borderWidth: amountError ? 1 : 0,
-              borderColor: amountError ? "#EF4444" : "transparent",
+              borderWidth: (amountError || isInsufficientBalance) ? 1 : 0,
+              borderColor: (amountError || isInsufficientBalance) ? "#EF4444" : "transparent",
             }}
           >
             <View
@@ -535,11 +619,47 @@ export const MultiSendForm: React.FC<MultiSendFormProps> = ({ onNext }) => {
                   color: colors.bodyText,
                 }}
               >
-                ${(parseFloat(localAmount || "0") * sendStore.totalRecipients * 1000).toFixed(2)}
+                Total: ${(parseFloat(parseRawValue(localAmount) || "0") * totalRecipients).toFixed(2)}
               </Text>
             </View>
           </View>
-          {amountError && (
+
+          {/* Percentage Presets Row */}
+          <View style={{
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            marginTop: 4,
+            width: '100%',
+            gap: 12
+          }}>
+            {[25, 50, 75, 100].map((pct) => (
+              <TouchableOpacity
+                key={pct}
+                onPress={() => handlePercentagePress(pct)}
+                activeOpacity={0.7}
+                style={{
+                  flex: 1,
+                  height: 38,
+                  backgroundColor: colors.bgSemi,
+                  borderRadius: 10,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderWidth: 1,
+                  borderColor: 'rgba(255, 255, 255, 0.05)'
+                }}
+              >
+                <Text style={{
+                  fontFamily: 'Manrope-SemiBold',
+                  fontSize: 13,
+                  color: colors.titleText
+                }}>
+                  {pct === 100 ? 'Max' : `${pct}%`}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {(amountError || isInsufficientBalance) && (
             <Text
               style={{
                 fontFamily: "Manrope-Regular",
@@ -547,9 +667,10 @@ export const MultiSendForm: React.FC<MultiSendFormProps> = ({ onNext }) => {
                 lineHeight: 14,
                 color: "#EF4444",
                 paddingLeft: 17,
+                marginTop: 4
               }}
             >
-              {amountError}
+              {isInsufficientBalance ? "Insufficient balance for total send" : amountError}
             </Text>
           )}
         </View>

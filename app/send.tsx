@@ -412,7 +412,8 @@ export default function SendScreen() {
                     validateAddress(sendStore.recipientAddress, sendStore.selectedChain?.id).isValid &&
                     parseFloat(sendStore.amount) > 0 &&
                     validateAmount(sendStore.amount).isValid &&
-                    sendStore.selectedToken
+                    sendStore.selectedToken &&
+                    !sendStore.isInsufficientBalance
                 );
             } else {
                 return (
@@ -420,7 +421,8 @@ export default function SendScreen() {
                     validateAddresses(sendStore.recipients.map(r => r.address), sendStore.selectedChain?.id).isValid &&
                     parseFloat(sendStore.amountPerRecipient) > 0 &&
                     validateAmount(sendStore.amountPerRecipient).isValid &&
-                    sendStore.selectedToken
+                    sendStore.selectedToken &&
+                    !sendStore.isInsufficientBalance
                 );
             }
         }
@@ -523,28 +525,34 @@ export default function SendScreen() {
                     </View>
                 )}
 
-                {/* Fixed Confirm Button at Bottom - show on review step */}
                 {currentStep === 'review' && (
                     <View style={[styles.buttonContainer, { bottom: (bottom || 16) + 32 }]}>
                         <TouchableOpacity
                             activeOpacity={0.8}
                             onPress={handleConfirmFromReview}
-                            disabled={isExecuting}
+                            disabled={isExecuting || sendStore.isInsufficientGas}
                             style={[
                                 styles.nextButton,
                                 {
-                                    backgroundColor: isExecuting ? colors.bgCards : colors.primaryCTA
+                                    backgroundColor: (isExecuting || sendStore.isInsufficientGas) ? colors.bgCards : colors.primaryCTA
                                 }
                             ]}
                         >
                             {isExecuting ? (
                                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                                     <View style={{ width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: colors.primaryCTA, borderTopColor: 'transparent' }} />
-                                    <Text style={[styles.nextButtonText, { color: colors.bodyText }]}>Processing...</Text>
+                                    <Text style={[styles.nextButtonText, { color: colors.bodyText }]}>
+                                        {sendStore.isInsufficientGas ? 'Insufficient Gas' : 'Processing...'}
+                                    </Text>
                                 </View>
                             ) : (
-                                <Text style={[styles.nextButtonText, { color: colors.titleText }]}>
-                                    {activeTab === 'send-to-one' ? 'Confirm' : 'Confirm Multi-Send'}
+                                <Text style={[
+                                    styles.nextButtonText,
+                                    { color: (isExecuting || sendStore.isInsufficientGas) ? colors.bodyText : colors.bg }
+                                ]}>
+                                    {sendStore.isInsufficientGas
+                                        ? `Insufficient ${sendStore.selectedChain?.id === 56 ? 'BNB' : (sendStore.selectedChain?.id === 1 ? 'ETH' : 'Native')} for gas`
+                                        : (activeTab === 'send-to-one' ? 'Confirm' : 'Confirm Multi-Send')}
                                 </Text>
                             )}
                         </TouchableOpacity>

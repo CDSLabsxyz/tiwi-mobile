@@ -5,19 +5,19 @@
  */
 
 import { colors } from "@/constants";
+import { useWalletBalances } from "@/hooks/useWalletBalances";
+import { transactionService } from "@/services/transactionService";
 import { useSecurityStore } from "@/store/securityStore";
 import { useSendStore } from "@/store/sendStore";
 import { useToastStore } from "@/store/useToastStore";
 import { validateAddress, validateAmount } from "@/utils/addressValidation";
+import { isNativeToken } from "@/utils/wallet";
 import * as Clipboard from "expo-clipboard";
 import { Image } from "expo-image";
 import React, { useEffect, useState } from "react";
 import { Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { SendTokenSelector } from "./SendTokenSelector";
-import { WhitelistSelectSheet } from "./WhitelistSelectSheet";
-
-import { Ionicons } from "@expo/vector-icons";
+import { parseUnits } from "viem";
 
 const CheckmarkIcon = require("@/assets/swap/checkmark-circle-01.svg");
 const WalletIcon = require("@/assets/wallet/wallet-01.svg");
@@ -31,7 +31,7 @@ interface SendFormProps {
 export const SendForm: React.FC<SendFormProps> = ({ onNext }) => {
   const sendStore = useSendStore();
   const { isStrictModeEnabled, whitelistedAddresses, addWhitelistedAddress } = useSecurityStore();
-  const { selectedToken, selectedChain, recipientAddress, amount, usdValue, setRecipientAddress, setAmount, openTokenSheet } = sendStore;
+  const { selectedToken, selectedChain, recipientAddress, amount, usdValue, setRecipientAddress, setAmount, openTokenSheet, setInsufficientBalance, isInsufficientBalance } = sendStore;
 
   const [localAddress, setLocalAddress] = useState(recipientAddress);
   const [localAmount, setLocalAmount] = useState(amount);
@@ -45,6 +45,9 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext }) => {
   const [showSaveSuggestion, setShowSaveSuggestion] = useState(false);
   const [isSavingToWhitelist, setIsSavingToWhitelist] = useState(false);
   const [newAddressName, setNewAddressName] = useState("");
+
+  const { data: balanceData } = useWalletBalances();
+  const { setInsufficientGas } = sendStore;
 
   // Validate address when it changes
   useEffect(() => {
@@ -83,8 +86,9 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext }) => {
 
   // Validate amount when it changes
   useEffect(() => {
-    if (localAmount.trim()) {
-      const result = validateAmount(localAmount);
+    const rawValue = parseRawValue(localAmount);
+    if (rawValue.trim()) {
+      const result = validateAmount(rawValue);
       setAmountError(result.isValid ? null : result.error || null);
     } else {
       setAmountError(null);
@@ -108,7 +112,60 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext }) => {
     return parseFloat(selectedToken.balanceToken.split(" ")[0].replace(/,/g, "")) || 0;
   };
 
-  const isInsufficient = selectedToken ? parseFloat(parseRawValue(localAmount) || "0") > getCleanBalance() : false;
+  // Real-time Gas Check (Pre-computation)
+  useEffect(() => {
+    const runGasCheck = async () => {
+      const rawAmount = parseRawValue(localAmount);
+      const chainIdNum = Number(selectedChain?.id);
+      const recipient = localAddress.trim();
+
+      // Only run if basic validation passes
+      if (selectedToken && chainIdNum && recipient && parseFloat(rawAmount) > 0 && !addressError) {
+        try {
+          const { gasCostNative } = await transactionService.estimateGas({
+            tokenAddress: selectedToken.address,
+            symbol: selectedToken.symbol,
+            decimals: selectedToken.decimals,
+            recipientAddress: recipient,
+            amount: rawAmount,
+            chainId: chainIdNum,
+            isNative: isNativeToken(selectedToken.address),
+          });
+
+          // cross-check with actual balance
+          const nativeToken = balanceData?.tokens?.find(t =>
+            t.chainId === chainIdNum &&
+            (t.address === "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" ||
+              t.address === "0x0000000000000000000000000000000000000000")
+          );
+
+          if (nativeToken) {
+            const nativeBalance = BigInt(nativeToken.balance);
+            const isNative = isNativeToken(selectedToken.address);
+            const totalCost = isNative
+              ? BigInt(parseUnits(rawAmount, selectedToken.decimals)) + gasCostNative
+              : gasCostNative;
+
+            setInsufficientGas(nativeBalance < totalCost);
+          }
+        } catch (e) {
+          // If gas estimation fails, we don't block yet, but we'll re-estimate on review
+          console.warn("Real-time gas check failed", e);
+        }
+      }
+    };
+
+    const timer = setTimeout(runGasCheck, 600); // debounce to avoid spamming
+    return () => clearTimeout(timer);
+  }, [localAmount, localAddress, selectedToken, balanceData, addressError]);
+
+  // Sync insufficient balance flag to store
+  useEffect(() => {
+    const rawAmount = parseRawValue(localAmount) || "0";
+    const balance = getCleanBalance();
+    const isInsufficient = selectedToken ? parseFloat(rawAmount) > balance : false;
+    setInsufficientBalance(isInsufficient);
+  }, [localAmount, selectedToken]);
 
   const handlePercentagePress = (percent: number) => {
     if (!selectedToken) return;
@@ -116,13 +173,12 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext }) => {
 
     let targetAmount = 0;
     if (percent === 100) {
-      // Smart Max Logic: Reserve for gas if native
+      // Smart Max Logic: Use 99.5% for native to leave gas room
       const isNative = selectedToken.address === "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" ||
         selectedToken.address === "0x0000000000000000000000000000000000000000" ||
         selectedToken.symbol === "BNB" || selectedToken.symbol === "ETH";
 
-      const reserve = isNative ? 0.005 : 0;
-      targetAmount = Math.max(0, balance - reserve);
+      targetAmount = isNative ? (balance * 0.995) : balance;
     } else {
       targetAmount = balance * (percent / 100);
     }
@@ -460,8 +516,8 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext }) => {
               paddingHorizontal: 17,
               paddingVertical: 10,
               justifyContent: "center",
-              borderWidth: (amountError || isInsufficient) ? 1 : 0,
-              borderColor: (amountError || isInsufficient) ? "#EF4444" : "transparent",
+              borderWidth: (amountError || isInsufficientBalance) ? 1 : 0,
+              borderColor: (amountError || isInsufficientBalance) ? "#EF4444" : "transparent",
             }}
           >
             <View
@@ -534,7 +590,7 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext }) => {
             ))}
           </View>
 
-          {(amountError || isInsufficient) && (
+          {(amountError || isInsufficientBalance) && (
             <Text
               style={{
                 fontFamily: "Manrope-Regular",
@@ -545,7 +601,7 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext }) => {
                 marginTop: 4
               }}
             >
-              {isInsufficient ? "Insufficient balance" : amountError}
+              {isInsufficientBalance ? "Insufficient balance" : amountError}
             </Text>
           )}
         </View>

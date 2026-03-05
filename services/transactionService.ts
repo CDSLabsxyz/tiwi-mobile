@@ -65,6 +65,8 @@ export interface SendTokenParams {
     amount: string;
     chainId: number;
     isNative: boolean;
+    isMultiSend?: boolean;
+    recipientCount?: number;
 }
 
 /**
@@ -208,9 +210,40 @@ export const transactionService = {
         let gasLimit = 21000n;
 
         try {
-            if (params.isNative) {
+            const account = useWalletStore.getState().address as `0x${string}`;
+
+            if (params.isMultiSend && params.recipientCount) {
+                const disperseAddress = DISPERSE_CONTRACTS[params.chainId];
+                if (!disperseAddress) throw new Error("Disperse not supported");
+
+                const mockRecipients = Array(params.recipientCount).fill(params.recipientAddress);
+                const mockValues = Array(params.recipientCount).fill(amountBI);
+
+                if (params.isNative) {
+                    gasLimit = await client.estimateGas({
+                        account,
+                        to: disperseAddress as `0x${string}`,
+                        value: amountBI * BigInt(params.recipientCount),
+                        data: encodeFunctionData({
+                            abi: DISPERSE_ABI,
+                            functionName: "disperseEther",
+                            args: [mockRecipients, mockValues],
+                        }),
+                    });
+                } else {
+                    gasLimit = await client.estimateGas({
+                        account,
+                        to: disperseAddress as `0x${string}`,
+                        data: encodeFunctionData({
+                            abi: DISPERSE_ABI,
+                            functionName: "disperseTokenSimple",
+                            args: [params.tokenAddress as `0x${string}`, mockRecipients, mockValues],
+                        }),
+                    });
+                }
+            } else if (params.isNative) {
                 gasLimit = await client.estimateGas({
-                    account: useWalletStore.getState().address as `0x${string}`,
+                    account,
                     to: params.recipientAddress as `0x${string}`,
                     value: amountBI,
                 });
@@ -222,7 +255,7 @@ export const transactionService = {
                 });
 
                 gasLimit = await client.estimateGas({
-                    account: useWalletStore.getState().address as `0x${string}`,
+                    account,
                     to: params.tokenAddress as `0x${string}`,
                     data,
                 });
@@ -231,8 +264,8 @@ export const transactionService = {
             const gasPrice = await client.getGasPrice();
             const gasCostNative = gasLimit * gasPrice;
 
-            // Simplified USD conversion (ideally fetch price of native asset)
-            const gasCostUSD = 0.05; // Mock for now until price service integrated
+            // Simplified USD conversion
+            const gasCostUSD = 0.05;
 
             return { gasLimit, gasCostNative, gasCostUSD };
         } catch (error) {

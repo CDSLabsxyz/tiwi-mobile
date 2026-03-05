@@ -8,20 +8,20 @@ import { AccountSelectionModal } from '@/components/sections/Earn/AccountSelecti
 import { DepositSelectionModal } from '@/components/sections/Earn/DepositSelectionModal';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { NumericKeypad } from '@/components/ui/NumericKeypad';
+import { TIWILoader } from '@/components/ui/TIWILoader';
 import { colors } from '@/constants/colors';
 import { useStakingAllowance } from '@/hooks/useStakingAllowance';
 import { useStakingPool } from '@/hooks/useStakingPool';
 import { useWalletBalances } from '@/hooks/useWalletBalances';
 import { stakingService, type StakingPool } from '@/services/stakingService';
-import { formatCompactNumber } from '@/utils/formatting';
+import { useToastStore } from '@/store/useToastStore';
 import { useWalletStore } from '@/store/walletStore';
+import { formatCompactNumber } from '@/utils/formatting';
 import AntDesign from '@expo/vector-icons/AntDesign';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useToastStore } from '@/store/useToastStore';
 import React, { useEffect, useState } from 'react';
 import {
-    Alert,
     ScrollView,
     StyleSheet,
     Text,
@@ -29,7 +29,6 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
-import { TIWILoader } from '@/components/ui/TIWILoader';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { parseUnits } from 'viem';
 import { useAccount } from 'wagmi';
@@ -44,6 +43,7 @@ const TWCIcon = require('../../../assets/home/tiwicat.svg');
 
 type StakeType = 'Flexible' | 'Fixed';
 type AccountType = 'Account';
+type TransactionStatus = 'idle' | 'approving' | 'staking' | 'success' | 'error';
 
 export default function StakeScreen() {
     const { top, bottom } = useSafeAreaInsets();
@@ -62,6 +62,8 @@ export default function StakeScreen() {
     const [pool, setPool] = useState<StakingPool | null>(null);
     const { showToast } = useToastStore();
     const [isLoading, setIsLoading] = useState(true);
+    const [txStatus, setTxStatus] = useState<TransactionStatus>('idle');
+    const [errorMsg, setErrorMsg] = useState('');
 
     // Get user balance for this specific token
     const userTokenBalance = React.useMemo(() => {
@@ -202,33 +204,38 @@ export default function StakeScreen() {
 
         try {
             if (needsApproval) {
+                setTxStatus('approving');
                 // Phase 1: Approve
                 await approve();
-                showToast('Token Approved! Proceeding to Stake...', 'pending');
-                
+
                 // Phase 2: Action (Stake) 
-                // We add a tiny delay for state to settle, then call it direct
+                setTxStatus('staking');
+                // We add a tiny delay for state to settle
                 setTimeout(async () => {
                     try {
                         await stake(amount);
-                        showToast('Staked Successfully!', 'success');
+                        setTxStatus('success');
                         refetchStaking();
-                        setTimeout(() => router.back(), 2000);
                     } catch (err: any) {
                         console.error('[StakeScreen] Chained stake error:', err);
+                        setErrorMsg(err?.message || 'Stake failed');
+                        setTxStatus('error');
                     }
-                }, 1000);
+                }, 1500);
             } else {
+                setTxStatus('staking');
                 await stake(amount);
-                showToast('Staked Successfully!', 'success');
+                setTxStatus('success');
                 refetchStaking();
-                setTimeout(() => router.back(), 2000);
             }
         } catch (error: any) {
             console.error('[StakeScreen] Transaction error:', error);
-            const errorMsg = error?.message || 'Transaction failed. Please try again.';
-            if (!errorMsg.includes('User rejected')) {
-                showToast(`Transaction Failed: ${errorMsg}`, 'error');
+            const msg = error?.message || 'Transaction failed. Please try again.';
+            if (!msg.includes('User rejected')) {
+                setErrorMsg(msg);
+                setTxStatus('error');
+            } else {
+                setTxStatus('idle');
             }
         }
     };
@@ -476,9 +483,119 @@ export default function StakeScreen() {
                     else if (action === 'receive') router.push('/receive');
                 }}
             />
+
+            {/* Immersive Staking Processing Modal */}
+            <StakeProcessingModal
+                status={txStatus}
+                symbol={symbol || 'TWC'}
+                amount={amount}
+                error={errorMsg}
+                onClose={() => setTxStatus('idle')}
+                onDone={() => {
+                    setTxStatus('idle');
+                    // Navigate to Earn page and switch to Active Positions tab
+                    router.replace('/earn?tab=active');
+                }}
+            />
         </View>
     );
 }
+
+/**
+ * Immersive Processing Modal for Staking
+ */
+const StakeProcessingModal = ({
+    status,
+    symbol,
+    amount,
+    error,
+    onClose,
+    onDone
+}: {
+    status: TransactionStatus;
+    symbol: string;
+    amount: string;
+    error?: string;
+    onClose: () => void;
+    onDone: () => void;
+}) => {
+    if (status === 'idle') return null;
+
+    const getStatusText = () => {
+        switch (status) {
+            case 'approving': return `Approving ${symbol} usage...`;
+            case 'staking': return `Initiating stake of ${amount} ${symbol}...`;
+            case 'success': return 'Stake successful!';
+            case 'error': return 'Transaction Failed';
+            default: return 'Processing...';
+        }
+    };
+
+    const getSubText = () => {
+        switch (status) {
+            case 'approving': return 'Please confirm the approval in your wallet to proceed.';
+            case 'staking': return 'Your transaction is being processed on the blockchain.';
+            case 'success': return `Successfully staked ${amount} ${symbol} to the pool.`;
+            case 'error': return error || 'Something went wrong during the transaction.';
+            default: return '';
+        }
+    };
+
+    return (
+        <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+                {status !== 'success' && status !== 'error' && (
+                    <View style={styles.loaderContainer}>
+                        <View style={styles.circularWrapper}>
+                            <Image
+                                source={require('../../../assets/GIF/loader_animation.gif')}
+                                style={styles.loaderGif}
+                                contentFit="cover"
+                            />
+                        </View>
+                    </View>
+                )}
+
+                {status === 'success' && (
+                    <View style={styles.successIconContainer}>
+                        <AntDesign name="check-circle" size={80} color={colors.primaryCTA} />
+                    </View>
+                )}
+
+                {status === 'error' && (
+                    <View style={styles.successIconContainer}>
+                        <AntDesign name="close-circle" size={80} color="#EF4444" />
+                    </View>
+                )}
+
+                <Text style={styles.statusMainText}>{getStatusText()}</Text>
+                <Text style={styles.statusSubText}>{getSubText()}</Text>
+
+                <View style={styles.modalActions}>
+                    {status === 'success' && (
+                        <TouchableOpacity
+                            style={styles.doneButton}
+                            activeOpacity={0.8}
+                            onPress={onDone}
+                        >
+                            <Text style={styles.doneButtonText}>Done</Text>
+                        </TouchableOpacity>
+                    )}
+
+                    {(status === 'error') && (
+                        <TouchableOpacity
+                            style={[styles.doneButton, { backgroundColor: colors.bgSemi }]}
+                            activeOpacity={0.8}
+                            onPress={onClose}
+                        >
+                            <Text style={[styles.doneButtonText, { color: colors.titleText }]}>Close</Text>
+                        </TouchableOpacity>
+                    )}
+                </View>
+            </View>
+        </View>
+    );
+};
 
 const styles = StyleSheet.create({
     container: {
@@ -736,5 +853,68 @@ const styles = StyleSheet.create({
         fontFamily: 'Manrope-SemiBold',
         fontSize: 13,
         color: colors.mutedText,
+    },
+    // Modal Styles
+    modalOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(5, 10, 5, 0.95)',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 1000,
+    },
+    modalContent: {
+        width: '85%',
+        alignItems: 'center',
+        padding: 30,
+    },
+    loaderContainer: {
+        marginBottom: 30,
+    },
+    circularWrapper: {
+        width: 140,
+        height: 140,
+        borderRadius: 70,
+        overflow: 'hidden',
+        borderWidth: 2,
+        borderColor: colors.primaryCTA,
+        backgroundColor: colors.bgSemi,
+    },
+    loaderGif: {
+        width: '100%',
+        height: '100%',
+    },
+    successIconContainer: {
+        marginBottom: 30,
+    },
+    statusMainText: {
+        fontFamily: 'Manrope-Bold',
+        fontSize: 22,
+        color: colors.titleText,
+        textAlign: 'center',
+        marginBottom: 12,
+    },
+    statusSubText: {
+        fontFamily: 'Manrope-Regular',
+        fontSize: 14,
+        color: colors.mutedText,
+        textAlign: 'center',
+        lineHeight: 20,
+        marginBottom: 40,
+    },
+    modalActions: {
+        width: '100%',
+    },
+    doneButton: {
+        backgroundColor: colors.primaryCTA,
+        height: 52,
+        borderRadius: 26,
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: '100%',
+    },
+    doneButtonText: {
+        fontFamily: 'Manrope-Bold',
+        fontSize: 16,
+        color: colors.bg,
     },
 });

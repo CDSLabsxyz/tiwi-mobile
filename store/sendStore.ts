@@ -39,6 +39,8 @@ interface SendState {
   // UI state
   isTokenSheetVisible: boolean;
   currentStep: "select-asset" | "enter-details" | "review" | "passcode" | "success";
+  isInsufficientBalance: boolean;
+  isInsufficientGas: boolean;
 
   // Actions
   setActiveTab: (tab: SendTab) => void;
@@ -53,6 +55,8 @@ interface SendState {
   openTokenSheet: () => void;
   closeTokenSheet: () => void;
   setCurrentStep: (step: SendState["currentStep"]) => void;
+  setInsufficientBalance: (isInsufficient: boolean) => void;
+  setInsufficientGas: (isInsufficient: boolean) => void;
   resetSendState: () => void;
   prePopulateFromAsset: (token: TokenOption, chain: ChainOption, balance: string, usdValue: string) => void;
 }
@@ -71,6 +75,8 @@ const initialState = {
   networkFeeUSD: "$0.00",
   isTokenSheetVisible: false,
   currentStep: "select-asset" as const,
+  isInsufficientBalance: false,
+  isInsufficientGas: false,
 };
 
 /**
@@ -112,6 +118,8 @@ export const useSendStore = create<SendState>((set, get) => ({
   openTokenSheet: () => set({ isTokenSheetVisible: true }),
   closeTokenSheet: () => set({ isTokenSheetVisible: false }),
   setCurrentStep: (step) => set({ currentStep: step }),
+  setInsufficientBalance: (isInsufficient) => set({ isInsufficientBalance: isInsufficient }),
+  setInsufficientGas: (isInsufficient) => set({ isInsufficientGas: isInsufficient }),
   resetSendState: () => set(initialState),
   prePopulateFromAsset: (token, chain, balance, usdValue) => {
     set({

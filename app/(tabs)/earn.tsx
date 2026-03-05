@@ -9,7 +9,6 @@ import {
     EarnEmptyState,
     EarnTabSwitcher,
     MyStakeCard,
-    StakingCarousel,
     StakingTokenCard,
     TotalStakedCard,
     type EarnTabKey
@@ -20,7 +19,7 @@ import { TIWILoader } from '@/components/ui/TIWILoader';
 import { colors } from '@/constants/colors';
 import { stakingService, type StakingPool, type UserStake } from '@/services/stakingService';
 import { useWalletStore } from '@/store/walletStore';
-import { usePathname, useRouter } from 'expo-router';
+import { useLocalSearchParams, usePathname, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -34,8 +33,18 @@ export default function EarnScreen() {
     const { top, bottom } = useSafeAreaInsets();
     const router = useRouter();
     const pathname = usePathname();
+    const { tab } = useLocalSearchParams<{ tab: string }>();
     const [activeTab, setActiveTab] = useState<EarnTabKey>('staking');
     const [stakingSubTab, setStakingSubTab] = useState<StakingSubTab>('stake');
+
+    // Handle deep-link tab switching (e.g., from staking success)
+    useEffect(() => {
+        if (tab === 'active' || tab === 'my-stakes' || tab === 'stake') {
+            setStakingSubTab(tab as StakingSubTab);
+            setActiveTab('staking');
+            fetchData(); // Trigger immediate fetch
+        }
+    }, [tab]);
 
     const handleSettingsPress = () => {
         const currentRoute = pathname || '/earn';

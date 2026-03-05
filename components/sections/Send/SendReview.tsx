@@ -27,7 +27,7 @@ interface SendReviewProps {
 
 export const SendReview: React.FC<SendReviewProps> = ({ onConfirm }) => {
   const { address: activeAddress } = useWalletStore();
-  const { selectedToken, selectedChain, recipientAddress, amount, usdValue, networkFee, networkFeeUSD, setNetworkFee } = useSendStore();
+  const { selectedToken, selectedChain, recipientAddress, amount, usdValue, networkFee, networkFeeUSD, setNetworkFee, setInsufficientGas } = useSendStore();
   const { isFlaggedAddressEnabled, isTransactionRiskEnabled } = useSecurityStore();
 
   const [riskResult, setRiskResult] = useState<RiskCheckResult | null>(null);
@@ -35,7 +35,8 @@ export const SendReview: React.FC<SendReviewProps> = ({ onConfirm }) => {
   const [isEstimatingGas, setIsEstimatingGas] = useState(false);
 
   const { data: balanceData } = useWalletBalances();
-  const [insufficientGas, setInsufficientGas] = useState(false);
+  const [insufficientGas, setLocalInsufficientGas] = useState(false);
+  const nativeGasSymbol = selectedChain?.id === 56 ? 'BNB' : (selectedChain?.id === 1 ? 'ETH' : 'Native Token');
 
   useEffect(() => {
     const runInitialChecks = async () => {
@@ -83,7 +84,9 @@ export const SendReview: React.FC<SendReviewProps> = ({ onConfirm }) => {
                 ? BigInt(parseUnits(amount, selectedToken.decimals)) + gasCostNative
                 : gasCostNative;
 
-              setInsufficientGas(nativeBalance < totalCost);
+              const isGasShort = nativeBalance < totalCost;
+              setInsufficientGas(isGasShort);
+              setLocalInsufficientGas(isGasShort);
             }
           }
         } catch (e) {
@@ -153,7 +156,7 @@ export const SendReview: React.FC<SendReviewProps> = ({ onConfirm }) => {
                 color: '#EF4444',
                 textTransform: 'uppercase'
               }}>
-                Insufficient for gas
+                Insufficient gas
               </Text>
             )}
             <Text style={[styles.detailValueSmall, insufficientGas && { color: '#EF4444' }]}>
