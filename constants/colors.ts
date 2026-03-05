@@ -10,7 +10,9 @@ export const colors = {
   bg: "#010501",
   bgSemi: "#0B0F0A",
   bgCards: "#121712",
+  bgSecondary: "#121712",
   bgStroke: "#1F261E",
+  border: "#1F261E",
   bgShade20: "#0D3600",
 
   // Text

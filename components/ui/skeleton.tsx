@@ -1,10 +1,9 @@
-import { colors } from '@/constants/colors';
 import React from 'react';
-import { DimensionValue, View, ViewStyle } from 'react-native';
+import { Animated, ViewStyle } from 'react-native';
 
 interface SkeletonProps {
-    width?: DimensionValue;
-    height?: number;
+    width?: number | string;
+    height?: number | string;
     borderRadius?: number;
     style?: ViewStyle;
 }
@@ -12,17 +11,39 @@ interface SkeletonProps {
 export const Skeleton: React.FC<SkeletonProps> = ({
     width = '100%',
     height = 20,
-    borderRadius = 8,
-    style,
+    borderRadius = 4,
+    style
 }) => {
+    const opacity = React.useRef(new Animated.Value(0.3)).current;
+
+    React.useEffect(() => {
+        const animation = Animated.loop(
+            Animated.sequence([
+                Animated.timing(opacity, {
+                    toValue: 0.7,
+                    duration: 800,
+                    useNativeDriver: true,
+                }),
+                Animated.timing(opacity, {
+                    toValue: 0.3,
+                    duration: 800,
+                    useNativeDriver: true,
+                }),
+            ])
+        );
+        animation.start();
+        return () => animation.stop();
+    }, [opacity]);
+
     return (
-        <View
+        <Animated.View
             style={[
                 {
-                    width,
-                    height,
+                    width: width as any,
+                    height: height as any,
+                    backgroundColor: '#1f261e',
                     borderRadius,
-                    backgroundColor: colors.bgCards,
+                    opacity,
                 },
                 style,
             ]}

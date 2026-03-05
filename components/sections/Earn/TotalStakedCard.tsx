@@ -5,7 +5,8 @@
 
 import { colors } from '@/constants/colors';
 import React from 'react';
-import { StyleSheet, Text, View, ActivityIndicator } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
+import { Skeleton } from '@/components/ui/skeleton';
 
 interface TotalStakedCardProps {
     overallTvl?: string;
@@ -33,7 +34,7 @@ export const TotalStakedCard: React.FC<TotalStakedCardProps> = ({
                 <View style={[styles.statItem, styles.borderRight, styles.borderBottom]}>
                     <Text style={styles.statLabel}>OVERALL TVL</Text>
                     {isLoading ? (
-                        <ActivityIndicator size="small" color={colors.primaryCTA} />
+                        <Skeleton width={80} height={20} />
                     ) : (
                         <Text style={styles.statValue}>{maxTvl}</Text>
                     )}
@@ -44,7 +45,7 @@ export const TotalStakedCard: React.FC<TotalStakedCardProps> = ({
                 <View style={[styles.statItem, styles.borderBottom]}>
                     <Text style={styles.statLabel}>NO. OF ACTIVE POOLS</Text>
                     {isLoading ? (
-                        <ActivityIndicator size="small" color={colors.primaryCTA} />
+                        <Skeleton width={40} height={20} />
                     ) : (
                         <Text style={[styles.statValue, { color: colors.primaryCTA }]}>{activePoolsCount}</Text>
                     )}
@@ -55,7 +56,7 @@ export const TotalStakedCard: React.FC<TotalStakedCardProps> = ({
                 <View style={[styles.statItem, styles.borderRight]}>
                     <Text style={styles.statLabel}>TOTAL TWC STAKED</Text>
                     {isLoading ? (
-                        <ActivityIndicator size="small" color={colors.primaryCTA} />
+                        <Skeleton width={80} height={20} />
                     ) : (
                         <Text style={styles.statValue}>{totalTwcStaked}</Text>
                     )}
@@ -66,7 +67,7 @@ export const TotalStakedCard: React.FC<TotalStakedCardProps> = ({
                 <View style={styles.statItem}>
                     <Text style={styles.statLabel}>TOTAL ACTIVE STAKERS</Text>
                     {isLoading ? (
-                        <ActivityIndicator size="small" color={colors.primaryCTA} />
+                        <Skeleton width={60} height={20} />
                     ) : (
                         <Text style={styles.statValue}>{activeStakersCount}</Text>
                     )}

@@ -9,6 +9,7 @@ import {
     EarnEmptyState,
     EarnTabSwitcher,
     MyStakeCard,
+    StakingPoolAccordion,
     StakingTokenCard,
     TotalStakedCard,
     type EarnTabKey
@@ -19,8 +20,9 @@ import { TIWILoader } from '@/components/ui/TIWILoader';
 import { colors } from '@/constants/colors';
 import { stakingService, type StakingPool, type UserStake } from '@/services/stakingService';
 import { useWalletStore } from '@/store/walletStore';
+import { useStakingStore } from '@/store/stakingStore';
 import { useLocalSearchParams, usePathname, useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -61,34 +63,34 @@ export default function EarnScreen() {
     };
 
     const { address: walletAddress } = useWalletStore();
+    const {
+        activePositions,
+        activePools,
+        globalStats,
+        isLoading: isStoreLoading,
+        isGlobalStatsLoading,
+        fetchInitialData,
+        fetchGlobalStats,
+        discoverPositions,
+        liveRewards
+    } = useStakingStore();
+
     const [isLoading, setIsLoading] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
-    const [stakingTokens, setStakingTokens] = useState<StakingPool[]>([]);
-    const [myStakes, setMyStakes] = useState<UserStake[]>([]);
-    const [stakingStats, setStakingStats] = useState<any>({
-        overallTvl: '...',
-        maxTvl: '...',
-        totalTwcStaked: '...',
-        activePoolsCount: 0,
-        activeStakersCount: '...'
-    });
 
     // Fetch data from backend
     const fetchData = async () => {
         try {
-            // Fetch global staking stats and pool data in parallel
-            const [stats, pools] = await Promise.all([
-                stakingService.getGlobalStakingStats(),
-                stakingService.getActivePools()
-            ]);
-
-            setStakingStats(stats);
-            setStakingTokens(pools);
-
+            // Fetch core data and global stats via store
             if (walletAddress) {
-                const status = stakingSubTab === 'active' ? 'active' : undefined;
-                const stakes = await stakingService.getUserStakes(walletAddress, status);
-                setMyStakes(stakes);
+                await Promise.all([
+                    fetchInitialData(walletAddress),
+                    fetchGlobalStats()
+                ]);
+                // Background harvesting crawler
+                discoverPositions(walletAddress);
+            } else {
+                await fetchGlobalStats();
             }
         } catch (error) {
             console.error('[Earn] Data fetch failed:', error);
@@ -186,12 +188,12 @@ export default function EarnScreen() {
                         <View style={styles.tabContent}>
                             {/* Total Staked Card (Web-style mobile grid) */}
                             <TotalStakedCard
-                                overallTvl={stakingStats.overallTvl}
-                                maxTvl={stakingStats.maxTvl}
-                                activePoolsCount={stakingStats.activePoolsCount}
-                                totalTwcStaked={stakingStats.totalTwcStaked}
-                                activeStakersCount={stakingStats.activeStakersCount}
-                                isLoading={isLoading}
+                                overallTvl={globalStats.overallTvl}
+                                maxTvl={globalStats.maxTvl}
+                                activePoolsCount={globalStats.activePoolsCount}
+                                totalTwcStaked={globalStats.totalTwcStaked}
+                                activeStakersCount={globalStats.activeStakersCount}
+                                isLoading={isGlobalStatsLoading}
                                 tokenSymbol="TWC"
                             />
 
@@ -209,14 +211,7 @@ export default function EarnScreen() {
                                         { backgroundColor: stakingSubTab === 'stake' ? '#081f02' : '#0b0f0a' }
                                     ]}
                                 >
-                                    <Text
-                                        style={[
-                                            styles.subTabText,
-                                            { color: stakingSubTab === 'stake' ? '#b1f128' : '#b5b5b5' }
-                                        ]}
-                                    >
-                                        Stake
-                                    </Text>
+                                    <Text style={[styles.subTabText, { color: stakingSubTab === 'stake' ? '#b1f128' : '#b5b5b5' }]}>Stake</Text>
                                 </TouchableOpacity>
 
                                 <TouchableOpacity
@@ -227,14 +222,7 @@ export default function EarnScreen() {
                                         { backgroundColor: stakingSubTab === 'active' ? '#081f02' : '#0b0f0a' }
                                     ]}
                                 >
-                                    <Text
-                                        style={[
-                                            styles.subTabText,
-                                            { color: stakingSubTab === 'active' ? '#b1f128' : '#b5b5b5' }
-                                        ]}
-                                    >
-                                        Active Positions
-                                    </Text>
+                                    <Text style={[styles.subTabText, { color: stakingSubTab === 'active' ? '#b1f128' : '#b5b5b5' }]}>Active Positions</Text>
                                 </TouchableOpacity>
 
                                 <TouchableOpacity
@@ -245,108 +233,58 @@ export default function EarnScreen() {
                                         { backgroundColor: stakingSubTab === 'my-stakes' ? '#081f02' : '#0b0f0a' }
                                     ]}
                                 >
-                                    <Text
-                                        style={[
-                                            styles.subTabText,
-                                            { color: stakingSubTab === 'my-stakes' ? '#b1f128' : '#b5b5b5' }
-                                        ]}
-                                    >
-                                        My Stakes
-                                    </Text>
+                                    <Text style={[styles.subTabText, { color: stakingSubTab === 'my-stakes' ? '#b1f128' : '#b5b5b5' }]}>My Stakes</Text>
                                 </TouchableOpacity>
                             </ScrollView>
 
-
-                            {/* Staking Token Cards */}
-                            {stakingSubTab === 'stake' && (
-                                <View style={styles.cardsList}>
-                                    {isLoading ? (
-                                        <TIWILoader size={80} style={{ marginTop: 20 }} />
-                                    ) : stakingTokens.length > 0 ? (
-                                        stakingTokens.map((token, index) => (
-                                            <StakingTokenCard
-                                                key={token.id}
-                                                tokenSymbol={token.tokenSymbol}
-                                                tokenName={token.tokenName}
-                                                apy={token.displayApy}
-                                                tvl={token.tvl}
-                                                activeStakers={token.activeStakers}
-                                                tokenIcon={token.tokenLogo ? { uri: token.tokenLogo } : TWCIcon}
-                                                onPress={() => router.push(`/earn/stake/${token.tokenSymbol}` as any)}
+                            {/* Cards List Section */}
+                            <View style={styles.cardsList}>
+                                {stakingSubTab === 'stake' ? (
+                                    activePools.length > 0 ? (
+                                        activePools.map((pool) => (
+                                            <StakingPoolAccordion
+                                                key={pool.id}
+                                                poolId={pool.poolId ?? pool.id}
+                                                tokenSymbol={pool.tokenSymbol}
+                                                tokenName={pool.tokenName}
+                                                onStakePress={() => router.push(`/earn/stake/${pool.tokenSymbol}`)}
                                             />
                                         ))
                                     ) : (
-                                        <EarnEmptyState
-                                            title={getEmptyStateMessages('stake').title}
-                                            description={getEmptyStateMessages('stake').description}
-                                        />
-                                    )}
-                                </View>
-                            )}
-
-                            {/* Active Positions Content */}
-                            {stakingSubTab === 'active' && (
-                                <View style={styles.cardsList}>
-                                    {isLoading ? (
-                                        <TIWILoader size={80} style={{ marginTop: 20 }} />
-                                    ) : myStakes.length > 0 ? (
-                                        myStakes.map((stake, index) => (
+                                        <Text style={{ color: colors.mutedText, textAlign: 'center', marginTop: 20 }}>
+                                            No available pools
+                                        </Text>
+                                    )
+                                ) : stakingSubTab === 'active' ? (
+                                    activePositions.length > 0 ? (
+                                        activePositions.map((pos) => (
                                             <MyStakeCard
-                                                key={stake.id}
-                                                symbol={stake.pool?.tokenSymbol || 'TWC'}
-                                                apy={stake.displayApy}
-                                                stakedAmount={stake.displayStakedAmount}
-                                                rewardsEarned={stake.displayRewardsEarned}
-                                                lockPeriod={stake.minStakingPeriod}
-                                                earningRate={stake.earningRate}
-                                                icon={stake.pool?.tokenLogo ? { uri: stake.pool.tokenLogo } : TWCIcon}
-                                                onPress={() => router.push(`/earn/manage/${stake.pool?.tokenSymbol}` as any)}
+                                                key={pos.id}
+                                                symbol={pos.pool?.tokenSymbol || 'TWC'}
+                                                stakedAmount={pos.stakedAmount}
+                                                apy={pos.pool?.displayApy || 'N/A'}
+                                                rewardsEarned={`${pos.displayRewardsEarned} ${pos.pool?.tokenSymbol || ''}`}
+                                                lockPeriod={pos.pool?.minStakingPeriod || 'N/A'}
+                                                icon={pos.pool?.tokenLogo ? { uri: pos.pool.tokenLogo } : TWCIcon}
+                                                onPress={() => router.push(`/earn/manage/${pos.pool?.tokenSymbol || 'TWC'}`)}
                                             />
                                         ))
                                     ) : (
-                                        <EarnEmptyState
-                                            title={getEmptyStateMessages('active').title}
-                                            description={getEmptyStateMessages('active').description}
-                                        />
-                                    )}
-                                </View>
-                            )}
-
-                            {/* My Stakes Content */}
-                            {stakingSubTab === 'my-stakes' && (
-                                <View style={styles.cardsList}>
-                                    {isLoading ? (
-                                        <TIWILoader size={80} style={{ marginTop: 20 }} />
-                                    ) : myStakes.length > 0 ? (
-                                        myStakes.map((stake, index) => (
-                                            <MyStakeCard
-                                                key={stake.id}
-                                                symbol={stake.pool?.tokenSymbol || 'TWC'}
-                                                apy={stake.displayApy}
-                                                stakedAmount={stake.displayStakedAmount}
-                                                rewardsEarned={stake.displayRewardsEarned}
-                                                lockPeriod={stake.minStakingPeriod}
-                                                earningRate={stake.earningRate}
-                                                icon={stake.pool?.tokenLogo ? { uri: stake.pool.tokenLogo } : TWCIcon}
-                                                onPress={() => router.push(`/earn/manage/${stake.pool?.tokenSymbol}` as any)}
-                                            />
-                                        ))
-                                    ) : (
-                                        <EarnEmptyState
-                                            title={getEmptyStateMessages('my-stakes').title}
-                                            description={getEmptyStateMessages('my-stakes').description}
-                                        />
-                                    )}
-                                </View>
-                            )}
+                                        <Text style={{ color: colors.mutedText, textAlign: 'center', marginTop: 20 }}>
+                                            No active positions found
+                                        </Text>
+                                    )
+                                ) : (
+                                    <Text style={{ color: colors.mutedText, textAlign: 'center', marginTop: 20 }}>
+                                        My Stakes tab content
+                                    </Text>
+                                )}
+                            </View>
                         </View>
                     )}
 
                     {/* Coming Soon Tabs */}
-                    {(activeTab === 'farming' ||
-                        activeTab === 'lend-borrow' ||
-                        activeTab === 'nft-staking') && <ComingSoon />}
-
+                    {activeTab !== 'staking' && <ComingSoon />}
                 </View>
             </ScrollView>
         </View>

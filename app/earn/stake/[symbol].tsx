@@ -344,8 +344,12 @@ export default function StakeScreen() {
                                     <View style={styles.gridDividerV} />
                                     <View style={styles.statItem}>
                                         <Text style={styles.statLabel}>APR</Text>
-                                        <Text style={[styles.statValue, { color: colors.primaryCTA }]}>{stats.apr}</Text>
-                                        <Text style={styles.statInfoLabel}>%</Text>
+                                        <View style={styles.rowValue}>
+                                            <Text style={[styles.statValue, { color: colors.primaryCTA }]}>
+                                                {stats.apr.replace('%', '')}
+                                            </Text>
+                                            <Text style={[styles.statInfoLabel, { marginLeft: 2 }]}>%</Text>
+                                        </View>
                                     </View>
                                 </View>
 
@@ -445,10 +449,10 @@ export default function StakeScreen() {
             <View style={[styles.bottomBar, { paddingBottom: bottom + 12 }]}>
                 <TouchableOpacity
                     onPress={handleConfirm}
-                    disabled={isTransactionPending || !amount || parseFloat(amount) <= 0 || isOutOfRange}
+                    disabled={isTransactionPending || !amount || parseFloat(amount) <= 0 || isOutOfRange || stakingData.isFull}
                     style={[
                         styles.confirmButton,
-                        (isTransactionPending || !amount || parseFloat(amount) <= 0 || isOutOfRange) && styles.confirmButtonDisabled
+                        (isTransactionPending || !amount || parseFloat(amount) <= 0 || isOutOfRange || stakingData.isFull) && styles.confirmButtonDisabled
                     ]}
                     activeOpacity={0.9}
                 >
@@ -456,7 +460,7 @@ export default function StakeScreen() {
                         <TIWILoader size={40} />
                     ) : (
                         <Text style={styles.confirmButtonText}>
-                            {needsApproval ? 'Approve Token' : 'Stake Now'}
+                            {stakingData.isFull ? 'Pool Full' : (needsApproval ? 'Approve Token' : 'Stake Now')}
                         </Text>
                     )}
                 </TouchableOpacity>
@@ -662,6 +666,10 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         paddingVertical: 10,
+    },
+    rowValue: {
+        flexDirection: 'row',
+        alignItems: 'baseline',
     },
     statLabel: {
         fontFamily: 'Manrope-Medium',

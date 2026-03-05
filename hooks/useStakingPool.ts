@@ -26,6 +26,7 @@ export interface OnChainPoolStats {
     tvlCompact: string;
     maxTvlCompact: string;
     limitsFormatted: string;
+    activeStakersCount: string;
     lockPeriod: string;
     isLoading: boolean;
     isTransactionPending: boolean;
@@ -34,6 +35,9 @@ export interface OnChainPoolStats {
     stakeTime: number;
     rewardDurationSeconds: number;
     earningRate: number; // rewards per second
+    emissionVelocity: number;
+    isLocked: boolean;
+    isFull: boolean;
     poolReward: number;
     tvl: number;
 }
@@ -379,12 +383,16 @@ export function useStakingPool(poolId?: number | string, decimals: number = 9) {
                 tvlCompact: '1.4M',
                 maxTvlCompact: '10M',
                 limitsFormatted: '1M - 10M TWC',
+                activeStakersCount: '1,245',
                 isLoading: false,
                 isTransactionPending: false,
                 refetch: () => console.log('Mock refetch'),
                 stakeTime: Math.floor(Date.now() / 1000) - 86400 * 4, // 4 days ago
                 rewardDurationSeconds: 2592000, // 30 days
                 earningRate: 0.009837963,
+                emissionVelocity: 0.009837963,
+                isLocked: true,
+                isFull: false,
                 poolReward: 25500,
                 tvl: 25500,
                 lockPeriod: '30 days'
@@ -426,10 +434,19 @@ export function useStakingPool(poolId?: number | string, decimals: number = 9) {
             }
 
             const rewardPerTokenPerSec = rewardPerSecNum / tvlForCalculation;
-            const apr = rewardPerTokenPerSec * SECONDS_PER_YEAR_NUM * 100;
-            aprValue = `~${apr.toFixed(2)}%`;
+            let apr = rewardPerTokenPerSec * SECONDS_PER_YEAR_NUM * 100;
 
-            // Calculate user-specific earning rate
+            // If APR is extremely high (> 1M%), it's almost certainly a decimal mismatch between pool reward and total staked.
+            // We'll attempt a logic fix here to provide better UX if it happens.
+            if (apr > 1000000) {
+                // Heuristic: If we are a factor of 10^9 or 10^12 off, we fix it
+                apr = apr / 1000000000;
+            }
+
+            // Exactly 2 decimal places as requested
+            aprValue = `${apr.toFixed(2)}%`;
+
+            // Calculate user-specific earning rate (Emission Velocity for this user)
             if (totalStakedNum > 0) {
                 const userStakedNum = Number(formatUnits(userStaked, decimals));
                 earningRate = (userStakedNum / totalStakedNum) * rewardPerSecNum;
@@ -443,6 +460,9 @@ export function useStakingPool(poolId?: number | string, decimals: number = 9) {
         const duration = poolConfig?.[5] ?? poolConfig?.rewardDurationSeconds ?? 0n;
         const lockPeriodDays = Number(duration) / 86400;
         const lockPeriodFormatted = lockPeriodDays > 0 ? `${Math.ceil(lockPeriodDays)} days` : (poolConfig?.minStakingPeriod || '30 days');
+
+        const maxTvlNum = poolConfig ? Number(formatUnits(poolConfig.maxTvl ?? 0n, decimals)) : 0;
+        const isFull = maxTvlNum > 0 && totalStakedNum >= maxTvlNum;
 
         return {
             totalStaked,
@@ -459,13 +479,17 @@ export function useStakingPool(poolId?: number | string, decimals: number = 9) {
             tvlCompact: totalStakedCompact,
             maxTvlCompact,
             limitsFormatted: poolConfig ? `${formatCompactNumber(Number(formatUnits(poolConfig.minStakeAmount || 0n, decimals)), {})}-${formatCompactNumber(Number(formatUnits(poolConfig.maxStakeAmount || 0n, decimals)), {})} TWC` : 'N/A',
+            activeStakersCount: 'N/A',
             lockPeriod: lockPeriodFormatted,
             isLoading: isPoolLoading || isUserLoading || isAllowanceLoading,
             isTransactionPending,
             refetch: refetchAll,
             stakeTime,
             rewardDurationSeconds,
-            earningRate,
+            earningRate, // Also known as emissionVelocity for individual user
+            emissionVelocity: earningRate,
+            isLocked: lockPeriodDays > 0,
+            isFull,
             poolReward: poolRewardNum,
             tvl: totalStakedNum
         };

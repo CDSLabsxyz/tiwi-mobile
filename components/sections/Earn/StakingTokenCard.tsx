@@ -8,6 +8,7 @@ import { colors } from '@/constants/colors';
 import { Image } from 'expo-image';
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Skeleton } from '@/components/ui/skeleton';
 
 const ArrowDownIcon = require('../../../assets/home/arrow-down-01.svg');
 
@@ -62,9 +63,13 @@ export const StakingTokenCard: React.FC<StakingTokenCardProps> = ({
                 </View>
 
                 <View style={styles.apyContainer}>
-                    <Text style={styles.apyText}>
-                        {apy}
-                    </Text>
+                    {isLoading ? (
+                        <Skeleton width={60} height={14} />
+                    ) : (
+                        <Text style={styles.apyText}>
+                            {apy}
+                        </Text>
+                    )}
                     <View style={styles.arrowIconContainer}>
                         <Image
                             source={ArrowDownIcon}
@@ -77,12 +82,21 @@ export const StakingTokenCard: React.FC<StakingTokenCardProps> = ({
 
             {/* Bottom Row: TVL, Stakers */}
             <View style={styles.bottomRow}>
-                <Text style={styles.statsText}>
-                    TVL {tvl}
-                </Text>
-                <Text style={styles.statsText}>
-                    {activeStakers} ACTIVE STAKERS
-                </Text>
+                {isLoading ? (
+                    <Skeleton width={100} height={12} />
+                ) : (
+                    <Text style={styles.statsText}>
+                        TVL {tvl}
+                    </Text>
+                )}
+
+                {isLoading ? (
+                    <Skeleton width={120} height={12} />
+                ) : (
+                    <Text style={styles.statsText}>
+                        {activeStakers} ACTIVE STAKERS
+                    </Text>
+                )}
             </View>
         </TouchableOpacity>
     );

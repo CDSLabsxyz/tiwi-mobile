@@ -9,5 +9,6 @@ export { EarnTabSwitcher } from './EarnTabSwitcher';
 export type { EarnTabKey } from './EarnTabSwitcher';
 export { MyStakeCard } from './MyStakeCard';
 export { StakingCarousel } from './StakingCarousel';
+export { StakingPoolAccordion } from './StakingPoolAccordion';
 export { StakingTokenCard } from './StakingTokenCard';
 export { TotalStakedCard } from './TotalStakedCard';

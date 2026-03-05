@@ -36,6 +36,7 @@ export interface UserStake extends APIUserStake {
     displayApy: string;
     displayStakedAmount: string;
     displayRewardsEarned: string;
+    pendingRewardsFormatted?: string;
     minStakingPeriod?: string;
     earningRate?: number;
     pool: StakingPool;
@@ -137,12 +138,25 @@ class StakingService {
      */
     async getGlobalStakingStats(): Promise<StakingStats> {
         try {
-            // Get all active pool IDs from factory
-            const allPoolIds = await this.bscClient.readContract({
-                address: BSC_FACTORY_ADDRESS as `0x${string}`,
-                abi: STAKING_FACTORY_ABI,
-                functionName: 'getActivePoolIds',
-            }) as bigint[];
+            // 1. Get all active pool IDs from factory
+            let allPoolIds: bigint[] = [];
+            try {
+                allPoolIds = await this.bscClient.readContract({
+                    address: BSC_FACTORY_ADDRESS as `0x${string}`,
+                    abi: STAKING_FACTORY_ABI,
+                    functionName: 'getActivePoolIds',
+                }) as bigint[];
+            } catch (contractErr) {
+                console.warn('[StakingService] Factory "getActivePoolIds" call failed, using empty list or fallback:', contractErr);
+                // Return defaults if we can't even get pool IDs
+                return {
+                    overallTvl: '0',
+                    maxTvl: '0',
+                    totalTwcStaked: '0',
+                    activePoolsCount: 0,
+                    activeStakersCount: '0'
+                };
+            }
 
             if (!allPoolIds || allPoolIds.length === 0) {
                 return {
@@ -316,6 +330,85 @@ class StakingService {
         } catch (error) {
             console.error('[StakingService] Failed to fetch allowance:', error);
             return BigInt(0);
+        }
+    }
+
+    /**
+     * CRAWLER: Discovers user positions directly from blockchain factory
+     * This ensures the app sees positions even if they aren't indexed in the DB yet
+     */
+    async discoverOnChainPositions(walletAddress: string): Promise<UserStake[]> {
+        if (!walletAddress) return [];
+        try {
+            // 1. Get all active pool IDs from factory
+            const allPoolIds = await this.bscClient.readContract({
+                address: BSC_FACTORY_ADDRESS as `0x${string}`,
+                abi: STAKING_FACTORY_ABI,
+                functionName: 'getActivePoolIds',
+            }) as bigint[];
+
+            if (!allPoolIds || allPoolIds.length === 0) return [];
+
+            // 2. Scan all pools in parallel for user balances
+            const discovered = await Promise.all(allPoolIds.map(async (poolId) => {
+                try {
+                    const userInfo = await this.bscClient.readContract({
+                        address: BSC_FACTORY_ADDRESS as `0x${string}`,
+                        abi: STAKING_FACTORY_ABI,
+                        functionName: 'getUserInfo',
+                        args: [poolId, walletAddress as `0x${string}`],
+                    }) as [bigint, bigint, bigint, bigint];
+
+                    const amount = userInfo[0];
+                    if (amount > 0n) {
+                        // Position found! Hydrate it with pool data
+                        const poolInfo = await this.bscClient.readContract({
+                            address: BSC_FACTORY_ADDRESS as `0x${string}`,
+                            abi: STAKING_FACTORY_ABI,
+                            functionName: 'getPoolInfo',
+                            args: [poolId],
+                        }) as any;
+
+                        const config = poolInfo[0];
+                        const decimals = (config.stakingToken.toLowerCase() === TWC_ADDRESS_BSC.toLowerCase()) ? 9 : 18;
+
+                        // Create a skeleton pool for mapping
+                        const poolRecord: any = {
+                            id: poolId.toString(),
+                            poolId: Number(poolId),
+                            tokenSymbol: config.stakingToken.toLowerCase() === TWC_ADDRESS_BSC.toLowerCase() ? 'TWC' : 'Tokens',
+                            decimals,
+                            chainId: 56
+                        };
+
+                        const apiPool = await this.mapPool(poolRecord);
+                        const stakedAmountStr = formatUnits(amount, decimals);
+
+                        return {
+                            id: `live-${poolId}-${walletAddress.slice(2, 6)}`,
+                            userWallet: walletAddress,
+                            stakedAmount: stakedAmountStr,
+                            rewardsEarned: formatUnits(userInfo[3], decimals),
+                            status: 'active' as const,
+                            createdAt: new Date(Number(userInfo[2]) * 1000).toISOString(),
+                            pool: apiPool,
+                            displayApy: apiPool.displayApy,
+                            displayStakedAmount: `${stakedAmountStr} ${apiPool.tokenSymbol}`,
+                            displayRewardsEarned: `${formatUnits(userInfo[3], decimals)} ${apiPool.tokenSymbol}`,
+                            minStakingPeriod: apiPool.minStakingPeriod || '30 days',
+                            earningRate: 0 // Will be calculated by store
+                        } as UserStake;
+                    }
+                } catch (e) {
+                    // Fail silently for individual pools
+                }
+                return null;
+            }));
+
+            return discovered.filter((s): s is UserStake => s !== null);
+        } catch (error) {
+            console.error('[StakingService] Discovery crawler failed:', error);
+            return [];
         }
     }
 }
