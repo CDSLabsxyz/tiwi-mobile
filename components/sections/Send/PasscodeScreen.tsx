@@ -8,12 +8,14 @@
 import { PasscodeField } from "@/components/ui/security/PasscodeField";
 import { SecurityKeypad } from "@/components/ui/security/SecurityKeypad";
 import { colors } from "@/constants";
+import { useTranslation } from "@/hooks/useLocalization";
 import { useSecurityStore } from "@/store/securityStore";
 import * as Haptics from "expo-haptics";
 import * as LocalAuthentication from "expo-local-authentication";
 import React, { useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 interface PasscodeScreenProps {
   onSuccess: () => void;
@@ -25,6 +27,8 @@ export const PasscodeScreen: React.FC<PasscodeScreenProps> = ({ onSuccess }) => 
   const [passcode, setPasscode] = useState("");
   const [validationState, setValidationState] = useState<ValidationState>("idle");
   const { verifyPasscode, isBiometricsEnabled } = useSecurityStore();
+  const { t } = useTranslation();
+  const { top, bottom } = useSafeAreaInsets();
 
   const shake = useSharedValue(0);
   const shakeStyle = useAnimatedStyle(() => ({
@@ -114,31 +118,30 @@ export const PasscodeScreen: React.FC<PasscodeScreenProps> = ({ onSuccess }) => 
   };
 
   return (
-    <View style={styles.container}>
-      <Animated.View style={[styles.content, shakeStyle]}>
-        {/* Title */}
-        <Text style={styles.title}>Enter Passcode</Text>
+    <View style={[styles.container, { paddingTop: top }]}>
+      <View style={styles.content}>
+        <Animated.View style={[styles.innerContent, shakeStyle]}>
+          {/* Title - Reverted to your preferred wording */}
+          <Text style={styles.title}>Enter Passcode</Text>
+          <Text style={styles.subtitle}>Enter your 6-digit passcode to confirm the transaction</Text>
 
-        {/* Passcode Field */}
-        <View style={styles.dotsContainer}>
-          <PasscodeField
-            length={6}
-            passcode={passcode}
-            isError={validationState === "invalid"}
-          />
-        </View>
+          {/* Passcode Field */}
+          <View style={styles.dotsContainer}>
+            <PasscodeField
+              length={6}
+              passcode={passcode}
+              isError={validationState === "invalid"}
+            />
+          </View>
 
-        {validationState === "invalid" ? (
-          <Text style={styles.errorText}>Incorrect passcode</Text>
-        ) : (
-          <Text style={styles.helperText}>
-            Enter your 6-digit passcode to confirm the transaction
-          </Text>
-        )}
-      </Animated.View>
+          {validationState === "invalid" && (
+            <Text style={styles.errorText}>{t('lock.incorrect')}</Text>
+          )}
+        </Animated.View>
+      </View>
 
-      {/* Security Keypad */}
-      <View style={styles.keypadWrapper}>
+      {/* Security Keypad - Positioned at absolute bottom with minimal vertical padding */}
+      <View style={[styles.keypadWrapper, { paddingBottom: bottom + 4 }]}>
         <SecurityKeypad
           onPress={handlePress}
           onDelete={handleDelete}
@@ -153,41 +156,48 @@ export const PasscodeScreen: React.FC<PasscodeScreenProps> = ({ onSuccess }) => 
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
     width: "100%",
-    minHeight: 500,
-    flexDirection: "column",
-    alignItems: "center",
+    backgroundColor: colors.bg,
   },
   content: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 24,
+  },
+  innerContent: {
     width: "100%",
     alignItems: "center",
-    paddingTop: 20,
-    marginBottom: 40,
+    justifyContent: "center",
   },
   title: {
-    fontFamily: "Manrope-SemiBold",
-    fontSize: 20,
-    lineHeight: 28,
+    fontFamily: "Manrope-Bold",
+    fontSize: 24,
     color: colors.titleText,
     textAlign: "center",
-    marginBottom: 32,
+    marginBottom: 12,
   },
-  dotsContainer: {
-    marginBottom: 24,
-  },
-  errorText: {
-    color: "#EF4444",
-    fontFamily: "Manrope-Medium",
-    fontSize: 14,
-    marginBottom: 16,
-  },
-  helperText: {
+  subtitle: {
     fontFamily: "Manrope-Regular",
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 16,
     color: colors.bodyText,
     textAlign: "center",
-    paddingHorizontal: 40,
+    marginBottom: 48,
+    paddingHorizontal: 20,
+  },
+  dotsContainer: {
+    width: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 20,
+  },
+  errorText: {
+    color: "#FF4D4D",
+    fontFamily: "Manrope-Medium",
+    fontSize: 14,
+    marginTop: 20,
+    textAlign: "center",
   },
   keypadWrapper: {
     width: "100%",

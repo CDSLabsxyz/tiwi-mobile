@@ -1,9 +1,8 @@
 import { colors } from '@/constants/colors';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import * as Haptics from 'expo-haptics';
-import { Image } from 'expo-image'; // Added import for Image
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 
 // Fallback logic for icons
 const BackspaceIcon = require('@/assets/security/delete-left.svg');
@@ -86,7 +85,7 @@ export const SecurityKeypad: React.FC<SecurityKeypadProps> = ({
 const styles = StyleSheet.create({
     container: {
         width: '100%',
-        paddingHorizontal: 24,
+        paddingHorizontal: 12,
         paddingBottom: 24,
     },
     grid: {

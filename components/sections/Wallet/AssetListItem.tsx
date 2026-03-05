@@ -9,6 +9,7 @@ import { TokenPrice } from '@/components/ui/TokenPrice';
 import { colors } from '@/constants/colors';
 import { useTranslation } from '@/hooks/useLocalization';
 import type { PortfolioItem } from '@/services/walletService';
+import { useWalletStore } from '@/store/walletStore';
 import { formatTokenQuantity, getColorFromSeed } from '@/utils/formatting';
 import { Image } from 'expo-image';
 import React, { useMemo } from 'react';
@@ -48,7 +49,7 @@ export const AssetListItem: React.FC<AssetListItemProps> = ({
     asset,
     onPress,
 }) => {
-    console.log("🚀 ~ AssetListItem ~ asset:", asset)
+    const isBalanceHidden = useWalletStore((state) => state.isBalanceHidden);
     const { t } = useTranslation();
     const isPositive = asset.change24h >= 0;
     // Figma Colors: success #3FEA9B, primaryCTA #B1F128, negative #FB406E
@@ -127,14 +128,18 @@ export const AssetListItem: React.FC<AssetListItemProps> = ({
                     style={styles.balance}
                     numberOfLines={1}
                 >
-                    {formatTokenQuantity(asset.balanceFormatted.replace(/,/g, ''))} {asset.symbol}
+                    {isBalanceHidden ? '****' : `${formatTokenQuantity(asset.balanceFormatted.replace(/,/g, ''))} ${asset.symbol}`}
                 </Text>
 
                 {/* USD Value */}
-                <TokenPrice
-                    amount={asset.usdValue}
-                    style={styles.usdValue}
-                />
+                {isBalanceHidden ? (
+                    <Text style={styles.usdValue}>****</Text>
+                ) : (
+                    <TokenPrice
+                        amount={asset.usdValue}
+                        style={styles.usdValue}
+                    />
+                )}
             </View>
         </TouchableOpacity>
     );

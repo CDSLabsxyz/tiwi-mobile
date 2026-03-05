@@ -5,6 +5,7 @@
  */
 
 import { colors } from "@/constants";
+import { useWalletBalances } from "@/hooks/useWalletBalances";
 import { RiskCheckResult, securityGuard } from "@/services/securityGuard";
 import { transactionService } from "@/services/transactionService";
 import { useSecurityStore } from "@/store/securityStore";
@@ -15,7 +16,7 @@ import { isNativeToken, truncateAddress } from "@/utils/wallet";
 import { Image } from "expo-image";
 import React, { useEffect, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { formatEther } from "viem";
+import { formatEther, parseUnits } from "viem";
 
 const AlertIcon = require("@/assets/wallet/alert-square.svg");
 const CheckmarkIcon = require("@/assets/swap/checkmark-circle-01.svg");
@@ -32,6 +33,9 @@ export const SendReview: React.FC<SendReviewProps> = ({ onConfirm }) => {
   const [riskResult, setRiskResult] = useState<RiskCheckResult | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [isEstimatingGas, setIsEstimatingGas] = useState(false);
+
+  const { data: balanceData } = useWalletBalances();
+  const [insufficientGas, setInsufficientGas] = useState(false);
 
   useEffect(() => {
     const runInitialChecks = async () => {
@@ -63,6 +67,25 @@ export const SendReview: React.FC<SendReviewProps> = ({ onConfirm }) => {
           const feeUSDStr = `$${gasCostUSD.toFixed(4)}`;
 
           setNetworkFee(feeStr, feeUSDStr);
+
+          // 3. Final Balance Check (Native for Gas)
+          if (balanceData?.tokens) {
+            const nativeToken = balanceData.tokens.find(t =>
+              t.chainId === selectedChain.id &&
+              (t.address === "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" ||
+                t.address === "0x0000000000000000000000000000000000000000")
+            );
+
+            if (nativeToken) {
+              const nativeBalance = BigInt(nativeToken.balance);
+              const isNative = isNativeToken(selectedToken.address);
+              const totalCost = isNative
+                ? BigInt(parseUnits(amount, selectedToken.decimals)) + gasCostNative
+                : gasCostNative;
+
+              setInsufficientGas(nativeBalance < totalCost);
+            }
+          }
         } catch (e) {
           console.error('Failed to estimate gas in review:', e);
         } finally {
@@ -122,7 +145,21 @@ export const SendReview: React.FC<SendReviewProps> = ({ onConfirm }) => {
           </View>
         </View>
         <View style={styles.feeValueWrapper}>
-          <Text style={styles.detailValueSmall}>{isEstimatingGas ? 'Calculating...' : networkFee}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            {insufficientGas && (
+              <Text style={{
+                fontFamily: 'Manrope-Bold',
+                fontSize: 10,
+                color: '#EF4444',
+                textTransform: 'uppercase'
+              }}>
+                Insufficient for gas
+              </Text>
+            )}
+            <Text style={[styles.detailValueSmall, insufficientGas && { color: '#EF4444' }]}>
+              {isEstimatingGas ? 'Calculating...' : networkFee}
+            </Text>
+          </View>
           <Text style={styles.feeDetail}>{isEstimatingGas ? '...' : networkFeeUSD}</Text>
         </View>
       </View>

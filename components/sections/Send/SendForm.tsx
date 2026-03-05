@@ -7,12 +7,12 @@
 import { colors } from "@/constants";
 import { useSecurityStore } from "@/store/securityStore";
 import { useSendStore } from "@/store/sendStore";
+import { useToastStore } from "@/store/useToastStore";
 import { validateAddress, validateAmount } from "@/utils/addressValidation";
 import * as Clipboard from "expo-clipboard";
 import { Image } from "expo-image";
 import React, { useEffect, useState } from "react";
 import { Text, TextInput, TouchableOpacity, View } from "react-native";
-import { useToastStore } from "@/store/useToastStore";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SendTokenSelector } from "./SendTokenSelector";
 import { WhitelistSelectSheet } from "./WhitelistSelectSheet";
@@ -91,15 +91,49 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext }) => {
     }
   }, [localAmount]);
 
-  const handleMaxPress = () => {
-    if (selectedToken) {
-      const balance = parseFloat(selectedToken.balanceToken.split(" ")[0].replace(/,/g, "")) || 0;
-      const maxAmount = balance * 0.9995; // 99.95% to leave gas
-      const maxAmountStr = maxAmount.toFixed(8);
-      setLocalAmount(maxAmountStr);
-      sendStore.setAmount(maxAmountStr);
-    }
+  // Comma formatting utilities
+  const formatWithCommas = (value: string) => {
+    if (!value) return "";
+    const parts = value.split(".");
+    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    return parts.join(".");
   };
+
+  const parseRawValue = (value: string) => {
+    return value.replace(/,/g, "");
+  };
+
+  const getCleanBalance = () => {
+    if (!selectedToken) return 0;
+    return parseFloat(selectedToken.balanceToken.split(" ")[0].replace(/,/g, "")) || 0;
+  };
+
+  const isInsufficient = selectedToken ? parseFloat(parseRawValue(localAmount) || "0") > getCleanBalance() : false;
+
+  const handlePercentagePress = (percent: number) => {
+    if (!selectedToken) return;
+    const balance = getCleanBalance();
+
+    let targetAmount = 0;
+    if (percent === 100) {
+      // Smart Max Logic: Reserve for gas if native
+      const isNative = selectedToken.address === "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" ||
+        selectedToken.address === "0x0000000000000000000000000000000000000000" ||
+        selectedToken.symbol === "BNB" || selectedToken.symbol === "ETH";
+
+      const reserve = isNative ? 0.005 : 0;
+      targetAmount = Math.max(0, balance - reserve);
+    } else {
+      targetAmount = balance * (percent / 100);
+    }
+
+    const amountStr = targetAmount === 0 ? "" : targetAmount.toFixed(6).replace(/\.?0+$/, "");
+    setLocalAmount(formatWithCommas(amountStr));
+    sendStore.setAmount(amountStr);
+  };
+
+  // Re-map handleMaxPress for safety
+  const handleMaxPress = () => handlePercentagePress(100);
 
   const handleAddressChange = (text: string) => {
     setLocalAddress(text);
@@ -107,10 +141,11 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext }) => {
   };
 
   const handleAmountChange = (text: string) => {
+    const raw = parseRawValue(text);
     // Only allow numbers and one decimal point
-    if (text === "" || /^\d*\.?\d*$/.test(text)) {
-      setLocalAmount(text);
-      sendStore.setAmount(text);
+    if (raw === "" || /^\d*\.?\d*$/.test(raw)) {
+      setLocalAmount(formatWithCommas(raw));
+      sendStore.setAmount(raw);
     }
   };
 
@@ -409,18 +444,6 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext }) => {
             >
               {selectedToken?.balanceToken.split(" ")[0] || "0"}
             </Text>
-            <TouchableOpacity activeOpacity={0.8} onPress={handleMaxPress}>
-              <Text
-                style={{
-                  fontFamily: "Manrope-SemiBold",
-                  fontSize: 12,
-                  lineHeight: 18,
-                  color: colors.primaryCTA,
-                }}
-              >
-                Max
-              </Text>
-            </TouchableOpacity>
           </View>
         </View>
         <View
@@ -437,8 +460,8 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext }) => {
               paddingHorizontal: 17,
               paddingVertical: 10,
               justifyContent: "center",
-              borderWidth: amountError ? 1 : 0,
-              borderColor: amountError ? "#EF4444" : "transparent",
+              borderWidth: (amountError || isInsufficient) ? 1 : 0,
+              borderColor: (amountError || isInsufficient) ? "#EF4444" : "transparent",
             }}
           >
             <View
@@ -475,7 +498,43 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext }) => {
               </Text>
             </View>
           </View>
-          {amountError && (
+
+          {/* Percentage Presets Row */}
+          <View style={{
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            marginTop: 4,
+            width: '100%',
+            gap: 12
+          }}>
+            {[25, 50, 75, 100].map((pct) => (
+              <TouchableOpacity
+                key={pct}
+                onPress={() => handlePercentagePress(pct)}
+                activeOpacity={0.7}
+                style={{
+                  flex: 1,
+                  height: 38,
+                  backgroundColor: colors.bgSemi,
+                  borderRadius: 10,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderWidth: 1,
+                  borderColor: 'rgba(255, 255, 255, 0.05)'
+                }}
+              >
+                <Text style={{
+                  fontFamily: 'Manrope-SemiBold',
+                  fontSize: 13,
+                  color: colors.titleText
+                }}>
+                  {pct === 100 ? 'Max' : `${pct}%`}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {(amountError || isInsufficient) && (
             <Text
               style={{
                 fontFamily: "Manrope-Regular",
@@ -483,9 +542,10 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext }) => {
                 lineHeight: 14,
                 color: "#EF4444",
                 paddingLeft: 17,
+                marginTop: 4
               }}
             >
-              {amountError}
+              {isInsufficient ? "Insufficient balance" : amountError}
             </Text>
           )}
         </View>

@@ -25,11 +25,11 @@ import { validateAddress, validateAddresses, validateAmount } from '@/utils/addr
 import { mapAssetToTokenOption } from '@/utils/assetMapping';
 import { isNativeToken } from '@/utils/wallet';
 import * as Haptics from 'expo-haptics';
+import { useLocalSearchParams, usePathname, useRouter } from 'expo-router';
+import { useEffect } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter, usePathname, useLocalSearchParams } from 'expo-router';
-import { useEffect } from 'react';
 
 export default function SendScreen() {
     const { top, bottom } = useSafeAreaInsets();
@@ -60,6 +60,8 @@ export default function SendScreen() {
         chainId?: string;
         logo?: string;
         priceUSD?: string;
+        address?: string;
+        decimals?: string;
     }>();
 
     const sendStore = useSendStore();
@@ -112,6 +114,8 @@ export default function SendScreen() {
                 balanceToken: params.balance || '0',
                 balanceFiat: params.usdValue || '$0',
                 priceUSD: params.priceUSD || '0',
+                address: params.address,
+                decimals: params.decimals ? Number(params.decimals) : undefined,
             };
 
             const chain = chains.find(c => String(c.id) === params.chainId);
@@ -235,14 +239,10 @@ export default function SendScreen() {
         }
 
         // Check if active wallet is local or external
-        console.log("🚀 ~ handleConfirmFromReview ~ walletAddress:", walletAddress)
         const wallet = walletGroups.find((g: any) => {
-            console.log("🚀 ~ handleConfirmFromReview ~ g:", g)
             return Object.values(g.addresses).some((addr: any) => addr?.toLowerCase() === walletAddress?.toLowerCase());
         });
-        console.log("🚀 ~ handleConfirmFromReview ~ wallet:", wallet)
         const isLocal = wallet?.source === 'local' || wallet?.source === 'internal' || wallet?.source === 'imported';
-        console.log("🚀 ~ handleConfirmFromReview ~ isLocal:", isLocal)
 
         if (isLocal) {
             // Local wallet needs passcode
@@ -306,7 +306,7 @@ export default function SendScreen() {
 
     const handleSuccessDone = () => {
         resetSendState();
-        router.replace('/(tabs)' as any);
+        router.replace('/(tabs)/wallet' as any);
     };
 
     // Render current step
@@ -427,21 +427,24 @@ export default function SendScreen() {
         return false;
     };
 
+
     return (
         <View style={[styles.container, { backgroundColor: colors.bg }]}>
             <CustomStatusBar />
 
             {/* Sticky Header */}
-            <View style={[styles.header, { paddingTop: top || 0 }]}>
-                <WalletHeader
-                    walletAddress={walletAddress || '0x'}
-                    onSettingsPress={handleSettingsPress}
-                    showBackButton
-                    onBackPress={handleBackPress}
-                    showIrisScan={false}
-                    showSettings={true}
-                />
-            </View>
+            {currentStep !== 'passcode' && (
+                <View style={[styles.header, { paddingTop: top || 0 }]}>
+                    <WalletHeader
+                        walletAddress={walletAddress || '0x'}
+                        onSettingsPress={handleSettingsPress}
+                        showBackButton
+                        onBackPress={handleBackPress}
+                        showIrisScan={false}
+                        showSettings={true}
+                    />
+                </View>
+            )}
 
             {/* Content */}
             {/* <KeyboardAvoidingView
@@ -456,10 +459,14 @@ export default function SendScreen() {
                         styles.scrollContent,
                         {
                             paddingBottom: currentStep === 'select-asset' || currentStep === 'review' ? 100 : 80,
+                            flex: currentStep === 'passcode' ? 1 : 0, // Ensure it fills screen if passcode
+                            paddingHorizontal: currentStep === 'passcode' ? 0 : 18,
+                            paddingTop: currentStep === 'passcode' ? 0 : 20,
                         }
                     ]}
                     showsVerticalScrollIndicator={false}
                     keyboardShouldPersistTaps="handled"
+                    scrollEnabled={currentStep !== 'passcode'}
                 >
                     {renderContent()}
                 </ScrollView>

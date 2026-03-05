@@ -53,9 +53,11 @@ interface WalletState {
   _hasHydrated: boolean;
   setHasHydrated: (state: boolean) => void;
 
-  // Global Modal Control
+  // Global Modal & UI Control
   isWalletModalVisible: boolean;
   setWalletModalVisible: (visible: boolean) => void;
+  isBalanceHidden: boolean;
+  toggleBalanceVisibility: () => void;
 }
 
 export const useWalletStore = create<WalletState>()(
@@ -214,9 +216,11 @@ export const useWalletStore = create<WalletState>()(
       _hasHydrated: false,
       setHasHydrated: (state) => set({ _hasHydrated: state }),
 
-      // Global Modal Implementation
+      // Global Modal & UI Implementation
       isWalletModalVisible: false,
       setWalletModalVisible: (visible) => set({ isWalletModalVisible: visible }),
+      isBalanceHidden: false,
+      toggleBalanceVisibility: () => set((state) => ({ isBalanceHidden: !state.isBalanceHidden })),
     }),
     {
       name: 'tiwi-wallet-storage',

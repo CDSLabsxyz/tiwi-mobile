@@ -4,9 +4,20 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Clipboard from 'expo-clipboard';
 import { Image as ExpoImage } from 'expo-image';
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useState } from 'react';
+import { ActivityIndicator, Dimensions, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, {
+    interpolate,
+    runOnJS,
+    useAnimatedStyle,
+    useSharedValue,
+    withSpring,
+    withTiming
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 import { useWalletBalances } from '@/hooks/useWalletBalances';
 import { useWalletStore } from '@/store/walletStore';
@@ -47,6 +58,10 @@ export const WalletModal: React.FC<WalletModalProps> = (props) => {
     } = props;
 
     const router = useRouter();
+    const { bottom = 0 } = useSafeAreaInsets() || { bottom: 0 };
+
+    // 1. Store hooks (Call first)
+    const store = useWalletStore();
     const {
         address: storeAddress,
         walletGroups = [],
@@ -54,18 +69,79 @@ export const WalletModal: React.FC<WalletModalProps> = (props) => {
         setActiveGroup,
         removeWalletGroup,
         isConnected,
+        isBalanceHidden,
+        toggleBalanceVisibility,
         _hasHydrated
-    } = useWalletStore() || { _hasHydrated: false, walletGroups: [], address: '', activeGroupId: null, isConnected: false, removeWalletGroup: () => { } };
+    } = store || { _hasHydrated: false, walletGroups: [], address: '', activeGroupId: null, isConnected: false, isBalanceHidden: false, toggleBalanceVisibility: () => { }, removeWalletGroup: () => { } };
 
-    if (!_hasHydrated) return null;
+    // 2. Data and State hooks
+    const { data: balanceData, isLoading: isBalanceLoading } = useWalletBalances();
+    const [mode, setMode] = useState<ModalMode>('MAIN');
+    const [copied, setCopied] = useState(false);
+
+    // 3. Animation hooks
+    const translateY = useSharedValue(0);
+    const context = useSharedValue({ y: 0 });
+
+    const closeModal = useCallback(() => {
+        'worklet';
+        runOnJS(onClose)();
+    }, [onClose]);
+
+    // Reset translateY when modal opens
+    React.useEffect(() => {
+        if (visible) {
+            translateY.value = 0;
+        }
+    }, [visible]);
+
+    // Use a fixed modal height for consistent interpolation
+    const modalHeight = isConnected ? 600 : 400;
+
+    const gesture = Gesture.Pan()
+        .onStart(() => {
+            context.value = { y: translateY.value };
+        })
+        .onUpdate((event) => {
+            translateY.value = Math.max(0, event.translationY + context.value.y);
+        })
+        .onEnd((event) => {
+            if (translateY.value > modalHeight / 4 || event.velocityY > 500) {
+                translateY.value = withTiming(modalHeight, { duration: 200 }, () => {
+                    closeModal();
+                });
+            } else {
+                translateY.value = withSpring(0, {
+                    damping: 25,
+                    stiffness: 200,
+                    mass: 0.8
+                });
+            }
+        })
+        .activeOffsetY(5)
+        .failOffsetY(-5);
+
+    const animatedModalStyle = useAnimatedStyle(() => ({
+        transform: [{ translateY: translateY.value }],
+    }));
+
+    const animatedBackdropStyle = useAnimatedStyle(() => ({
+        opacity: interpolate(
+            translateY.value,
+            [0, modalHeight],
+            [1, 0],
+            'clamp'
+        ),
+    }));
+
+    // EARLY RENDERING CHECK (Must be after all hooks)
+    if (!_hasHydrated || (!visible && translateY.value === 0)) return null;
 
     // Safety: Ensure groups is always an array
     const safeGroups = Array.isArray(walletGroups) ? walletGroups : [];
     const activeGroup = safeGroups.find(g => g && g.id === activeGroupId);
     const walletIcon = activeGroup?.walletIcon;
 
-    // 3. Balance Calculations
-    const { data: balanceData, isLoading: isBalanceLoading } = useWalletBalances();
     const liveTotalBalance = balanceData?.totalNetWorthUsd ? `$${balanceData.totalNetWorthUsd}` : '$0.00';
 
     const activeAddress = walletAddress || storeAddress;
@@ -74,8 +150,6 @@ export const WalletModal: React.FC<WalletModalProps> = (props) => {
     if (activeAddress) {
         console.log(`[WalletModal] Rendering with activeAddress: ${activeAddress}, Chain: ${activeChain}`);
     }
-
-    const [mode, setMode] = useState<ModalMode>('MAIN');
 
     // Use provider icon if available and valid URI, otherwise fallback to TiwiCat
     const hasExternalIcon = typeof walletIcon === 'string' && walletIcon.trim().length > 0;
@@ -86,9 +160,7 @@ export const WalletModal: React.FC<WalletModalProps> = (props) => {
 
     // Final displayed balance
     const displayBalance = initialBalance || liveTotalBalance;
-    const { bottom = 0 } = useSafeAreaInsets() || { bottom: 0 };
-    const modalHeight = isConnected ? 600 : 400;
-    const [copied, setCopied] = useState(false);
+
 
     const handleCopyAddress = async () => {
         if (!fullAddress) return;
@@ -168,7 +240,16 @@ export const WalletModal: React.FC<WalletModalProps> = (props) => {
                         }}
                     >
                         <View style={styles.balanceHeader}>
-                            <Text style={styles.cardLabel}>Total Balance</Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                <Text style={styles.cardLabel}>Total Balance</Text>
+                                <TouchableOpacity onPress={toggleBalanceVisibility}>
+                                    <Ionicons
+                                        name={isBalanceHidden ? "eye-off-outline" : "eye-outline"}
+                                        size={16}
+                                        color={colors.mutedText}
+                                    />
+                                </TouchableOpacity>
+                            </View>
                             {isBalanceLoading && (
                                 <View style={{ marginLeft: 8 }}>
                                     <ActivityIndicator size="small" color={colors.primaryCTA} />
@@ -180,7 +261,7 @@ export const WalletModal: React.FC<WalletModalProps> = (props) => {
                             </TouchableOpacity>
                         </View>
                         <Text style={[styles.balanceText, { color: isBalanceLoading ? '#6E7873' : colors.titleText }]}>
-                            {isBalanceLoading && displayBalance === '$0.00' ? 'Updating...' : (displayBalance === '$0.00' && !isBalanceLoading ? '$0.00' : displayBalance)}
+                            {isBalanceHidden ? '****' : (isBalanceLoading && displayBalance === '$0.00' ? 'Updating...' : (displayBalance === '$0.00' && !isBalanceLoading ? '$0.00' : displayBalance))}
                         </Text>
                     </TouchableOpacity>
 
@@ -287,50 +368,54 @@ export const WalletModal: React.FC<WalletModalProps> = (props) => {
         </View>
     );
 
-    if (!visible) return null;
+
 
     try {
         return (
             <View style={[StyleSheet.absoluteFill, { zIndex: 999999, elevation: 999999 }]}>
                 {/* 1. FULL SCREEN BACKDROP */}
-                <Pressable
-                    onPress={onClose}
-                    style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.85)' }]}
-                />
+                <Animated.View style={[StyleSheet.absoluteFill, animatedBackdropStyle]}>
+                    <Pressable
+                        onPress={onClose}
+                        style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.85)' }]}
+                    />
+                </Animated.View>
 
                 {/* 2. MODAL CONTENT AREA */}
-                <View
-                    style={{
-                        position: 'absolute',
-                        bottom: 0,
-                        width: '100%',
-                        maxHeight: '90%', // Don't cover status bar
-                        height: modalHeight,
-                        backgroundColor: colors.bgSemi,
-                        borderTopLeftRadius: 32,
-                        borderTopRightRadius: 32,
-                        borderTopWidth: 1,
-                        borderColor: colors.bgStroke,
-                        zIndex: 1000001,
-                        overflow: 'hidden'
-                    }}
-                >
-                    <View style={styles.handleBarContainer}>
-                        <View style={styles.handleBar} />
-                    </View>
-
-                    <ScrollView
-                        style={{ flex: 1 }}
-                        contentContainerStyle={{
-                            paddingHorizontal: 24,
-                            paddingBottom: bottom + 40,
-                            alignItems: 'center'
-                        }}
-                        showsVerticalScrollIndicator={false}
+                <GestureDetector gesture={gesture}>
+                    <Animated.View
+                        style={[{
+                            position: 'absolute',
+                            bottom: 0,
+                            width: '100%',
+                            maxHeight: '90%', // Don't cover status bar
+                            height: modalHeight,
+                            backgroundColor: colors.bgSemi,
+                            borderTopLeftRadius: 32,
+                            borderTopRightRadius: 32,
+                            borderTopWidth: 1,
+                            borderColor: colors.bgStroke,
+                            zIndex: 1000001,
+                            overflow: 'hidden'
+                        }, animatedModalStyle]}
                     >
-                        {mode === 'MAIN' ? renderMainView() : renderAddOptionsView()}
-                    </ScrollView>
-                </View>
+                        <View style={styles.handleBarContainer}>
+                            <View style={styles.handleBar} />
+                        </View>
+
+                        <ScrollView
+                            style={{ flex: 1 }}
+                            contentContainerStyle={{
+                                paddingHorizontal: 24,
+                                paddingBottom: bottom + 40,
+                                alignItems: 'center'
+                            }}
+                            showsVerticalScrollIndicator={false}
+                        >
+                            {mode === 'MAIN' ? renderMainView() : renderAddOptionsView()}
+                        </ScrollView>
+                    </Animated.View>
+                </GestureDetector>
             </View>
         );
     } catch (e) {

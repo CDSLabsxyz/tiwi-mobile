@@ -40,13 +40,21 @@ export const useTransactionExecution = () => {
     const { sendTransactionAsync } = useSendTransaction();
 
     const execute = useCallback(async (params: SendTokenParams) => {
+        // Metadata Guard: Ensure we have the minimum requirements for a valid transaction
+        if (params.decimals === undefined || params.decimals === null) {
+            throw new Error('Token decimals are missing. Cannot calculate amount safely.');
+        }
+        if (!params.isNative && (!params.tokenAddress || params.tokenAddress === 'native')) {
+            throw new Error('Contract address is missing for ERC20 transfer.');
+        }
+
         setIsExecuting(true);
         setError(null);
         setLastHash(null);
 
         try {
             const { walletGroups } = useWalletStore.getState();
-            const wallet = walletGroups.find(g => 
+            const wallet = walletGroups.find(g =>
                 Object.values(g.addresses).some(addr => addr?.toLowerCase() === activeAddress?.toLowerCase())
             );
             const isLocal = wallet?.source === 'local' || wallet?.source === 'internal' || wallet?.source === 'imported';
@@ -115,13 +123,18 @@ export const useTransactionExecution = () => {
     }, [activeAddress, writeContractAsync, sendTransactionAsync]);
 
     const executeMulti = useCallback(async (params: Omit<SendTokenParams, 'recipientAddress' | 'amount'> & { recipients: string[]; amounts: string[] }) => {
+        // Metadata Guard
+        if (params.decimals === undefined || params.decimals === null) {
+            throw new Error('Token decimals are missing for multi-send.');
+        }
+
         setIsExecuting(true);
         setError(null);
         setLastHash(null);
 
         try {
             const { walletGroups } = useWalletStore.getState();
-            const wallet = walletGroups.find(g => 
+            const wallet = walletGroups.find(g =>
                 Object.values(g.addresses).some(addr => addr?.toLowerCase() === activeAddress?.toLowerCase())
             );
             const isLocal = wallet?.source === 'local' || wallet?.source === 'internal' || wallet?.source === 'imported';

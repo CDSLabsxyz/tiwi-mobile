@@ -354,7 +354,8 @@ export function toSmallestUnit(amount: string, decimals: number): string {
     const decimalIndex = amountStr.indexOf(".");
     if (decimalIndex === -1) {
         const amountBigInt = BigInt(amountStr);
-        const decimalsMultiplier = BigInt(10 ** decimals);
+        const safeDecimals = Math.max(0, decimals || 0);
+        const decimalsMultiplier = BigInt(10) ** BigInt(safeDecimals);
         return (amountBigInt * decimalsMultiplier).toString();
     }
 

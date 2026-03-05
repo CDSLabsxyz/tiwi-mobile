@@ -61,18 +61,25 @@ export class LocalSignerEngine implements SignerEngine {
             : await this.createSecureAccount(address);
         const chain = getChainById(Number(tx.chainId) || 1);
 
+        const isNative = !tx.data || tx.data === '0x' || tx.data === '';
+
         const walletClient = createWalletClient({
             account,
             chain,
             transport: http()
         });
 
-        return await walletClient.signTransaction({
+        const signArgs: any = {
             to: tx.to as `0x${string}`,
-            value: tx.value ? BigInt(tx.value) : undefined,
-            data: tx.data as `0x${string}`,
-            chainId: Number(tx.chainId)
-        } as any);
+            value: tx.value ? BigInt(tx.value) : 0n,
+            chain: chain,
+        };
+
+        if (!isNative) {
+            signArgs.data = tx.data as `0x${string}`;
+        }
+
+        return await walletClient.signTransaction(signArgs);
     }
 
     async sendTransaction(tx: TransactionRequest, address: string, options?: { skipAuthorize?: boolean }): Promise<ExecutionResult> {
@@ -81,6 +88,7 @@ export class LocalSignerEngine implements SignerEngine {
                 ? await this.getRawAccount(address)
                 : await this.createSecureAccount(address);
             const chain = getChainById(Number(tx.chainId) || 1);
+            const isNative = !tx.data || tx.data === '0x' || tx.data === '';
 
             const walletClient = createWalletClient({
                 account,
@@ -88,13 +96,15 @@ export class LocalSignerEngine implements SignerEngine {
                 transport: http()
             });
 
+            // Standardize txArgs to match viem's SendTransactionParameters
             const txArgs: any = {
                 to: tx.to as `0x${string}`,
-                value: tx.value ? BigInt(tx.value) : undefined,
-                chainId: Number(tx.chainId)
+                value: tx.value ? BigInt(tx.value) : 0n,
+                chain: chain, // Use full chain object to fix TS error
             };
 
-            if (tx.data && tx.data.startsWith('0x')) {
+            // Only add data if it's a real contract call (ERC20, Disperse, etc.)
+            if (!isNative) {
                 txArgs.data = tx.data as `0x${string}`;
             }
 
@@ -102,27 +112,32 @@ export class LocalSignerEngine implements SignerEngine {
             // We apply a 20% price premium and 30% limit buffer.
             try {
                 const publicClient = await this.getPublicClient(Number(tx.chainId) || 1);
-                
+
                 // 1. Gas Price Buffer (20% above network base)
                 const networkPrice = await publicClient.getGasPrice();
                 txArgs.gasPrice = (networkPrice * 120n) / 100n;
 
-                // 2. Gas Limit Buffer (30% above network estimate)
-                const estimate = await publicClient.estimateGas({
-                    account: walletClient.account!,
-                    to: txArgs.to,
-                    data: txArgs.data,
-                    value: txArgs.value,
-                });
-                txArgs.gas = (estimate * 130n) / 100n;
-                console.log(`[SmartSigner] Using buffered gas: ${txArgs.gas} and price: ${txArgs.gasPrice}`);
+                // 2. Gas Limit Buffer
+                if (isNative) {
+                    // Simple native transfers are always 21,000 gas. 
+                    // We use 21,000 with a buffer to ensure it stays a 'Transfer' on explorers.
+                    txArgs.gas = 21000n;
+                } else {
+                    const estimate = await publicClient.estimateGas({
+                        account: walletClient.account!,
+                        to: txArgs.to,
+                        data: txArgs.data,
+                        value: txArgs.value,
+                    });
+                    txArgs.gas = (estimate * 130n) / 100n;
+                }
             } catch (estError) {
                 console.warn("[SmartSigner] Estimation failed, allowing provider to handle gas defaults.");
             }
 
             const hash = await walletClient.sendTransaction(txArgs);
 
-            return { hash, status: 'success' };
+            return { hash, status: 'success'};
         } catch (error: any) {
             console.error('[LocalSignerEngine] Transaction failed', error);
             return {

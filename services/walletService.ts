@@ -38,6 +38,8 @@ export interface PortfolioItem {
   usdValue: string;
   change24h: number;
   chainId: ChainId; // The chain this token belongs to
+  address: string; // Contract address or 'native'
+  decimals: number; // Token decimals
   chartData?: string; // Placeholder for chart image URL (70px wide, 32px tall)
 }
 
@@ -82,8 +84,10 @@ export const fetchWalletData = async (address: string): Promise<WalletData> => {
       balance: '0.01912343',
       usdValue: '$10,234.23',
       change24h: 2.5,
-      chainId: 'ethereum', // Wrapped BTC on Ethereum
-      chartData: 'https://www.figma.com/api/mcp/asset/a34680f1-9f3f-432d-9c1d-762d12a6bd6b', // Placeholder chart
+      chainId: 'ethereum',
+      address: '0x2260fac5e5542a773aa44fbcfedf7c193bc2c599', // WBTC
+      decimals: 8,
+      chartData: 'https://www.figma.com/api/mcp/asset/a34680f1-9f3f-432d-9c1d-762d12a6bd6b',
     },
     {
       id: '2',
@@ -93,8 +97,10 @@ export const fetchWalletData = async (address: string): Promise<WalletData> => {
       balance: '20,000.85',
       usdValue: '$10,234.23',
       change24h: -1.2,
-      chainId: 'aegis', // Solana native chain (mapped to Aegis Core)
-      chartData: 'https://www.figma.com/api/mcp/asset/71d4ca90-aa21-438e-ae22-6d8a1be63c75', // Placeholder chart
+      chainId: 'aegis',
+      address: 'native',
+      decimals: 9,
+      chartData: 'https://www.figma.com/api/mcp/asset/71d4ca90-aa21-438e-ae22-6d8a1be63c75',
     },
     {
       id: '3',
@@ -104,8 +110,10 @@ export const fetchWalletData = async (address: string): Promise<WalletData> => {
       balance: '1,580.8565',
       usdValue: '$10,234.23',
       change24h: 0.8,
-      chainId: 'apex', // BNB Smart Chain (mapped to Apex Network)
-      chartData: 'https://www.figma.com/api/mcp/asset/a6e0181b-66a8-4fbb-b069-6ceace500a3f', // Placeholder chart
+      chainId: 'apex',
+      address: 'native',
+      decimals: 18,
+      chartData: 'https://www.figma.com/api/mcp/asset/a6e0181b-66a8-4fbb-b069-6ceace500a3f',
     },
     {
       id: '4',
@@ -115,8 +123,10 @@ export const fetchWalletData = async (address: string): Promise<WalletData> => {
       balance: '0.1582890708008970',
       usdValue: '$10,234.23',
       change24h: -2.5,
-      chainId: 'ethereum', // Ethereum native
-      chartData: 'https://www.figma.com/api/mcp/asset/71d4ca90-aa21-438e-ae22-6d8a1be63c75', // Placeholder chart
+      chainId: 'ethereum',
+      address: 'native',
+      decimals: 18,
+      chartData: 'https://www.figma.com/api/mcp/asset/71d4ca90-aa21-438e-ae22-6d8a1be63c75',
     },
   ];
 
@@ -379,6 +389,8 @@ export interface AssetDetail {
   change24h: number; // Percentage change (can be negative)
   change24hAmount: string; // e.g., "0,10%"
   chainId: ChainId; // The chain this token belongs to
+  address: string;
+  decimals: number;
   priceUSD: string;
   chartData: {
     [key in ChartTimePeriod]: ChartDataPoint[];
@@ -489,7 +501,9 @@ const getPortfolioData = async (): Promise<PortfolioItem[]> => {
       balance: '0.01912343',
       usdValue: '$10,234.23',
       change24h: 2.5,
-      chainId: 'ethereum', // Wrapped BTC on Ethereum
+      chainId: 'ethereum',
+      address: '0x2260fac5e5542a773aa44fbcfedf7c193bc2c599', // WBTC
+      decimals: 8,
       chartData: 'https://www.figma.com/api/mcp/asset/a34680f1-9f3f-432d-9c1d-762d12a6bd6b',
     },
     {
@@ -500,7 +514,9 @@ const getPortfolioData = async (): Promise<PortfolioItem[]> => {
       balance: '20,000.85',
       usdValue: '$10,234.23',
       change24h: -1.2,
-      chainId: 'aegis', // Solana native chain (mapped to Aegis Core)
+      chainId: 'aegis',
+      address: 'native',
+      decimals: 9,
       chartData: 'https://www.figma.com/api/mcp/asset/71d4ca90-aa21-438e-ae22-6d8a1be63c75',
     },
     {
@@ -511,7 +527,9 @@ const getPortfolioData = async (): Promise<PortfolioItem[]> => {
       balance: '1,580.8565',
       usdValue: '$10,234.23',
       change24h: 0.8,
-      chainId: 'apex', // BNB Smart Chain (mapped to Apex Network)
+      chainId: 'apex',
+      address: 'native',
+      decimals: 18,
       chartData: 'https://www.figma.com/api/mcp/asset/a6e0181b-66a8-4fbb-b069-6ceace500a3f',
     },
     {
@@ -522,7 +540,9 @@ const getPortfolioData = async (): Promise<PortfolioItem[]> => {
       balance: '0.15828',
       usdValue: '$10,234.23',
       change24h: -2.5,
-      chainId: 'ethereum', // Ethereum native
+      chainId: 'ethereum',
+      address: 'native',
+      decimals: 18,
       chartData: 'https://www.figma.com/api/mcp/asset/71d4ca90-aa21-438e-ae22-6d8a1be63c75',
     },
   ];
@@ -581,6 +601,8 @@ export const fetchAssetDetail = async (assetId: string): Promise<AssetDetail> =>
       change24hAmount: isPositive ? '0,10%' : '-0,10%',
       priceUSD: '1800.00',
       chainId: 'ethereum', // Default to Ethereum if asset not found
+      address: 'native',
+      decimals: 18,
       chartData: {
         '1D': generateChartData(24, isPositive ? 'up' : 'down'),
         '1W': generateChartData(7, isPositive ? 'up' : 'down'),
@@ -672,6 +694,8 @@ export const fetchAssetDetail = async (assetId: string): Promise<AssetDetail> =>
     change24h: portfolioAsset.change24h / 100, // Convert percentage to decimal
     change24hAmount: change24hAmount,
     chainId: portfolioAsset.chainId, // Preserve chain information from portfolio
+    address: portfolioAsset.address,
+    decimals: portfolioAsset.decimals,
     chartData: {
       '1D': generateChartData(24, isPositive ? 'up' : 'down'),
       '1W': generateChartData(7, isPositive ? 'up' : 'down'),

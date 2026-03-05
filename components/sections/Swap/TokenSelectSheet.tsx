@@ -1,14 +1,14 @@
+import { TIWILoader } from '@/components/ui/TIWILoader';
 import { colors } from '@/constants/colors';
 import { useChains } from '@/hooks/useChains';
 import { useTokens } from '@/hooks/useTokens';
 import { useWalletBalances } from '@/hooks/useWalletBalances';
-import { getColorFromSeed, formatTokenQuantity, formatUSDPrice } from '@/utils/formatting';
-import { truncateAddress } from '@/utils/wallet';
+import { formatTokenQuantity, formatUSDPrice, getColorFromSeed } from '@/utils/formatting';
+import { MORALIS_NATIVE_ADDRESS, NATIVE_TOKEN_ADDRESS, truncateAddress } from '@/utils/wallet';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import React, { useState } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { TIWILoader } from '@/components/ui/TIWILoader';
 import type { ChainId } from './ChainSelectSheet';
 import { SelectionBottomSheet } from './SelectionBottomSheet';
 
@@ -61,7 +61,7 @@ export const TokenSelectSheet: React.FC<TokenSelectSheetProps> = ({
         if (!tokens) return [];
 
         const TWC_ADDRESS = '0xda1060158f7d593667cce0a15db346bb3ffb3596'.toLowerCase();
-        const NATIVE_ADDRS = ['0x0000000000000000000000000000000000000000', '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'];
+        const NATIVE_ADDRS = [NATIVE_TOKEN_ADDRESS, MORALIS_NATIVE_ADDRESS];
 
         // Filtering: Smart Heuristic Scam Filter
         const filteredTokens = tokens.filter(t => {
@@ -140,10 +140,10 @@ export const TokenSelectSheet: React.FC<TokenSelectSheetProps> = ({
             const nativeSymbol = chainInfo?.nativeCurrency?.symbol;
 
             // 1. Native Token is absolute priority (#1)
-            const isANative = NATIVE_ADDRS.includes(a.address.toLowerCase()) || 
-                             (nativeSymbol && a.symbol.toUpperCase() === nativeSymbol.toUpperCase());
-            const isBNative = NATIVE_ADDRS.includes(b.address.toLowerCase()) || 
-                             (nativeSymbol && b.symbol.toUpperCase() === nativeSymbol.toUpperCase());
+            const isANative = NATIVE_ADDRS.includes(a.address.toLowerCase()) ||
+                (nativeSymbol && a.symbol.toUpperCase() === nativeSymbol.toUpperCase());
+            const isBNative = NATIVE_ADDRS.includes(b.address.toLowerCase()) ||
+                (nativeSymbol && b.symbol.toUpperCase() === nativeSymbol.toUpperCase());
 
             if (isANative && !isBNative) return -1;
             if (!isANative && isBNative) return 1;

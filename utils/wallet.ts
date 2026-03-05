@@ -1,6 +1,9 @@
 // Wallet Utilities
 // Helper functions for wallet operations
 
+export const NATIVE_TOKEN_ADDRESS = '0x0000000000000000000000000000000000000000';
+export const MORALIS_NATIVE_ADDRESS = '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+
 /**
  * Truncates a wallet address for display
  * @param address Full wallet address
@@ -32,12 +35,12 @@ export const isValidAddress = (address: string): boolean => {
  * @param address Token address
  * @returns Boolean
  */
-export const isNativeToken = (address: string): boolean => {
+export const isNativeToken = (address: string | undefined | null): boolean => {
   if (!address) return true;
   const lower = address.toLowerCase();
   return (
-    lower === '0x0000000000000000000000000000000000000000' ||
-    lower === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' ||
+    lower === NATIVE_TOKEN_ADDRESS ||
+    lower === MORALIS_NATIVE_ADDRESS ||
     lower === 'native'
   );
 };

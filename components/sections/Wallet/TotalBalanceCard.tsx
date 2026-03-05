@@ -38,6 +38,7 @@ export const TotalBalanceCard: React.FC<TotalBalanceCardProps> = ({
     onTodayPress,
 }) => {
     const { t } = useTranslation();
+    const formattedChangeAmount = usePrice(Math.abs(parseFloat(portfolioChange.amount)));
 
     return (
         <View style={styles.container}>
@@ -74,17 +75,23 @@ export const TotalBalanceCard: React.FC<TotalBalanceCardProps> = ({
 
                 {/* Portfolio Change */}
                 <View style={styles.changeRow}>
-                    <Text style={[
-                        styles.changeText,
-                        { color: portfolioChange.amount.startsWith('-') ? '#FB406E' : '#B1F128' }
-                    ]}>
-                        {portfolioChange.amount.startsWith('-') ? '-' : '+'}{usePrice(Math.abs(parseFloat(portfolioChange.amount)))} ({portfolioChange.amount.startsWith('-') ? '' : '+'}{portfolioChange.percent}%)
-                    </Text>
-                    <TouchableOpacity activeOpacity={0.8} onPress={onTodayPress}>
-                        <Text style={styles.periodText}>
-                            {portfolioChange.period}
-                        </Text>
-                    </TouchableOpacity>
+                    {isBalanceVisible ? (
+                        <>
+                            <Text style={[
+                                styles.changeText,
+                                { color: portfolioChange.amount.startsWith('-') ? '#FB406E' : '#B1F128' }
+                            ]}>
+                                {portfolioChange.amount.startsWith('-') ? '-' : '+'}{formattedChangeAmount} ({portfolioChange.amount.startsWith('-') ? '' : '+'}{portfolioChange.percent}%)
+                            </Text>
+                            <TouchableOpacity activeOpacity={0.8} onPress={onTodayPress}>
+                                <Text style={styles.periodText}>
+                                    {portfolioChange.period}
+                                </Text>
+                            </TouchableOpacity>
+                        </>
+                    ) : (
+                        <Text style={styles.changeText}>****</Text>
+                    )}
                 </View>
             </View>
         </View>

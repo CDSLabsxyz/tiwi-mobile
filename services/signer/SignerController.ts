@@ -26,7 +26,6 @@ export class SignerController {
 
         // 1. Identify Wallet Source
         const walletGroup = walletStore.walletGroups.find(g => {
-            console.log("🚀 ~ SignerController ~ executeTransaction ~ g:", g)
             return Object.values(g.addresses).some(addr => addr?.toLowerCase() === address.toLowerCase());
         }
         );

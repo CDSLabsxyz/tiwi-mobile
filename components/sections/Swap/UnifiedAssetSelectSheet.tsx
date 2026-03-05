@@ -1,19 +1,19 @@
+import { TIWILoader } from '@/components/ui/TIWILoader';
 import { TokenSkeleton } from '@/components/ui/TokenSkeleton';
 import { colors } from '@/constants/colors';
 import { useChains } from '@/hooks/useChains';
 import { useTokens } from '@/hooks/useTokens';
 import { useWalletBalances } from '@/hooks/useWalletBalances';
-import { getColorFromSeed, formatTokenQuantity, formatUSDPrice } from '@/utils/formatting';
+import { formatTokenQuantity, formatUSDPrice, getColorFromSeed } from '@/utils/formatting';
 import { Ionicons } from '@expo/vector-icons';
 import { Image as ExpoImage } from 'expo-image';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Dimensions, FlatList, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { TIWILoader } from '@/components/ui/TIWILoader';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { SelectionBottomSheet } from './SelectionBottomSheet';
 
 // Reuse types from existing sheets
-import { truncateAddress } from '@/utils/wallet';
+import { MORALIS_NATIVE_ADDRESS, NATIVE_TOKEN_ADDRESS, truncateAddress } from '@/utils/wallet';
 import type { ChainId, ChainOption } from './ChainSelectSheet';
 import type { TokenOption } from './TokenSelectSheet';
 
@@ -134,16 +134,16 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
         const TWC_ADDRESS = '0xda1060158f7d593667cce0a15db346bb3ffb3596'.toLowerCase();
 
         const NATIVE_ADDRS = [
-            '0x0000000000000000000000000000000000000000',
-            '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
+            NATIVE_TOKEN_ADDRESS,
+            MORALIS_NATIVE_ADDRESS
         ];
 
         // Filtering: Smart Heuristic Scam Filter
         const filteredTokens = tokens.filter(t => {
-            const isOnChain = (selectedChain && selectedChain.id !== 'all') 
-                ? t.chainId === selectedChain.id 
+            const isOnChain = (selectedChain && selectedChain.id !== 'all')
+                ? t.chainId === selectedChain.id
                 : true;
-            
+
             if (!isOnChain) return false;
 
             const name = t.name?.toLowerCase() || '';
@@ -151,7 +151,7 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
             const address = t.address?.toLowerCase() || '';
 
             const isTWC = address === TWC_ADDRESS;
-            
+
             // Get native symbol from chains data
             const chainInfo = chains?.find(c => c.id === t.chainId);
             const nativeSymbol = chainInfo?.nativeCurrency?.symbol?.toLowerCase();
@@ -222,10 +222,10 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
             const nativeSymbol = chainInfo?.nativeCurrency?.symbol;
 
             // 1. Native Token is absolute priority (#1)
-            const isANative = NATIVE_ADDRS.includes(a.address.toLowerCase()) || 
-                             (nativeSymbol && a.symbol.toUpperCase() === nativeSymbol.toUpperCase());
-            const isBNative = NATIVE_ADDRS.includes(b.address.toLowerCase()) || 
-                             (nativeSymbol && b.symbol.toUpperCase() === nativeSymbol.toUpperCase());
+            const isANative = NATIVE_ADDRS.includes(a.address.toLowerCase()) ||
+                (nativeSymbol && a.symbol.toUpperCase() === nativeSymbol.toUpperCase());
+            const isBNative = NATIVE_ADDRS.includes(b.address.toLowerCase()) ||
+                (nativeSymbol && b.symbol.toUpperCase() === nativeSymbol.toUpperCase());
 
             if (isANative && !isBNative) return -1;
             if (!isANative && isBNative) return 1;

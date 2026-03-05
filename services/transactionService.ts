@@ -79,7 +79,12 @@ export const transactionService = {
         const { address: fromAddress } = useWalletStore.getState();
         if (!fromAddress) throw new Error('No active wallet found');
 
-        const amountBIStr = toSmallestUnit(params.amount, params.decimals);
+        // Fallback: If decimals is missing for native, we can assume standard 18 for BSC/ETH
+        const decimals = (params.decimals === undefined || params.decimals === null)
+            ? (params.isNative && [1, 56, 137, 42161, 8453, 10].includes(params.chainId) ? 18 : 18)
+            : params.decimals;
+
+        const amountBIStr = toSmallestUnit(params.amount, decimals);
 
         let txRequest: TransactionRequest;
 
@@ -102,6 +107,7 @@ export const transactionService = {
                 chainFamily: 'evm',
                 to: params.tokenAddress,
                 data,
+                value: '0', // EXPLICIT: prevents the wallet from sending native value by mistake
                 chainId: params.chainId,
             };
         }
@@ -179,6 +185,7 @@ export const transactionService = {
                     functionName: 'disperseTokenSimple',
                     args: [params.tokenAddress as `0x${string}`, params.recipients as `0x${string}`[], amountsBI],
                 }),
+                value: '0', // EXPLICIT: prevents the wallet from sending native value by mistake
                 chainId: params.chainId,
             };
         }

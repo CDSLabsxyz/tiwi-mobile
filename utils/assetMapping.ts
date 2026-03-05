@@ -84,14 +84,20 @@ export const mapAssetToTokenOption = (
       tvl: "$0",
       balanceFiat: usdValue,
       balanceToken: `${balance} ${asset.symbol}`,
+      address: asset.address,
+      chainId: typeof asset.chainId === 'number' ? asset.chainId : 56,
+      decimals: asset.decimals,
     };
   }
 
   return {
     ...tokenData,
+    address: asset.address || tokenData.address || '',
+    decimals: asset.decimals || tokenData.decimals || 18,
     tvl: "$1,000,000",
     balanceFiat: usdValue,
     balanceToken: `${balance} ${tokenData.symbol || asset.symbol.toUpperCase()}`,
+    chainId: typeof asset.chainId === 'number' ? asset.chainId : 56, // Default to BSC if not found
   } as TokenOption;
 };
 

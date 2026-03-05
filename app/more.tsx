@@ -1,6 +1,7 @@
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { colors } from '@/constants/colors';
 import { SearchableItem, searchItems } from '@/utils/search';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
@@ -30,22 +31,22 @@ const allActions: MoreAction[] = [
         id: 'stake',
         label: 'Stake',
         icon: require('../assets/home/stake-1.svg'),
-        route: '/stake',
+        route: '/(tabs)/earn',
         category: 'recommended',
     },
     // },
     // {
-        // category: 'coming-soon',
-//     id: 'analytics',
-//     label: 'Analytics',
-//     icon: require('../assets/home/more/analytics-01.svg'),
-//     route: '/analytics'
-// },
-    
+    // category: 'coming-soon',
+    //     id: 'analytics',
+    //     label: 'Analytics',
+    //     icon: require('../assets/home/more/analytics-01.svg'),
+    //     route: '/analytics'
+    // },
+
     {
         id: 'referral',
         label: 'Referrals',
-        icon: require('../assets/home/tiwicat-token.svg'),
+        icon: 'gift-outline',
         route: '/referral',
         category: 'recommended',
     },
@@ -61,21 +62,21 @@ const allActions: MoreAction[] = [
         id: 'market',
         label: 'Market',
         icon: require('../assets/home/market-analysis.svg'),
-        route: '/market',
+        route: '/(tabs)/market',
         category: 'popular',
     },
     {
         id: 'earn',
         label: 'Earn',
         icon: require('../assets/home/coins-01.svg'),
-        route: '/earn',
+        route: '/(tabs)/earn',
         category: 'popular',
     },
     {
         id: 'wallet',
         label: 'Wallet',
         icon: require('../assets/home/wallet-03.svg'),
-        route: '/wallet',
+        route: '/(tabs)/wallet',
         category: 'popular',
     },
     // Coming soon
@@ -249,11 +250,15 @@ export default function MoreScreen() {
                                         style={[styles.actionItem, { opacity: action.disabled ? 0.5 : 1 }]}
                                     >
                                         <View style={styles.iconContainer}>
-                                            <Image
-                                                source={action.icon}
-                                                style={styles.actionIcon}
-                                                contentFit="contain"
-                                            />
+                                            {typeof action.icon === 'string' ? (
+                                                <Ionicons name={action.icon as any} size={24} color={colors.titleText} />
+                                            ) : (
+                                                <Image
+                                                    source={action.icon}
+                                                    style={styles.actionIcon}
+                                                    contentFit="contain"
+                                                />
+                                            )}
                                         </View>
                                         <Text
                                             style={[
@@ -290,11 +295,15 @@ export default function MoreScreen() {
                                         style={[styles.actionItem, { opacity: action.disabled ? 0.5 : 1 }]}
                                     >
                                         <View style={styles.iconContainer}>
-                                            <Image
-                                                source={action.icon}
-                                                style={styles.actionIcon}
-                                                contentFit="contain"
-                                            />
+                                            {typeof action.icon === 'string' ? (
+                                                <Ionicons name={action.icon as any} size={24} color={colors.titleText} />
+                                            ) : (
+                                                <Image
+                                                    source={action.icon}
+                                                    style={styles.actionIcon}
+                                                    contentFit="contain"
+                                                />
+                                            )}
                                         </View>
                                         <Text
                                             style={[
@@ -331,11 +340,15 @@ export default function MoreScreen() {
                                         style={[styles.actionItem, { opacity: action.disabled ? 0.5 : 1 }]}
                                     >
                                         <View style={styles.iconContainer}>
-                                            <Image
-                                                source={action.icon}
-                                                style={styles.actionIcon}
-                                                contentFit="contain"
-                                            />
+                                            {typeof action.icon === 'string' ? (
+                                                <Ionicons name={action.icon as any} size={24} color={colors.titleText} />
+                                            ) : (
+                                                <Image
+                                                    source={action.icon}
+                                                    style={styles.actionIcon}
+                                                    contentFit="contain"
+                                                />
+                                            )}
                                         </View>
                                         <Text
                                             style={[

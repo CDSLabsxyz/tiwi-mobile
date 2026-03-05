@@ -55,7 +55,9 @@ export default function WalletScreen() {
 
     // State
     const [activeTab, setActiveTab] = useState<WalletTabKey>((params.tab as WalletTabKey) || 'assets');
-    const [isBalanceVisible, setIsBalanceVisible] = useState(true);
+    const isBalanceHidden = useWalletStore((state) => state.isBalanceHidden);
+    const toggleBalanceVisibility = useWalletStore((state) => state.toggleBalanceVisibility);
+
     const [isFilterVisible, setIsFilterVisible] = useState(false);
     const [nfts, setNfts] = useState<NFTItem[]>([]);
     const [isLoadingNFTs, setIsLoadingNFTs] = useState(false);
@@ -70,7 +72,7 @@ export default function WalletScreen() {
     }, [nfts, sortBy, tokenCategories, chains]);
 
     // UI Handlers
-    const handleToggleVisibility = () => setIsBalanceVisible(!isBalanceVisible);
+    const handleToggleVisibility = () => toggleBalanceVisibility();
     const handleTodayPress = () => { };
     const handleAssetPress = (asset: any) => {
         const assetId = asset.address || asset.id;
@@ -85,7 +87,9 @@ export default function WalletScreen() {
                 chainId: asset.chainId,
                 logo: asset.logoURI, // USE logoURI
                 priceUSD: asset.priceUSD,
-                change24h: asset.priceChange24h
+                change24h: asset.priceChange24h,
+                address: asset.address,
+                decimals: asset.decimals
             }
         });
     };
@@ -177,7 +181,7 @@ export default function WalletScreen() {
                             percent: balanceData?.portfolioChange?.percent || "0.00",
                             period: "today"
                         }}
-                        isBalanceVisible={isBalanceVisible}
+                        isBalanceVisible={!isBalanceHidden}
                         onToggleVisibility={handleToggleVisibility}
                         onTodayPress={handleTodayPress}
                     />

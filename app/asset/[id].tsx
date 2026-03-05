@@ -43,6 +43,8 @@ export default function AssetDetailScreen() {
     logo?: string;
     priceUSD?: string;
     change24h?: string;
+    address?: string;
+    decimals?: string;
     tab?: string;
   }>();
 
@@ -65,6 +67,8 @@ export default function AssetDetailScreen() {
       priceUSD: params.priceUSD || "0",
       change24h: change24hVal / 100,
       change24hAmount: isPositive ? `+${change24hVal.toFixed(2)}%` : `${change24hVal.toFixed(2)}%`,
+      address: params.address || "0x0000000000000000000000000000000000000000",
+      decimals: params.decimals ? Number(params.decimals) : 18,
       activities: [],
       chartData: { "1D": [], "1W": [], "1M": [], "1Y": [], "5Y": [], "All": [] },
     } as AssetDetailType;
@@ -160,6 +164,8 @@ export default function AssetDetailScreen() {
         chainId: asset.chainId,
         logo: typeof asset.logo === "string" ? asset.logo : undefined,
         priceUSD: asset.priceUSD,
+        address: asset.address,
+        decimals: asset.decimals.toString(),
       },
     } as any);
   };

@@ -111,7 +111,7 @@ export const CustomTabBar: React.FC<BottomTabBarProps> = ({ state, descriptors, 
             <TouchableOpacity
                 activeOpacity={0.9}
                 onPress={() => router.push('/swap')}
-                style={[styles.floatingButton, { bottom: insets.bottom + 20 }]}
+                style={[styles.floatingButton, { bottom: insets.bottom + 12 }]}
             >
                 <Image
                     source={MenuSwapGif}
@@ -167,7 +167,7 @@ const styles = StyleSheet.create({
         justifyContent: 'space-around',
     },
     gap: {
-        width: 72,
+        width: 90,
     },
     tabItem: {
         flex: 1,
@@ -194,19 +194,12 @@ const styles = StyleSheet.create({
     floatingButton: {
         position: 'absolute',
         left: '50%',
-        marginLeft: -36,
-        width: 72,
-        height: 72,
+        marginLeft: -45,
+        width: 90,
+        height: 90,
         alignItems: 'center',
         justifyContent: 'center',
-        borderRadius: 36,
-        // Soft green glow
-        shadowColor: colors.primaryCTA,
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.8,
-        shadowRadius: 15,
-        elevation: 10,
-    },
+        borderRadius: 45,    },
     fullSize: {
         width: '100%',
         height: '100%',

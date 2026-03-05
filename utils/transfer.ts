@@ -29,9 +29,11 @@ export function getPublicClient(chainId: number) {
  * Check if address is native token (ETH, MATIC, etc.)
  */
 export function isNativeToken(address: string): boolean {
+    const lower = address.toLowerCase();
     return (
-        address === "0x0000000000000000000000000000000000000000" ||
-        address.toLowerCase() === "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        lower === "0x0000000000000000000000000000000000000000" ||
+        lower === "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" ||
+        lower === "native"
     );
 }
 
