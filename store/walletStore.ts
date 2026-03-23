@@ -1,4 +1,4 @@
-import { apiClient } from '@/services/apiClient';
+import { api } from '@/lib/mobile/api-client';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
@@ -157,7 +157,7 @@ export const useWalletStore = create<WalletState>()(
         if (primaryAddr) {
           let apiSource = newGroup.source;
           if (apiSource === 'internal' || apiSource === 'imported') apiSource = 'local';
-          apiClient.registerWallet(primaryAddr, apiSource);
+          api.wallet.register(primaryAddr, apiSource);
         }
       },
 

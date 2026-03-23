@@ -1,5 +1,5 @@
 import { colors } from '@/constants/colors';
-import { EnrichedMarket } from '@/services/apiClient';
+import { MarketAsset } from '@/lib/mobile/api-client';
 import { formatNumber, formatPercentageChange } from '@/utils/formatting';
 import { Image } from 'expo-image';
 import React from 'react';
@@ -9,7 +9,7 @@ import { TokenPrice } from '@/components/ui/TokenPrice';
 import { useTranslation } from '@/hooks/useLocalization';
 
 interface TokenListItemProps {
-    token: EnrichedMarket;
+    token: MarketAsset & { displaySymbol?: string; priceUSD?: string; marketCapRank?: number };
     onPress: () => void;
 }
 

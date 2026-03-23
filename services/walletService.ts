@@ -5,7 +5,7 @@
  */
 
 import type { ChainId } from "@/components/sections/Swap/ChainSelectSheet";
-import { apiClient } from "@/services/apiClient";
+import { api, WalletBalanceResponse } from "@/lib/mobile/api-client";
 import { useWalletStore } from "@/store/walletStore";
 import { formatTokenAmount } from "@/utils/formatting";
 
@@ -65,131 +65,76 @@ export interface Transaction {
   status: 'pending' | 'completed' | 'failed';
 }
 
+
 /**
- * Fetches wallet data from backend API
- * Simulates API call with loading delay
+ * Fetches wallet data from backend API using the new Mobile SDK
  */
 export const fetchWalletData = async (address: string): Promise<WalletData> => {
-  // Simulate API delay (500ms - 1.5s)
-  await delay(500 + Math.random() * 1000);
+  try {
+    // 1. Fetch real balances using the new SDK
+    const balanceResponse = await api.wallet.balances({ address });
 
-  // Mock wallet data matching Figma design
-  // Production-ready structure with chain information
-  const mockPortfolio: PortfolioItem[] = [
-    {
-      id: '1',
-      symbol: 'BTC',
-      name: 'Bitcoin',
-      logo: 'https://www.figma.com/api/mcp/asset/2f4942b6-9793-4b55-9683-2b68af5b886b',
-      balance: '0.01912343',
-      usdValue: '$10,234.23',
-      change24h: 2.5,
-      chainId: 'ethereum',
-      address: '0x2260fac5e5542a773aa44fbcfedf7c193bc2c599', // WBTC
-      decimals: 8,
+    // 2. Map SDK response to existing PortfolioItem format (API returns flat WalletToken[])
+    const portfolio: PortfolioItem[] = balanceResponse.balances.map((b, i) => ({
+      id: `${b.chainId}-${b.address || i}`,
+      symbol: b.symbol,
+      name: b.name,
+      logo: b.logoURI || 'https://via.placeholder.com/100?text=Token',
+      balance: b.balanceFormatted || b.balance,
+      usdValue: `$${parseFloat(b.usdValue || '0').toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      change24h: parseFloat(b.priceChange24h || '0'),
+      chainId: b.chainId as any,
+      address: b.address,
+      decimals: b.decimals || 18,
       chartData: 'https://www.figma.com/api/mcp/asset/a34680f1-9f3f-432d-9c1d-762d12a6bd6b',
-    },
-    {
-      id: '2',
-      symbol: 'SOL',
-      name: 'Solana',
-      logo: 'https://www.figma.com/api/mcp/asset/48caf229-149d-4424-863d-1287a8f8eead',
-      balance: '20,000.85',
-      usdValue: '$10,234.23',
-      change24h: -1.2,
-      chainId: 'aegis',
-      address: 'native',
-      decimals: 9,
-      chartData: 'https://www.figma.com/api/mcp/asset/71d4ca90-aa21-438e-ae22-6d8a1be63c75',
-    },
-    {
-      id: '3',
-      symbol: 'BNB',
-      name: 'BNB Smart Chain',
-      logo: 'https://www.figma.com/api/mcp/asset/ae5b8259-54bc-495a-8e22-e9133f8ed09a',
-      balance: '1,580.8565',
-      usdValue: '$10,234.23',
-      change24h: 0.8,
-      chainId: 'apex',
-      address: 'native',
-      decimals: 18,
-      chartData: 'https://www.figma.com/api/mcp/asset/a6e0181b-66a8-4fbb-b069-6ceace500a3f',
-    },
-    {
-      id: '4',
-      symbol: 'ETH',
-      name: 'Ethereum',
-      logo: 'https://www.figma.com/api/mcp/asset/939391c7-5d01-4394-bc69-b84bf6df5bfe',
-      balance: '0.1582890708008970',
-      usdValue: '$10,234.23',
-      change24h: -2.5,
-      chainId: 'ethereum',
-      address: 'native',
-      decimals: 18,
-      chartData: 'https://www.figma.com/api/mcp/asset/71d4ca90-aa21-438e-ae22-6d8a1be63c75',
-    },
-  ];
+    }));
 
-  const mockActivities: Activity[] = [
-    {
-      id: '1',
-      type: 'swap',
-      token: 'ETH',
-      amount: '0.5',
-      timestamp: Date.now() - 3600000, // 1 hour ago
-      status: 'completed',
-    },
-    {
-      id: '2',
-      type: 'stake',
-      token: 'SUI',
-      amount: '100',
-      timestamp: Date.now() - 7200000, // 2 hours ago
-      status: 'completed',
-    },
-  ];
+    // 3. Optional: Fetch transaction history for unified activity
+    let activities: Activity[] = [];
+    try {
+      const history = await api.wallet.transactions({ address, limit: 10 });
+      if (history && history.transactions) {
+        activities = history.transactions.map((tx: any) => ({
+          id: tx.id,
+          type: tx.type?.toLowerCase() || 'transfer',
+          token: tx.tokenSymbol,
+          amount: tx.amountFormatted,
+          timestamp: tx.timestamp,
+          status: tx.status || 'completed',
+        }));
+      }
+    } catch (e) {
+      console.warn("Transactions fetch failed:", e);
+    }
 
-  const mockTransactions: Transaction[] = [
-    {
-      id: '1',
-      hash: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
-      type: 'swap',
-      from: address,
-      to: '0xabcdef1234567890abcdef1234567890abcdef1234',
-      token: 'ETH',
-      amount: '0.5',
-      usdValue: '$1,360.28',
-      timestamp: Date.now() - 3600000,
-      status: 'completed',
-    },
-    {
-      id: '2',
-      hash: '0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890',
-      type: 'stake',
-      from: address,
-      to: '0x1234567890abcdef1234567890abcdef1234567890',
-      token: 'SUI',
-      amount: '100',
-      usdValue: '$50.00',
-      timestamp: Date.now() - 7200000,
-      status: 'completed',
-    },
-  ];
-
-  return {
-    address,
-    totalBalance: '$4,631.21',
-    usdBalance: 4631.21,
-    portfolioChange: {
-      amount: '+$61.69',
-      percent: '+2.51%',
-      period: 'today',
-    },
-    claimableRewards: '$0.00',
-    portfolio: mockPortfolio,
-    activities: mockActivities,
-    transactionHistory: mockTransactions,
-  };
+    return {
+      address,
+      totalBalance: `$${parseFloat(balanceResponse.totalUSD || '0').toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      usdBalance: parseFloat(balanceResponse.totalUSD || '0'),
+      portfolioChange: {
+        amount: '+0.00',
+        percent: '0.00%',
+        period: 'today',
+      },
+      claimableRewards: '$0.00',
+      portfolio,
+      activities: activities.slice(0, 5),
+      transactionHistory: [], // Populated by fetchTransactionHistory
+    };
+  } catch (error) {
+    console.error("fetchWalletData failed:", error);
+    // Fallback to minimal empty state
+    return {
+      address,
+      totalBalance: '$0.00',
+      usdBalance: 0,
+      portfolioChange: { amount: '0.00', percent: '0.00%', period: 'today' },
+      claimableRewards: '$0.00',
+      portfolio: [],
+      activities: [],
+      transactionHistory: [],
+    };
+  }
 };
 
 /**
@@ -273,7 +218,8 @@ export interface NFTActivity {
  */
 export const fetchNFTs = async (address: string): Promise<NFTItem[]> => {
   try {
-    const apiNfts = await apiClient.getNFTs(address);
+    const response = await api.nfts.list({ address });
+    const apiNfts = response.nfts || [];
 
     // Normalize and handle missing data
     return apiNfts.map(nft => {
@@ -282,38 +228,24 @@ export const fetchNFTs = async (address: string): Promise<NFTItem[]> => {
         id,
         name: nft.name || 'Unnamed NFT',
         mediaUrl: nft.imageThumbnail || nft.image || 'https://via.placeholder.com/400?text=No+Image',
-        floorPrice: nft.floorPriceUSD ? `$${parseFloat(nft.floorPriceUSD).toLocaleString()}` : (nft.floorPrice ? `${nft.floorPrice} ${nft.collectionSymbol || 'ETH'}` : '0 ETH'),
+        floorPrice: nft.floorPriceUSD ? `$${parseFloat(nft.floorPriceUSD).toLocaleString()}` : '0 ETH',
         collectionName: nft.collectionName,
         chainId: nft.chainId,
         contractAddress: nft.contractAddress,
         tokenId: nft.tokenId
       };
     });
-  } catch (error) {
-    console.error("Failed to fetch real NFTs, falling back to mocks:", error);
-    await delay(600);
-    return [
-      {
-        id: 'mock-1',
-        name: 'Cartoon-bird',
-        mediaUrl: 'https://www.figma.com/api/mcp/asset/be2cc277-351e-410f-87ad-eb4a2887eeda',
-        floorPrice: '$0',
-        collectionName: 'Cartoon-bird',
-        chainId: 1,
-        contractAddress: '0x1',
-        tokenId: '1'
-      },
-      {
-        id: 'mock-2',
-        name: 'Alien Amphibian',
-        mediaUrl: 'https://www.figma.com/api/mcp/asset/d9a5806c-183c-4f98-8ae0-3a2694033d27',
-        floorPrice: '$0',
-        collectionName: 'Alien Amphibian',
-        chainId: 1,
-        contractAddress: '0x2',
-        tokenId: '2'
-      },
-    ];
+  } catch (error: any) {
+    // 404 = NFT API endpoint not yet deployed; fall back silently
+    const is404 = error?.message?.includes('404') || error?.status === 404;
+    if (is404) {
+      console.warn('[fetchNFTs] NFT API not available (404), using placeholder data.');
+    } else {
+      console.warn('[fetchNFTs] Failed to fetch NFTs, using placeholder data:', error?.message);
+    }
+    // Skip artificial delay on known API unavailability
+    if (!is404) await delay(600);
+    return [];
   }
 };
 
@@ -322,7 +254,8 @@ export const fetchNFTs = async (address: string): Promise<NFTItem[]> => {
  */
 export const fetchNFTDetail = async (nftId: string): Promise<NFTDetail> => {
   try {
-    const apiDetail = await apiClient.getNFTDetail(nftId);
+    const [contractAddress, tokenId, walletAddress] = nftId.split('-');
+    const apiDetail = await api.nfts.get(walletAddress || '', contractAddress || nftId, tokenId || '');
 
     // Normalize and handle missing data
     return {
@@ -336,10 +269,10 @@ export const fetchNFTDetail = async (nftId: string): Promise<NFTDetail> => {
       chainId: apiDetail.chainId,
       creationDate: apiDetail.blockTimestampMinted ? new Date(apiDetail.blockTimestampMinted).toLocaleDateString() : undefined,
       createdBy: apiDetail.minterAddress,
-      isVerified: !!apiDetail.isVerified,
+      isVerified: !!apiDetail.verified,
       description: apiDetail.description,
       collectionName: apiDetail.collectionName,
-      activities: (apiDetail.activities || []).map(act => ({
+      activities: (apiDetail.activities || []).map((act: any) => ({
         id: act.id,
         type: act.type as any,
         nftName: act.nftName,
@@ -348,9 +281,14 @@ export const fetchNFTDetail = async (nftId: string): Promise<NFTDetail> => {
         date: act.date
       }))
     };
-  } catch (error) {
-    console.error("Failed to fetch real NFT detail, falling back to mock:", error);
-    await delay(600);
+  } catch (error: any) {
+    const is404 = error?.message?.includes('404') || error?.status === 404;
+    if (is404) {
+      console.warn('[fetchNFTDetail] NFT detail API not available (404), using placeholder data.');
+    } else {
+      console.warn('[fetchNFTDetail] Failed to fetch NFT detail, using placeholder data:', error?.message);
+    }
+    if (!is404) await delay(600);
     return {
       id: nftId,
       name: 'Cartoon-bird',
@@ -423,7 +361,7 @@ export const getAllAssetActivities = async (assetId: string): Promise<AssetActiv
     const activeAddress = useWalletStore.getState().address;
     if (!activeAddress) throw new Error("No active wallet");
 
-    const response = await apiClient.getTransactionHistory({
+    const response = await api.wallet.transactions({
       address: activeAddress,
       limit: 50,
     });
@@ -436,8 +374,8 @@ export const getAllAssetActivities = async (assetId: string): Promise<AssetActiv
 
     // Filter by token symbol and map to AssetActivity interface
     const filteredActivities: AssetActivity[] = response.transactions
-      .filter(tx => tx.tokenSymbol.toUpperCase() === symbol || tx.tokenAddress.toLowerCase() === assetId.toLowerCase())
-      .map(tx => ({
+      .filter((tx: any) => tx.tokenSymbol.toUpperCase() === symbol || tx.tokenAddress.toLowerCase() === assetId.toLowerCase())
+      .map((tx: any) => ({
         id: tx.id,
         type: tx.type.toLowerCase() as any,
         amount: `${formatTokenAmount(tx.amountFormatted)} ${tx.tokenSymbol}`,

@@ -1,4 +1,4 @@
-import { apiClient, TokenMetadata } from '@/services/apiClient';
+import { api } from '@/lib/mobile/api-client';
 import { useQuery } from '@tanstack/react-query';
 
 // TWC Token Constants
@@ -11,17 +11,16 @@ const TWC_CHAIN_ID = 56; // BNB Chain
  * Fetches detailed market statistics for the $TWC token.
  */
 export const useTWCToken = () => {
-    return useQuery<TokenMetadata | null, Error>({
+    return useQuery({
         queryKey: ['twcToken'],
         queryFn: async () => {
-            const tokens = await apiClient.getTokens({
+            const resp = await api.tokens.list({
                 address: TWC_ADDRESS,
                 chains: [TWC_CHAIN_ID],
                 limit: 1
             });
-            return tokens.tokens.length > 0 ? tokens.tokens[0] : null;
+            return resp.tokens.length > 0 ? resp.tokens[0] : null;
         },
         staleTime: 30 * 1000, // 30 seconds
-        gcTime: 5 * 60 * 1000,
     });
 };

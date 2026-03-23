@@ -137,12 +137,12 @@ export default function WalletScreen() {
         const ids: number[] = [];
         const ecos = supportedEcosystems || [];
         if (ecos.includes('evm')) ids.push(1, 56, 137, 42161);
-        if (ecos.includes('solana')) ids.push(1399811149);
+        if (ecos.includes('solana')) ids.push(7565164);
         return ids;
     }, [supportedEcosystems]);
 
     // Pre-warm React Query cache for tokens and chains
-    const { data: chainsData } = useChains(supportedEcosystems);
+    const { data: chainsData } = useChains(supportedEcosystems[0] as any);
     useTokens({
         chains: supportedChainIds,
         enabled: supportedChainIds.length > 0 && !!address,
@@ -233,7 +233,7 @@ export default function WalletScreen() {
                                 const chainName = tokenChain?.name || FALLBACK_NAMES[token.chainId] || 'Unknown';
 
                                 // Priority: dynamic logo > fallback require > token.logoURI (fallback to token's own logo if somehow nothing else)
-                                const chainLogo = tokenChain?.logoURI || tokenChain?.logo || FALLBACK_LOGOS[token.chainId];
+                                const chainLogo = tokenChain?.logoURI || (tokenChain as any)?.logo || FALLBACK_LOGOS[token.chainId];
 
                                 return (
                                     <AssetListItem

@@ -1,7 +1,7 @@
 import { Skeleton } from '@/components/ui/skeleton';
 import { colors } from '@/constants/colors';
 import { useTranslation } from '@/hooks/useLocalization';
-import { Chain } from '@/services/apiClient';
+import { ChainItem } from '@/lib/mobile/api-client';
 import { StatCard } from '@/types';
 import { Image } from 'expo-image';
 import React, { useEffect } from 'react';
@@ -20,7 +20,7 @@ const SECTION_WIDTH = 353;
 
 interface TradeStatsSectionProps {
     stats: StatCard[];
-    chains?: Chain[];
+    chains?: ChainItem[];
     isLoading?: boolean;
 }
 
@@ -45,13 +45,13 @@ const localChainLogos = [
  * ChainMarquee Component
  * Animates the overlapping chain logos in one direction
  */
-const ChainMarquee = ({ chains = [] }: { chains?: Chain[] }) => {
+const ChainMarquee = ({ chains = [] }: { chains?: ChainItem[] }) => {
     const translateX = useSharedValue(0);
     const itemWidth = 34; // 24 (icon) + 10 (gap)
 
     // Use dynamic logos from API if available, otherwise fallback to local icons
     const logos = chains.length > 0
-        ? chains.map(c => c.logo).filter(Boolean)
+        ? chains.map(c => c.logoURI || c.logo).filter(Boolean)
         : localChainLogos;
 
     const totalContentWidth = logos.length * itemWidth;

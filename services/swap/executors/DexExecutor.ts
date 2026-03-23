@@ -161,7 +161,7 @@ export class DexExecutor {
 
     private calculateAmountOutMin(toAmount: string, decimals: number, slippage: number, toTokenAddress?: string): bigint {
         const amount = parseUnits(toAmount, decimals);
-        const slippageBps = BigInt(Math.floor(slippage * 100)); 
+        const slippageBps = BigInt(Math.floor(slippage * 100));
         return (amount * (BigInt(10000) - slippageBps)) / BigInt(10000);
     }
 

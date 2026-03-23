@@ -1,3 +1,4 @@
+import { api, Notification as SDKNotification } from '@/lib/mobile/api-client';
 
 export type NotificationStatus = 'live' | 'removed' | 'scheduled';
 export type NotificationPriority = 'normal' | 'important' | 'critical';
@@ -15,42 +16,34 @@ export interface AdminNotification {
     created_by?: string;
 }
 
-const ADMIN_API_BASE = 'https://app.tiwiprotocol.xyz/api/v1/notifications';
-
 class AdminNotificationService {
     /**
      * Fetch active broadcast notifications from the central API
      */
     async getAdminNotifications(walletAddress: string, unreadOnly = false) {
         try {
-            const url = `${ADMIN_API_BASE}?status=live&userWallet=${encodeURIComponent(walletAddress)}&unreadOnly=${unreadOnly}`;
-
-            const response = await fetch(url, {
-                method: 'GET',
-                headers: {
-                    'Accept': 'application/json',
-                    'Content-Type': 'application/json',
-                },
+            const response = await api.notifications.list({
+                status: 'live',
+                userWallet: walletAddress,
+                unreadOnly
             });
 
-            if (!response.ok) {
-                console.warn('[AdminNotificationService] API request failed:', response.status);
-                return { notifications: [], unreadCount: 0 };
-            }
+            const notifications = (response.notifications || []).map(n => ({
+                id: n.id,
+                title: n.title,
+                message_body: n.messageBody || '',
+                status: n.status as any,
+                priority: n.priority as any,
+                delivery_type: n.deliveryType || 'banner',
+                created_at: n.createdAt
+            }));
 
-            const data = await response.json();
-
-            // Expected response: {"notifications": [...], "total": X, "unreadCount": Y}
             return {
-                notifications: (data.notifications as AdminNotification[]) || [],
-                unreadCount: data.unreadCount || 0
+                notifications: notifications as AdminNotification[],
+                unreadCount: response.unreadCount || 0
             };
         } catch (error: any) {
-            if (error?.message?.includes('Network request failed')) {
-                console.warn('[AdminNotificationService] Fetch: Network unreachable.');
-            } else {
-                console.error('[AdminNotificationService] Exception fetching via API:', error);
-            }
+            console.error('[AdminNotificationService] Exception fetching notifications:', error);
             return { notifications: [], unreadCount: 0 };
         }
     }
@@ -62,29 +55,17 @@ class AdminNotificationService {
         if (notificationIds.length === 0) return;
 
         try {
-            const url = `${ADMIN_API_BASE}/mark-viewed`;
-
-            const response = await fetch(url, {
-                method: 'POST',
-                headers: {
-                    'Accept': 'application/json',
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    notificationIds,
-                    userWallet: walletAddress
-                })
-            });
-
-            if (!response.ok) {
-                console.warn('[AdminNotificationService] Mark viewed failed:', response.status);
-            }
+            // SDK currently supports single ID per call according to signature
+            await Promise.all(
+                notificationIds.map(id =>
+                    api.notifications.markViewed({
+                        notificationId: id,
+                        userWallet: walletAddress
+                    })
+                )
+            );
         } catch (error: any) {
-            if (error?.message?.includes('Network request failed')) {
-                console.warn('[AdminNotificationService] MarkRead: Network unreachable.');
-            } else {
-                console.error('[AdminNotificationService] Exception marking viewed via API:', error);
-            }
+            console.error('[AdminNotificationService] Exception marking viewed:', error);
         }
     }
 }

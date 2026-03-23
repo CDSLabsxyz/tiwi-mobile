@@ -1,11 +1,17 @@
-import { apiClient, EnrichedMarket } from '@/services/apiClient';
+import { api, MarketAsset } from '@/lib/mobile/api-client';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
+
+// For internal typing in the hook logic
+interface EnrichedMarketCompat extends MarketAsset {
+    displaySymbol: string;
+    priceUSD: string;
+}
 
 const TWC_ADDRESS = '0xDA1060158F7D593667cCE0a15DB346BB3FfB3596'.toLowerCase();
 
 interface UseEnrichedMarketsOptions {
-    marketType?: 'spot' | 'perp' | 'all';
+    marketType?: 'spot' | 'perp' | 'all' | 'swap';
     limit?: number;
     enabled?: boolean;
 }
@@ -14,15 +20,18 @@ interface UseEnrichedMarketsOptions {
  * useEnrichedMarkets Hook
  * 
  * Fetches unified market data (Binance, dYdX, On-chain)
- * and handles TIWICAT (TWC) priority logic.
+ * using the new Mobile SDK and handles TIWICAT (TWC) priority logic.
  */
 export const useEnrichedMarkets = (options: UseEnrichedMarketsOptions = {}) => {
     const { marketType = 'all', limit = 250, enabled = true } = options;
 
-    const query = useQuery<EnrichedMarket[], Error>({
+    const query = useQuery<MarketAsset[], Error>({
         queryKey: ['enrichedMarkets', marketType, limit],
-        queryFn: () => apiClient.getEnrichedMarkets({ marketType, limit }),
-        staleTime: 30 * 1000, // 30 seconds
+        queryFn: async () => {
+            const response = await api.market.list({ marketType, limit });
+            return response.markets || [];
+        },
+        staleTime: 30 * 1000,
         gcTime: 5 * 60 * 1000,
         enabled,
     });
@@ -41,17 +50,16 @@ export const useEnrichedMarkets = (options: UseEnrichedMarketsOptions = {}) => {
                 displaySymbol = (cleanSymbol.includes('/') || cleanSymbol.includes('-')) ? cleanSymbol : `${cleanSymbol}-USD`;
             }
 
+            // Map new SDK properties to what the UI expects (Price/PriceUSD bridge)
             return {
                 ...m,
                 displaySymbol,
-                // Normalization: Ensure logoURI and priceUSD exist regardless of provider
                 logoURI: m.logoURI || m.logo,
-                priceUSD: (m.priceUSD || m.price || 0).toString(),
-            };
+                priceUSD: (m.price || 0).toString(),
+            } as EnrichedMarketCompat;
         });
 
         // TWC Priority Logic
-        // Find TWC either by address (on-chain) or by symbol
         const twcIndex = markets.findIndex(
             m =>
                 (m.address && m.address.toLowerCase() === TWC_ADDRESS) ||

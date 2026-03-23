@@ -1,4 +1,4 @@
-import { apiClient, EnrichedMarket } from '@/services/apiClient';
+import { api, MarketAsset } from '@/lib/mobile/api-client';
 import { useQuery } from '@tanstack/react-query';
 
 interface UseEnrichedMarketDetailOptions {
@@ -13,8 +13,7 @@ interface UseEnrichedMarketDetailOptions {
 /**
  * useEnrichedMarketDetail Hook
  * 
- * Fetches deep market metadata for a specific pair, including 
- * funding rates, open interest, and social links.
+ * Fetches deep market metadata for a specific pair using the new Mobile SDK.
  */
 export const useEnrichedMarketDetail = (options: UseEnrichedMarketDetailOptions) => {
     const { symbol, provider, address, chainId, marketType, enabled = true } = options;
@@ -22,24 +21,32 @@ export const useEnrichedMarketDetail = (options: UseEnrichedMarketDetailOptions)
     // Normalize symbol for backend dispatcher (e.g. BTC/USD -> BTC-USD)
     let normalizedSymbol = symbol.toUpperCase().replace('/', '-').replace('_', '-');
 
-    // Safety Fallback: If no pair separator is found and it's a spot market, 
-    // the new backend logic specifically requires a BASE-QUOTE format.
-    if (!normalizedSymbol.includes('-') && marketType === 'spot') {
+    if (!normalizedSymbol.includes('-') && (marketType === 'spot' || !marketType)) {
         normalizedSymbol = `${normalizedSymbol}-USD`;
     }
 
-    return useQuery<EnrichedMarket, Error>({
+    return useQuery<any, Error>({
         queryKey: ['enrichedMarketDetail', normalizedSymbol, address, marketType],
         queryFn: async () => {
-            const data = await apiClient.getEnrichedMarketDetail(normalizedSymbol, {
-                provider,
-                address,
-                chainId,
-                marketType
-            });
+            // Note: The new SDK uses market.list or tokens.list for generic lookups
+            // If the specific detail endpoint isn't in the SDK, we use the tokens or market list
+            const response = await api.market.list({ marketType: marketType === 'all' ? 'all' : marketType as any, limit: 100 });
+            const data = response.markets.find(m =>
+                m.symbol.toUpperCase() === normalizedSymbol.split('-')[0] ||
+                m.address?.toLowerCase() === address?.toLowerCase()
+            );
 
-            if (!data || !data.symbol) {
-                throw new Error('Market data not found');
+            if (!data) {
+                // Secondary attempt via tokens.list
+                const tokenResponse = await api.tokens.list({ query: symbol, chains: chainId ? [chainId] : undefined, limit: 1 });
+                if (tokenResponse.tokens.length === 0) throw new Error('Market data not found');
+
+                const t = tokenResponse.tokens[0];
+                return {
+                    ...t,
+                    displaySymbol: `${t.symbol}-USD`,
+                    priceUSD: t.priceUSD || '0',
+                };
             }
 
             const cleanSymbol = data.symbol.toUpperCase();
@@ -48,26 +55,17 @@ export const useEnrichedMarketDetail = (options: UseEnrichedMarketDetailOptions)
             if (data.marketType === 'perp') {
                 displaySymbol = cleanSymbol.includes('-') ? cleanSymbol : `${cleanSymbol}-USD`;
             } else {
-                displaySymbol = data.pair || ((cleanSymbol.includes('/') || cleanSymbol.includes('-')) ? cleanSymbol : `${cleanSymbol}-USD`);
+                displaySymbol = (cleanSymbol.includes('/') || cleanSymbol.includes('-')) ? cleanSymbol : `${cleanSymbol}-USD`;
             }
 
             // Flatten backend response for mobile UI compatibility
             return {
                 ...data,
-                id: data.id || (data.contractAddress ? `${data.chainId}-${data.contractAddress}` : data.symbol),
+                id: data.id || (data.address ? `${data.chainId}-${data.address}` : data.symbol),
                 displaySymbol,
-                name: data.metadata?.name || data.name || data.baseToken?.name || data.symbol,
-                address: data.contractAddress || data.baseToken?.address || data.symbol,
-                logo: data.metadata?.logo || data.baseToken?.logo || '',
-                logoURI: data.metadata?.logo || data.baseToken?.logo || '',
-                description: data.metadata?.description || '',
-                priceUSD: (data.priceUSD || data.price || 0).toString(),
-                high24h: data.high24h || 0,
-                low24h: data.low24h || 0,
-                marketCap: data.marketCap || 0,
-                circulatingSupply: data.circulatingSupply || 0,
-                maxSupply: data.maxSupply || 0,
-            } as any; // Cast to any to allow flattened properties for UI
+                logoURI: data.logoURI || data.logo || '',
+                priceUSD: (data.price || 0).toString(),
+            };
         },
         staleTime: 10 * 1000,
         enabled: enabled && !!symbol,

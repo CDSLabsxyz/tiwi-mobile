@@ -1,7 +1,7 @@
+import { api, FaqItem as FAQ } from '@/lib/mobile/api-client';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { SettingsHeader } from '@/components/ui/settings-header';
 import { colors } from '@/constants/colors';
-import { apiClient, FAQ } from '@/services/apiClient';
 import { useQuery } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
@@ -39,48 +39,36 @@ const FALLBACK_FAQS: FAQ[] = [
         question: "Is Tiwi Protocol custodial?",
         answer: "No, Tiwi Protocol is a fully non-custodial decentralized platform. You always maintain 100% control of your private keys and assets. We never have access to your funds.",
         category: 'General',
-        createdAt: '',
-        updatedAt: ''
     },
     {
         id: '2',
         question: "Can I pay gas without native tokens?",
         answer: "Yes! Our Omni-Paymaster service allows you to pay gas fees using stablecoins (USDT/USDC) or our native TIWI tokens, so you don't need to worry about holding native chain gas tokens (like ETH or BNB) on every network.",
         category: 'Transactions',
-        createdAt: '',
-        updatedAt: ''
     },
     {
         id: '3',
         question: "Which chains are supported?",
         answer: "We support major EVM chains including BNB Chain, Ethereum, Arbitrum, Base, and Polygon. We are also expanding to non-EVM chains like Solana and Bitcoin Layer 2s.",
         category: 'Chains',
-        createdAt: '',
-        updatedAt: ''
     },
     {
         id: '4',
         question: "What are the lending limits?",
         answer: "Lending limits and Max LTV (Loan-to-Value) depend on the asset's tier. Blue-chip assets like BTC and ETH have higher limits (up to 80%), while newer tokens may have lower limits to maintain protocol safety.",
         category: 'Lending',
-        createdAt: '',
-        updatedAt: ''
     },
     {
         id: '5',
         question: "Can I stake NFTs?",
         answer: "Yes, Tiwi Protocol supports NFT staking for verified collections. This allows you to earn protocol rewards (Yield) while keeping the original NFT in your wallet's staking contract.",
         category: 'Staking',
-        createdAt: '',
-        updatedAt: ''
     },
     {
         id: '6',
         question: "How do merchants use TIWI Pay?",
         answer: "Merchants can easily integrate TIWI Pay via our Developer SDK or by generating a payment QR code. Customers can then pay in any supported crypto, while merchants receive their preferred stablecoin instantly.",
         category: 'General',
-        createdAt: '',
-        updatedAt: ''
     }
 ];
 
@@ -130,7 +118,7 @@ export default function FaqsScreen() {
 
     const { data, isLoading } = useQuery({
         queryKey: ['faqs'],
-        queryFn: () => apiClient.getFAQs(),
+        queryFn: () => api.faqs.list(),
     });
 
     const faqList = useMemo(() => {

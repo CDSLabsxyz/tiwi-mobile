@@ -26,7 +26,7 @@ import { SpotlightSection } from '@/components/features/home/spotlight-section';
 import { StakeBanner } from '@/components/features/home/stake-banner';
 import { TradeStatsSection } from '@/components/features/home/trade-stats-section';
 import { usePrice, useTranslation } from '@/hooks/useLocalization';
-import { apiClient } from '@/services/apiClient';
+import { api } from '@/lib/mobile/api-client';
 import { useMarketStore } from '@/store/marketStore';
 import { useWalletStore } from '@/store/walletStore';
 import { useQueryClient } from '@tanstack/react-query';
@@ -48,14 +48,14 @@ export default function HomeScreen() {
       // 1. Prefetch Spot Markets (Default View)
       queryClient.prefetchQuery({
         queryKey: ['enrichedMarkets', 'spot', 250],
-        queryFn: () => apiClient.getEnrichedMarkets({ marketType: 'spot', limit: 250 }),
+        queryFn: () => api.market.list({ marketType: 'spot', limit: 250 }),
         staleTime: 60 * 1000,
       });
 
       // 2. Prefetch Perp Markets (Background View)
       queryClient.prefetchQuery({
         queryKey: ['enrichedMarkets', 'perp', 250],
-        queryFn: () => apiClient.getEnrichedMarkets({ marketType: 'perp', limit: 250 }),
+        queryFn: () => api.market.list({ marketType: 'perp', limit: 250 }),
         staleTime: 60 * 1000,
       });
     };
@@ -98,19 +98,20 @@ export default function HomeScreen() {
     const categories: ('hot' | 'new' | 'gainers' | 'losers')[] = ['hot', 'new', 'gainers', 'losers'];
     const prefetch = async () => {
       queryClient.prefetchQuery({
-        queryKey: ['spotlightTokens', true],
-        queryFn: () => apiClient.getSpotlightTokens(true),
+        queryKey: ['spotlightTokens'],
+        queryFn: () => api.tokenSpotlight.get(),
       });
 
-      queryClient.prefetchQuery({
-        queryKey: ['smartMarkets'],
-        queryFn: () => apiClient.getSmartMarkets(),
-      });
+      // Removed smartMarkets prefetch if deprecated or merged into tokens.list
+      // queryClient.prefetchQuery({
+      //   queryKey: ['smartMarkets'],
+      //   queryFn: () => api.tokens.list({ category: 'hot', limit: 30 }),
+      // });
 
       for (const category of categories) {
         queryClient.prefetchQuery({
           queryKey: ['tokens', category, 5, undefined],
-          queryFn: () => apiClient.getMarketPairs({ category, limit: 5 }),
+          queryFn: () => api.market.pairs({ category, limit: 5 }),
           staleTime: 60 * 1000,
         });
         await new Promise(resolve => setTimeout(resolve, 300));
@@ -121,7 +122,7 @@ export default function HomeScreen() {
           const [chainId, address] = id.split('-');
           queryClient.prefetchQuery({
             queryKey: ['tokens', address, [parseInt(chainId)], 1],
-            queryFn: () => apiClient.getTokens({ address, chains: [parseInt(chainId)], limit: 1 }),
+            queryFn: () => api.tokens.list({ address, chains: [parseInt(chainId)], limit: 1 }),
           });
           await new Promise(resolve => setTimeout(resolve, 100));
         }
@@ -140,6 +141,7 @@ export default function HomeScreen() {
       queryClient.invalidateQueries({ queryKey: ['twcToken'] }),
       queryClient.invalidateQueries({ queryKey: ['smartMarkets'] }),
       queryClient.invalidateQueries({ queryKey: ['market-pairs'] }),
+      queryClient.invalidateQueries({ queryKey: ['tokens'] }),
     ]);
     setRefreshing(false);
   }, [queryClient]);

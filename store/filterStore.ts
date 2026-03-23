@@ -15,7 +15,7 @@ interface FilterState {
 }
 
 export const useFilterStore = create<FilterState>((set) => ({
-  sortBy: 'balance-high',
+  sortBy: 'value-high',
   tokenCategories: new Set<string>(),
   chains: new Set<string>(),
 

@@ -45,7 +45,7 @@ const queryClient = new QueryClient({
 });
 
 // Prevent splash screen from auto-hiding
-// SplashScreen.preventAutoHideAsync();
+SplashScreen.preventAutoHideAsync().catch(() => { });
 
 // Custom component to sync AppKit state with legacy walletStore
 import { useAccount } from 'wagmi';
@@ -168,6 +168,7 @@ export default function RootLayout() {
         setIsAppInitialized(true);
         setIsNavigationReady(true);
         SplashScreen.hideAsync().catch(() => { });
+        setIsSplashComplete(true);
       }
     }, 5000);
     return () => clearTimeout(timer);
@@ -175,24 +176,16 @@ export default function RootLayout() {
 
   const isReadyForApp = isAppInitialized && isHydrated && isNavigationReady;
 
-  SplashScreen.setOptions({
-    duration: 1000,
-    fade: true,
-  });
-
-
   // 1. Initialize app state
   useEffect(() => {
     const init = async () => {
       console.log('[RootLayout] Starting initialization...');
       try {
-        await SplashScreen.preventAutoHideAsync().catch(() => { });
-
-        // Block only on essential local status checks
+        // Essential local status checks
         await Promise.all([
           checkOnboardingStatus().catch(e => console.warn('Onboarding check failed', e)),
           initializeLiFi().catch(e => console.warn('LiFi init failed', e))
-        ]).catch(e => console.error('Essential init failed', e));
+        ]);
 
         // Background initializations
         currencyService.init();
@@ -205,7 +198,7 @@ export default function RootLayout() {
         setIsNavigationReady(true);
         setIsAppInitialized(true);
 
-        // Safety timeout to hide native splash
+        // Safety timeout to hide native splash if GIF fails to load
         setTimeout(() => {
           SplashScreen.hideAsync().catch(() => { });
         }, 3000);
@@ -365,7 +358,7 @@ export default function RootLayout() {
                   onAnimationComplete={() => setIsSplashComplete(true)}
                   onLoaded={() => {
                     // Hide the static native splash screen as soon as the GIF is ready to play
-                    SplashScreen.hideAsync();
+                    SplashScreen.hideAsync().catch(() => { });
                   }}
                 />
               )}

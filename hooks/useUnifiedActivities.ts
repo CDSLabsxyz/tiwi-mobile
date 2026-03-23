@@ -1,5 +1,5 @@
 import { activityService, ActivityType, UserActivity } from '@/services/activityService';
-import { apiClient } from '@/services/apiClient';
+import { api } from '@/lib/mobile/api-client';
 import { useWalletStore } from '@/store/walletStore';
 import { useQuery } from '@tanstack/react-query';
 
@@ -30,13 +30,12 @@ export function useUnifiedActivities(limit = 100) {
         queryKey: ['unifiedActivities', activeAddress, limit],
         queryFn: async (): Promise<UnifiedActivity[]> => {
             if (!activeAddress) {
-                console.log('[useUnifiedActivities] No active address found, skipping fetch');
                 return [];
             }
 
             try {
                 // 1. Fetch Global Transactions (Swaps, Transfers, etc.)
-                const globalPromise = apiClient.getTransactionHistory({
+                const globalPromise = api.wallet.transactions({
                     address: activeAddress,
                     limit,
                 }).catch(err => {
@@ -44,23 +43,18 @@ export function useUnifiedActivities(limit = 100) {
                     return { transactions: [] };
                 });
 
-                // 2. Fetch NFTs first, then their activities (following super-app pattern)
+                // 2. Fetch NFTs Activity (Flattened)
                 const fetchNFTActivityData = async () => {
                     try {
-                        const nfts = await apiClient.getNFTs(activeAddress);
-                        if (!nfts || nfts.length === 0) return [];
+                        const response = await api.nfts.list({ address: activeAddress });
+                        const nfts = response.nfts || [];
+                        if (nfts.length === 0) return [];
 
-                        // Parallel fetch activities for EACH NFT (singular endpoint requires contractAddress/tokenId)
+                        // Parallel fetch activities for EACH NFT
                         const nftActivityPromises = nfts.map(nft =>
-                            apiClient.getNFTActivity({
-                                address: activeAddress,
-                                chainId: nft.chainId,
-                                contractAddress: nft.contractAddress,
-                                tokenId: nft.tokenId,
-                                limit: 10,
-                            }).then(res => ({
+                            api.nfts.get(activeAddress, nft.contractAddress, nft.tokenId).then(res => ({
                                 nft,
-                                activities: res.activities || []
+                                activities: (res as any).activities || []
                             })).catch(err => {
                                 console.warn(`[useUnifiedActivities] Failed for NFT ${nft.contractAddress}:`, err);
                                 return { nft, activities: [] };
@@ -69,7 +63,7 @@ export function useUnifiedActivities(limit = 100) {
 
                         return await Promise.all(nftActivityPromises);
                     } catch (err) {
-                        console.error('[useUnifiedActivities] NFT list fetch failed:', err);
+                        console.error('[useUnifiedActivities] NFT activity fetch failed:', err);
                         return [];
                     }
                 };
@@ -87,18 +81,18 @@ export function useUnifiedActivities(limit = 100) {
                 ]);
 
                 // Map Global Transactions
-                const mappedGlobal: UnifiedActivity[] = (globalData.transactions || []).map(tx => ({
-                    id: tx.id,
+                const mappedGlobal: UnifiedActivity[] = ((globalData as any).transactions || []).map((tx: any) => ({
+                    id: tx.id || tx.hash || Math.random().toString(),
                     type: 'transaction',
-                    category: tx.type,
-                    title: tx.type === 'Swap' ? `Swapped ${tx.tokenSymbol}` : `${tx.type} ${tx.tokenSymbol}`,
-                    message: `${tx.type} transaction on chain ${tx.chainId}`,
-                    timestamp: tx.timestamp,
-                    date: new Date(tx.timestamp).toLocaleDateString(),
-                    amount: tx.amountFormatted,
+                    category: tx.type || 'Transaction',
+                    title: tx.type === 'Swap' ? `Swapped ${tx.tokenSymbol}` : `${tx.type} ${tx.tokenSymbol || ''}`,
+                    message: `${tx.type || 'Activity'} transaction on chain ${tx.chainId || ''}`,
+                    timestamp: tx.timestamp ? new Date(tx.timestamp).getTime() : Date.now(),
+                    date: tx.timestamp ? new Date(tx.timestamp).toLocaleDateString() : '',
+                    amount: tx.amountFormatted || tx.amount,
                     tokenSymbol: tx.tokenSymbol,
                     usdValue: tx.usdValue,
-                    status: tx.status,
+                    status: tx.status || 'completed',
                     isLocal: false,
                     hash: tx.hash,
                     chainId: tx.chainId
@@ -106,20 +100,20 @@ export function useUnifiedActivities(limit = 100) {
 
                 // Map NFT Activities (Flattened)
                 const mappedNFT: UnifiedActivity[] = nftActivityData.flatMap(({ nft, activities }) =>
-                    activities.map(act => ({
+                    activities.map((act: any) => ({
                         id: `nft-${nft.contractAddress}-${nft.tokenId}-${act.timestamp}`,
                         type: 'transaction',
-                        category: act.type.charAt(0).toUpperCase() + act.type.slice(1),
-                        title: `${act.type.toUpperCase()} ${nft.name || 'NFT'}`,
+                        category: act.type?.charAt(0).toUpperCase() + act.type?.slice(1) || 'NFT Activity',
+                        title: `${(act.type || '').toUpperCase()} ${nft.name || 'NFT'}`,
                         message: `${nft.name || 'NFT'} activity`,
-                        timestamp: act.timestamp,
-                        date: act.date || new Date(act.timestamp).toLocaleDateString(),
+                        timestamp: act.timestamp ? new Date(act.timestamp).getTime() : Date.now(),
+                        date: act.date || (act.timestamp ? new Date(act.timestamp).toLocaleDateString() : ''),
                         amount: act.price || '0',
                         tokenSymbol: nft.name || 'NFT',
-                        usdValue: act.priceUSD || '$0.00',
+                        usdValue: act.usdValue || act.priceUSD || '$0.00',
                         status: 'completed',
                         isLocal: false,
-                        hash: act.transactionHash,
+                        hash: act.transactionHash || act.hash,
                         chainId: nft.chainId
                     }))
                 );

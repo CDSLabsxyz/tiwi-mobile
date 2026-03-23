@@ -1,7 +1,7 @@
+import { api, TutorialItem as SDKTutorial } from '@/lib/mobile/api-client';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { SettingsHeader } from '@/components/ui/settings-header';
 import { colors } from '@/constants/colors';
-import { apiClient, Tutorial } from '@/services/apiClient';
 import { useQuery } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
@@ -19,6 +19,18 @@ import {
 import { TIWILoader } from '@/components/ui/TIWILoader';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+/* 
+ * Tutorial type that supports both SDK and local fallback
+ */
+export interface Tutorial extends Partial<SDKTutorial> {
+    id: string;
+    title: string;
+    description: string;
+    category?: string;
+    link: string; // Used for UI
+    thumbnailUrl: string;
+}
+
 const SearchIcon = require('@/assets/swap/search-01.svg');
 
 /**
@@ -30,10 +42,8 @@ const FALLBACK_TUTORIALS: Tutorial[] = [
         title: "How to swap",
         description: "Learn the basics of swapping assets on Tiwi Protocol.",
         category: 'Trading',
-        link: 'https://youtube.com/watch?v=dQw4w9WgXcQ', // Placeholder link
-        thumbnailUrl: 'https://images.unsplash.com/photo-1639762681485-074b7f938ba0?q=80&w=600&auto=format&fit=crop', // Crypto/DeFi theme
-        createdAt: '',
-        updatedAt: ''
+        link: 'https://youtube.com/watch?v=dQw4w9WgXcQ',
+        thumbnailUrl: 'https://images.unsplash.com/photo-1639762681485-074b7f938ba0?q=80&w=600&auto=format&fit=crop',
     },
     {
         id: '2',
@@ -42,8 +52,6 @@ const FALLBACK_TUTORIALS: Tutorial[] = [
         category: 'Liquidity',
         link: 'https://youtube.com/watch?v=dQw4w9WgXcQ',
         thumbnailUrl: 'https://images.unsplash.com/photo-1605792657660-596af9009e82?q=80&w=600&auto=format&fit=crop',
-        createdAt: '',
-        updatedAt: ''
     },
     {
         id: '3',
@@ -52,8 +60,6 @@ const FALLBACK_TUTORIALS: Tutorial[] = [
         category: 'Liquidity',
         link: 'https://youtube.com/watch?v=dQw4w9WgXcQ',
         thumbnailUrl: 'https://images.unsplash.com/photo-1621761191319-c6fb5200c729?q=80&w=600&auto=format&fit=crop',
-        createdAt: '',
-        updatedAt: ''
     },
     {
         id: '4',
@@ -62,8 +68,6 @@ const FALLBACK_TUTORIALS: Tutorial[] = [
         category: 'Staking',
         link: 'https://youtube.com/watch?v=dQw4w9WgXcQ',
         thumbnailUrl: 'https://images.unsplash.com/photo-1518546305927-5a555bb7020d?q=80&w=600&auto=format&fit=crop',
-        createdAt: '',
-        updatedAt: ''
     },
     {
         id: '5',
@@ -72,8 +76,6 @@ const FALLBACK_TUTORIALS: Tutorial[] = [
         category: 'Security',
         link: 'https://youtube.com/watch?v=dQw4w9WgXcQ',
         thumbnailUrl: 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?q=80&w=600&auto=format&fit=crop',
-        createdAt: '',
-        updatedAt: ''
     },
     {
         id: '6',
@@ -82,8 +84,6 @@ const FALLBACK_TUTORIALS: Tutorial[] = [
         category: 'Advanced',
         link: 'https://youtube.com/watch?v=dQw4w9WgXcQ',
         thumbnailUrl: 'https://images.unsplash.com/photo-1611974764457-36611586ca55?q=80&w=600&auto=format&fit=crop',
-        createdAt: '',
-        updatedAt: ''
     }
 ];
 
@@ -133,7 +133,18 @@ export default function TutorialsScreen() {
 
     const { data, isLoading } = useQuery({
         queryKey: ['tutorials'],
-        queryFn: () => apiClient.getTutorials(),
+        queryFn: async () => {
+            const resp = await api.tutorials.list();
+            return {
+                tutorials: resp.tutorials.map(t => ({
+                    ...t,
+                    link: t.videoUrl || '',
+                    description: t.description || '',
+                    thumbnailUrl: t.thumbnailUrl || 'https://via.placeholder.com/300?text=Tiwi+Tutorial',
+                    category: (t as any).category || 'General'
+                })) as Tutorial[]
+            };
+        },
     });
 
     // Calculate grid layout
@@ -150,7 +161,7 @@ export default function TutorialsScreen() {
         return sourceList.filter(t =>
             t.title.toLowerCase().includes(query) ||
             t.description.toLowerCase().includes(query) ||
-            t.category.toLowerCase().includes(query)
+            (t.category || '').toLowerCase().includes(query)
         );
     }, [data, searchQuery]);
 

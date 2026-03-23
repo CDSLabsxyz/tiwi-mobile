@@ -1,6 +1,6 @@
+import { api } from '@/lib/mobile/api-client';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { SettingsHeader } from '@/components/ui/settings-header';
-import { apiClient, CreateBugReportRequest } from '@/services/apiClient';
 import { useWalletStore } from '@/store/walletStore';
 import * as Device from 'expo-device';
 import * as DocumentPicker from 'expo-document-picker';
@@ -23,6 +23,18 @@ import {
 import { TIWILoader } from '@/components/ui/TIWILoader';
 import Animated, { useAnimatedStyle, withSpring } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+/*
+ * Request shape for the bug reporting logic
+ */
+export interface CreateBugReportRequest {
+    userWallet: string;
+    description: string;
+    title?: string;
+    screenshot?: string;
+    logFile?: string;
+    deviceInfo?: any;
+}
 
 const CloudAddIcon = require('@/assets/settings/cloud-add.svg');
 
@@ -76,7 +88,7 @@ export default function ReportBugScreen() {
 
         const result = await ImagePicker.launchImageLibraryAsync({
             mediaTypes: ['images'],
-            allowsEditing: false, // Disabled cropping to fix the issue where users couldn't return to app
+            allowsEditing: false,
             quality: 0.8,
         });
 
@@ -122,17 +134,17 @@ export default function ReportBugScreen() {
             let screenshotUrl: string | undefined;
             let logFileUrl: string | undefined;
 
-            // Upload Screenshot if exists
+            // Upload Screenshot if exists - use SDK uploadFile
             if (screenshot && screenshotName && screenshotMime) {
-                const uploadRes = await apiClient.uploadFile(screenshot, screenshotName, screenshotMime, 'bug-reports/screenshots');
+                const uploadRes = await api.uploadFile(screenshot, screenshotName, screenshotMime, 'bug-reports/screenshots');
                 if (uploadRes) {
                     screenshotUrl = uploadRes.url;
                 }
             }
 
-            // Upload Log File if exists
+            // Upload Log File if exists - use SDK uploadFile
             if (logFile && logFileName && logFileMime) {
-                const uploadRes = await apiClient.uploadFile(logFile, logFileName, logFileMime, 'bug-reports/logs');
+                const uploadRes = await api.uploadFile(logFile, logFileName, logFileMime, 'bug-reports/logs');
                 if (uploadRes) {
                     logFileUrl = uploadRes.url;
                 }
@@ -158,10 +170,10 @@ export default function ReportBugScreen() {
                 deviceInfo,
             };
 
-            const response = await apiClient.reportBug(payload);
+            const response = await api.bugReports.submit(payload);
             console.log("🚀 ~ handleSubmit ~ response:", response)
 
-            if (response.success) {
+            if (response) { // SDK returns parsed json
                 Alert.alert('Success', 'Your bug report has been submitted.', [
                     { text: 'OK', onPress: () => router.back() }
                 ]);

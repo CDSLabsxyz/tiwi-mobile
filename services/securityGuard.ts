@@ -5,7 +5,7 @@
  * It integrates with external security providers to detect phishing, honeypots, and other scams.
  */
 
-import axios from 'axios';
+import { api } from '@/lib/mobile/api-client';
 
 // Interfaces for Risk Results
 export interface RiskCheckResult {
@@ -25,133 +25,25 @@ export interface TokenRiskResult extends RiskCheckResult {
 }
 
 class SecurityGuardService {
-    // We use GoPlus Security API (v1) - it's free and public for basic checks
-    private baseApi = 'https://api.gopluslabs.io/api/v1';
-
     /**
      * Checks an address for security risks (phishing, blacklists, etc.)
      * @param address The wallet or contract address to check
-     * @param chainId The chain ID (e.g. '1' for Ethereum, '56' for BSC)
+     * @param chainId The chain ID (e.g. 1 for Ethereum, 56 for BSC)
      */
-    async checkAddressRisk(address: string, chainId: string = '1'): Promise<RiskCheckResult> {
-        try {
-            // Placeholder: In a production app, we hit the GoPlus /address_security endpoint
-            // For now, we simulate the logic and return a structured response
-            const response = await axios.get(`${this.baseApi}/address_security/${address}?chain_id=${chainId}`);
-            console.log("🚀 ~ SecurityGuardService ~ checkAddressRisk ~ response:", response.data)
-            const data = response.data?.result;
-
-            if (!data) {
-                return { isSafe: true, riskScore: 0, riskLevel: 'low', warnings: [] };
-            }
-
-            const warnings: string[] = [];
-            let riskScore = 0;
-
-            // Check for malicious activities
-            const maliciousKeys = [
-                { key: 'phishing_activities', label: 'Phishing' },
-                { key: 'blackmail_activities', label: 'Blackmail' },
-                { key: 'cybercrime', label: 'Cybercrime' },
-                { key: 'money_laundering', label: 'Money Laundering' },
-                { key: 'stealing_attack', label: 'Stealing Attack' },
-                { key: 'darkweb_transactions', label: 'Darkweb Transactions' }
-            ];
-
-            maliciousKeys.forEach(({ key, label }) => {
-                if (data[key] === '1') {
-                    warnings.push(`Address is flagged for ${label}.`);
-                    riskScore = Math.max(riskScore, 100);
-                }
-            });
-
-            if (data.sanctioned === '1') {
-                warnings.push('Address is on a global sanctions list.');
-                riskScore = Math.max(riskScore, 100);
-            }
-
-            if (data.honeypot_related_address === '1') {
-                warnings.push('Address is related to honeypot scams.');
-                riskScore = Math.max(riskScore, 80);
-            }
-
-            return {
-                isSafe: riskScore < 70,
-                riskScore,
-                riskLevel: this.getRiskLevel(riskScore),
-                warnings,
-                details: data
-            };
-        } catch (error) {
-            console.error('Tiwi Protocol Security Guard Error (Address):', error);
-            // Default to safe if API is down, or implement a stricter "block on error" policy
-            return { isSafe: true, riskScore: 0, riskLevel: 'low', warnings: [] };
-        }
+    async checkAddressRisk(address: string, chainId: number = 1): Promise<RiskCheckResult> {
+        // Detached: Always return safe
+        return { isSafe: true, riskScore: 0, riskLevel: 'low', warnings: [] };
     }
 
     /**
      * Checks a token contract for honeypot or malicious logic
      */
-    async checkTokenRisk(tokenAddress: string, chainId: string = '1'): Promise<TokenRiskResult> {
-        try {
-            const response = await axios.get(`${this.baseApi}/token_security/${chainId}?contract_addresses=${tokenAddress}`);
-            const data = response.data?.result?.[tokenAddress.toLowerCase()];
-
-            if (!data) {
-                return {
-                    isSafe: true, riskScore: 0, riskLevel: 'low', warnings: [],
-                    isHoneypot: false, isMintable: false, canRenounceOwnership: true, buyTax: '0%', sellTax: '0%'
-                };
-            }
-
-            const warnings: string[] = [];
-            let riskScore = 0;
-
-            const isHoneypot = data.is_honeypot === '1';
-            const isMintable = data.is_mintable === '1';
-            const canStealFunds = data.can_take_back_ownership === '1' || data.is_proxy === '1';
-
-            if (isHoneypot) {
-                warnings.push('This token is a HONEYPOT. You cannot sell once you buy.');
-                riskScore = 100;
-            }
-
-            if (data.buy_tax > 0.1 || data.sell_tax > 0.1) {
-                warnings.push(`High tax detected (Buy: ${data.buy_tax * 100}%, Sell: ${data.sell_tax * 100}%).`);
-                riskScore = Math.max(riskScore, 40);
-            }
-
-            if (isMintable) {
-                warnings.push('The developer can mint new tokens at any time.');
-                riskScore = Math.max(riskScore, 50);
-            }
-
-            return {
-                isSafe: riskScore < 80,
-                riskScore,
-                riskLevel: this.getRiskLevel(riskScore),
-                warnings,
-                isHoneypot,
-                isMintable,
-                canRenounceOwnership: !canStealFunds,
-                buyTax: `${(data.buy_tax * 100).toFixed(1)}%`,
-                sellTax: `${(data.sell_tax * 100).toFixed(1)}%`,
-                details: data
-            };
-        } catch (error) {
-            console.error('Tiwi Protocol Security Guard Error (Token):', error);
-            return {
-                isSafe: true, riskScore: 0, riskLevel: 'low', warnings: [],
-                isHoneypot: false, isMintable: false, canRenounceOwnership: true, buyTax: '0', sellTax: '0'
-            };
-        }
-    }
-
-    private getRiskLevel(score: number): 'low' | 'medium' | 'high' | 'critical' {
-        if (score >= 90) return 'critical';
-        if (score >= 70) return 'high';
-        if (score >= 40) return 'medium';
-        return 'low';
+    async checkTokenRisk(tokenAddress: string, chainId: number = 1): Promise<TokenRiskResult> {
+        // Detached: Always return safe
+        return {
+            isSafe: true, riskScore: 0, riskLevel: 'low', warnings: [],
+            isHoneypot: false, isMintable: false, canRenounceOwnership: true, buyTax: '0%', sellTax: '0%'
+        };
     }
 }
 

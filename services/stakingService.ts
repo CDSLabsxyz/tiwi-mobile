@@ -3,7 +3,7 @@ import { MOCK_STAKING_POOLS, MOCK_USER_STAKES } from '@/constants/mockData';
 import { formatCompactNumber } from '@/utils/formatting';
 import { createPublicClient, formatUnits, http } from 'viem';
 import { bsc } from 'viem/chains';
-import { apiClient, APIStakingPool, APIUserStake } from './apiClient';
+import { api, StakingPool as SDKStakingPool, UserStake as SDKUserStake } from '@/lib/mobile/api-client';
 import { RPC_CONFIG, RPC_TRANSPORT_OPTIONS } from '@/constants/rpc';
 
 // Toggle this to enable/disable mocks globally for staking
@@ -24,15 +24,21 @@ export interface StakingStats {
     activeStakersCount: string;
 }
 
-export interface StakingPool extends APIStakingPool {
+export interface StakingPool extends SDKStakingPool {
     displayApy: string;
     displayLimits?: string;
     minStakingPeriod?: string;
     tvl?: string;
     activeStakers?: string;
+    tokenSymbol: string; // Ensure compatibility
+    tokenName: string;
 }
 
-export interface UserStake extends APIUserStake {
+export interface UserStake extends Partial<SDKUserStake> {
+    id: string;
+    userWallet: string;
+    stakedAmount: string;
+    rewardsEarned: string;
     displayApy: string;
     displayStakedAmount: string;
     displayRewardsEarned: string;
@@ -40,6 +46,7 @@ export interface UserStake extends APIUserStake {
     minStakingPeriod?: string;
     earningRate?: number;
     pool: StakingPool;
+    status: 'active' | 'completed' | 'withdrawn' | 'archived';
 }
 
 class StakingService {
@@ -103,8 +110,11 @@ class StakingService {
 
                     // Fetch active stakers for THIS specific pool from API
                     try {
-                        const poolStakes = await apiClient.getUserStakes(undefined, 'active', pool.id);
-                        const uniqueWallets = new Set((poolStakes || []).map((s: any) => s.userWallet?.toLowerCase())).size;
+                        const response = await api.staking.userStakes({
+                            walletAddress: '', // Fetch all for count
+                            poolId: pool.id
+                        });
+                        const uniqueWallets = new Set((response.stakes || []).map((s: any) => s.userWallet?.toLowerCase())).size;
                         activeStakers = uniqueWallets.toLocaleString();
                     } catch (e: any) {
                         console.warn(`[StakingService] Failed to fetch stakers for pool ${pool.id}`, e.message);
@@ -203,8 +213,8 @@ class StakingService {
             // Fetch active stakers count from API (global)
             let stakersCount = '0';
             try {
-                const stakes = await apiClient.getUserStakes(undefined, 'active');
-                const uniqueWallets = new Set((stakes || []).map((s: any) => s.userWallet?.toLowerCase())).size;
+                const response = await api.staking.userStakes({ walletAddress: '' });
+                const uniqueWallets = new Set((response.stakes || []).map((s: any) => s.userWallet?.toLowerCase())).size;
                 stakersCount = uniqueWallets.toLocaleString();
             } catch (e: any) {
                 console.warn('[StakingService] Failed to fetch global stakers count:', e.message);
@@ -234,10 +244,11 @@ class StakingService {
      */
     async getActivePools(): Promise<StakingPool[]> {
         try {
-            let pools = await apiClient.getStakingPools('active');
+            const response = await api.staking.list({ status: 'active' });
+            let pools = response.pools || [];
 
-            if (USE_MOCK_FALLBACK && (!pools || pools.length === 0)) {
-                pools = MOCK_STAKING_POOLS;
+            if (USE_MOCK_FALLBACK && pools.length === 0) {
+                pools = MOCK_STAKING_POOLS as any;
             }
 
             // Map and enrich sequentially to avoid RPC spam, though Promise.all is faster
@@ -258,14 +269,15 @@ class StakingService {
     async getUserStakes(walletAddress: string, status?: string): Promise<UserStake[]> {
         if (!walletAddress && !USE_MOCK_FALLBACK) return [];
         try {
-            let stakes = await apiClient.getUserStakes(walletAddress || '0x', status);
+            const response = await api.staking.userStakes({ walletAddress });
+            let stakes = response.stakes || [];
 
-            if (USE_MOCK_FALLBACK && (!stakes || stakes.length === 0)) {
-                stakes = MOCK_USER_STAKES.filter((s: APIUserStake) => !status || s.status === status);
+            if (USE_MOCK_FALLBACK && stakes.length === 0) {
+                stakes = MOCK_USER_STAKES.filter((s: any) => !status || s.status === status);
             }
 
             // Enrich all stakes with on-chain pool info in parallel
-            return await Promise.all((stakes || []).map(async (stake) => {
+            return await Promise.all(stakes.map(async (stake: any) => {
                 let enrichedPool = stake.pool;
                 if (stake.pool) {
                     enrichedPool = await this.mapPool(stake.pool);

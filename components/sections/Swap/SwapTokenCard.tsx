@@ -25,6 +25,7 @@ interface SwapTokenCardProps {
     onAmountChange?: (value: string) => void;
     onTokenPress?: () => void;
     onMaxPress?: () => void;
+    onInputPress?: () => void;
     isLoadingQuote?: boolean;
     isRefreshing?: boolean;
     isStale?: boolean;
@@ -47,6 +48,7 @@ export const SwapTokenCard: React.FC<SwapTokenCardProps> = ({
     onAmountChange,
     onTokenPress,
     onMaxPress,
+    onInputPress,
     isLoadingQuote = false,
     isRefreshing = false,
     isStale = false,
@@ -138,19 +140,23 @@ export const SwapTokenCard: React.FC<SwapTokenCardProps> = ({
                     {isLoadingQuote ? (
                         <View style={styles.skeletonAmount} />
                     ) : isFrom ? (
-                        <TextInput
-                            value={amount}
-                            onChangeText={handleAmountChange}
-                            editable={true}
-                            keyboardType="decimal-pad"
-                            inputMode="decimal"
-                            placeholder="0.0"
-                            placeholderTextColor={colors.mutedText}
-                            style={[styles.amountInput, isRefreshing && { opacity: 0.6 }]}
-                            textAlign="right"
-                            multiline={false}
-                            scrollEnabled={true}
-                        />
+                        <TouchableOpacity
+                            activeOpacity={0.7}
+                            onPress={onInputPress}
+                            style={styles.amountInputButton}
+                        >
+                            <Text
+                                style={[
+                                    styles.amountInput,
+                                    isRefreshing && { opacity: 0.6 },
+                                    !amount && { color: colors.mutedText }
+                                ]}
+                                numberOfLines={1}
+                                ellipsizeMode="tail"
+                            >
+                                {amount || '0.0'}
+                            </Text>
+                        </TouchableOpacity>
                     ) : (
                         <View style={styles.toAmountContainer}>
                             <ScrollView
@@ -322,12 +328,16 @@ const styles = StyleSheet.create({
         flex: 1,
         alignItems: 'flex-end',
     },
+    amountInputButton: {
+        width: '100%',
+        alignItems: 'flex-end',
+        justifyContent: 'center',
+    },
     amountInput: {
         fontFamily: 'Manrope-Bold',
         fontSize: 24,
         color: colors.titleText,
-        width: '100%',
-        padding: 0,
+        textAlign: 'right',
     },
     toAmountContainer: {
         width: '100%',

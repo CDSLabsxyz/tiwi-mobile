@@ -1,8 +1,18 @@
+import { api } from '@/lib/mobile/api-client';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { SettingsHeader } from '@/components/ui/settings-header';
 import { colors } from '@/constants/colors';
-import { apiClient, LiveStatus } from '@/services/apiClient';
 import { useQuery } from '@tanstack/react-query';
+
+// Interface matching the legacy type but used locally
+export interface LiveStatus {
+    id: string;
+    service: string;
+    status: 'operational' | 'degraded' | 'maintenance' | 'down';
+    description?: string;
+    lastUpdated?: string;
+}
+
 import { useRouter } from 'expo-router';
 import React from 'react';
 import { FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
@@ -20,7 +30,7 @@ export default function LiveStatusScreen() {
 
     const { data, isLoading, isError, refetch } = useQuery({
         queryKey: ['liveStatus'],
-        queryFn: () => apiClient.getLiveStatus(),
+        queryFn: () => api.liveStatus.get(),
     });
     console.log("🚀 ~ LiveStatusScreen ~ data:", data)
 

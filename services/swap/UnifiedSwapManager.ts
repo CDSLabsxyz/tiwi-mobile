@@ -3,6 +3,7 @@ import { DexExecutor } from './executors/DexExecutor';
 import { LiFiExecutor } from './executors/LiFiExecutor';
 import { RelayExecutor } from './executors/RelayExecutor';
 import { RelayerExecutor } from './executors/RelayerExecutor';
+import { TiwiExecutor } from './executors/TiwiExecutor';
 import { ExecuteSwapParams, SwapExecutionResult } from './types';
 
 export class UnifiedSwapManager {
@@ -11,6 +12,7 @@ export class UnifiedSwapManager {
     private relayerExecutor = new RelayerExecutor();
     private acrossExecutor = new AcrossExecutor();
     private relayExecutor = new RelayExecutor();
+    private tiwiExecutor = new TiwiExecutor();
 
     async execute(params: ExecuteSwapParams): Promise<SwapExecutionResult> {
         const { quote } = params;
@@ -24,10 +26,15 @@ export class UnifiedSwapManager {
             return { success: false, error: errorMsg };
         }
 
+        // 1. Priority: If SDK returned a specific transaction request, use TiwiExecutor
+        if (quote.transactionRequest || router === 'aggregator' || router === 'tiwi') {
+            return this.tiwiExecutor.execute(params);
+        }
+
         if (router === 'relay') {
             return this.relayExecutor.execute(params);
         }
-        
+
         if (router === 'across') {
             return this.acrossExecutor.execute(params);
         }
@@ -37,11 +44,11 @@ export class UnifiedSwapManager {
         }
 
         if (router.includes('relayer') || router === 'managed') {
-           // Relayer executor DISABLED per user request
-           return { success: false, error: "Managed relayer execution is currently disabled. Please use a standard router." };
+            // Relayer executor DISABLED per user request
+            return { success: false, error: "Managed relayer execution is currently disabled. Please use a standard router." };
         }
 
-        // Default to DEX executor for PancakeSwap, Uniswap, etc.
+        // Default to DEX executor
         if (router.includes('pancakeswap') || router.includes('uniswap') || router === 'dex' || router === 'unknown') {
             return this.dexExecutor.execute(params);
         }

@@ -1,6 +1,6 @@
 import { colors } from '@/constants/colors';
 import { useMarketTrades } from '@/hooks/useMarketTrades';
-import { apiClient, BASE_URL } from '@/services/apiClient';
+import { api, TIWI_API_BASE_URL } from '@/lib/mobile/api-client';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { WebView } from 'react-native-webview';
@@ -15,7 +15,7 @@ const timeframes = ['1m', '5m', '15m', '1h', '4h', '1D', 'More'];
  */
 
 // USE YOUR VERIFIED IP ADDRESS
-const CHART_URL = `${BASE_URL}/charts/index.html`;
+const CHART_URL = `${TIWI_API_BASE_URL}/charts/index.html`;
 
 interface TradingViewChartProps {
     symbol: string;
@@ -120,7 +120,7 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
             }
 
             if (data.type === 'GET_BARS') {
-                const history = await apiClient.getChartHistory({
+                const history = await api.charts.history({
                     symbol: tvSymbol,
                     resolution: data.resolution,
                     from: data.from,

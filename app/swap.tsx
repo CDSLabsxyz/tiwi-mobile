@@ -15,7 +15,8 @@ import {
     SwapTabs,
     SwapTokenCard,
     TokenOption,
-    UnifiedAssetSelectSheet
+    UnifiedAssetSelectSheet,
+    SwapKeyboard
 } from '@/components/sections/Swap';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { WalletModal } from '@/components/ui/wallet-modal';
@@ -24,7 +25,7 @@ import { useChains } from '@/hooks/useChains';
 import { useTokenPrefetch } from '@/hooks/useTokenPrefetch';
 import { useWalletBalances } from '@/hooks/useWalletBalances';
 import { activityService } from '@/services/activityService';
-import { apiClient } from '@/services/apiClient';
+import { api } from '@/lib/mobile/api-client';
 import { securityGuard } from '@/services/securityGuard';
 import { executeSwap, fetchSwapQuote } from '@/services/swap';
 import { useLocaleStore } from '@/store/localeStore';
@@ -114,6 +115,17 @@ export default function SwapScreen() {
     const [isLoadingSwap, setIsLoadingSwap] = useState(false);
     const [lastFetchTime, setLastFetchTime] = useState<number>(0);
     const [isSuccessModalVisible, setIsSuccessModalVisible] = useState(false);
+    const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+
+    const scrollViewRef = React.useRef<ScrollView>(null);
+
+    useEffect(() => {
+        if (isKeyboardVisible) {
+            setTimeout(() => {
+                scrollViewRef.current?.scrollTo({ y: 150, animated: true });
+            }, 50);
+        }
+    }, [isKeyboardVisible]);
 
     const { address } = useWalletStore();
     const { isTransactionRiskEnabled } = useSecurityStore();
@@ -170,8 +182,8 @@ export default function SwapScreen() {
 
                 if (isDefaultBnb || isDefaultTwc) {
                     const [bnbRes, twcRes] = await Promise.all([
-                        apiClient.getTokens({ query: '0x0000000000000000000000000000000000000000', chains: [56], limit: 1 }),
-                        apiClient.getTokens({ query: '0xDA1060158F7D593667CCE0A15DB346BB3FFB3596', chains: [56], limit: 1 })
+                        api.tokens.list({ address: '0x0000000000000000000000000000000000000000', chains: [56], limit: 1 }),
+                        api.tokens.list({ address: '0xDA1060158F7D593667CCE0A15DB346BB3FFB3596', chains: [56], limit: 1 })
                     ]);
 
                     if (isDefaultBnb && bnbRes.tokens?.[0]) {
@@ -261,6 +273,35 @@ export default function SwapScreen() {
     const handleLimitAssetSelect = (target: 'from' | 'to') => {
         setWhenPriceTarget(target);
         setIsLimitAssetSheetVisible(false);
+    };
+
+    const handleKeyboardPress = (key: string) => {
+        if (key === 'DELETE') {
+            setFromAmount(fromAmount.slice(0, -1));
+            return;
+        }
+
+        if (key === '.' && fromAmount.includes('.')) return;
+
+        if (key === '.' && (!fromAmount || fromAmount === '')) {
+            setFromAmount('0.');
+            return;
+        }
+
+        if (fromAmount.includes('.')) {
+            const [, dec] = fromAmount.split('.');
+            if (dec && dec.length >= 6) return;
+        }
+
+        setFromAmount(fromAmount + key);
+    };
+
+    const handlePercentagePress = (percentage: number) => {
+        if (!fromToken?.balanceToken) return;
+        const maxBal = parseFloat(fromToken.balanceToken.split(' ')[0] || '0');
+        if (maxBal <= 0) return;
+        const val = (maxBal * percentage / 100).toFixed(6).replace(/\.?0+$/, '');
+        setFromAmount(val);
     };
 
 
@@ -391,20 +432,10 @@ export default function SwapScreen() {
             const txHash = result?.txHash || `mock-hash-e${Date.now()}`;
             const chainId = typeof fromChain?.id === 'number' ? fromChain.id : 56;
 
-            await apiClient.logTransaction({
-                walletAddress: address,
-                transactionHash: txHash,
-                chainId: chainId,
-                type: 'Swap',
-                fromTokenAddress: fromToken.address,
-                fromTokenSymbol: fromToken.symbol,
-                toTokenAddress: toToken.address,
-                toTokenSymbol: toToken.symbol,
-                amount: fromAmount,
-                amountFormatted: `${fromAmount} ${fromToken.symbol}`,
-                usdValue: parseFloat(toFiatAmount.replace('$', '').replace(',', '')),
-                routerName: swapQuote?.source?.[0] || 'Tiwi Router',
-            });
+            /* 
+            TODO: Use new SDK for indexing transaction if needed.
+            await api.wallet.logTransaction({ ... });
+            */
 
             // Log activity to user-facing activity log
             await activityService.logTransaction(
@@ -494,10 +525,11 @@ export default function SwapScreen() {
                 />
 
                 <ScrollView
+                    ref={scrollViewRef}
                     style={styles.flex1}
                     contentContainerStyle={[
                         styles.scrollContent,
-                        { paddingBottom: (bottom || 16) + 32 }
+                        { paddingBottom: isKeyboardVisible ? 400 : ((bottom || 16) + 32) }
                     ]}
                     showsVerticalScrollIndicator={false}
                 >
@@ -534,10 +566,8 @@ export default function SwapScreen() {
                                 balanceText={fromToken?.balanceToken || '0.00'}
                                 onAmountChange={setFromAmount}
                                 onTokenPress={() => handleOpenAssetSheet('from', 'tokens')}
-                                onMaxPress={() => {
-                                    const bal = fromToken?.balanceToken?.split(' ')[0] || '0';
-                                    setFromAmount(bal);
-                                }}
+                                onMaxPress={() => handlePercentagePress(100)}
+                                onInputPress={() => setIsKeyboardVisible(true)}
                             />
 
                             <View style={styles.toCardWrapper}>
@@ -610,6 +640,14 @@ export default function SwapScreen() {
                         />
                     </View>
                 </ScrollView>
+
+                <SwapKeyboard
+                    visible={isKeyboardVisible}
+                    onClose={() => setIsKeyboardVisible(false)}
+                    onKeyPress={handleKeyboardPress}
+                    onPercentagePress={handlePercentagePress}
+                    onMaxPress={() => handlePercentagePress(100)}
+                />
             </View>
         </View>
     );

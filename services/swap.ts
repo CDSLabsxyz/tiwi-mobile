@@ -1,13 +1,12 @@
 
-import { acrossService } from './acrossService';
-import { relayService } from './relayService';
+import { api, RouteRequest } from '@/lib/mobile/api-client';
 import { SwapQuote, TokenMinimal } from './swap/types';
 import { unifiedSwapManager } from './swap/UnifiedSwapManager';
 
 export * from './swap/types';
 
 /**
- * Swap service - handles swap-related API calls
+ * Swap service - handles swap-related API calls using the new Routing Engine
  */
 
 export async function fetchSwapQuote(
@@ -16,48 +15,57 @@ export async function fetchSwapQuote(
     toToken: TokenMinimal,
     fromAddress: string,
     recipient: string,
-    slippage?: number
+    slippage: number = 0.5
 ): Promise<SwapQuote> {
     if (!fromAmount || parseFloat(fromAmount) <= 0) {
         throw new Error('Invalid amount');
     }
 
     try {
-    // 1. Fetch from best sources in parallel for speed
-    console.log(`[SwapService] Parallel quoting for ${fromToken.symbol} -> ${toToken.symbol}`);
-    const results = await Promise.allSettled([
-        acrossService.fetchAcrossQuote(fromAmount, fromToken, toToken, fromAddress, recipient, slippage),
-        relayService.fetchRelayQuote(fromAmount, fromToken, toToken, fromAddress, recipient, slippage)
-    ]);
+        console.log(`[SwapService] Using Tiwi Routing Engine for ${fromToken.symbol} -> ${toToken.symbol}`);
 
-    const acrossQuote = (results[0].status === 'fulfilled' && results[0].value?.router !== 'error') ? results[0].value : null;
-    const relayQuote = (results[1].status === 'fulfilled' && results[1].value?.router !== 'error') ? results[1].value : null;
-
-    // 2. Selection logic: 
-    // Always prefer Across as Priority 1 (best for aggregators/taxes)
-    // Fallback to Relay for others.
-    if (acrossQuote) {
-        console.log("[SwapService] Selecting Across Quote (Primary Route)");
-        return acrossQuote;
-    }
-    if (relayQuote) {
-        console.log("[SwapService] Selecting Relay Quote (Secondary Route)");
-        return relayQuote;
-    }
-
-    throw new Error('No swap route found for this pair. Try a different amount or asset.');
-    } catch (error) {
-        console.error('[SwapService] fetchSwapQuote failed:', error);
-        return {
-            toAmount: fromAmount,
-            fiatAmount: '0',
-            slippage: 0.5,
-            gasEstimate: '0.001',
-            gasFee: '0',
-            twcFee: '0.00%',
-            source: ['Error', 'Across'],
-            router: 'error',
+        const routeReq: RouteRequest = {
+            fromToken: {
+                chainId: fromToken.chainId,
+                address: fromToken.address,
+                symbol: fromToken.symbol,
+                decimals: fromToken.decimals,
+            },
+            toToken: {
+                chainId: toToken.chainId,
+                address: toToken.address,
+                symbol: toToken.symbol,
+                decimals: toToken.decimals,
+            },
+            fromAmount,
+            fromAddress,
+            recipient,
+            slippage,
         };
+
+        const response: any = await api.route.get(routeReq);
+
+        if (!response || !response.route) {
+            throw new Error('No swap route found');
+        }
+
+        // Map RouteResponse to SwapQuote (UI Compatibility)
+        return {
+            toAmount: response.route.toToken?.amount || '0',
+            fiatAmount: response.route.toToken?.amountUSD || '0',
+            slippage: slippage,
+            gasEstimate: response.route.fees?.gasUSD || '0',
+            gasFee: response.route.fees?.gasUSD ? `$${response.route.fees.gasUSD}` : '0',
+            twcFee: '0.00%',
+            source: [response.route.router ? response.route.router.charAt(0).toUpperCase() + response.route.router.slice(1) : 'Tiwi Router'],
+            router: response.route.router,
+            transactionRequest: response.transactionRequest,
+            raw: response.route.raw,
+            quoteId: response.route.routeId,
+        };
+    } catch (error: any) {
+        console.error('[SwapService] fetchSwapQuote failed:', error);
+        throw error;
     }
 }
 

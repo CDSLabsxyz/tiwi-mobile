@@ -24,6 +24,7 @@ export interface SwapQuote {
     raw?: any;
     router?: string;
     quoteId?: string;
+    transactionRequest?: any;
 }
 
 export interface ExecuteSwapParams {
