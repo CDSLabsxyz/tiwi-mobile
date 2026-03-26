@@ -209,22 +209,36 @@ export default function RootLayout() {
 
   // 2. App State Listener (Session Management)
   useEffect(() => {
+    let appState = AppState.currentState;
+
     const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
-      if (nextAppState === 'active') {
+      const securityState = useSecurityStore.getState();
+      const walletState = useWalletStore.getState();
+      
+      const { lastActive, autoLockTimeout, hasPasscode, lockApp, updateLastActive } = securityState;
+      const { isConnected, address } = walletState;
+
+      // Going to Foreground
+      if (appState.match(/inactive|background/) && nextAppState === 'active') {
         const now = Date.now();
         const diff = now - lastActive;
 
-        if (diff > autoLockTimeout && hasPasscode) {
+        if (autoLockTimeout !== -1 && diff > autoLockTimeout && hasPasscode) {
           lockApp();
         }
+        
         updateLastActive();
+        
         if (isConnected && address) {
           mobileSessionManager.syncCurrentSession(address);
         } else {
           deviceService.registerSession();
         }
-      } else if (nextAppState === 'background') {
+      } 
+      // Going to Background
+      else if (appState === 'active' && nextAppState.match(/inactive|background/)) {
         updateLastActive();
+        
         if (isConnected && address) {
           mobileSessionManager.syncCurrentSession(address);
         } else {
@@ -235,10 +249,12 @@ export default function RootLayout() {
           lockApp();
         }
       }
+      
+      appState = nextAppState;
     });
 
     return () => subscription.remove();
-  }, [lastActive, hasPasscode, lockApp, updateLastActive, autoLockTimeout, isConnected, address]);
+  }, []);
 
   // 3. Navigation Guard Logic
   useEffect(() => {

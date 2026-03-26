@@ -3,7 +3,7 @@ import { SettingsHeader } from '@/components/ui/settings-header';
 import { SettingsItem } from '@/components/ui/settings-item';
 import { colors } from '@/constants/colors';
 import { BlurView } from 'expo-blur';
-import { Paths, Directory, File } from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Linking from 'expo-linking';
 import React, { useState } from 'react';
 import {
@@ -20,40 +20,36 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 const DownloadIcon = require('../../assets/settings/download-03.svg');
 const DeleteIcon = require('../../assets/settings/delete-02.svg');
 const RestoreBinIcon = require('../../assets/settings/restore-bin.svg');
-const RefreshIcon = require('../../assets/settings/refresh.svg');
-const UnavailableIcon = require('../../assets/settings/unavailable.svg');
 
 export default function AppUpdatesCacheScreen() {
     const { bottom } = useSafeAreaInsets();
     const [isClearingCache, setIsClearingCache] = useState(false);
     const [isResettingFiles, setIsResettingFiles] = useState(false);
-    const [isRefreshingMetadata, setIsRefreshingMetadata] = useState(false);
 
     const handleCheckForUpdates = async () => {
         try {
-            if (Platform.OS === 'ios') {
-                const appStoreUrl = 'https://apps.apple.com/app/tiwi-protocol/id123456789';
-                await Linking.openURL(appStoreUrl);
-            } else if (Platform.OS === 'android') {
-                const playStoreUrl = 'https://play.google.com/store/apps/details?id=com.tiwiprotocol.app';
-                await Linking.openURL(playStoreUrl);
-            } else {
-                Alert.alert('Info', 'Please check for updates on your device app store');
-            }
+            await Linking.openURL('https://app.tiwiprotocol.xyz/download');
         } catch (error) {
-            console.error('Error opening app store:', error);
-            Alert.alert('Error', 'Failed to open app store');
+            console.error('Error opening update link:', error);
+            Alert.alert('Error', 'Failed to open update link');
         }
     };
 
     const handleClearCache = async () => {
         setIsClearingCache(true);
         try {
-            const cacheDir = Paths.cache;
-            if (cacheDir.exists) {
-                const contents = cacheDir.list();
-                for (const item of contents) {
-                    item.delete();
+            const cacheDir = FileSystem.cacheDirectory;
+            if (cacheDir) {
+                const dirInfo = await FileSystem.getInfoAsync(cacheDir);
+                if (dirInfo.exists) {
+                    const contents = await FileSystem.readDirectoryAsync(cacheDir);
+                    for (const item of contents) {
+                        try {
+                            await FileSystem.deleteAsync(`${cacheDir}${item}`, { idempotent: true });
+                        } catch (e) {
+                            console.warn('Skipped non-deletable sub-item in cache:', item);
+                        }
+                    }
                 }
             }
             Alert.alert('Success', 'Cache cleared successfully');
@@ -68,12 +64,19 @@ export default function AppUpdatesCacheScreen() {
     const handleResetTemporaryFiles = async () => {
         setIsResettingFiles(true);
         try {
-            const cacheDir = Paths.cache;
-            if (cacheDir.exists) {
-                const contents = cacheDir.list();
-                for (const item of contents) {
-                    if (item.name.startsWith('temp_') || item.name.endsWith('.tmp')) {
-                        item.delete();
+            const cacheDir = FileSystem.cacheDirectory;
+            if (cacheDir) {
+                const dirInfo = await FileSystem.getInfoAsync(cacheDir);
+                if (dirInfo.exists) {
+                    const contents = await FileSystem.readDirectoryAsync(cacheDir);
+                    for (const item of contents) {
+                        if (item.startsWith('temp_') || item.endsWith('.tmp') || item.includes('tmp')) {
+                            try {
+                                await FileSystem.deleteAsync(`${cacheDir}${item}`, { idempotent: true });
+                            } catch (e) {
+                                console.warn('Skipped non-deletable tmp file:', item);
+                            }
+                        }
                     }
                 }
             }
@@ -83,16 +86,6 @@ export default function AppUpdatesCacheScreen() {
             Alert.alert('Error', 'Failed to reset temporary files');
         } finally {
             setIsResettingFiles(false);
-        }
-    };
-
-    const handleRefreshNFTMetadata = async () => {
-        setIsRefreshingMetadata(true);
-        try {
-            await new Promise((resolve) => setTimeout(resolve, 1500));
-            Alert.alert('Success', 'NFT metadata refreshed successfully');
-        } finally {
-            setIsRefreshingMetadata(false);
         }
     };
 
@@ -117,20 +110,6 @@ export default function AppUpdatesCacheScreen() {
             action: handleResetTemporaryFiles,
             loading: isResettingFiles,
         },
-        {
-            id: 'refresh-nft-metadata',
-            title: 'Refresh NFT Metadata',
-            icon: RefreshIcon,
-            action: handleRefreshNFTMetadata,
-            loading: isRefreshingMetadata,
-        },
-        {
-            id: 'developer-mode',
-            title: 'Developer Mode',
-            icon: UnavailableIcon,
-            action: () => { },
-            disabled: true,
-        },
     ];
 
     return (
@@ -152,14 +131,11 @@ export default function AppUpdatesCacheScreen() {
                             <SettingsItem
                                 label={option.title}
                                 icon={option.icon}
-                                onPress={option.disabled ? () => { } : option.action}
-                                showChevron={!option.disabled && !option.loading}
+                                onPress={option.action}
+                                showChevron={!option.loading}
                                 rightElement={option.loading && <TIWILoader size={30} />}
                                 destructive={false}
                             />
-                            {option.disabled && (
-                                <BlurView intensity={10} style={styles.blurOverlay} />
-                            )}
                         </View>
                     ))}
                 </View>

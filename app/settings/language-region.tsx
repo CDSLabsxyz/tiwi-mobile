@@ -8,7 +8,7 @@
 import { StatusBar } from '@/components/ui/StatusBar';
 import { colors } from '@/constants/colors';
 import { useTranslation } from '@/hooks/useLocalization';
-import { useLocaleStore } from '@/store/localeStore';
+import { useLocaleStore, SUPPORTED_LANGUAGES, SUPPORTED_CURRENCIES } from '@/store/localeStore';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
@@ -179,8 +179,8 @@ export default function LanguageRegionScreen() {
     const { t } = useTranslation();
 
     const {
-        language, setLanguage, languages,
-        currency, setCurrency, currencies,
+        language, setLanguage,
+        currency, setCurrency,
         dateFormat, setDateFormat
     } = useLocaleStore();
 
@@ -224,7 +224,7 @@ export default function LanguageRegionScreen() {
                 visible: true,
                 type: 'language',
                 title: t('locale.language'),
-                options: languages.map(l => ({ label: l.nativeName, value: l.code })),
+                options: SUPPORTED_LANGUAGES.map(l => ({ label: l.nativeName, value: l.code })),
                 selectedKey: language,
                 setter: setLanguage
             });
@@ -233,7 +233,7 @@ export default function LanguageRegionScreen() {
                 visible: true,
                 type: 'currency',
                 title: t('locale.currency'),
-                options: currencies.map(c => ({ label: `${c.code} (${c.symbol}) - ${c.name}`, value: c.code })),
+                options: SUPPORTED_CURRENCIES.map(c => ({ label: `${c.code} (${c.symbol}) - ${c.name}`, value: c.code })),
                 selectedKey: currency,
                 setter: setCurrency
             });
@@ -253,7 +253,7 @@ export default function LanguageRegionScreen() {
         }
     };
 
-    const currentLanguageName = languages.find(l => l.code === language)?.nativeName || 'English';
+    const currentLanguageName = SUPPORTED_LANGUAGES.find(l => l.code === language)?.nativeName || 'English';
 
     return (
         <View style={[styles.container, { backgroundColor: colors.bg }]}>

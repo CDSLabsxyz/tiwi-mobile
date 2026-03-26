@@ -24,6 +24,7 @@ export type SetupPhase = 'WELCOME' | 'WALLET_READY' | 'SECURITY_READY' | 'COMPLE
 interface SecurityState {
     hasPasscode: boolean;
     isBiometricsEnabled: boolean;
+    isFaceUnlockEnabled: boolean;
     isNotificationsEnabled: boolean;
     isLocked: boolean;
     isSetupComplete: boolean;
@@ -49,6 +50,7 @@ interface SecurityState {
     verifyPasscode: (code: string) => Promise<boolean>;
     authenticateBiometrics: (promptMessage?: string) => Promise<boolean>;
     enableBiometrics: (enabled: boolean) => void;
+    enableFaceUnlock: (enabled: boolean) => void;
     enableNotifications: (enabled: boolean) => void;
 
     setSuspiciousActivity: (enabled: boolean) => void;
@@ -73,6 +75,7 @@ export const useSecurityStore = create<SecurityState>()(
         (set, get) => ({
             hasPasscode: false,
             isBiometricsEnabled: false,
+            isFaceUnlockEnabled: false,
             isNotificationsEnabled: false,
             isLocked: true, // Default to locked for higher security on boot
             isSetupComplete: false,
@@ -119,8 +122,8 @@ export const useSecurityStore = create<SecurityState>()(
             },
 
             authenticateBiometrics: async (promptMessage = 'Authenticate to continue') => {
-                const { isBiometricsEnabled } = get();
-                if (!isBiometricsEnabled) return false;
+                const { isBiometricsEnabled, isFaceUnlockEnabled } = get();
+                if (!isBiometricsEnabled && !isFaceUnlockEnabled) return false;
 
                 try {
                     const hasHardware = await LocalAuthentication.hasHardwareAsync();
@@ -142,6 +145,7 @@ export const useSecurityStore = create<SecurityState>()(
             },
 
             enableBiometrics: (enabled) => set({ isBiometricsEnabled: enabled }),
+            enableFaceUnlock: (enabled) => set({ isFaceUnlockEnabled: enabled }),
             enableNotifications: (enabled) => set({ isNotificationsEnabled: enabled }),
 
             setSuspiciousActivity: (enabled) => set({ isSuspiciousActivityEnabled: enabled }),
@@ -177,6 +181,7 @@ export const useSecurityStore = create<SecurityState>()(
                 set({
                     hasPasscode: false,
                     isBiometricsEnabled: false,
+                    isFaceUnlockEnabled: false,
                     isNotificationsEnabled: false,
                     isSuspiciousActivityEnabled: true,
                     isTransactionRiskEnabled: true,

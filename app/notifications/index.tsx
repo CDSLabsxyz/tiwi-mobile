@@ -1,12 +1,11 @@
 import { colors } from '@/constants/colors';
-import { useNotifications } from '@/hooks/useNotifications';
-import { activityService, ActivityType, UserActivity } from '@/services/activityService';
-import { adminNotificationService } from '@/services/adminNotificationService';
+import { activityService, ActivityType } from '@/services/activityService';
 import { useWalletStore } from '@/store/walletStore';
-import Ionicons from '@expo/vector-icons/Ionicons';
+import { useUnifiedActivities } from '@/hooks/useUnifiedActivities';
 import { formatDistanceToNow } from 'date-fns';
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import { Image } from 'expo-image';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
     FlatList,
     RefreshControl,
@@ -17,45 +16,102 @@ import {
 } from 'react-native';
 import { TIWILoader } from '@/components/ui/TIWILoader';
 
+const ChevronLeftIcon = require('../../assets/swap/arrow-left-02.svg');
+const AlertCircle = require('../../assets/settings/alert-circle.svg');
+const Megaphone = require('../../assets/settings/news-01.svg');
+const TransactionIcon = require('../../assets/home/transaction-history.svg');
+const CrownIcon = require('../../assets/settings/crown.svg');
+const UserGroup = require('../../assets/settings/user-group-02.svg');
+const SecurityLock = require('../../assets/settings/security-lock.svg');
+const NotificationIcon = require('../../assets/settings/notification-02.svg');
+
 const CATEGORIES: { label: string; value: ActivityType | 'all' | 'announcement' }[] = [
     { label: 'All', value: 'all' },
     { label: 'Announcements', value: 'announcement' },
     { label: 'Transactions', value: 'transaction' },
-    { label: 'Rewards', value: 'reward' },
-    { label: 'Security', value: 'security' },
-    { label: 'Governance', value: 'governance' },
 ];
 
 export default function NotificationsScreen() {
     const router = useRouter();
     const { address } = useWalletStore();
-    const { activities, adminNotifications, loading, refresh } = useNotifications();
     const [filter, setFilter] = useState<ActivityType | 'all' | 'announcement'>('all');
     const [viewedAdminIds, setViewedAdminIds] = useState<Set<string>>(new Set());
 
+    const { data: unifiedActivities = [], isLoading: isUnifiedLoading, refetch: refetchUnified } = useUnifiedActivities(100);
+    const [liveAnnouncements, setLiveAnnouncements] = useState<any[]>([]);
+    const [isLoadingAnnouncements, setIsLoadingAnnouncements] = useState(false);
+
+    const fetchAnnouncements = useCallback(async () => {
+        if (!address) return;
+        setIsLoadingAnnouncements(true);
+        try {
+            const response = await fetch(`https://app.tiwiprotocol.xyz/api/v1/notifications?status=live&userWallet=${encodeURIComponent(address)}`);
+            if (response.ok) {
+                const data = await response.json();
+                setLiveAnnouncements(data.notifications || []);
+                
+                // Track already-viewed ones via UI status returned by API if supported, or locally 
+                // for simplicity, we assume ones returned without explicitly viewed logic act like the dropdown
+            }
+        } catch (error) {
+            console.error("Error fetching announcements:", error);
+        } finally {
+            setIsLoadingAnnouncements(false);
+        }
+    }, [address]);
+
+    useEffect(() => {
+        if (address) {
+            fetchAnnouncements();
+        }
+    }, [address, fetchAnnouncements]);
+
+    const loading = isUnifiedLoading || isLoadingAnnouncements;
+    const refresh = () => {
+        refetchUnified();
+        fetchAnnouncements();
+    };
+
     // Merge and sort all notifications
     const allNotifications = [
-        ...activities.map(a => ({ ...a, displayType: 'activity' as const })),
-        ...adminNotifications.map(n => ({ ...n, displayType: 'admin' as const }))
+        ...unifiedActivities.map(a => ({ ...a, displayType: 'activity' as const })),
+        ...liveAnnouncements.map(n => ({ ...n, displayType: 'admin' as const }))
     ].sort((a, b) => {
-        const dateA = new Date(a.created_at || 0).getTime();
-        const dateB = new Date(b.created_at || 0).getTime();
+        const dateA = a.displayType === 'activity' ? (a.timestamp || 0) : new Date(a.createdAt || 0).getTime();
+        const dateB = b.displayType === 'activity' ? (b.timestamp || 0) : new Date(b.createdAt || 0).getTime();
         return dateB - dateA;
     });
 
     const filteredList = allNotifications.filter(item => {
         if (filter === 'all') return true;
         if (filter === 'announcement') return item.displayType === 'admin';
-        if (item.displayType === 'activity') return (item as UserActivity).type === filter;
+        if (filter === 'transaction') return item.displayType === 'activity' && item.type === 'transaction';
         return false;
     });
 
     const handleMarkAllRead = async () => {
         if (!address) return;
-        await Promise.all([
-            activityService.markAllAsRead(address),
-            adminNotificationService.markAsViewed(address, adminNotifications.map(n => n.id))
-        ]);
+        // Mark activities read locally
+        await activityService.markAllAsRead(address);
+
+        // Mark announcements read remotely
+        if (liveAnnouncements.length > 0) {
+            try {
+                const notificationIds = liveAnnouncements.map(n => n.id);
+                await fetch("https://app.tiwiprotocol.xyz/api/v1/notifications/mark-viewed", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ notificationIds, userWallet: address }),
+                });
+                setViewedAdminIds(prev => {
+                    const next = new Set(prev);
+                    notificationIds.forEach(id => next.add(id));
+                    return next;
+                });
+            } catch (error) {
+                console.error("Error marking notifications as viewed:", error);
+            }
+        }
         refresh();
     };
 
@@ -63,39 +119,51 @@ export default function NotificationsScreen() {
         if (!address) return;
 
         if (item.displayType === 'activity') {
-            if (item.id) activityService.markAsRead(item.id);
+            if (item.id) await activityService.markAsRead(item.id);
             // Handle activity deep linking
         } else {
-            await adminNotificationService.markAsViewed(address, [item.id]);
+            try {
+                await fetch("https://app.tiwiprotocol.xyz/api/v1/notifications/mark-viewed", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ notificationIds: [item.id], userWallet: address }),
+                });
+                setViewedAdminIds(prev => {
+                    const next = new Set(prev);
+                    next.add(item.id);
+                    return next;
+                });
+            } catch (error) {
+                console.error("Error marking viewed:", error);
+            }
         }
-        refresh();
+        refetchUnified();
     };
 
     const isUnread = (item: any) => {
         if (item.displayType === 'activity') return !item.is_read;
-        const viewed = viewedAdminIds.has(item.id);
-        return !viewed;
+        return !viewedAdminIds.has(item.id);
     };
 
     const renderItem = ({ item }: { item: any }) => {
         const isActivity = item.displayType === 'activity';
         const unread = isUnread(item);
 
-        const getIcon = () => {
+        const getIconSource = () => {
             if (!isActivity) {
                 switch (item.priority) {
-                    case 'critical': return 'alert-circle';
-                    case 'important': return 'megaphone';
-                    default: return 'megaphone-outline';
+                    case 'critical': return AlertCircle;
+                    case 'important': return Megaphone;
+                    default: return Megaphone;
                 }
             }
             switch (item.type) {
-                case 'transaction': return 'swap-horizontal';
-                case 'reward': return 'gift-outline';
-                case 'governance': return 'people-outline';
-                case 'security': return 'shield-checkmark-outline';
-                case 'system': return 'information-circle-outline';
-                default: return 'notifications-outline';
+                case 'transaction': return TransactionIcon;
+                case 'reward': return CrownIcon;
+                case 'governance': return UserGroup;
+                case 'security': return SecurityLock;
+                case 'system': return NotificationIcon;
+                default: return NotificationIcon;
             }
         };
 
@@ -134,23 +202,24 @@ export default function NotificationsScreen() {
                 activeOpacity={0.7}
             >
                 <View style={[styles.iconContainer, { backgroundColor: getIconBg() }]}>
-                    <Ionicons name={getIcon() as any} size={20} color={getIconColor()} />
+                    <Image source={getIconSource()} style={{ width: 20, height: 20 }} tintColor={getIconColor()} contentFit="contain" />
                 </View>
                 <View style={styles.contentContainer}>
                     <View style={styles.titleRow}>
-                        <Text style={styles.title} numberOfLines={1}>{isActivity ? item.title : item.title}</Text>
+                        <Text style={styles.title} numberOfLines={1}>{item.title}</Text>
                         <Text style={styles.time}>
-                            {item.created_at ? formatDistanceToNow(new Date(item.created_at), { addSuffix: true }) : ''}
+                            {isActivity 
+                                ? (item.timestamp ? formatDistanceToNow(item.timestamp, { addSuffix: true }) : '')
+                                : (item.createdAt ? formatDistanceToNow(new Date(item.createdAt), { addSuffix: true }) : '')}
                         </Text>
                     </View>
-                    <Text style={styles.message} numberOfLines={2}>
-                        {isActivity ? item.message : item.message_body}
+                    <Text style={styles.message} numberOfLines={3}>
+                        {isActivity ? item.message : item.messageBody}
                     </Text>
 
                     {/* Deep link info for transactions */}
                     {isActivity && item.type === 'transaction' && item.metadata?.transaction_hash && (
                         <View style={styles.metadataRow}>
-                            <Ionicons name="link-outline" size={12} color={colors.mutedText} />
                             <Text style={styles.metadataText} numberOfLines={1}>
                                 {item.metadata.transaction_hash}
                             </Text>
@@ -167,7 +236,7 @@ export default function NotificationsScreen() {
             {/* Header */}
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                    <Ionicons name="arrow-back" size={24} color={colors.bodyText} />
+                    <Image source={ChevronLeftIcon} style={{ width: 24, height: 24 }} contentFit="contain" />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Notifications</Text>
                 <TouchableOpacity onPress={handleMarkAllRead} style={styles.markAllButton}>
@@ -208,7 +277,7 @@ export default function NotificationsScreen() {
                 </View>
             ) : filteredList.length === 0 ? (
                 <View style={styles.centerContainer}>
-                    <Ionicons name="notifications-off-outline" size={48} color={colors.bgSemi} />
+                    <Image source={NotificationIcon} style={{ width: 48, height: 48, opacity: 0.3 }} tintColor={colors.bgSemi} contentFit="contain" />
                     <Text style={styles.emptyText}>No notifications found</Text>
                 </View>
             ) : (

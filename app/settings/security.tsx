@@ -10,6 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 // Security Icons
 const ResetPasswordIcon = require('@/assets/settings/reset-password.svg');
 const BiometricAccessIcon = require('@/assets/settings/biometric-access.svg');
+const FaceUnlockIcon = require('@/assets/settings/user-circle.svg');
 const Timer02Icon = require('@/assets/settings/timer-02.svg');
 const AlertSquareIcon = require('@/assets/settings/alert-square.svg');
 const AddressBookIcon = require('@/assets/settings/address-book.svg');
@@ -20,7 +21,12 @@ import * as Haptics from 'expo-haptics';
 export default function SecuritySettingsScreen() {
     const { bottom } = useSafeAreaInsets();
     const router = useRouter();
-    const { isBiometricsEnabled, enableBiometrics } = useSecurityStore();
+    const { isBiometricsEnabled, enableBiometrics, isFaceUnlockEnabled, enableFaceUnlock } = useSecurityStore();
+
+    const handleToggleFaceUnlock = (value: boolean) => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        enableFaceUnlock(value);
+    };
 
     const handleToggleBiometrics = (value: boolean) => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -29,6 +35,12 @@ export default function SecuritySettingsScreen() {
 
     const securityItems = [
         { label: 'Change PIN', icon: ResetPasswordIcon, route: '/settings/security/change-pin' },
+        {
+            label: 'Face Unlock',
+            icon: FaceUnlockIcon,
+            rightElement: <ToggleSwitch value={isFaceUnlockEnabled} onValueChange={handleToggleFaceUnlock} />,
+            showChevron: false
+        },
         {
             label: 'Enable/Disable Biometrics',
             icon: BiometricAccessIcon,

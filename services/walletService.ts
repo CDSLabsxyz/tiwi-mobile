@@ -502,6 +502,27 @@ const getPortfolioData = async (): Promise<PortfolioItem[]> => {
   return mockPortfolio;
 };
 
+const generateChartData = (points: number, trend: 'up' | 'down', basePrice: number, variation: number): ChartDataPoint[] => {
+  const data: ChartDataPoint[] = [];
+  const now = Date.now();
+  const interval = 86400000 / points;
+
+  for (let i = 0; i < points; i++) {
+    const timestamp = now - (points - i) * interval;
+    const noise = (Math.random() - 0.5) * 0.05;
+    const trendValue = trend === 'up'
+      ? basePrice * (1 + (i / points) * variation + noise)
+      : basePrice * (1 - (i / points) * Math.abs(variation) + noise);
+
+    data.push({
+      timestamp,
+      value: Math.max(trendValue, basePrice * 0.5),
+    });
+  }
+
+  return data;
+};
+
 /**
  * Fetches detailed asset information by ID
  * Returns asset-specific data based on the assetId
@@ -521,19 +542,24 @@ export const fetchAssetDetail = async (assetId: string): Promise<AssetDetail> =>
       // Use current address
       const activeAddress = useWalletStore.getState().address;
       if (activeAddress) {
+        // Parse address from chainId-address format if needed
+        const searchAddr = assetId.includes('-') ? assetId.split('-')[1].toLowerCase() : assetId.toLowerCase();
+
         // Fetch all balances to find this specific one (most robust way)
-        // Ideally we'd have a getAssetDetail(address, assetId) on backend
         const resp = await api.wallet.balances({ address: activeAddress }) as any;
         const balances = Array.isArray(resp?.balances) ? resp.balances : (Array.isArray(resp) ? resp : []);
 
         const realAsset = balances.find((b: any) =>
-          b.address?.toLowerCase() === assetId.toLowerCase() ||
-          (assetId.toLowerCase() === 'native' && b.address?.toLowerCase() === '0x0000000000000000000000000000000000000000')
+          b.address?.toLowerCase() === searchAddr ||
+          (searchAddr === 'native' && (b.address?.toLowerCase() === '0x0000000000000000000000000000000000000000' || !b.address))
         );
 
         if (realAsset) {
-          const isPositive = parseFloat(realAsset.priceChange24h || '0') >= 0;
+          const chg24h = parseFloat(realAsset.priceChange24h || '0');
+          const isPositive = chg24h >= 0;
           const activities = await getAllAssetActivities(assetId, realAsset.symbol);
+          const price = parseFloat(realAsset.priceUSD || '0') || 1;
+          const variation = Math.abs(chg24h) / 100;
 
           return {
             id: assetId,
@@ -542,14 +568,19 @@ export const fetchAssetDetail = async (assetId: string): Promise<AssetDetail> =>
             logo: realAsset.logoURI || realAsset.logo,
             balance: realAsset.balanceFormatted || realAsset.balance,
             usdValue: `$${parseFloat(realAsset.usdValue || '0').toFixed(2)}`,
-            priceUSD: realAsset.priceUSD || '0',
-            change24h: parseFloat(realAsset.priceChange24h || '0') / 100,
-            change24hAmount: `${isPositive ? '+' : ''}${parseFloat(realAsset.priceChange24h || '0').toFixed(2)}%`,
+            priceUSD: price.toString(),
+            change24h: chg24h / 100,
+            change24hAmount: `${isPositive ? '+' : ''}${chg24h.toFixed(2)}%`,
             chainId: realAsset.chainId as any,
             address: realAsset.address,
             decimals: realAsset.decimals || 18,
             chartData: {
-              '1D': [], '1W': [], '1M': [], '1Y': [], '5Y': [], 'All': []
+              '1D': generateChartData(48, isPositive ? 'up' : 'down', price, variation),
+              '1W': generateChartData(70, isPositive ? 'up' : 'down', price, variation * 2),
+              '1M': generateChartData(100, isPositive ? 'up' : 'down', price, variation * 4),
+              '1Y': generateChartData(150, isPositive ? 'up' : 'down', price, variation * 10),
+              '5Y': generateChartData(200, isPositive ? 'up' : 'down', price, variation * 20),
+              'All': generateChartData(250, isPositive ? 'up' : 'down', price, variation * 30),
             },
             activities: activities,
           };
@@ -574,7 +605,12 @@ export const fetchAssetDetail = async (assetId: string): Promise<AssetDetail> =>
       address: 'native',
       decimals: 18,
       chartData: {
-        '1D': [], '1W': [], '1M': [], '1Y': [], '5Y': [], 'All': []
+        '1D': generateChartData(48, 'up', 1800, 0.02),
+        '1W': generateChartData(70, 'up', 1800, 0.05),
+        '1M': generateChartData(100, 'up', 1800, 0.1),
+        '1Y': generateChartData(150, 'up', 1800, 0.2),
+        '5Y': generateChartData(200, 'up', 1800, 0.5),
+        'All': generateChartData(250, 'up', 1800, 0.8),
       },
       activities: [],
     };
@@ -582,66 +618,9 @@ export const fetchAssetDetail = async (assetId: string): Promise<AssetDetail> =>
 
   // Use the portfolio asset data
   const isPositive = portfolioAsset.change24h > 0;
-  const basePrice = 10000;
-  const variation = isPositive ? Math.abs(portfolioAsset.change24h) / 100 : -Math.abs(portfolioAsset.change24h) / 100;
-
-  const generateChartData = (points: number, trend: 'up' | 'down'): ChartDataPoint[] => {
-    const data: ChartDataPoint[] = [];
-    const now = Date.now();
-    const interval = 86400000 / points;
-
-    for (let i = 0; i < points; i++) {
-      const timestamp = now - (points - i) * interval;
-      const noise = (Math.random() - 0.5) * 0.02;
-      const trendValue = trend === 'up'
-        ? basePrice * (1 + (i / points) * variation + noise)
-        : basePrice * (1 - (i / points) * Math.abs(variation) + noise);
-
-      data.push({
-        timestamp,
-        value: Math.max(trendValue, basePrice * 0.9),
-      });
-    }
-
-    return data;
-  };
-
-  // Generate only 3 recent activities for the detail page
-  // (getAllAssetActivities will return all activities)
-  const now = Date.now();
-  const oneDay = 24 * 60 * 60 * 1000;
-
-  const formatDate = (date: Date): string => {
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    return `${months[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
-  };
-
-  const activities: AssetActivity[] = [
-    {
-      id: '1',
-      type: 'sent',
-      amount: `0,017 ${portfolioAsset.symbol}`,
-      usdValue: '$725.00',
-      timestamp: now - (2 * oneDay),
-      date: formatDate(new Date(now - (2 * oneDay))),
-    },
-    {
-      id: '2',
-      type: 'received',
-      amount: `0,025 ${portfolioAsset.symbol}`,
-      usdValue: '$1,050.00',
-      timestamp: now - (5 * oneDay),
-      date: formatDate(new Date(now - (5 * oneDay))),
-    },
-    {
-      id: '3',
-      type: 'swap',
-      amount: `0,050 ${portfolioAsset.symbol}`,
-      usdValue: '$2,100.00',
-      timestamp: now - (8 * oneDay),
-      date: formatDate(new Date(now - (8 * oneDay))),
-    },
-  ];
+  const basePrice = parseFloat((portfolioAsset.usdValue || '0').replace(/[$,]/g, '')) || 10000;
+  const variation = Math.abs(portfolioAsset.change24h) / 100;
+  const activities = await getAllAssetActivities(portfolioAsset.id, portfolioAsset.symbol);
 
   // Format change24h amount
   const change24hAmount = isPositive
@@ -655,19 +634,19 @@ export const fetchAssetDetail = async (assetId: string): Promise<AssetDetail> =>
     logo: portfolioAsset.logo,
     balance: portfolioAsset.balance,
     usdValue: portfolioAsset.usdValue,
-    priceUSD: (portfolioAsset.usdValue || '0').replace(/[$,]/g, ''),
+    priceUSD: basePrice.toString(),
     change24h: portfolioAsset.change24h / 100, // Convert percentage to decimal
     change24hAmount: change24hAmount,
     chainId: portfolioAsset.chainId, // Preserve chain information from portfolio
     address: portfolioAsset.address,
     decimals: portfolioAsset.decimals,
     chartData: {
-      '1D': generateChartData(24, isPositive ? 'up' : 'down'),
-      '1W': generateChartData(7, isPositive ? 'up' : 'down'),
-      '1M': generateChartData(30, isPositive ? 'up' : 'down'),
-      '1Y': generateChartData(12, isPositive ? 'up' : 'down'),
-      '5Y': generateChartData(60, isPositive ? 'up' : 'down'),
-      'All': generateChartData(100, isPositive ? 'up' : 'down'),
+      '1D': generateChartData(48, isPositive ? 'up' : 'down', basePrice, variation),
+      '1W': generateChartData(70, isPositive ? 'up' : 'down', basePrice, variation * 2),
+      '1M': generateChartData(100, isPositive ? 'up' : 'down', basePrice, variation * 4),
+      '1Y': generateChartData(150, isPositive ? 'up' : 'down', basePrice, variation * 10),
+      '5Y': generateChartData(200, isPositive ? 'up' : 'down', basePrice, variation * 20),
+      'All': generateChartData(250, isPositive ? 'up' : 'down', basePrice, variation * 30),
     },
     activities,
   };

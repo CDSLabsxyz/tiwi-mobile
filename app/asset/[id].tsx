@@ -13,8 +13,10 @@ import { AssetQuickActions } from "@/components/sections/Wallet/AssetQuickAction
 import { WalletHeader } from "@/components/sections/Wallet/WalletHeader";
 import { CustomStatusBar } from "@/components/ui/custom-status-bar";
 import { colors } from "@/constants/colors";
+import { useUnifiedActivities } from "@/hooks/useUnifiedActivities";
 import {
   fetchAssetDetail,
+  type AssetActivity,
   type AssetDetail as AssetDetailType,
   type ChartTimePeriod,
 } from "@/services/walletService";
@@ -24,7 +26,7 @@ import { useSwapStore } from "@/store/swapStore";
 import { useWalletStore } from "@/store/walletStore";
 import { mapAssetToChainOption, mapAssetToTokenOption } from "@/utils/assetMapping";
 import { useLocalSearchParams, usePathname, useRouter } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -81,6 +83,72 @@ export default function AssetDetailScreen() {
   const swapStore = useSwapStore();
   const assetStore = useAssetStore();
 
+  // Fetch unified activities base on wallet address
+  const { data: unifiedActivities } = useUnifiedActivities(100);
+
+  // Filter and map activities specifically for this token
+  const tokenActivities = useMemo(() => {
+    const mappedUnifiedForAsset: AssetActivity[] = [];
+    
+    if (unifiedActivities && unifiedActivities.length > 0 && asset) {
+      const tokenSymbol = asset.symbol.toUpperCase();
+      const searchAddr = asset.address.toLowerCase();
+      
+      const relevantActivities = unifiedActivities.filter(act => {
+        const actSymbol = (act.tokenSymbol || act.metadata?.tokenSymbol || act.metadata?.symbol || '').toUpperCase();
+        const actAssetId = (act.metadata?.assetId || act.metadata?.tokenAddress || '').toLowerCase();
+        
+        const actChainId = act.chainId || act.metadata?.chainId;
+        const isChainMatch = !actChainId || !asset.chainId || Number(actChainId) === Number(asset.chainId);
+        
+        const isSymbolMatch = actSymbol === tokenSymbol;
+        const isAddressMatch = actAssetId === searchAddr;
+        const isNativeMatch = tokenSymbol === 'ETH' && (!actSymbol || actSymbol === 'ETH');
+        
+        return isChainMatch && (isSymbolMatch || isAddressMatch || isNativeMatch);
+      });
+
+      relevantActivities.forEach(act => {
+        const typeLower = (act.category || act.type || '').toLowerCase();
+        const titleLower = (act.title || '').toLowerCase();
+        
+        let mappedType: AssetActivity["type"] = "swap";
+        if (typeLower.includes("receive") || titleLower.includes("receive")) mappedType = "received";
+        else if (typeLower.includes("send") || typeLower.includes("transfer") || titleLower.includes("send")) mappedType = "sent";
+        else if (typeLower.includes("stake") && !typeLower.includes("unstake")) mappedType = "stake";
+        else if (typeLower.includes("unstake")) mappedType = "unstake";
+        
+        const amountVal = act.amount || act.metadata?.amount || act.metadata?.fromAmount || '0';
+        const actSymbol = act.tokenSymbol || act.metadata?.tokenSymbol || act.metadata?.symbol || tokenSymbol;
+        
+        const rawAmount = amountVal.toString().replace(new RegExp(`\\s*${actSymbol}$`, 'i'), '').trim();
+        const displayAmount = `${rawAmount} ${actSymbol}`;
+        
+        const usdVal = act.usdValue || act.metadata?.usdValue || '$0.00';
+        
+        mappedUnifiedForAsset.push({
+          id: act.id,
+          type: mappedType,
+          amount: displayAmount,
+          usdValue: usdVal,
+          usdAmount: parseFloat(usdVal.replace(/[$,]/g, '') || '0'),
+          timestamp: act.timestamp,
+          date: act.date || new Date(act.timestamp).toLocaleDateString()
+        });
+      });
+    }
+
+    const allBase = asset?.activities || [];
+    const mergedMap = new Map<string, AssetActivity>();
+    
+    allBase.forEach(a => mergedMap.set(a.id, a));
+    mappedUnifiedForAsset.forEach(a => mergedMap.set(a.id, a));
+    
+    return Array.from(mergedMap.values())
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(0, 5);
+  }, [unifiedActivities, asset]);
+
   // Fetch asset detail for full data (activities, chart)
   useEffect(() => {
     const loadAssetDetail = async () => {
@@ -93,20 +161,17 @@ export default function AssetDetailScreen() {
         const data = await fetchAssetDetail(id);
 
         setAsset(prev => {
-          if (!prev) return data;
-
-          // Trust the data passed from the list (prev) for core metadata 
-          // and only enhance it with the fetched activities and chart data.
-          // This prevents the "flicker" where it replaces real data with hardcoded mocks.
-          return {
+          const merged = prev ? {
             ...prev,
             activities: data.activities && data.activities.length > 0 ? data.activities : prev.activities,
             chartData: data.chartData || prev.chartData
-          };
-        });
+          } : data;
 
-        // Store the merged or new asset in the store
-        assetStore.setCurrentAsset(data);
+          // Store the merged or new asset in the store
+          assetStore.setCurrentAsset(merged);
+
+          return merged;
+        });
       } catch (error) {
         console.error("Failed to fetch asset detail:", error);
       } finally {
@@ -326,7 +391,7 @@ export default function AssetDetailScreen() {
 
           {/* Recent Activities */}
           <AssetDetailActivities
-            activities={asset.activities}
+            activities={tokenActivities}
             onViewAllPress={handleViewAllPress}
           />
         </View>

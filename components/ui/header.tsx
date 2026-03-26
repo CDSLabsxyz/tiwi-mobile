@@ -1,6 +1,5 @@
 import { colors } from '@/constants/colors';
 import { truncateAddress } from '@/utils/wallet';
-import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -20,6 +19,8 @@ const ArrowDown01 = require('../../assets/home/arrow-down-01.svg');
 const Scan = require('../../assets/home/iris-scan.svg');
 const Settings = require('../../assets/home/settings-03.svg');
 const ChevronLeftIcon = require('../../assets/swap/arrow-left-02.svg');
+const NotificationIconLocal = require('../../assets/settings/notification-02.svg');
+const ReferralIconLocal = require('../../assets/settings/user-group-02.svg');
 
 const ChainIcons = {
     EVM: require('../../assets/home/chains/ethereum.svg'),
@@ -107,7 +108,11 @@ export const Header: React.FC<HeaderProps> = ({
             {/* Right Side - Icons */}
             <View style={styles.rightSection}>
                 <TouchableOpacity onPress={() => router.push('/notifications' as any)} style={styles.iconButton} activeOpacity={0.7}>
-                    <Ionicons name="notifications-outline" size={24} color={colors.titleText} />
+                    <Image
+                        source={NotificationIconLocal}
+                        style={styles.icon}
+                        contentFit="contain"
+                    />
                     {unreadCount > 0 && (
                         <View style={styles.unreadBadge}>
                             <Text style={styles.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
@@ -115,7 +120,11 @@ export const Header: React.FC<HeaderProps> = ({
                     )}
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => router.push('/referral' as any)} style={styles.iconButton} activeOpacity={0.7}>
-                    <Ionicons name="gift-outline" size={24} color={colors.titleText} />
+                    <Image
+                        source={ReferralIconLocal}
+                        style={styles.icon}
+                        contentFit="contain"
+                    />
                 </TouchableOpacity>
                 <TouchableOpacity onPress={onSettingsPress} style={styles.iconButton} activeOpacity={0.7}>
                     <Image
@@ -125,7 +134,7 @@ export const Header: React.FC<HeaderProps> = ({
                     />
                 </TouchableOpacity>
                 {/* <TouchableOpacity onPress={onScanPress} style={styles.iconButton} activeOpacity={0.7}>
-                    <Ionicons name="scan-outline" size={24} color={colors.bodyText} />
+                    <Image source={Scan} style={styles.icon} contentFit="contain" />
                 </TouchableOpacity> */}
             </View>
         </View>

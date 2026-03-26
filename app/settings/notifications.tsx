@@ -1,3 +1,4 @@
+import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { SettingsHeader } from '@/components/ui/settings-header';
 import { SettingsItem } from '@/components/ui/settings-item';
@@ -18,6 +19,7 @@ interface NotificationCategory {
     title: string;
     icon: any;
     route: string;
+    inactive?: boolean;
 }
 
 const notificationCategories: NotificationCategory[] = [
@@ -32,24 +34,28 @@ const notificationCategories: NotificationCategory[] = [
         title: 'Rewards & Earnings',
         icon: CrownIcon,
         route: '/settings/notifications/rewards-earnings',
+        inactive: true,
     },
     {
         id: 'governance',
         title: 'Governance',
         icon: UserGroupIcon,
         route: '/settings/notifications/governance',
+        inactive: true,
     },
     {
         id: 'news',
         title: 'News & Announcements',
         icon: NewsIcon,
         route: '/settings/notifications/news',
+        inactive: true,
     },
     {
         id: 'system-alerts',
         title: 'System Alerts',
         icon: AlertCircleIcon,
         route: '/settings/notifications/system-alerts',
+        inactive: true,
     },
 ];
 
@@ -72,12 +78,19 @@ export default function NotificationsScreen() {
             >
                 <View style={styles.listWrapper}>
                     {notificationCategories.map((category) => (
-                        <SettingsItem
-                            key={category.id}
-                            label={category.title}
-                            icon={category.icon}
-                            onPress={() => router.push(category.route as any)}
-                        />
+                        <View key={category.id} style={{ opacity: category.inactive ? 0.4 : 1 }}>
+                            <SettingsItem
+                                label={category.title}
+                                icon={category.icon}
+                                onPress={() => !category.inactive && router.push(category.route as any)}
+                                showChevron={!category.inactive}
+                                rightElement={category.inactive ? (
+                                    <View style={styles.soonBadge}>
+                                        <ThemedText style={styles.soonText}>SOON</ThemedText>
+                                    </View>
+                                ) : undefined}
+                            />
+                        </View>
                     ))}
                 </View>
             </ScrollView>
@@ -99,5 +112,20 @@ const styles = StyleSheet.create({
     },
     listWrapper: {
         gap: 20,
+    },
+    soonBadge: {
+        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 12,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    soonText: {
+        fontSize: 10,
+        fontFamily: 'Manrope-Bold',
+        color: 'rgba(255, 255, 255, 0.6)',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
     },
 });

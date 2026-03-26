@@ -40,26 +40,12 @@ interface LocaleState {
     setRegion: (region: string) => void;
 }
 
-const SUPPORTED_LANGUAGES: Language[] = [
+export const SUPPORTED_LANGUAGES: Language[] = [
     { code: 'en', name: 'English', nativeName: 'English' },
     { code: 'fr', name: 'French', nativeName: 'Français' },
-    { code: 'es', name: 'Spanish', nativeName: 'Español' },
-    { code: 'de', name: 'German', nativeName: 'Deutsch' },
-    { code: 'zh', name: 'Chinese', nativeName: '中文' },
-    { code: 'ar', name: 'Arabic', nativeName: 'العربية' },
-    { code: 'pt', name: 'Portuguese', nativeName: 'Português' },
-    { code: 'ru', name: 'Russian', nativeName: 'Русский' },
-    { code: 'hi', name: 'Hindi', nativeName: 'हिन्दी' },
-    { code: 'ja', name: 'Japanese', nativeName: '日本語' },
-    { code: 'ko', name: 'Korean', nativeName: '한국어' },
-    { code: 'tr', name: 'Turkish', nativeName: 'Türkçe' },
-    { code: 'vi', name: 'Vietnamese', nativeName: 'Tiếng Việt' },
-    { code: 'yo', name: 'Yoruba', nativeName: 'Yorùbá' },
-    { code: 'ig', name: 'Igbo', nativeName: 'Asụsụ Igbo' },
-    { code: 'ha', name: 'Hausa', nativeName: 'Harshen Hausa' },
 ];
 
-const SUPPORTED_CURRENCIES: Currency[] = [
+export const SUPPORTED_CURRENCIES: Currency[] = [
     { code: 'USD', name: 'US Dollar', symbol: '$' },
     { code: 'NGN', name: 'Nigerian Naira', symbol: '₦' },
     { code: 'EUR', name: 'Euro', symbol: '€' },

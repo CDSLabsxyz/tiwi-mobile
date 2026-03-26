@@ -8,12 +8,13 @@ import { WalletHeader } from "@/components/sections/Wallet";
 import { CustomStatusBar } from "@/components/ui/custom-status-bar";
 import { TokenPrice } from "@/components/ui/TokenPrice";
 import { colors } from "@/constants/colors";
+import { useUnifiedActivities } from "@/hooks/useUnifiedActivities";
 import {
     fetchAssetDetail,
-    getAllAssetActivities,
     type AssetActivity,
     type AssetDetail,
 } from "@/services/walletService";
+import { useAssetStore } from "@/store/assetStore";
 import { useWalletStore } from "@/store/walletStore";
 import { Image } from "expo-image";
 import { useLocalSearchParams, usePathname, useRouter } from "expo-router";
@@ -30,34 +31,101 @@ export default function AssetActivitiesScreen() {
     const { id, tab } = useLocalSearchParams<{ id: string; tab?: string }>();
 
     // State
-    const [activities, setActivities] = useState<AssetActivity[]>([]);
-    const [asset, setAsset] = useState<AssetDetail | null>(null);
-    const [isLoading, setIsLoading] = useState(true);
+    const { currentAsset } = useAssetStore();
+    const [asset, setAsset] = useState<AssetDetail | null>(currentAsset);
+    const [isAssetLoading, setIsAssetLoading] = useState(!currentAsset);
 
     const { address: activeWalletAddress } = useWalletStore();
+    
+    // Fetch unified activities base on wallet address
+    const { data: unifiedActivities, isLoading: isUnifiedLoading } = useUnifiedActivities(100);
 
-    // Fetch activities and asset detail
+    // Filter and map activities specifically for this token
+    const activities = React.useMemo(() => {
+        const mappedUnifiedForAsset: AssetActivity[] = [];
+        
+        if (unifiedActivities && unifiedActivities.length > 0 && asset) {
+            const tokenSymbol = asset.symbol.toUpperCase();
+            const searchAddr = asset.address.toLowerCase();
+            
+            const relevantActivities = unifiedActivities.filter(act => {
+                const actSymbol = (act.tokenSymbol || act.metadata?.tokenSymbol || act.metadata?.symbol || '').toUpperCase();
+                const actAssetId = (act.metadata?.assetId || act.metadata?.tokenAddress || '').toLowerCase();
+                
+                const actChainId = act.chainId || act.metadata?.chainId;
+                const isChainMatch = !actChainId || !asset.chainId || Number(actChainId) === Number(asset.chainId);
+                
+                const isSymbolMatch = actSymbol === tokenSymbol;
+                const isAddressMatch = actAssetId === searchAddr;
+                const isNativeMatch = tokenSymbol === 'ETH' && (!actSymbol || actSymbol === 'ETH');
+                
+                return isChainMatch && (isSymbolMatch || isAddressMatch || isNativeMatch);
+            });
+
+            relevantActivities.forEach(act => {
+                const typeLower = (act.category || act.type || '').toLowerCase();
+                const titleLower = (act.title || '').toLowerCase();
+                
+                let mappedType: AssetActivity["type"] = "swap";
+                if (typeLower.includes("receive") || titleLower.includes("receive")) mappedType = "received";
+                else if (typeLower.includes("send") || typeLower.includes("transfer") || titleLower.includes("send")) mappedType = "sent";
+                else if (typeLower.includes("stake") && !typeLower.includes("unstake")) mappedType = "stake";
+                else if (typeLower.includes("unstake")) mappedType = "unstake";
+                
+                const amountVal = act.amount || act.metadata?.amount || act.metadata?.fromAmount || '0';
+                const actSymbol = act.tokenSymbol || act.metadata?.tokenSymbol || act.metadata?.symbol || tokenSymbol;
+                
+                const rawAmount = amountVal.toString().replace(new RegExp(`\\s*${actSymbol}$`, 'i'), '').trim();
+                const displayAmount = `${rawAmount} ${actSymbol}`;
+                
+                const usdVal = act.usdValue || act.metadata?.usdValue || '$0.00';
+                
+                mappedUnifiedForAsset.push({
+                    id: act.id,
+                    type: mappedType,
+                    amount: displayAmount,
+                    usdValue: usdVal,
+                    usdAmount: parseFloat(usdVal.replace(/[$,]/g, '') || '0'),
+                    timestamp: act.timestamp,
+                    date: act.date || new Date(act.timestamp).toLocaleDateString()
+                });
+            });
+        }
+
+        const allBase = asset?.activities || [];
+        const mergedMap = new Map<string, AssetActivity>();
+        
+        allBase.forEach(a => mergedMap.set(a.id, a));
+        mappedUnifiedForAsset.forEach(a => mergedMap.set(a.id, a));
+        
+        return Array.from(mergedMap.values())
+            .sort((a, b) => b.timestamp - a.timestamp);
+    }, [unifiedActivities, asset]);
+
+    const isLoading = isAssetLoading || isUnifiedLoading;
+
+    // Fetch asset detail ONLY if needed (direct link)
     useEffect(() => {
-        const loadData = async () => {
-            if (!id) return;
+        const loadAsset = async () => {
+            if (!id || currentAsset) return;
 
-            setIsLoading(true);
+            setIsAssetLoading(true);
             try {
-                const [activitiesData, assetData] = await Promise.all([
-                    getAllAssetActivities(id),
-                    fetchAssetDetail(id),
-                ]);
-                setActivities(activitiesData);
+                const assetData = await fetchAssetDetail(id);
                 setAsset(assetData);
             } catch (error) {
-                console.error("Failed to fetch activities:", error);
+                console.error("Failed to fetch asset:", error);
             } finally {
-                setIsLoading(false);
+                setIsAssetLoading(false);
             }
         };
 
-        loadData();
-    }, [id]);
+        if (!currentAsset) {
+            loadAsset();
+        } else {
+            setIsAssetLoading(false);
+        }
+    }, [id, currentAsset]);
 
     // Handlers
     const handleBackPress = () => {
