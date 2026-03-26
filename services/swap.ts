@@ -1,5 +1,6 @@
 
 import { api, RouteRequest } from '@/lib/mobile/api-client';
+import { relayService } from './relayService';
 import { SwapQuote, TokenMinimal } from './swap/types';
 import { unifiedSwapManager } from './swap/UnifiedSwapManager';
 
@@ -19,6 +20,18 @@ export async function fetchSwapQuote(
 ): Promise<SwapQuote> {
     if (!fromAmount || parseFloat(fromAmount) <= 0) {
         throw new Error('Invalid amount');
+    }
+
+    try {
+        console.log(`[SwapService] Checking Relay Protocol first...`);
+        const relayQuote = await relayService.fetchRelayQuote(fromAmount, fromToken, toToken, fromAddress, recipient, slippage);
+        
+        if (relayQuote) {
+            console.log(`[SwapService] Using Relay Protocol quote for ${fromToken.symbol} -> ${toToken.symbol}`);
+            return relayQuote;
+        }
+    } catch (relayError) {
+        console.warn(`[SwapService] Relay quote fetch failed or unavailable, falling back to Tiwi Routing Engine:`, relayError);
     }
 
     try {

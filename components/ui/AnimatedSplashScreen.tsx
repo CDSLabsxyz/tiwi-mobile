@@ -1,12 +1,9 @@
-import { Image } from 'expo-image';
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Dimensions, StyleSheet } from 'react-native';
+import { useVideoPlayer, VideoView } from 'expo-video';
 
-const IntroGif = require('../../assets/GIF/intro_animation.gif');
+const SplashVideo = require('../../assets/GIF/Splash_Screen.mp4');
 const { width, height } = Dimensions.get('window');
-
-// Optimized duration for much faster startup
-const GIF_DURATION = 1800;
 
 interface AnimatedSplashScreenProps {
     isReady: boolean;
@@ -17,36 +14,47 @@ interface AnimatedSplashScreenProps {
 export const AnimatedSplashScreen: React.FC<AnimatedSplashScreenProps> = ({ isReady, onAnimationComplete, onLoaded }) => {
     const fadeAnim = useRef(new Animated.Value(1)).current;
     const [animationFinished, setAnimationFinished] = useState(false);
-    const [gifDurationPassed, setGifDurationPassed] = useState(false);
-    const [hasLoaded, setHasLoaded] = useState(false);
+    const [videoFinished, setVideoFinished] = useState(false);
+    const [hasStarted, setHasStarted] = useState(false);
+
+    const player = useVideoPlayer(SplashVideo, (p) => {
+        p.loop = false;
+        p.play();
+    });
 
     useEffect(() => {
-        if (hasLoaded) {
-            // Wait for the full GIF duration (1.8s) after it has actually loaded
-            const maxTimer = setTimeout(() => {
-                setGifDurationPassed(true);
-            }, GIF_DURATION);
+        const subscription = player.addListener('playToEnd', () => {
+            setVideoFinished(true);
+        });
 
-            return () => {
-                clearTimeout(maxTimer);
-            };
-        }
-    }, [hasLoaded]);
+        // Trigger onLoaded as soon as we have some status/metadata
+        const statusSub = player.addListener('statusChange', (status) => {
+            if (status === 'readyToPlay' && !hasStarted) {
+                setHasStarted(true);
+                if (onLoaded) onLoaded();
+            }
+        });
+
+        return () => {
+            subscription.remove();
+            statusSub.remove();
+        };
+    }, [player, onLoaded, hasStarted]);
 
     useEffect(() => {
-        // We only exit when BOTH the GIF has played (1.8s) AND the app is ready.
-        if (isReady && gifDurationPassed) {
+        // We only exit when BOTH the Video has finished playing AND the app is ready.
+        if (isReady && videoFinished) {
             // Exit Animation: Fade out
             Animated.timing(fadeAnim, {
                 toValue: 0,
-                duration: 600, // Slightly smoother fade
+                duration: 800, 
                 useNativeDriver: true,
             }).start(() => {
                 setAnimationFinished(true);
                 onAnimationComplete();
             });
         }
-    }, [isReady, gifDurationPassed]);
+    }, [isReady, videoFinished]);
 
     if (animationFinished) return null;
 
@@ -57,22 +65,13 @@ export const AnimatedSplashScreen: React.FC<AnimatedSplashScreenProps> = ({ isRe
                 { opacity: fadeAnim }
             ]}
         >
-            <Image
-                source={IntroGif}
-                style={styles.logo}
+            <VideoView
+                player={player}
+                style={styles.video}
                 contentFit="contain"
-                autoplay={true}
-                cachePolicy="memory-disk"
-                onLoad={() => {
-                    setHasLoaded(true);
-                    // Notify parent that the GIF is loaded and ready to be seen
-                    if (onLoaded) onLoaded();
-                }}
-                onError={(e) => {
-                    console.error("SplashScreen GIF Error:", e);
-                    setHasLoaded(true); // Allow exit on error
-                    if (onLoaded) onLoaded();
-                }}
+                allowsFullscreen={false}
+                allowsPictureInPicture={false}
+                useNativeControls={false}
             />
         </Animated.View>
     );
@@ -86,7 +85,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         zIndex: 999999,
     },
-    logo: {
+    video: {
         width: width,
         height: height,
     },

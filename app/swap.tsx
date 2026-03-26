@@ -29,6 +29,7 @@ import { api } from '@/lib/mobile/api-client';
 import { signerController } from '@/services/signer/SignerController';
 import { securityGuard } from '@/services/securityGuard';
 import { executeSwap, fetchSwapQuote } from '@/services/swap';
+import { isNativeToken } from '@/services/swap/constants';
 import { useLocaleStore } from '@/store/localeStore';
 import { useSecurityStore } from '@/store/securityStore';
 import { useSwapStore } from '@/store/swapStore';
@@ -172,11 +173,11 @@ export default function SwapScreen() {
                 // Silently update chain icons if missing
                 if (chains && fromChain && !fromChain.icon) {
                     const real = chains.find(c => c.id === fromChain.id);
-                    if (real) setFromChain({ ...fromChain, icon: real.logoURI || real.logo });
+                    if (real) setFromChain({ ...fromChain, icon: real.logoURI });
                 }
                 if (chains && toChain && !toChain.icon) {
                     const real = chains.find(c => c.id === toChain.id);
-                    if (real) setToChain({ ...toChain, icon: real.logoURI || real.logo });
+                    if (real) setToChain({ ...toChain, icon: real.logoURI });
                 }
 
                 // Silently update token info if it's our defaults
@@ -215,7 +216,7 @@ export default function SwapScreen() {
                 const chainOption = {
                     id: chain.id,
                     name: chain.name,
-                    icon: chain.logoURI || chain.logo
+                    icon: chain.logoURI
                 };
                 setFromChain(chainOption);
                 setFromToken({
@@ -407,8 +408,7 @@ export default function SwapScreen() {
                 const revenueWallet = "0x2452fC6B401FaB80D9fDa6050b2De0Dd42b233bc";
                 const chainId = Number(fromChain?.id) || 56;
 
-                const isNative = fromToken.address.toLowerCase() === '0x0000000000000000000000000000000000000000' ||
-                    fromToken.address.toLowerCase() === 'native';
+                const isNative = isNativeToken(fromToken.address);
 
                 let step1Hash = '';
 
@@ -457,7 +457,7 @@ export default function SwapScreen() {
             // Security Check: Token Risk
             if (isTransactionRiskEnabled && !taxPaid) { // Only check once if possible
                 try {
-                    const toTokenRisk = await securityGuard.checkTokenRisk(toToken.address, fromChain?.id.toString() || '1');
+                    const toTokenRisk = await securityGuard.checkTokenRisk(toToken.address, Number(fromChain?.id) || 1);
                     if (!toTokenRisk.isSafe) {
                         setIsLoadingSwap(false); // Pause loading for alert
                         Alert.alert(
@@ -573,7 +573,7 @@ export default function SwapScreen() {
 
                 <ChainSelectSheet
                     visible={isChainSheetVisible}
-                    selectedChainId={chainSheetTarget === 'from' ? fromChain?.id : toChain?.id}
+                    selectedChainId={chainSheetTarget === 'from' ? (fromChain?.id || null) : (toChain?.id || null)}
                     onSelect={handleChainOptionSelect}
                     onClose={closeChainSheet}
                 />

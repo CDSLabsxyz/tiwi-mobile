@@ -1,6 +1,21 @@
 import { getAddress, type Address } from 'viem';
 
 // Router Addresses
+export const isNativeToken = (addr: string | null | undefined): boolean => {
+    if (!addr) return true;
+    const lower = addr.toLowerCase().trim();
+    return (
+        lower === '0x0000000000000000000000000000000000000000' ||
+        lower === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' ||
+        lower === '0x0000000000000000000000000000000000000001' || // Some bridges use this
+        lower === '0x000000000000000000000000000000000000000' ||  // Missing one zero
+        lower === 'native' ||
+        lower === '' ||
+        lower === 'null' ||
+        lower === 'undefined'
+    );
+};
+
 export const PANCAKESWAP_V2_ROUTER: Record<number, Address> = {
     1: getAddress('0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D'), // Ethereum Mainnet
     56: getAddress('0x10ED43C718714eb63d5aA57B78B54704E256024E'), // BSC

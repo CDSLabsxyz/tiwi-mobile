@@ -3,6 +3,7 @@ import { formatUnits, getAddress, parseUnits } from "viem";
 import { arbitrum, base, bsc, mainnet, optimism, polygon, zksync, scroll, mantle, blast, lisk } from "viem/chains";
 import { acrossService } from "./acrossService";
 import { SwapQuote, TokenMinimal } from "./swap/types";
+import { isNativeToken } from "./swap/constants";
 
 const SUPPORTED_CHAINS_RAW = [mainnet, optimism, arbitrum, bsc, polygon, base, zksync, scroll, mantle, blast, lisk];
 
@@ -33,13 +34,18 @@ class RelayService {
         slippage?: number
     ): Promise<SwapQuote | null> {
         try {
+            // 1. Skip if same-chain (Relay is for cross-chain)
+            if (Number(fromToken.chainId) === Number(toToken.chainId)) {
+                return null;
+            }
+
             const amountIn = parseUnits(fromAmount, fromToken.decimals);
-            
+
             // RELAY USES 0x000... FOR NATIVE TOKENS
-            const inputToken = fromToken.address === '0x0000000000000000000000000000000000000000' 
-                ? '0x0000000000000000000000000000000000000000' 
+            const inputToken = isNativeToken(fromToken.address)
+                ? '0x0000000000000000000000000000000000000000'
                 : getAddress(fromToken.address);
-            const outputToken = toToken.address === '0x0000000000000000000000000000000000000000'
+            const outputToken = isNativeToken(toToken.address)
                 ? '0x0000000000000000000000000000000000000000'
                 : getAddress(toToken.address);
 
@@ -84,7 +90,7 @@ class RelayService {
             // The SDK returns a v2 response structure where output is in details.currencyOut
             const outputAmount = quote.details?.currencyOut?.amount || (quote as any).details?.outputAmount || "0";
             const outputAmountUsd = quote.details?.currencyOut?.amountUsd || (quote as any).details?.outputAmountUsd || "0";
-            
+
             // Fees are in the fees object
             const relayerFee = quote.fees?.relayer;
             const gasFeeUsd = relayerFee?.amountUsd || "0";
@@ -111,7 +117,7 @@ class RelayService {
             };
         } catch (error: any) {
             console.error(`[RelayService] Quote failure for ${fromToken.symbol} -> ${toToken.symbol}:`, error.message);
-            
+
             if (error.response?.data) {
                 console.error("[RelayService] API Error:", JSON.stringify(error.response.data));
             }

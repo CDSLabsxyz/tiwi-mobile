@@ -1,6 +1,5 @@
 import { colors } from '@/constants/colors';
 import { truncateAddress } from '@/utils/wallet';
-import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Clipboard from 'expo-clipboard';
 import { Image as ExpoImage } from 'expo-image';
 import { useRouter } from 'expo-router';
@@ -39,6 +38,18 @@ const SettingsIcon = require('../../assets/home/settings-03.svg');
 const CopyIcon = require('../../assets/wallet/copy-01.svg');
 const LogoutIcon = require('../../assets/wallet/logout-01.svg');
 const TiwiLogo = require('../../assets/logo/tiwi-logo.svg');
+const PlusIcon = require('../../assets/settings/add-square.svg');
+const SearchIcon = require('../../assets/swap/search-01.svg');
+const ChevronDownIcon = require('../../assets/home/arrow-down-01.svg');
+const ChevronUpIcon = require('../../assets/swap/arrow-up-02.svg');
+const ChevronRightIcon = require('../../assets/home/arrow-right-01.svg');
+const ChevronLeftIcon = require('../../assets/swap/arrow-left-02.svg');
+const CheckmarkCircleIcon = require('../../assets/swap/checkmark-circle-01.svg');
+const TrashIcon = require('../../assets/settings/delete-02.svg');
+const EyeIcon = require('../../assets/home/view.svg');
+const EyeOffIcon = require('../../assets/settings/unavailable.svg');
+const WalletOutlineIcon = require('../../assets/home/wallet-03.svg');
+const DownloadIcon = require('../../assets/home/download-04.svg');
 
 type ModalMode = 'MAIN' | 'ADD_OPTIONS';
 const ALL_NETWORKS = [
@@ -63,8 +74,6 @@ const ChainIcons = {
     COSMOS: require('../../assets/home/chains/bsc.svg'),
     OSMOSIS: require('../../assets/home/chains/polygon.svg'),
 };
-
-const SearchIcon = require('../../assets/home/filter-horizontal.svg'); // placeholder for search icon
 
 /**
  * Wallet Modal Component
@@ -237,7 +246,7 @@ export const WalletModal: React.FC<WalletModalProps> = (props) => {
                         onPress={handleAddWallet}
                         activeOpacity={0.8}
                     >
-                        <Ionicons name="add-circle" size={20} color={colors.bg} />
+                        <ExpoImage source={PlusIcon} style={{ width: 20, height: 20 }} tintColor={colors.bg} contentFit="contain" />
                         <Text style={styles.addWalletButtonTextMain}>Add Wallet</Text>
                     </TouchableOpacity>
                 </View>
@@ -267,7 +276,7 @@ export const WalletModal: React.FC<WalletModalProps> = (props) => {
                          <TouchableOpacity onPress={(e) => { e.stopPropagation(); handleCopyAddress(); }} style={styles.identityCopyButton}>
                              {copied ? <Text style={styles.checkMark}>✓</Text> : <ExpoImage source={CopyIcon} style={{ width: 18, height: 18, opacity: 0.6 }} contentFit="contain" />}
                         </TouchableOpacity>
-                        <Ionicons name={isExpanded ? "chevron-up" : "chevron-down"} size={20} color={colors.mutedText} />
+                        <ExpoImage source={isExpanded ? ChevronUpIcon : ChevronDownIcon} style={{ width: 20, height: 20 }} tintColor={colors.mutedText} contentFit="contain" />
                     </View>
                 </TouchableOpacity>
 
@@ -276,7 +285,7 @@ export const WalletModal: React.FC<WalletModalProps> = (props) => {
                     <View style={{ width: '100%', flex: 1 }}>
                         <View style={styles.searchContainer}>
                             <View style={styles.searchInputWrapper}>
-                                <Ionicons name="search-outline" size={20} color={colors.mutedText} />
+                                <ExpoImage source={SearchIcon} style={{ width: 20, height: 20 }} tintColor={colors.mutedText} contentFit="contain" />
                                 <Text style={styles.searchPlaceholder}>Search network</Text>
                             </View>
                         </View>
@@ -350,7 +359,7 @@ export const WalletModal: React.FC<WalletModalProps> = (props) => {
                         <Text style={{ fontSize: 13, color: colors.mutedText, fontFamily: 'Manrope-SemiBold' }}>
                              {isWalletListExpanded ? "Hide Wallets" : "Switch Wallet"}
                         </Text>
-                        <Ionicons name={isWalletListExpanded ? "chevron-up" : "chevron-down"} size={14} color={colors.mutedText} />
+                        <ExpoImage source={isWalletListExpanded ? ChevronUpIcon : ChevronDownIcon} style={{ width: 14, height: 14 }} tintColor={colors.mutedText} contentFit="contain" />
                     </TouchableOpacity>
                 )}
 
@@ -385,7 +394,7 @@ export const WalletModal: React.FC<WalletModalProps> = (props) => {
                                         </View>
                                     </View>
                                     <View style={styles.walletItemRight}>
-                                        {isActive && <Ionicons name="checkmark-circle" size={18} color={colors.primaryCTA} />}
+                                        {isActive && <ExpoImage source={CheckmarkCircleIcon} style={{ width: 18, height: 18 }} tintColor={colors.primaryCTA} contentFit="contain" />}
                                         <TouchableOpacity
                                             onPress={(e) => {
                                                 e.stopPropagation();
@@ -393,14 +402,14 @@ export const WalletModal: React.FC<WalletModalProps> = (props) => {
                                             }}
                                             style={[styles.deleteWalletButton, { marginLeft: 12 }]}
                                         >
-                                            <Ionicons name="trash-outline" size={16} color={colors.error} />
+                                            <ExpoImage source={TrashIcon} style={{ width: 16, height: 16 }} tintColor={colors.error} contentFit="contain" />
                                         </TouchableOpacity>
                                     </View>
                                 </TouchableOpacity>
                              );
                         })}
                         <TouchableOpacity style={styles.addWalletDropdownItem} onPress={handleAddWallet}>
-                            <Ionicons name="add" size={18} color={colors.primaryCTA} />
+                            <ExpoImage source={PlusIcon} style={{ width: 18, height: 18 }} tintColor={colors.primaryCTA} contentFit="contain" />
                             <Text style={styles.addWalletDropdownText}>Import or Create New Wallet</Text>
                         </TouchableOpacity>
                     </View>
@@ -419,10 +428,11 @@ export const WalletModal: React.FC<WalletModalProps> = (props) => {
                                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                                     <Text style={styles.cardLabel}>Total Balance</Text>
                                     <TouchableOpacity onPress={toggleBalanceVisibility}>
-                                        <Ionicons
-                                            name={isBalanceHidden ? "eye-off-outline" : "eye-outline"}
-                                            size={16}
-                                            color={colors.mutedText}
+                                        <ExpoImage
+                                            source={isBalanceHidden ? EyeOffIcon : EyeIcon}
+                                            style={{ width: 16, height: 16 }}
+                                            tintColor={colors.mutedText}
+                                            contentFit="contain"
                                         />
                                     </TouchableOpacity>
                                 </View>
@@ -432,7 +442,7 @@ export const WalletModal: React.FC<WalletModalProps> = (props) => {
                                     </View>
                                 )}
                                 <TouchableOpacity onPress={() => setMode('ADD_OPTIONS')} style={styles.miniAddButton}>
-                                    <Ionicons name="add" size={16} color={colors.primaryCTA} />
+                                    <ExpoImage source={PlusIcon} style={{ width: 16, height: 16 }} tintColor={colors.primaryCTA} contentFit="contain" />
                                     <Text style={styles.miniAddText}>Add Wallet</Text>
                                 </TouchableOpacity>
                             </View>
@@ -469,7 +479,7 @@ export const WalletModal: React.FC<WalletModalProps> = (props) => {
         <View style={styles.optionsContainer}>
             <View style={styles.optionsHeader}>
                 <TouchableOpacity onPress={() => setMode('MAIN')} style={styles.backButtonOption}>
-                    <Ionicons name="chevron-back" size={24} color={colors.titleText} />
+                    <ExpoImage source={ChevronLeftIcon} style={{ width: 24, height: 24 }} tintColor={colors.titleText} contentFit="contain" />
                 </TouchableOpacity>
                 <Text style={styles.optionsTitle}>Add Wallet</Text>
                 <View style={{ width: 40 }} />
@@ -477,24 +487,24 @@ export const WalletModal: React.FC<WalletModalProps> = (props) => {
 
             <TouchableOpacity style={styles.optionCard} onPress={navigateToCreate} activeOpacity={0.7}>
                 <View style={[styles.optionIconContainer, { backgroundColor: 'rgba(177, 241, 40, 0.1)' }]}>
-                    <Ionicons name="wallet-outline" size={24} color={colors.primaryCTA} />
+                    <ExpoImage source={WalletOutlineIcon} style={{ width: 24, height: 24 }} tintColor={colors.primaryCTA} contentFit="contain" />
                 </View>
                 <View style={styles.optionTextContainer}>
                     <Text style={styles.optionLabel}>Create New Wallet</Text>
                     <Text style={styles.optionSubtext}>Generate a fresh 12-word seed phrase.</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={20} color={colors.mutedText} />
+                <ExpoImage source={ChevronRightIcon} style={{ width: 20, height: 20 }} tintColor={colors.mutedText} contentFit="contain" />
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.optionCard} onPress={navigateToImport} activeOpacity={0.7}>
                 <View style={[styles.optionIconContainer, { backgroundColor: 'rgba(63, 234, 155, 0.1)' }]}>
-                    <Ionicons name="download-outline" size={24} color={colors.success} />
+                    <ExpoImage source={DownloadIcon} style={{ width: 24, height: 24 }} tintColor={colors.success} contentFit="contain" />
                 </View>
                 <View style={styles.optionTextContainer}>
                     <Text style={styles.optionLabel}>Import Existing Wallet</Text>
                     <Text style={styles.optionSubtext}>Use seed phrase or private key.</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={20} color={colors.mutedText} />
+                <ExpoImage source={ChevronRightIcon} style={{ width: 20, height: 20 }} tintColor={colors.mutedText} contentFit="contain" />
             </TouchableOpacity>
         </View>
     );

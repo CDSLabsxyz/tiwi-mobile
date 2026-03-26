@@ -26,13 +26,13 @@ export class UnifiedSwapManager {
             return { success: false, error: errorMsg };
         }
 
+        if (router === 'relay') {
+            return this.relayExecutor.execute(params);
+        }
+
         // 1. Priority: If SDK returned a specific transaction request, use TiwiExecutor
         if (quote.transactionRequest || router === 'aggregator' || router === 'tiwi') {
             return this.tiwiExecutor.execute(params);
-        }
-
-        if (router === 'relay') {
-            return this.relayExecutor.execute(params);
         }
 
         if (router === 'across') {

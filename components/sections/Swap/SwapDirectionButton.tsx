@@ -1,9 +1,9 @@
 import { colors } from '@/constants/colors';
-import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
+import { Image } from 'expo-image';
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
 
-const ArrowUp02 = require('@/assets/swap/arrow-up-02.svg');
+const SwapVerticalIcon = require('@/assets/swap/swap-vertical.svg');
 
 interface SwapDirectionButtonProps {
     onPress?: () => void;
@@ -26,10 +26,11 @@ export const SwapDirectionButton: React.FC<SwapDirectionButtonProps> = ({
                 onPress={onPress}
                 style={styles.touchArea}
             >
-                <Ionicons
-                    name="swap-vertical"
-                    size={20}
-                    color={colors.primaryCTA}
+                <Image
+                    source={SwapVerticalIcon}
+                    style={styles.icon}
+                    tintColor={colors.primaryCTA}
+                    contentFit="contain"
                 />
             </TouchableOpacity>
         </View>

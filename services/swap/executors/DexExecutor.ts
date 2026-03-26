@@ -8,7 +8,7 @@ import {
 } from 'viem';
 import { base, bsc, mainnet, polygon } from 'viem/chains';
 import { signerController } from '../../signer/SignerController';
-import { DEX_ROUTER_ABI, ERC20_ABI, WETH_ADDRESSES } from '../constants';
+import { DEX_ROUTER_ABI, ERC20_ABI, WETH_ADDRESSES, isNativeToken } from '../constants';
 import { ExecuteSwapParams, SwapExecutionResult, TokenMinimal } from '../types';
 
 /**
@@ -16,24 +16,13 @@ import { ExecuteSwapParams, SwapExecutionResult, TokenMinimal } from '../types';
  * It provides local call construction, approval checks, and on-chain simulation.
  */
 export class DexExecutor {
-    private getPublicClient(chainId: number) {
-        const chains: Record<number, any> = {
-            1: mainnet,
-            56: bsc,
-            137: polygon,
-            8453: base,
-        };
-
-        const chain = chains[chainId] || mainnet;
-        return createPublicClient({
-            chain,
-            transport: http(),
-        });
+    private async getPublicClient(chainId: number) {
+        return await signerController.getPublicClient(chainId);
     }
 
     async execute(params: ExecuteSwapParams): Promise<SwapExecutionResult> {
         const { fromAmount, fromToken, toToken, fromAddress, recipientAddress, quote } = params;
-        const publicClient = this.getPublicClient(fromToken.chainId);
+        const publicClient = await this.getPublicClient(fromToken.chainId);
 
         try {
             if (!quote.raw) {
@@ -42,45 +31,58 @@ export class DexExecutor {
             const routerAddress = quote.raw.routerAddress as Address;
             if (!routerAddress) throw new Error("Router address is missing from quote");
 
-            const isNativeIn = fromToken.address === '0x0000000000000000000000000000000000000000';
-            const isNativeOut = toToken.address === '0x0000000000000000000000000000000000000000';
+            const isNativeIn = isNativeToken(fromToken.address);
+            const isNativeOut = isNativeToken(toToken.address);
+
+            console.log(`[DexExecutor] execution params:`, {
+                fromToken: fromToken.symbol,
+                fromTokenAddr: fromToken.address,
+                isNativeIn,
+                chainId: fromToken.chainId,
+                routerAddress
+            });
 
             // 1. CHECK APPROVAL (for non-native tokens)
             if (!isNativeIn) {
-                const amountIn = parseUnits(fromAmount, fromToken.decimals);
-                const allowance = await publicClient.readContract({
-                    address: getAddress(fromToken.address),
-                    abi: ERC20_ABI,
-                    functionName: 'allowance',
-                    args: [getAddress(fromAddress), getAddress(routerAddress)],
-                }) as bigint;
-                console.log("🚀 ~ DexExecutor ~ execute ~ allowance:", { allowance, amountIn })
-
-                if (allowance < amountIn) {
-                    console.log("[DexExecutor] Insufficient allowance, triggering approval...");
-                    // In a production app, we might return a 'status: need_approval' 
-                    // but for this direct execution, we'll try to execute approval first or fail.
-                    // Requesting approval via signerController
-                    const approveData = encodeFunctionData({
+                console.log(`[DexExecutor] Checking allowance for ${fromToken.symbol} (${fromToken.address}) to ${routerAddress}`);
+                const amountIn = parseUnits(fromAmount, fromToken.decimals || 18);
+                
+                try {
+                    const allowance = await publicClient.readContract({
+                        address: getAddress(fromToken.address),
                         abi: ERC20_ABI,
-                        functionName: 'approve',
-                        args: [getAddress(routerAddress), BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')],
-                    });
+                        functionName: 'allowance',
+                        args: [getAddress(fromAddress), getAddress(routerAddress)],
+                    }) as bigint;
+                    console.log(`[DexExecutor] Allowance found: ${allowance.toString()} for amountIn: ${amountIn.toString()}`);
 
-                    const approveResult = await signerController.executeTransaction({
-                        chainFamily: 'evm',
-                        to: fromToken.address,
-                        data: approveData,
-                        chainId: fromToken.chainId,
-                    }, fromAddress);
-                    console.log("🚀 ~ DexExecutor ~ execute ~ approveResult:", approveResult)
+                    if (allowance < amountIn) {
+                        console.log("[DexExecutor] Insufficient allowance, triggering approval...");
+                        const approveData = encodeFunctionData({
+                            abi: ERC20_ABI,
+                            functionName: 'approve',
+                            args: [getAddress(routerAddress), BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')],
+                        });
 
-                    if (approveResult.status !== 'success') {
-                        return { success: false, error: "Token approval failed: " + approveResult.error };
+                        const approveResult = await signerController.executeTransaction({
+                            chainFamily: 'evm',
+                            to: fromToken.address,
+                            data: approveData,
+                            chainId: fromToken.chainId,
+                        }, fromAddress);
+
+                        if (approveResult.status !== 'success') {
+                            return { success: false, error: "Token approval failed: " + approveResult.error };
+                        }
+                        await new Promise(r => setTimeout(r, 2000));
                     }
-                    console.log("[DexExecutor] Approval successful, waiting for indexing...");
-                    // Small delay for indexing (optional but helpful)
-                    await new Promise(r => setTimeout(r, 2000));
+                } catch (readError: any) {
+                    console.error(`[DexExecutor] Allowance check failed for ${fromToken.symbol} (${fromToken.address}):`, readError.message);
+                    // Standard Engineering Safety: Non-blocking fallback
+                    // If we can't read allowance (either not a contract, or RPC error), 
+                    // we log it and attempt to proceed. If approval is actually required, 
+                    // the subsequent swap transaction will fail with a clear "execution reverted" error.
+                    console.warn(`[DexExecutor] Proceeding with swap execution despite allowance read failure.`);
                 }
             }
 
@@ -124,18 +126,27 @@ export class DexExecutor {
             // 3. SIMULATION (Pre-flight check)
             try {
                 console.log("[DexExecutor] Simulating transaction...");
-                // Note: We don't use simulateContract here because we already have the data.
-                // We'll use eth_call via publicClient.call for a raw dry-run.
+                
+                // Extra Engineering Safety: Verify router address has bytecode on this chain
+                const bytecode = await publicClient.getBytecode({
+                    address: getAddress(routerAddress),
+                });
+                if (!bytecode || bytecode === '0x') {
+                    console.warn(`[DexExecutor] Router address ${routerAddress} has NO data at destination on chain ${fromToken.chainId}! This will fail on-chain.`);
+                }
+
                 await publicClient.call({
                     account: getAddress(fromAddress),
                     to: getAddress(routerAddress),
                     data: txData as `0x${string}`,
                     value: BigInt(txValue),
                 });
+                console.log("[DexExecutor] Simulation successful.");
             } catch (simError: any) {
                 console.warn("[DexExecutor] Simulation failed:", simError.message);
-                // We keep going as some RPCs fail simulation but succeed in reality, 
-                // but this is a warning sign.
+                // Standard Engineering fallback:
+                // We do NOT block the execution flow here - sometimes simulation logic differs from reality
+                // due to state differences (block timestamps, pending txs, etc).
             }
 
             // 4. SIGN AND BROADCAST
@@ -167,10 +178,10 @@ export class DexExecutor {
 
     private getDefaultPath(fromToken: TokenMinimal, toToken: TokenMinimal): Address[] {
         const weth = WETH_ADDRESSES[fromToken.chainId];
-        const tokenIn = fromToken.address === '0x0000000000000000000000000000000000000000'
+        const tokenIn = isNativeToken(fromToken.address)
             ? weth
             : getAddress(fromToken.address);
-        const tokenOut = toToken.address === '0x0000000000000000000000000000000000000000'
+        const tokenOut = isNativeToken(toToken.address)
             ? weth
             : getAddress(toToken.address);
 

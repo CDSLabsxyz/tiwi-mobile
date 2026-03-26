@@ -1,6 +1,5 @@
 import { colors } from '@/constants/colors';
 import { truncateAddress } from '@/utils/wallet';
-import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import React from 'react';
@@ -9,6 +8,7 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 const TiwiLogo = require('@/assets/logo/tiwi-logo.svg');
 const ArrowDown01 = require('@/assets/home/arrow-down-01.svg');
 const ArrowLeft02 = require('@/assets/swap/arrow-left-02.svg');
+const SettingsIcon = require('@/assets/home/settings-03.svg');
 
 interface SwapHeaderProps {
     walletAddress?: string;
@@ -60,7 +60,7 @@ export const SwapHeader: React.FC<SwapHeaderProps> = ({
                     activeOpacity={0.7}
                     style={styles.settingsButton}
                 >
-                    <Ionicons name="settings-outline" size={24} color={colors.titleText} />
+                    <Image source={SettingsIcon} style={styles.backIcon} tintColor={colors.titleText} contentFit="contain" />
                 </TouchableOpacity>
             </View>
 

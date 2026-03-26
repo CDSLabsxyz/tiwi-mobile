@@ -199,7 +199,15 @@ const styles = StyleSheet.create({
         height: 90,
         alignItems: 'center',
         justifyContent: 'center',
-        borderRadius: 45,    },
+        borderRadius: 45,
+        backgroundColor: 'transparent',
+        // Glow effect
+        shadowColor: colors.primaryCTA,
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.9,
+        shadowRadius: 20,
+        elevation: 15,
+    },
     fullSize: {
         width: '100%',
         height: '100%',

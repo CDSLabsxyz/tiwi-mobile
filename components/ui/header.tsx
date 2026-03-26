@@ -163,13 +163,19 @@ const styles = StyleSheet.create({
     logoContainer: {
         width: '100%',
         height: '100%',
-        backgroundColor: colors.bgCards,
+        backgroundColor: '#000000', // Black background for the logo
         borderRadius: 16,
-        borderWidth: 1,
-        borderColor: colors.bgStroke,
+        borderWidth: 1.5,
+        borderColor: colors.primaryCTA, // Neon green border
         padding: 4,
         justifyContent: 'center',
         alignItems: 'center',
+        // Glow effect
+        shadowColor: colors.primaryCTA,
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.9,
+        shadowRadius: 10,
+        elevation: 10,
     },
     logoChainBadge: {
         position: 'absolute',
