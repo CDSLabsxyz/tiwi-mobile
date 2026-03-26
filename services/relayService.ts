@@ -56,12 +56,12 @@ class RelayService {
 
             // Smart Slippage: Detect taxed tokens like TWC and use safe defaults
             const isTaxToken = fromToken.address.toLowerCase() === '0xda1060158f7d593667cce0a15db346bb3ffb3596';
-            const finalSlippage = isTaxToken ? Math.max(slippage || 0, 15.0) : (slippage || 0.5);
+            const finalSlippage = isTaxToken ? Math.max(slippage || 0, 20.0) : (slippage || 0.5);
 
-            // RELAY TRICK: Quote for a lower amount to provide a safety buffer 
-            // for SDK simulation gaps / potential token taxes.
-            // For TWC (5% tax), we use a 95% quote. For others, 98% is a safe buffer.
-            const amountToQuote = isTaxToken ? (amountIn * 95n) / 100n : (amountIn * 98n) / 100n;
+            // For tax tokens: quote FULL amount, rely on high slippage (15%) to absorb the 5% tax.
+            // No amount patching needed — Relay's minReturn with 15% slippage gives enough room.
+            // For standard tokens: use 98% buffer + patch back to 100% (Relay Trick).
+            const amountToQuote = isTaxToken ? amountIn : (amountIn * 98n) / 100n;
 
             const payload = {
                 chainId: Number(fromToken.chainId),
@@ -109,7 +109,7 @@ class RelayService {
                 txValue: quote.steps[0]?.items?.[0]?.data?.value || "0",
                 raw: {
                     ...quote,
-                    _isRelayTrick: true,
+                    _isRelayTrick: !isTaxToken,
                     _quoteAmount: amountToQuote.toString(),
                     _originalAmount: amountIn.toString()
                 },

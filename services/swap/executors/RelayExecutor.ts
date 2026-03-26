@@ -1,11 +1,49 @@
 
-import { createPublicClient, http } from "viem";
-import { arbitrum, base, bsc, mainnet, optimism, polygon, zksync, scroll, mantle, blast, lisk } from "viem/chains";
+import { encodeFunctionData, getAddress, parseUnits, type Hex } from "viem";
 import { relayService } from "../../relayService";
 import { signerController } from "../../signer/SignerController";
+import { ERC20_ABI, isNativeToken } from "../constants";
 import { ExecuteSwapParams, SwapExecutionResult } from "../types";
 
-const SUPPORTED_CHAINS = [mainnet, optimism, arbitrum, bsc, polygon, base, zksync, scroll, mantle, blast, lisk];
+// Cache for Relay approval proxy addresses per chain
+const approvalProxyCache: Map<number, string> = new Map();
+
+/**
+ * Fetch the ApprovalProxy address for a chain from Relay API.
+ * This is the contract that needs token approval for Relay swaps.
+ */
+async function getRelayApprovalProxy(chainId: number): Promise<string | null> {
+    if (approvalProxyCache.has(chainId)) {
+        return approvalProxyCache.get(chainId)!;
+    }
+
+    try {
+        const response = await fetch('https://api.relay.link/chains');
+        if (!response.ok) {
+            console.warn('[RelayExecutor] Failed to fetch Relay chains:', response.status);
+            return null;
+        }
+
+        const data = await response.json();
+        const chains = data.chains || [];
+
+        const chain = chains.find((c: any) => c.id === chainId);
+        if (chain) {
+            const approvalProxy = chain.contracts?.v3ApprovalProxy || chain.contracts?.approvalProxy;
+            if (approvalProxy) {
+                approvalProxyCache.set(chainId, approvalProxy);
+                console.log(`[RelayExecutor] Found approval proxy for chain ${chainId}: ${approvalProxy}`);
+                return approvalProxy;
+            }
+        }
+
+        console.warn(`[RelayExecutor] No approval proxy found for chain ${chainId}`);
+        return null;
+    } catch (error) {
+        console.error('[RelayExecutor] Error fetching Relay chains:', error);
+        return null;
+    }
+}
 
 export class RelayExecutor {
     private async getPublicClient(chainId: number) {
@@ -14,6 +52,11 @@ export class RelayExecutor {
 
     /**
      * Executes a quote from Relay Protocol.
+     * Mirrors the proven approach from tiwi-super-app:
+     * 1. Fetch ApprovalProxy from Relay API
+     * 2. Approve all unique spenders
+     * 3. Manually execute each step/item via walletClient
+     * 4. Wait for confirmation between steps
      */
     async execute(params: ExecuteSwapParams): Promise<SwapExecutionResult> {
         try {
@@ -25,100 +68,187 @@ export class RelayExecutor {
             console.log(`[RelayExecutor] Preparing Relay execution for ${fromToken.symbol} on chain ${fromToken.chainId}`);
 
             const walletClient = await signerController.getWalletClient(fromToken.chainId, fromAddress);
+            const publicClient = await this.getPublicClient(fromToken.chainId);
 
-            // REDUNDANT FIX: Re-sync chains to the SDK singleton right before execution
+            // Re-sync chains to the SDK singleton right before execution
             relayService.ensureChains();
 
-            // Diagnostic Check
-            const currentChains = relayService.client.chains?.map(c => c.id) || [];
-            console.log(`[RelayExecutor] Current registered chains:`, currentChains);
-            if (!currentChains.includes(Number(fromToken.chainId))) {
-                console.warn(`[RelayExecutor] Chain ${fromToken.chainId} STILL missing from registry! Forcing injection...`);
-            }
-
-            console.log(`[RelayExecutor] Executing on address: ${fromAddress}`);
-
-            // Relay SDK execute handles the steps
             const relayQuote = quote.raw;
 
-            // RELAY TRICK: Surgical Patching 
-            // We search the hex data for the 98% quote amount and replace it with the 100% original amount.
-            // This prevents "Return amount is not enough" errors because the minAmountOut was based on 98%.
-            if (relayQuote._isRelayTrick && relayQuote._quoteAmount && relayQuote._originalAmount) {
-                const quoteAmount = relayQuote._quoteAmount;
-                const originalAmount = relayQuote._originalAmount;
+            // ── 1. TOKEN APPROVAL (for non-native tokens) ──
+            if (!isNativeToken(fromToken.address)) {
+                const amountIn = parseUnits(params.fromAmount, fromToken.decimals || 18);
 
-                const quoteHex = BigInt(quoteAmount).toString(16).padStart(64, '0').toLowerCase();
-                const originalHex = BigInt(originalAmount).toString(16).padStart(64, '0').toLowerCase();
+                // Collect ALL spender addresses that may need approval
+                const spenderAddresses = new Set<string>();
 
-                console.log(`[RelayExecutor] 🧙‍♂️ Applying Relay Trick Patching (${quoteAmount} -> ${originalAmount})`);
+                // Primary: Fetch the official ApprovalProxy from Relay API
+                const approvalProxyAddress = await getRelayApprovalProxy(fromToken.chainId);
+                if (approvalProxyAddress) {
+                    spenderAddresses.add(approvalProxyAddress.toLowerCase());
+                    console.log(`[RelayExecutor] Using Relay ApprovalProxy: ${approvalProxyAddress}`);
+                }
 
-                let patchCount = 0;
+                // Fallback: Also check addresses from quote steps
+                for (const step of relayQuote.steps || []) {
+                    for (const item of step.items || []) {
+                        // Check for explicit approval address in quote response
+                        if (item.data?.approvalAddress) {
+                            spenderAddresses.add(item.data.approvalAddress.toLowerCase());
+                        }
+                        // Also add the target contract ('to') address
+                        if (item.data?.to) {
+                            spenderAddresses.add(item.data.to.toLowerCase());
+                        }
+                    }
+                }
 
-                // Iterate through steps and items to find and patch the amount in tx data
-                relayQuote.steps?.forEach((step: any) => {
-                    step.items?.forEach((item: any) => {
-                        const tx = item.data;
-                        if (tx && typeof tx === 'object') {
-                            // 1. Patch hex data
-                            if (tx.data) {
-                                let dataStr = String(tx.data).toLowerCase();
-                                // We use a Global regex for the hex amount to catch it if it appears multiple times
-                                const regex = new RegExp(quoteHex, 'g');
-                                if (regex.test(dataStr)) {
-                                    tx.data = dataStr.replace(regex, originalHex);
-                                    patchCount++;
-                                    console.log(`[RelayExecutor] 🩹 Patched hex data globally`);
-                                }
+                console.log(`[RelayExecutor] Spenders to check: ${[...spenderAddresses].join(', ')}`);
+
+                // Approve each unique spender that needs it
+                for (const spender of spenderAddresses) {
+                    try {
+                        const allowance = await publicClient.readContract({
+                            address: getAddress(fromToken.address),
+                            abi: ERC20_ABI,
+                            functionName: 'allowance',
+                            args: [getAddress(fromAddress), getAddress(spender)],
+                        }) as bigint;
+
+                        console.log(`[RelayExecutor] Allowance for ${spender}: ${allowance.toString()}, needed: ${amountIn.toString()}`);
+
+                        if (allowance < amountIn) {
+                            console.log(`[RelayExecutor] Approving ${fromToken.symbol} for ${spender}...`);
+                            const approveData = encodeFunctionData({
+                                abi: ERC20_ABI,
+                                functionName: 'approve',
+                                args: [getAddress(spender), BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')],
+                            });
+
+                            const approveResult = await signerController.executeTransaction({
+                                chainFamily: 'evm',
+                                to: fromToken.address,
+                                data: approveData,
+                                chainId: fromToken.chainId,
+                            }, fromAddress);
+
+                            if (approveResult.status !== 'success') {
+                                return { success: false, error: "Token approval failed: " + approveResult.error };
                             }
-                            // 2. Patch value if it matches the quote
-                            if (tx.value && BigInt(tx.value) === BigInt(quoteAmount)) {
-                                console.log(`[RelayExecutor] 🩹 Patched amount in transaction value`);
-                                tx.value = originalAmount;
+
+                            // Wait for approval confirmation on-chain
+                            if (approveResult.hash) {
+                                try {
+                                    await publicClient.waitForTransactionReceipt({ hash: approveResult.hash as Hex, timeout: 30000 });
+                                    console.log(`[RelayExecutor] Approval confirmed for ${spender}`);
+                                } catch {
+                                    // Fallback: simple wait
+                                    await new Promise(r => setTimeout(r, 3000));
+                                }
+                            } else {
+                                await new Promise(r => setTimeout(r, 3000));
                             }
                         }
-                    });
-                });
-
-                if (patchCount === 0) {
-                    console.warn(`[RelayExecutor] ⚠️ Relay Trick patch attempted but NO matching amount found in tx data!`);
-                    const sample = relayQuote.steps?.[0]?.items?.[0]?.data?.data;
-                    if (sample) console.log(`[RelayExecutor] Sample Hex: ${String(sample).slice(0, 74)}...`);
-                } else {
-                    console.log(`[RelayExecutor] ✅ Successfully applied ${patchCount} patches.`);
-                }
-
-                // Also update the display amount in the quote metadata (for SDK simulation)
-                if (relayQuote.details?.currencyIn) {
-                    relayQuote.details.currencyIn.amount = originalAmount;
-                }
-            }
-
-            const result = await relayService.client.actions.execute({
-                quote: relayQuote,
-                wallet: walletClient as any,
-                onProgress: (progress) => {
-                    const action = progress.currentStep?.action || 'Processing';
-                    const description = progress.currentStep?.description || 'Wait a moment...';
-                    console.log(`[RelayExecutor] Step: ${action} - Status: ${description}`);
-                },
-            });
-
-            // Try to find the first transaction hash from the steps
-            let txHash = `relay-${Date.now()}`;
-            if (result?.data?.steps) {
-                for (const step of result.data.steps) {
-                    const hashItem = step.items?.find(i => i.txHashes && i.txHashes.length > 0);
-                    if (hashItem && hashItem.txHashes?.[0]?.txHash) {
-                        txHash = hashItem.txHashes[0].txHash;
-                        break;
+                    } catch (approvalError: any) {
+                        console.error(`[RelayExecutor] Approval failed for ${spender}:`, approvalError.message);
+                        return { success: false, error: `Token approval failed: ${approvalError.message}` };
                     }
                 }
             }
 
+            // ── 2. RELAY TRICK PATCHING & MANUAL STEP EXECUTION ──
+            const steps = relayQuote.steps || [];
+            const txHashes: string[] = [];
+
+            console.log(`[RelayExecutor] Processing ${steps.length} steps`);
+
+            for (let i = 0; i < steps.length; i++) {
+                const step = steps[i];
+                console.log(`[RelayExecutor] Step ${i + 1}/${steps.length}: action=${step.action}, items=${step.items?.length || 0}`);
+
+                if (!step.items || step.items.length === 0) continue;
+                if (step.items.every((item: any) => item.status === 'completed')) continue;
+
+                for (let j = 0; j < step.items.length; j++) {
+                    const item = step.items[j];
+                    if (item.status === 'completed') continue;
+
+                    const tx = item.data;
+                    if (!tx || typeof tx !== 'object') {
+                        console.warn(`[RelayExecutor] Step[${i}].Item[${j}] has no data, skipping`);
+                        continue;
+                    }
+
+                    // Apply Relay Trick: patch hex data for taxed swaps OR standard relay trick
+                    const isTaxedSwap = relayQuote._isTaxedSwap;
+                    const isRelayTrick = relayQuote._isRelayTrick;
+
+                    if ((isTaxedSwap || isRelayTrick) && relayQuote._quoteAmount && relayQuote._originalAmount) {
+                        const quoteAmount = relayQuote._quoteAmount;
+                        const originalAmount = relayQuote._originalAmount;
+
+                        const quoteHex = BigInt(quoteAmount).toString(16).padStart(64, '0').toLowerCase();
+                        const originalHex = BigInt(originalAmount).toString(16).padStart(64, '0').toLowerCase();
+
+                        // Patch hex data (use indexOf like super-app, not regex)
+                        if (tx.data) {
+                            const dataLower = String(tx.data).toLowerCase();
+                            const index = dataLower.indexOf(quoteHex);
+                            if (index !== -1) {
+                                console.log(`[RelayExecutor] Applying Relay Trick: patching amount in data`);
+                                tx.data = tx.data.slice(0, index) + originalHex + tx.data.slice(index + 64);
+                            }
+                        }
+
+                        // Patch value if it matches
+                        if (tx.value && BigInt(tx.value) === BigInt(quoteAmount)) {
+                            console.log(`[RelayExecutor] Applying Relay Trick: patching amount in value`);
+                            tx.value = originalAmount;
+                        }
+                    }
+
+                    if (!tx.to) {
+                        console.error(`[RelayExecutor] Step[${i}].Item[${j}] missing "to" address`);
+                        throw new Error('Relay did not provide valid transaction data.');
+                    }
+
+                    console.log(`[RelayExecutor] Sending tx to ${tx.to}, value: ${tx.value || '0'}`);
+
+                    // Send the transaction via walletClient (not SDK execute)
+                    const hash = await walletClient.sendTransaction({
+                        to: tx.to as `0x${string}`,
+                        data: (tx.data || '0x') as `0x${string}`,
+                        value: tx.value ? BigInt(tx.value) : BigInt(0),
+                    });
+
+                    txHashes.push(hash);
+                    console.log(`[RelayExecutor] Tx broadcast: ${hash}`);
+
+                    // Wait for confirmation before next item (prevents TRANSFER_FROM_FAILED)
+                    try {
+                        await publicClient.waitForTransactionReceipt({
+                            hash: hash as Hex,
+                            timeout: 60000,
+                        });
+                        console.log(`[RelayExecutor] Tx confirmed: ${hash}`);
+                    } catch (waitError: any) {
+                        console.warn(`[RelayExecutor] Wait error for ${hash}:`, waitError.message);
+                        // For intermediate steps, wait a bit extra as fallback
+                        if (j < step.items.length - 1 || i < steps.length - 1) {
+                            await new Promise(r => setTimeout(r, 2000));
+                        }
+                    }
+                }
+            }
+
+            if (txHashes.length === 0) {
+                throw new Error('No transactions were executed. Please ensure your wallet is connected and try again.');
+            }
+
+            console.log(`[RelayExecutor] Swap completed with ${txHashes.length} transaction(s)`);
             return {
                 success: true,
-                txHash
+                txHash: txHashes[0],
             };
         } catch (error: any) {
             console.error("[RelayExecutor] Swap failed:", error);

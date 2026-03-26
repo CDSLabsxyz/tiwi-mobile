@@ -493,6 +493,126 @@ export default function SwapScreen() {
         setIsLoadingSwap(true);
         try {
             if (!swapQuote) throw new Error('No swap quote available');
+
+            // PRE-APPROVE: For Relay swaps with ERC20 tokens, approve before executing
+            if (swapQuote.router === 'relay' && !isNativeToken(fromToken.address)) {
+                console.log('[Swap] Pre-approving token for Relay swap...');
+                const { encodeFunctionData, getAddress, parseUnits: viemParseUnits } = require('viem');
+                const chainId = Number(fromChain?.id) || 56;
+                const amountIn = viemParseUnits(fromAmount, fromToken.decimals || 18);
+                const publicClient = await signerController.getPublicClient(chainId);
+                const tokenAddr = getAddress(fromToken.address).toLowerCase();
+
+                // Collect spender addresses from multiple sources
+                const spenderAddresses = new Set<string>();
+
+                const steps = swapQuote.raw?.steps || [];
+
+                // Log full step structure for debugging
+                console.log(`[Swap] Quote has ${steps.length} steps`);
+                for (const step of steps) {
+                    for (const item of (step as any).items || []) {
+                        const to = item.data?.to || '';
+                        const data = String(item.data?.data || '');
+                        console.log(`[Swap]   Item: to=${to}, data=${data.slice(0, 20)}..., approvalAddress=${item.data?.approvalAddress || 'none'}`);
+
+                        // Source 1: Explicit approvalAddress from Relay quote
+                        if (item.data?.approvalAddress) {
+                            spenderAddresses.add(item.data.approvalAddress.toLowerCase());
+                        }
+
+                        // Source 2: Decode spender from approve() calldata
+                        // If this item is an approve() call (selector 0x095ea7b3), the spender is in the calldata
+                        if (data.toLowerCase().startsWith('0x095ea7b3') && data.length >= 74) {
+                            const spenderHex = '0x' + data.slice(34, 74);
+                            console.log(`[Swap]   Decoded spender from approve calldata: ${spenderHex}`);
+                            spenderAddresses.add(spenderHex.toLowerCase());
+                        }
+
+                        // Source 3: Non-token 'to' addresses (the actual Relay contract)
+                        if (to && getAddress(to).toLowerCase() !== tokenAddr) {
+                            spenderAddresses.add(to.toLowerCase());
+                        }
+                    }
+                }
+
+                // Source 4: Fetch official ApprovalProxy from Relay API
+                try {
+                    const chainsRes = await fetch('https://api.relay.link/chains');
+                    if (chainsRes.ok) {
+                        const chainsData = await chainsRes.json();
+                        const chain = (chainsData.chains || []).find((c: any) => c.id === chainId);
+                        const proxy = chain?.contracts?.v3ApprovalProxy || chain?.contracts?.approvalProxy;
+                        if (proxy) {
+                            spenderAddresses.add(proxy.toLowerCase());
+                            console.log(`[Swap] Relay API ApprovalProxy: ${proxy}`);
+                        }
+                    }
+                } catch (e) {
+                    console.warn('[Swap] Failed to fetch Relay chains:', e);
+                }
+
+                console.log(`[Swap] Final spender set: ${[...spenderAddresses].join(', ')}`);
+
+                const ERC20_ABI = [
+                    { inputs: [{ name: 'spender', type: 'address' }, { name: 'amount', type: 'uint256' }], name: 'approve', outputs: [{ type: 'bool' }], stateMutability: 'nonpayable', type: 'function' },
+                    { inputs: [{ name: 'owner', type: 'address' }, { name: 'spender', type: 'address' }], name: 'allowance', outputs: [{ type: 'uint256' }], stateMutability: 'view', type: 'function' },
+                ] as const;
+
+                // Approve each spender with max uint256
+                for (const spender of spenderAddresses) {
+                    try {
+                        const allowance = await publicClient.readContract({
+                            address: getAddress(fromToken.address),
+                            abi: ERC20_ABI,
+                            functionName: 'allowance',
+                            args: [getAddress(address), getAddress(spender)],
+                        }) as bigint;
+
+                        console.log(`[Swap] Allowance for ${spender}: ${allowance.toString()}`);
+
+                        if (allowance < amountIn) {
+                            console.log(`[Swap] Approving ${fromToken.symbol} for ${spender}...`);
+                            const approveData = encodeFunctionData({
+                                abi: ERC20_ABI,
+                                functionName: 'approve',
+                                args: [getAddress(spender), BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')],
+                            });
+
+                            const approveResult = await signerController.executeTransaction({
+                                chainFamily: 'evm',
+                                to: fromToken.address,
+                                data: approveData,
+                                chainId: chainId,
+                            }, address);
+
+                            if (approveResult.status === 'failed') {
+                                throw new Error('Token approval failed: ' + (approveResult.error || 'Unknown error'));
+                            }
+
+                            // Wait for on-chain confirmation
+                            if (approveResult.hash) {
+                                try {
+                                    await publicClient.waitForTransactionReceipt({ hash: approveResult.hash as `0x${string}`, timeout: 30000 });
+                                } catch {
+                                    await new Promise(r => setTimeout(r, 5000));
+                                }
+                            } else {
+                                await new Promise(r => setTimeout(r, 5000));
+                            }
+                            console.log(`[Swap] Approval confirmed for ${spender}`);
+                        } else {
+                            console.log(`[Swap] Already approved for ${spender}`);
+                        }
+                    } catch (err: any) {
+                        console.error(`[Swap] Approval error for ${spender}:`, err.message);
+                        throw new Error(`Token approval failed: ${err.message}`);
+                    }
+                }
+
+                console.log('[Swap] All approvals done, proceeding to swap...');
+            }
+
             const result = await executeSwap(fromAmount, fromToken, toToken, address, address, swapQuote);
 
             const txHash = result?.txHash || `swap-${Date.now()}`;
