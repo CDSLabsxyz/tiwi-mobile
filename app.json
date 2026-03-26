@@ -48,7 +48,18 @@
       "expo-secure-store",
       "expo-audio",
       "expo-video",
-      "expo-asset"
+      "expo-asset",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 36,
+            "targetSdkVersion": 36,
+            "minSdkVersion": 24,
+            "kotlinVersion": "1.9.24"
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
