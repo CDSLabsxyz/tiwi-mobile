@@ -25,7 +25,7 @@ export class RelayExecutor {
             console.log(`[RelayExecutor] Preparing Relay execution for ${fromToken.symbol} on chain ${fromToken.chainId}`);
 
             const walletClient = await signerController.getWalletClient(fromToken.chainId, fromAddress);
-            
+
             // REDUNDANT FIX: Re-sync chains to the SDK singleton right before execution
             relayService.ensureChains();
 
@@ -39,11 +39,68 @@ export class RelayExecutor {
             console.log(`[RelayExecutor] Executing on address: ${fromAddress}`);
 
             // Relay SDK execute handles the steps
+            const relayQuote = quote.raw;
+
+            // RELAY TRICK: Surgical Patching 
+            // We search the hex data for the 98% quote amount and replace it with the 100% original amount.
+            // This prevents "Return amount is not enough" errors because the minAmountOut was based on 98%.
+            if (relayQuote._isRelayTrick && relayQuote._quoteAmount && relayQuote._originalAmount) {
+                const quoteAmount = relayQuote._quoteAmount;
+                const originalAmount = relayQuote._originalAmount;
+
+                const quoteHex = BigInt(quoteAmount).toString(16).padStart(64, '0').toLowerCase();
+                const originalHex = BigInt(originalAmount).toString(16).padStart(64, '0').toLowerCase();
+
+                console.log(`[RelayExecutor] 🧙‍♂️ Applying Relay Trick Patching (${quoteAmount} -> ${originalAmount})`);
+
+                let patchCount = 0;
+
+                // Iterate through steps and items to find and patch the amount in tx data
+                relayQuote.steps?.forEach((step: any) => {
+                    step.items?.forEach((item: any) => {
+                        const tx = item.data;
+                        if (tx && typeof tx === 'object') {
+                            // 1. Patch hex data
+                            if (tx.data) {
+                                let dataStr = String(tx.data).toLowerCase();
+                                // We use a Global regex for the hex amount to catch it if it appears multiple times
+                                const regex = new RegExp(quoteHex, 'g');
+                                if (regex.test(dataStr)) {
+                                    tx.data = dataStr.replace(regex, originalHex);
+                                    patchCount++;
+                                    console.log(`[RelayExecutor] 🩹 Patched hex data globally`);
+                                }
+                            }
+                            // 2. Patch value if it matches the quote
+                            if (tx.value && BigInt(tx.value) === BigInt(quoteAmount)) {
+                                console.log(`[RelayExecutor] 🩹 Patched amount in transaction value`);
+                                tx.value = originalAmount;
+                            }
+                        }
+                    });
+                });
+
+                if (patchCount === 0) {
+                    console.warn(`[RelayExecutor] ⚠️ Relay Trick patch attempted but NO matching amount found in tx data!`);
+                    const sample = relayQuote.steps?.[0]?.items?.[0]?.data?.data;
+                    if (sample) console.log(`[RelayExecutor] Sample Hex: ${String(sample).slice(0, 74)}...`);
+                } else {
+                    console.log(`[RelayExecutor] ✅ Successfully applied ${patchCount} patches.`);
+                }
+
+                // Also update the display amount in the quote metadata (for SDK simulation)
+                if (relayQuote.details?.currencyIn) {
+                    relayQuote.details.currencyIn.amount = originalAmount;
+                }
+            }
+
             const result = await relayService.client.actions.execute({
-                quote: quote.raw,
+                quote: relayQuote,
                 wallet: walletClient as any,
-                onProgress: (steps) => {
-                    console.log(`[RelayExecutor] Step: ${steps.action} - Status: ${steps.description}`);
+                onProgress: (progress) => {
+                    const action = progress.currentStep?.action || 'Processing';
+                    const description = progress.currentStep?.description || 'Wait a moment...';
+                    console.log(`[RelayExecutor] Step: ${action} - Status: ${description}`);
                 },
             });
 
@@ -58,7 +115,7 @@ export class RelayExecutor {
                     }
                 }
             }
-            
+
             return {
                 success: true,
                 txHash

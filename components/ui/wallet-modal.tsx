@@ -41,6 +41,30 @@ const LogoutIcon = require('../../assets/wallet/logout-01.svg');
 const TiwiLogo = require('../../assets/logo/tiwi-logo.svg');
 
 type ModalMode = 'MAIN' | 'ADD_OPTIONS';
+const ALL_NETWORKS = [
+    { id: 'ETH', name: 'Ethereum', chain: 'EVM', icon: require('../../assets/home/chains/ethereum.svg') },
+    { id: 'BSC', name: 'BNB Chain', chain: 'EVM', icon: require('../../assets/home/chains/bsc.svg') },
+    { id: 'POLYGON', name: 'Polygon', chain: 'EVM', icon: require('../../assets/home/chains/polygon.svg') },
+    { id: 'BASE', name: 'Base', chain: 'EVM', icon: require('../../assets/home/chains/base.png') },
+    { id: 'OPTIMISM', name: 'Optimism', chain: 'EVM', icon: require('../../assets/home/chains/optimism.png') },
+    { id: 'AVALANCHE', name: 'Avalanche', chain: 'EVM', icon: require('../../assets/home/chains/avalanche.svg') },
+    { id: 'SOLANA', name: 'Solana', chain: 'SOLANA', icon: require('../../assets/home/chains/solana.svg') },
+    { id: 'TRON', name: 'Tron', chain: 'TRON', icon: require('../../assets/home/chains/tron.png') },
+    { id: 'TON', name: 'TON', chain: 'TON', icon: require('../../assets/home/chains/ton.jpg') },
+    { id: 'COSMOS', name: 'Cosmos', chain: 'COSMOS', icon: require('../../assets/home/chains/bsc.svg') },
+    { id: 'OSMOSIS', name: 'Osmosis', chain: 'OSMOSIS', icon: require('../../assets/home/chains/polygon.svg') },
+] as const;
+
+const ChainIcons = {
+    EVM: require('../../assets/home/chains/ethereum.svg'),
+    SOLANA: require('../../assets/home/chains/solana.svg'),
+    TRON: require('../../assets/home/chains/tron.png'),
+    TON: require('../../assets/home/chains/ton.jpg'),
+    COSMOS: require('../../assets/home/chains/bsc.svg'),
+    OSMOSIS: require('../../assets/home/chains/polygon.svg'),
+};
+
+const SearchIcon = require('../../assets/home/filter-horizontal.svg'); // placeholder for search icon
 
 /**
  * Wallet Modal Component
@@ -60,24 +84,26 @@ export const WalletModal: React.FC<WalletModalProps> = (props) => {
     const router = useRouter();
     const { bottom = 0 } = useSafeAreaInsets() || { bottom: 0 };
 
-    // 1. Store hooks (Call first)
-    const store = useWalletStore();
-    const {
-        address: storeAddress,
-        walletGroups = [],
-        activeGroupId,
-        setActiveGroup,
-        removeWalletGroup,
-        isConnected,
-        isBalanceHidden,
-        toggleBalanceVisibility,
-        _hasHydrated
-    } = store || { _hasHydrated: false, walletGroups: [], address: '', activeGroupId: null, isConnected: false, isBalanceHidden: false, toggleBalanceVisibility: () => { }, removeWalletGroup: () => { } };
+    // 1. Store hooks (Using narrow selectors for performance)
+    const walletGroups = useWalletStore(s => s.walletGroups ?? []);
+    const activeGroupId = useWalletStore(s => s.activeGroupId);
+    const activeChain = useWalletStore(s => s.activeChain);
+    const setActiveGroup = useWalletStore(s => s.setActiveGroup);
+    const setActiveChain = useWalletStore(s => s.setActiveChain);
+    const removeWalletGroup = useWalletStore(s => s.removeWalletGroup);
+    const isConnected = useWalletStore(s => s.isConnected);
+    const isBalanceHidden = useWalletStore(s => s.isBalanceHidden);
+    const toggleBalanceVisibility = useWalletStore(s => s.toggleBalanceVisibility);
+    const _hasHydrated = useWalletStore(s => s._hasHydrated);
+    const syncActiveGroupAddresses = useWalletStore(s => s.syncActiveGroupAddresses);
+    const storeAddress = useWalletStore(s => s.address);
 
     // 2. Data and State hooks
     const { data: balanceData, isLoading: isBalanceLoading } = useWalletBalances();
     const [mode, setMode] = useState<ModalMode>('MAIN');
     const [copied, setCopied] = useState(false);
+    const [isExpanded, setIsExpanded] = useState(false);
+    const [isWalletListExpanded, setIsWalletListExpanded] = useState(false);
 
     // 3. Animation hooks
     const translateY = useSharedValue(0);
@@ -88,15 +114,26 @@ export const WalletModal: React.FC<WalletModalProps> = (props) => {
         runOnJS(onClose)();
     }, [onClose]);
 
-    // Reset translateY when modal opens
+    // Use a fixed modal height for consistent interpolation
+    const modalHeight = isConnected ? 680 : 400;
+
+    // 4. Visibility Control
+    const [renderModal, setRenderModal] = useState(visible);
+
     React.useEffect(() => {
         if (visible) {
+            setRenderModal(true);
             translateY.value = 0;
+            if (activeGroupId && syncActiveGroupAddresses) {
+                syncActiveGroupAddresses();
+            }
+        } else {
+            // Dismiss animation
+            translateY.value = withTiming(modalHeight, { duration: 250 }, () => {
+                runOnJS(setRenderModal)(false);
+            });
         }
-    }, [visible]);
-
-    // Use a fixed modal height for consistent interpolation
-    const modalHeight = isConnected ? 600 : 400;
+    }, [visible, activeGroupId, syncActiveGroupAddresses, modalHeight]);
 
     const gesture = Gesture.Pan()
         .onStart(() => {
@@ -134,8 +171,8 @@ export const WalletModal: React.FC<WalletModalProps> = (props) => {
         ),
     }));
 
-    // EARLY RENDERING CHECK (Must be after all hooks)
-    if (!_hasHydrated || (!visible && translateY.value === 0)) return null;
+    // EARLY RENDERING CHECK
+    if (!_hasHydrated || (!renderModal && !visible)) return null;
 
     // Safety: Ensure groups is always an array
     const safeGroups = Array.isArray(walletGroups) ? walletGroups : [];
@@ -145,7 +182,6 @@ export const WalletModal: React.FC<WalletModalProps> = (props) => {
     const liveTotalBalance = balanceData?.totalNetWorthUsd ? `$${balanceData.totalNetWorthUsd}` : '$0.00';
 
     const activeAddress = walletAddress || storeAddress;
-    const activeChain = activeGroup?.primaryChain;
 
     if (activeAddress) {
         console.log(`[WalletModal] Rendering with activeAddress: ${activeAddress}, Chain: ${activeChain}`);
@@ -210,126 +246,221 @@ export const WalletModal: React.FC<WalletModalProps> = (props) => {
 
         return (
             <View style={styles.mainInfo}>
-                {/* Wallet Avatar and Address */}
-                <View style={[styles.userInfo, { minHeight: 100, width: '100%', marginTop: 10 }]}>
-                    <View style={styles.avatarContainer}>
-                        <ExpoImage source={TiwiLogo} style={styles.iconFull} contentFit="contain" />
-                    </View>
-                    <View style={styles.addressContainer}>
-                        <Text style={[styles.addressText, { color: colors.titleText, fontSize: 18 }]}>
-                            {displayAddress}
-                        </Text>
-                        <TouchableOpacity onPress={handleCopyAddress} style={[styles.copyButton, { width: 24, height: 24 }]}>
-                            {copied ? (
-                                <Text style={styles.checkMark}>✓</Text>
-                            ) : (
-                                <ExpoImage source={CopyIcon} style={{ width: 16, height: 16 }} contentFit="contain" />
-                            )}
-                        </TouchableOpacity>
-                    </View>
-                </View>
-
-                {/* Cards Section */}
-                <View style={styles.cardsSection}>
-                    <TouchableOpacity
-                        style={styles.balanceCard}
-                        onPress={() => {
-                            console.log('[WalletModal] Manual refresh triggered');
-                            // Triggering a refresh via TanStack query is handled by the internal polling
-                            // but we can log it to show we are responsive.
-                        }}
-                    >
-                        <View style={styles.balanceHeader}>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                                <Text style={styles.cardLabel}>Total Balance</Text>
-                                <TouchableOpacity onPress={toggleBalanceVisibility}>
-                                    <Ionicons
-                                        name={isBalanceHidden ? "eye-off-outline" : "eye-outline"}
-                                        size={16}
-                                        color={colors.mutedText}
-                                    />
-                                </TouchableOpacity>
-                            </View>
-                            {isBalanceLoading && (
-                                <View style={{ marginLeft: 8 }}>
-                                    <ActivityIndicator size="small" color={colors.primaryCTA} />
-                                </View>
-                            )}
-                            <TouchableOpacity onPress={() => setMode('ADD_OPTIONS')} style={styles.miniAddButton}>
-                                <Ionicons name="add" size={16} color={colors.primaryCTA} />
-                                <Text style={styles.miniAddText}>Add Wallet</Text>
-                            </TouchableOpacity>
+                {/* 1. Top Card Identity Trigger */}
+                <TouchableOpacity 
+                    style={styles.identityCard} 
+                    activeOpacity={0.9}
+                    onPress={() => setIsExpanded(!isExpanded)}
+                >
+                    <View style={styles.identityLeft}>
+                        <View style={styles.identityIconContainer}>
+                            <ExpoImage source={TiwiLogo} style={styles.iconFull} contentFit="contain" />
                         </View>
-                        <Text style={[styles.balanceText, { color: isBalanceLoading ? '#6E7873' : colors.titleText }]}>
-                            {isBalanceHidden ? '****' : (isBalanceLoading && displayBalance === '$0.00' ? 'Updating...' : (displayBalance === '$0.00' && !isBalanceLoading ? '$0.00' : displayBalance))}
-                        </Text>
-                    </TouchableOpacity>
-
-                    <View style={styles.actionCardsRow}>
-                        <TouchableOpacity onPress={onHistoryPress} style={styles.actionCard} activeOpacity={0.7}>
-                            <ExpoImage source={TransactionHistory} style={{ width: 20, height: 20, marginBottom: 8 }} contentFit="contain" />
-                            <Text style={styles.cardLabel}>History</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity onPress={onSettingsPress} style={[styles.actionCard, styles.actionCardLast]} activeOpacity={0.7}>
-                            <ExpoImage source={SettingsIcon} style={{ width: 20, height: 20, marginBottom: 8 }} contentFit="contain" />
-                            <Text style={styles.cardLabel}>Settings</Text>
-                        </TouchableOpacity>
+                        <View style={styles.identityTextContainer}>
+                            <Text style={styles.identityChainLabel}>
+                                {activeChain === 'EVM' ? 'ETHEREUM' : activeChain}
+                            </Text>
+                            <Text style={styles.identityAddressText}>{displayAddress}</Text>
+                        </View>
                     </View>
-                </View>
+                    <View style={styles.identityRight}>
+                         <TouchableOpacity onPress={(e) => { e.stopPropagation(); handleCopyAddress(); }} style={styles.identityCopyButton}>
+                             {copied ? <Text style={styles.checkMark}>✓</Text> : <ExpoImage source={CopyIcon} style={{ width: 18, height: 18, opacity: 0.6 }} contentFit="contain" />}
+                        </TouchableOpacity>
+                        <Ionicons name={isExpanded ? "chevron-up" : "chevron-down"} size={20} color={colors.mutedText} />
+                    </View>
+                </TouchableOpacity>
 
-                {/* Wallet Switcher List */}
-                {safeGroups.length > 1 && (
-                    <View style={styles.walletListSection}>
-                        <Text style={styles.sectionTitle}>My Wallets</Text>
-                        <ScrollView style={styles.walletScroll} showsVerticalScrollIndicator={false}>
-                            {safeGroups.map((group) => {
-                                if (!group) return null;
-                                const isActive = group.id === activeGroupId;
-                                const addr = group.addresses?.[group.primaryChain] || '';
+                {/* 2. Expanded Content: Search & Network List */}
+                {isExpanded && (
+                    <View style={{ width: '100%', flex: 1 }}>
+                        <View style={styles.searchContainer}>
+                            <View style={styles.searchInputWrapper}>
+                                <Ionicons name="search-outline" size={20} color={colors.mutedText} />
+                                <Text style={styles.searchPlaceholder}>Search network</Text>
+                            </View>
+                        </View>
 
-                                return (
-                                    <TouchableOpacity
-                                        key={group.id}
-                                        style={[styles.walletItem, isActive && styles.activeWalletItem]}
-                                        onPress={() => setActiveGroup(group.id)}
-                                    >
-                                        <View style={styles.walletItemLeft}>
-                                            <View style={styles.miniAvatar}>
-                                                <ExpoImage source={TiwiCatToken} style={styles.iconFull} contentFit="contain" />
+                        <View style={styles.chainSwitcherListContainer}>
+                            <Text style={styles.sectionLabel}>TRENDING NETWORKS</Text>
+                            <ScrollView showsVerticalScrollIndicator={false} style={styles.chainListScroll} nestedScrollEnabled>
+                                {ALL_NETWORKS.map((network) => {
+                                    const isChainActive = activeChain === network.chain;
+                                    const hasAddress = activeGroup?.addresses?.[network.chain];
+                                    const chainAddress = activeGroup?.addresses?.[network.chain] || '';
+                                    const displayChainAddress = truncateAddress(chainAddress);
+
+                                    return (
+                                        <TouchableOpacity
+                                            key={network.id}
+                                            activeOpacity={0.7}
+                                            style={[
+                                                styles.chainListItem,
+                                                isChainActive && styles.activeChainListItem,
+                                                !hasAddress && styles.disabledChainListItem
+                                            ]}
+                                            onPress={() => hasAddress && setActiveChain(network.chain as any)}
+                                            disabled={!hasAddress}
+                                        >
+                                            <View style={styles.chainRowLeft}>
+                                                <View style={styles.chainListIconContainer}>
+                                                    <ExpoImage 
+                                                        source={network.icon} 
+                                                        style={[styles.chainListIcon, !hasAddress && { opacity: 0.3 }]} 
+                                                        contentFit="contain" 
+                                                    />
+                                                </View>
+                                                <View style={styles.chainNameContainer}>
+                                                    <Text style={styles.chainNameText}>{network.name}</Text>
+                                                    <Text style={styles.chainAddressText}>{displayChainAddress || 'No address'}</Text>
+                                                </View>
                                             </View>
-                                            <View>
-                                                <Text style={[styles.walletName, isActive && styles.activeWalletText]}>
-                                                    {group.name || 'Unnamed Wallet'}
-                                                </Text>
-                                                <Text style={styles.walletAddr}>
-                                                    {addr ? truncateAddress(addr, 6, 4) : 'No address'}
-                                                </Text>
-                                            </View>
-                                        </View>
-                                        <View style={styles.walletItemRight}>
-                                            {isActive && <Ionicons name="checkmark-circle" size={20} color={colors.primaryCTA} style={{ marginRight: 8 }} />}
-                                            <TouchableOpacity
-                                                onPress={(e) => {
-                                                    e.stopPropagation();
-                                                    removeWalletGroup(group.id);
-                                                }}
-                                                style={styles.deleteWalletButton}
-                                            >
-                                                <Ionicons name="trash-outline" size={18} color={colors.error} />
-                                            </TouchableOpacity>
-                                        </View>
-                                    </TouchableOpacity>
-                                );
-                            })}
-                        </ScrollView>
+                                            {hasAddress && (
+                                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                                                    {isChainActive && <View style={styles.onlineDot} />}
+                                                    <TouchableOpacity 
+                                                        onPress={() => {
+                                                            if (chainAddress) {
+                                                                Clipboard.setStringAsync(chainAddress);
+                                                                setCopied(true);
+                                                                setTimeout(() => setCopied(false), 2000);
+                                                            }
+                                                        }}
+                                                        style={styles.copyRowButton}
+                                                    >
+                                                        <ExpoImage source={CopyIcon} style={{ width: 18, height: 18, opacity: 0.5 }} contentFit="contain" />
+                                                    </TouchableOpacity>
+                                                </View>
+                                            )}
+                                        </TouchableOpacity>
+                                    );
+                                })}
+                            </ScrollView>
+                        </View>
                     </View>
                 )}
 
-                <TouchableOpacity onPress={onDisconnectPress} style={styles.disconnectButton} activeOpacity={0.8}>
-                    <ExpoImage source={LogoutIcon} style={{ width: 20, height: 20 }} contentFit="contain" />
-                    <Text style={styles.disconnectText}>Disconnect</Text>
-                </TouchableOpacity>
+                {/* 3. Multi-Wallet Toggle */}
+                {!isExpanded && safeGroups.length > 1 && (
+                    <TouchableOpacity 
+                        onPress={() => setIsWalletListExpanded(!isWalletListExpanded)}
+                        style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 12, marginBottom: 16 }}
+                        activeOpacity={0.7}
+                    >
+                        <Text style={{ fontSize: 13, color: colors.mutedText, fontFamily: 'Manrope-SemiBold' }}>
+                             {isWalletListExpanded ? "Hide Wallets" : "Switch Wallet"}
+                        </Text>
+                        <Ionicons name={isWalletListExpanded ? "chevron-up" : "chevron-down"} size={14} color={colors.mutedText} />
+                    </TouchableOpacity>
+                )}
+
+                {/* Expanded Wallet List (Dropdown Style) */}
+                {isWalletListExpanded && !isExpanded && (
+                    <View style={styles.walletDropdownContainer}>
+                        {safeGroups.map((group) => {
+                             if (!group) return null;
+                             const isActive = group.id === activeGroupId;
+                             const primaryAddr = group.addresses?.[activeChain] || group.addresses?.[group.primaryChain] || '';
+                             
+                             return (
+                                <TouchableOpacity 
+                                    key={group.id} 
+                                    style={[styles.walletDropdownItem, isActive && styles.activeWalletDropdownItem]}
+                                    onPress={() => {
+                                        setActiveGroup(group.id);
+                                        // Auto-collapse after switch? User might prefer it open to see result.
+                                    }}
+                                >
+                                    <View style={styles.walletItemLeft}>
+                                        <View style={styles.miniAvatar}>
+                                            <ExpoImage source={TiwiCatToken} style={styles.iconFull} contentFit="contain" />
+                                        </View>
+                                        <View>
+                                            <Text style={[styles.walletName, isActive && styles.activeWalletText]}>
+                                                {group.name || 'Unnamed Wallet'}
+                                            </Text>
+                                            <Text style={styles.walletAddr}>
+                                                {primaryAddr ? truncateAddress(primaryAddr, 6, 4) : 'No address'}
+                                            </Text>
+                                        </View>
+                                    </View>
+                                    <View style={styles.walletItemRight}>
+                                        {isActive && <Ionicons name="checkmark-circle" size={18} color={colors.primaryCTA} />}
+                                        <TouchableOpacity
+                                            onPress={(e) => {
+                                                e.stopPropagation();
+                                                removeWalletGroup(group.id);
+                                            }}
+                                            style={[styles.deleteWalletButton, { marginLeft: 12 }]}
+                                        >
+                                            <Ionicons name="trash-outline" size={16} color={colors.error} />
+                                        </TouchableOpacity>
+                                    </View>
+                                </TouchableOpacity>
+                             );
+                        })}
+                        <TouchableOpacity style={styles.addWalletDropdownItem} onPress={handleAddWallet}>
+                            <Ionicons name="add" size={18} color={colors.primaryCTA} />
+                            <Text style={styles.addWalletDropdownText}>Import or Create New Wallet</Text>
+                        </TouchableOpacity>
+                    </View>
+                )}
+                
+                {/* Cards Section - Hide when viewing networks for focus */}
+                {!isExpanded && (
+                    <View style={styles.cardsSection}>
+                        <TouchableOpacity
+                            style={styles.balanceCard}
+                            onPress={() => {
+                                console.log('[WalletModal] Manual refresh triggered');
+                            }}
+                        >
+                            <View style={styles.balanceHeader}>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                    <Text style={styles.cardLabel}>Total Balance</Text>
+                                    <TouchableOpacity onPress={toggleBalanceVisibility}>
+                                        <Ionicons
+                                            name={isBalanceHidden ? "eye-off-outline" : "eye-outline"}
+                                            size={16}
+                                            color={colors.mutedText}
+                                        />
+                                    </TouchableOpacity>
+                                </View>
+                                {isBalanceLoading && (
+                                    <View style={{ marginLeft: 8 }}>
+                                        <ActivityIndicator size="small" color={colors.primaryCTA} />
+                                    </View>
+                                )}
+                                <TouchableOpacity onPress={() => setMode('ADD_OPTIONS')} style={styles.miniAddButton}>
+                                    <Ionicons name="add" size={16} color={colors.primaryCTA} />
+                                    <Text style={styles.miniAddText}>Add Wallet</Text>
+                                </TouchableOpacity>
+                            </View>
+                            <Text style={[styles.balanceText, { color: isBalanceLoading ? '#6E7873' : colors.titleText }]}>
+                                {isBalanceHidden ? '****' : (isBalanceLoading && displayBalance === '$0.00' ? 'Updating...' : (displayBalance === '$0.00' && !isBalanceLoading ? '$0.00' : displayBalance))}
+                            </Text>
+                        </TouchableOpacity>
+
+                        <View style={styles.actionCardsRow}>
+                            <TouchableOpacity onPress={onHistoryPress} style={styles.actionCard} activeOpacity={0.7}>
+                                <ExpoImage source={TransactionHistory} style={{ width: 20, height: 20, marginBottom: 8 }} contentFit="contain" />
+                                <Text style={styles.cardLabel}>History</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity onPress={onSettingsPress} style={[styles.actionCard, styles.actionCardLast]} activeOpacity={0.7}>
+                                <ExpoImage source={SettingsIcon} style={{ width: 20, height: 20, marginBottom: 8 }} contentFit="contain" />
+                                <Text style={styles.cardLabel}>Settings</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                )}
+
+                {!isExpanded && (
+                    <TouchableOpacity onPress={onDisconnectPress} style={styles.disconnectButton} activeOpacity={0.8}>
+                        <ExpoImage source={LogoutIcon} style={{ width: 20, height: 20 }} contentFit="contain" />
+                        <Text style={styles.disconnectText}>Disconnect</Text>
+                    </TouchableOpacity>
+                )}
             </View>
         );
     };
@@ -446,17 +577,62 @@ const styles = StyleSheet.create({
     handleBarContainer: { paddingVertical: 12, width: '100%', alignItems: 'center' },
     handleBar: { width: 40, height: 4, backgroundColor: colors.bgStroke, borderRadius: 100 },
 
-    // Main View
+    // Identity Card Dropdown
+    identityCard: { 
+        flexDirection: 'row', 
+        alignItems: 'center', 
+        justifyContent: 'space-between',
+        backgroundColor: colors.bgCards, 
+        borderRadius: 24, 
+        padding: 16, 
+        width: '100%',
+        marginTop: 8,
+        marginBottom: 20,
+        borderWidth: 1,
+        borderColor: colors.bgStroke
+    },
+    identityLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    identityIconContainer: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#000', padding: 8, alignItems: 'center', justifyContent: 'center' },
+    identityTextContainer: { gap: 2 },
+    identityChainLabel: { fontSize: 10, fontFamily: 'Manrope-Bold', color: colors.mutedText, letterSpacing: 0.5 },
+    identityAddressText: { fontSize: 16, fontFamily: 'Manrope-SemiBold', color: colors.titleText },
+    identityRight: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+    identityCopyButton: { padding: 4 },
+
+    walletDropdownContainer: { 
+        backgroundColor: colors.bgCards, 
+        borderRadius: 20, 
+        padding: 8, 
+        width: '100%', 
+        marginBottom: 20,
+        borderWidth: 1,
+        borderColor: colors.bgStroke,
+        marginTop: 4
+    },
+    walletDropdownItem: { 
+        flexDirection: 'row', 
+        alignItems: 'center', 
+        justifyContent: 'space-between',
+        padding: 12, 
+        borderRadius: 12,
+        marginBottom: 4
+    },
+    activeWalletDropdownItem: { backgroundColor: 'rgba(255,255,255,0.05)' },
+    addWalletDropdownItem: { 
+        flexDirection: 'row', 
+        alignItems: 'center', 
+        padding: 12, 
+        gap: 12,
+        borderTopWidth: 1,
+        borderTopColor: colors.bgStroke,
+        marginTop: 4
+    },
+    addWalletDropdownText: { fontSize: 14, fontFamily: 'Manrope-SemiBold', color: colors.primaryCTA },
+
+    // Search Bar
     mainInfo: { width: '100%', paddingBottom: 10 },
-    userInfo: { alignItems: 'center', marginBottom: 24 },
-    avatarContainer: { width: 72, height: 72, borderRadius: 36, backgroundColor: colors.bgCards, padding: 16, marginBottom: 12, justifyContent: 'center', alignItems: 'center' },
-    avatar: { width: '100%', height: '100%' },
-    addressContainer: { flexDirection: 'row', alignItems: 'center' },
-    // text style fallbacks
-    addressText: { fontSize: 18, color: colors.titleText, fontWeight: 'bold' },
-    copyButton: { padding: 4, marginLeft: 8 },
-    checkMark: { color: colors.primaryCTA, fontSize: 14 },
     iconFull: { width: '100%', height: '100%' },
+    checkMark: { color: colors.primaryCTA, fontSize: 14 },
 
     cardsSection: { width: '100%', marginBottom: 24 },
     balanceCard: { backgroundColor: colors.bgCards, borderRadius: 20, padding: 20, width: '100%', borderWidth: 1, borderColor: colors.bgStroke, marginBottom: 12 },
@@ -477,9 +653,9 @@ const styles = StyleSheet.create({
     walletScroll: { width: '100%' },
     walletItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: colors.bg, padding: 12, borderRadius: 16, marginBottom: 8, borderWidth: 1, borderColor: colors.bgStroke },
     activeWalletItem: { borderColor: colors.primaryCTA, backgroundColor: 'rgba(177, 241, 40, 0.05)' },
-    walletItemLeft: { flexDirection: 'row', alignItems: 'center' },
-    miniAvatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.bgCards, padding: 6, marginRight: 12 },
-    walletName: { fontSize: 14, color: colors.titleText, fontWeight: '600' },
+    walletItemLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    miniAvatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.bgCards, padding: 6 },
+    walletName: { fontSize: 14, color: colors.titleText, fontFamily: 'Manrope-SemiBold' },
     activeWalletText: { color: colors.primaryCTA },
     walletAddr: { fontSize: 12, color: colors.mutedText },
     walletItemRight: { flexDirection: 'row', alignItems: 'center' },
@@ -507,4 +683,65 @@ const styles = StyleSheet.create({
     optionTextContainer: { flex: 1 },
     optionLabel: { fontSize: 16, color: colors.titleText, fontWeight: 'bold', marginBottom: 2 },
     optionSubtext: { fontSize: 12, color: colors.mutedText },
+    
+    // Search Bar
+    searchContainer: { width: '100%', paddingHorizontal: 4, marginBottom: 12 },
+    searchInputWrapper: { 
+        height: 48, 
+        backgroundColor: colors.bgCards, 
+        borderRadius: 12, 
+        flexDirection: 'row', 
+        alignItems: 'center', 
+        paddingHorizontal: 16, 
+        gap: 12,
+        borderWidth: 1,
+        borderColor: colors.bgStroke
+    },
+    searchPlaceholder: { color: colors.mutedText, fontSize: 16, fontFamily: 'Manrope-Medium' },
+
+    // Chain Switcher List
+    chainSwitcherListContainer: { width: '100%', paddingHorizontal: 4, flex: 1 },
+    sectionLabel: { 
+        fontSize: 10, 
+        fontFamily: 'Manrope-Bold', 
+        color: colors.mutedText, 
+        letterSpacing: 1, 
+        marginBottom: 12,
+        marginLeft: 4,
+        marginTop: 8
+    },
+    chainListScroll: { width: '100%' },
+    chainListItem: { 
+        flexDirection: 'row', 
+        alignItems: 'center', 
+        justifyContent: 'space-between',
+        paddingVertical: 12, 
+        paddingHorizontal: 16, 
+        borderRadius: 16,
+        marginBottom: 4,
+        width: '100%'
+    },
+    activeChainListItem: { 
+        backgroundColor: colors.bgCards,
+        borderWidth: 1,
+        borderColor: colors.bgStroke
+    },
+    disabledChainListItem: { opacity: 0.3 },
+    chainRowLeft: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+    chainListIconContainer: { 
+        width: 40, 
+        height: 40, 
+        borderRadius: 20, 
+        backgroundColor: colors.bgCards, 
+        alignItems: 'center', 
+        justifyContent: 'center',
+        borderWidth: 1,
+        borderColor: colors.bgStroke
+    },
+    chainListIcon: { width: 24, height: 24, borderRadius: 12 },
+    chainNameContainer: { gap: 2 },
+    chainNameText: { fontSize: 16, fontFamily: 'Manrope-SemiBold', color: colors.titleText },
+    chainAddressText: { fontSize: 12, fontFamily: 'Manrope-Medium', color: colors.mutedText },
+    copyRowButton: { padding: 8 },
+    onlineDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#B1F128' },
 });

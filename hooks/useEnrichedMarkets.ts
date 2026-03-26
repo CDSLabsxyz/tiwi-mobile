@@ -11,7 +11,7 @@ interface EnrichedMarketCompat extends MarketAsset {
 const TWC_ADDRESS = '0xDA1060158F7D593667cCE0a15DB346BB3FfB3596'.toLowerCase();
 
 interface UseEnrichedMarketsOptions {
-    marketType?: 'spot' | 'perp' | 'all' | 'swap';
+    marketType?: 'Swap' | 'Spot' | 'Perps' | 'Stocks' | 'Forex' | 'all';
     limit?: number;
     enabled?: boolean;
 }
@@ -37,23 +37,18 @@ export const useEnrichedMarkets = (options: UseEnrichedMarketsOptions = {}) => {
     });
 
     const data = useMemo(() => {
-        if (!query.data) return [];
+        if (!query.data || !Array.isArray(query.data)) return [];
 
         let markets = query.data.map(m => {
             const cleanSymbol = m.symbol.toUpperCase();
-            let displaySymbol = cleanSymbol;
-
-            // Smart Suffix Logic
-            if (m.marketType === 'perp') {
-                displaySymbol = cleanSymbol.includes('-') ? cleanSymbol : `${cleanSymbol}-USD`;
-            } else {
-                displaySymbol = (cleanSymbol.includes('/') || cleanSymbol.includes('-')) ? cleanSymbol : `${cleanSymbol}-USD`;
-            }
+            
+            // Web App Style: Just the core symbol, e.g. "BTC", "ETH"
+            const displaySymbol = cleanSymbol.split('-')[0].split('/')[0];
 
             // Map new SDK properties to what the UI expects (Price/PriceUSD bridge)
             return {
                 ...m,
-                displaySymbol,
+                displaySymbol: displaySymbol || cleanSymbol,
                 logoURI: m.logoURI || m.logo,
                 priceUSD: (m.price || 0).toString(),
             } as EnrichedMarketCompat;

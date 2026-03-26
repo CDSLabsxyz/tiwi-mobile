@@ -1,9 +1,10 @@
 import { api } from '@/lib/mobile/api-client';
+import { deriveMultiChainAddressesFromMnemonic, getSecureMnemonic } from '@/services/walletCreationService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
-export type ChainType = 'EVM' | 'SOLANA';
+export type ChainType = 'EVM' | 'SOLANA' | 'TRON' | 'TON' | 'COSMOS' | 'OSMOSIS';
 
 export interface WalletGroup {
   id: string;
@@ -46,8 +47,10 @@ interface WalletState {
 
   addWalletGroup: (group: WalletGroup) => void;
   setActiveGroup: (groupId: string) => void;
+  setActiveChain: (chain: ChainType) => void;
   updateGroupName: (groupId: string, name: string) => void;
   removeWalletGroup: (groupId: string) => void;
+  syncActiveGroupAddresses: () => Promise<void>;
 
   disconnect: () => void;
   _hasHydrated: boolean;
@@ -153,11 +156,13 @@ export const useWalletStore = create<WalletState>()(
           name: newGroup.name
         });
 
-        // Register the primary address with backend
+        // Register the primary address with backend (optional/background)
         if (primaryAddr) {
           let apiSource = newGroup.source;
           if (apiSource === 'internal' || apiSource === 'imported') apiSource = 'local';
-          api.wallet.register(primaryAddr, apiSource);
+          api.wallet.register(primaryAddr, apiSource).catch(err => {
+             console.warn('[WalletStore] Failed to register wallet with backend:', err.message);
+          });
         }
       },
 
@@ -174,6 +179,22 @@ export const useWalletStore = create<WalletState>()(
             name: group.name,
             isConnected: true
           });
+        }
+      },
+
+      setActiveChain: (chain) => {
+        const state = get();
+        const activeGroup = state.walletGroups.find(g => g.id === state.activeGroupId);
+        if (activeGroup) {
+          const chainAddr = activeGroup.addresses[chain] || null;
+          set({
+            activeChain: chain,
+            activeAddress: chainAddr,
+            // Sync legacy address selectively
+            address: chainAddr || state.address 
+          });
+        } else {
+          set({ activeChain: chain });
         }
       },
 
@@ -213,6 +234,41 @@ export const useWalletStore = create<WalletState>()(
         isConnected: false,
         walletGroups: [],
       }),
+
+      syncActiveGroupAddresses: async () => {
+        const state = get();
+        const activeGroup = state.walletGroups.find(g => g.id === state.activeGroupId);
+        if (!activeGroup || activeGroup.type !== 'mnemonic') return;
+
+        try {
+          // Attempt to retrieve mnemonic for the group
+          const mnemonic = await getSecureMnemonic(activeGroup.id);
+          if (mnemonic) {
+            const newAddresses = await deriveMultiChainAddressesFromMnemonic(mnemonic);
+            
+            // Merge new addresses into existing group
+            const updatedGroups = state.walletGroups.map(g => {
+              if (g.id === activeGroup.id) {
+                return {
+                  ...g,
+                  addresses: { ...g.addresses, ...newAddresses }
+                };
+              }
+              return g;
+            });
+
+            set({ walletGroups: updatedGroups });
+            
+            // Refresh active address if it was null for the current chain
+            const refreshedGroup = updatedGroups.find(g => g.id === activeGroup.id);
+            if (refreshedGroup && refreshedGroup.addresses[state.activeChain]) {
+               set({ activeAddress: refreshedGroup.addresses[state.activeChain] });
+            }
+          }
+        } catch (error) {
+          console.error('[WalletStore] Failed to sync addresses:', error);
+        }
+      },
       _hasHydrated: false,
       setHasHydrated: (state) => set({ _hasHydrated: state }),
 

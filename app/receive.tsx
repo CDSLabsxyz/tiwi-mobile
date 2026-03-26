@@ -8,14 +8,16 @@ import { WalletHeader } from '@/components/sections/Wallet/WalletHeader';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { colors } from '@/constants/colors';
 import { useChains } from '@/hooks/useChains';
+import { useEnrichedMarkets } from '@/hooks/useEnrichedMarkets';
 import { useTokens } from '@/hooks/useTokens';
-import { useWalletStore } from '@/store/walletStore';
+import { useToastStore } from '@/store/useToastStore';
+import { useWalletStore, ChainType } from '@/store/walletStore';
 import { truncateAddress } from '@/utils/wallet';
 import * as Clipboard from 'expo-clipboard';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, usePathname, useRouter } from 'expo-router';
-import React, { useMemo, useState } from 'react';
-import { Alert, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { TIWILoader } from '@/components/ui/TIWILoader';
 import QRCode from 'react-native-qrcode-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -39,25 +41,49 @@ export default function ReceiveScreen() {
     const { top, bottom } = useSafeAreaInsets();
     const router = useRouter();
     const pathname = usePathname();
-    const params = useLocalSearchParams<{ tokenId?: string }>();
-    const { walletGroups } = useWalletStore();
+    const params = useLocalSearchParams<{ 
+        tokenId?: string;
+        symbol?: string;
+        name?: string;
+        logoURI?: string;
+        chainId?: string;
+        address?: string;
+        isAutoSelected?: string;
+    }>();
+    const { walletGroups, activeAddress, activeChain } = useWalletStore();
 
+    const { showToast } = useToastStore();
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedChainFilter, setSelectedChainFilter] = useState<number | null>(null);
     const [selectedToken, setSelectedToken] = useState<DisplayToken | null>(null);
     const [copied, setCopied] = useState(false);
 
-    // Determine supported chain types based on connected wallets
+    // Dynamic pre-population logic (Direct from Asset Page)
+    useEffect(() => {
+        if (params.isAutoSelected === 'true' && params.symbol && !selectedToken) {
+            const cid = Number(params.chainId || 1);
+            setSelectedToken({
+                symbol: params.symbol,
+                name: params.name || '',
+                logoURI: params.logoURI || '',
+                chainId: cid,
+                address: params.address || '',
+                chainType: cid === 7565164 || cid === 1399811149 ? 'solana' : 'evm'
+            });
+        }
+    }, [params]);
+
+    // Determine supported chain families based on connected wallets
     const supportedChainTypes = useMemo(() => {
         const types = new Set<string>();
         walletGroups.forEach(g => {
-            if (g.addresses.EVM) types.add('evm');
-            if (g.addresses.SOLANA) types.add('solana');
+            if (g.addresses.EVM) types.add('EVM');
+            if (g.addresses.SOLANA) types.add('Solana');
         });
-        return Array.from(types) as ('evm' | 'solana' | 'bitcoin')[];
+        return Array.from(types) as any[];
     }, [walletGroups]);
 
-    const { data: chains } = useChains(supportedChainTypes);
+    const { data: chains } = useChains(supportedChainTypes as any);
 
     // IDs for fetching tokens
     const fetchChainIds = useMemo(() => {
@@ -66,43 +92,107 @@ export default function ReceiveScreen() {
     }, [selectedChainFilter, chains]);
 
     // Fetch tokens from API
-    const { data: response, isLoading: isFetchingTokens } = useTokens({
+    // 1. Fetch High Quality Market Tokens (Initial List)
+    const { data: marketTokens, isLoading: isFetchingMarket } = useEnrichedMarkets({
+        marketType: 'all',
+        limit: 50,
+        enabled: !searchQuery.trim()
+    });
+
+    // 2. Fetch Broad Tokens (Search only)
+    const { data: searchResponse, isLoading: isSearchingTokens } = useTokens({
         chains: fetchChainIds,
         query: searchQuery,
         limit: 50,
-        enabled: fetchChainIds.length > 0
+        enabled: searchQuery.trim().length > 0
     });
-    const apiTokens = response?.tokens;
+    
+    const apiTokens = searchQuery.trim() ? (searchResponse?.tokens || []) : (marketTokens || []);
 
     // Computed list of tokens to show
     const displayTokens = useMemo(() => {
-        if (!apiTokens) return [];
+        if (!apiTokens || !Array.isArray(apiTokens)) return [];
 
-        return apiTokens.map(t => ({
+        // --- MIRRORING SWAP PAGE SEARCH LOGIC ---
+        const TWC_ADDRESS = '0xda1060158f7d593667cce0a15db346bb3ffb3596'.toLowerCase();
+        
+        // 1. Rigorous Filtering (Deduplicate & Junk Clear)
+        const seenSymbolChain = new Map<string, any>();
+        
+        apiTokens.forEach((t: any) => {
+            const symb = (t.symbol || '').toUpperCase().trim();
+            if (!symb) return;
+            
+            // 1. Basic Junk/Spam Filter
+            const nameLower = (t.name || '').toLowerCase();
+            if (nameLower.includes('pump.fun') || nameLower.includes('.com') || nameLower.includes('visit') || nameLower.includes('claim')) return;
+            if (/[\u4e00-\u9fa5]/.test(nameLower)) return;
+
+            // 2. Global Deduplication by Symbol (Mirror Swap quality)
+            const key = symb; 
+            const existing = seenSymbolChain.get(key);
+            
+            const newVerified = !!t.verified;
+            const newHasLogo = !!(t.logoURI || t.logo);
+            const newLiq = parseFloat(t.liquidity?.toString() || '0');
+
+            if (!existing) {
+                seenSymbolChain.set(key, t);
+            } else {
+                const existingVerified = !!existing.verified;
+                const existingHasLogo = !!(existing.logoURI || existing.logo);
+                const existingLiq = parseFloat(existing.liquidity?.toString() || '0');
+
+                // DEDUPLICATION HEURISTICS (Exactly like the super-app swap logic)
+                // Priority 1: Verified tokens always win
+                if (newVerified && !existingVerified) {
+                    seenSymbolChain.set(key, t);
+                    return;
+                }
+                if (existingVerified && !newVerified) return;
+
+                // Priority 2: Tokens with logos win over those without
+                if (newHasLogo && !existingHasLogo) {
+                    seenSymbolChain.set(key, t);
+                    return;
+                }
+                if (existingHasLogo && !newHasLogo) return;
+
+                // Priority 3: Finally use liquidity as tie-breaker
+                if (newLiq > existingLiq) {
+                    seenSymbolChain.set(key, t);
+                }
+            }
+        });
+
+        const filtered = Array.from(seenSymbolChain.values());
+
+        return filtered.map(t => ({
             symbol: t.symbol,
             name: t.name,
-            logoURI: t.logoURI,
+            logoURI: t.logoURI || t.logo,
             chainId: t.chainId,
             address: t.address,
-            chainType: t.chainId === 1399811149 ? 'solana' : 'evm'
-        })) as DisplayToken[];
+            liquidity: parseFloat(t.liquidity?.toString() || '0'),
+            verified: !!t.verified,
+            chainType: t.chainId === 7565164 || t.chainId === 1399811149 ? 'solana' : 'evm'
+        })) as any[];
     }, [apiTokens]);
 
     // Get actual wallet address based on chain type
     const getAddressForToken = (token: DisplayToken) => {
+        if (token.chainType.toUpperCase() === activeChain) {
+            return activeAddress || 'No Address';
+        }
+
         const targetChain = token.chainType.toUpperCase() as any;
-        const group = walletGroups.find(g => g.addresses[targetChain]);
-        if (group && group.addresses[targetChain]) {
-            return group.addresses[targetChain]!;
+        const activeGroupId = useWalletStore.getState().activeGroupId;
+        const group = walletGroups.find(g => g.id === activeGroupId);
+        if (group && (group.addresses as any)[targetChain]) {
+            return (group.addresses as any)[targetChain]!;
         }
         
-        // Fallback to first available address in the first group
-        const firstGroup = walletGroups[0];
-        if (firstGroup) {
-            return firstGroup.addresses[firstGroup.primaryChain] || 'No Address';
-        }
-        
-        return 'No Wallet Connected';
+        return activeAddress || 'No Address';
     };
 
     const handleTokenSelect = (token: DisplayToken) => {
@@ -133,12 +223,17 @@ export default function ReceiveScreen() {
         } catch (error: any) {
             console.error('Failed to share address:', error);
             // Fallback to copy if sharing fails
-            await handleCopy();
-            Alert.alert('Copied', 'Wallet address copied to clipboard');
+            await Clipboard.setStringAsync(address);
+            showToast('Wallet address copied to clipboard', 'success');
         }
     };
 
     const handleBackPress = () => {
+        if (params.isAutoSelected === 'true') {
+            router.back();
+            return;
+        }
+
         if (selectedToken) {
             setSelectedToken(null);
         } else {
@@ -150,9 +245,13 @@ export default function ReceiveScreen() {
         const currentRoute = pathname || '/receive';
         router.push(`/settings?returnTo=${encodeURIComponent(currentRoute)}` as any);
     };
+    
+    const handleHomePress = () => {
+        router.replace('/(tabs)' as any);
+    };
 
     const handleIrisScanPress = () => {
-        console.log('Iris scan pressed');
+        showToast('Self-Sovereign Identity verification initiated', 'pending');
     };
 
     const handleChainFilter = (chainId: number | null) => {
@@ -175,6 +274,8 @@ export default function ReceiveScreen() {
                         onCopyPress={handleCopy}
                         showBackButton
                         onBackPress={handleBackPress}
+                        showHome
+                        onHomePress={handleHomePress}
                     />
                 </View>
 
@@ -265,16 +366,20 @@ export default function ReceiveScreen() {
 
             <View style={[styles.header, { paddingTop: top || 0 }]}>
                 <WalletHeader
-                    walletAddress={walletGroups[0]?.addresses[walletGroups[0]?.primaryChain] || ""}
+                    walletAddress={activeAddress || ""}
                     onIrisScanPress={handleIrisScanPress}
                     // showCopy
                     onCopyPress={() => {
-                        const addr = walletGroups[0]?.addresses[walletGroups[0]?.primaryChain] || "";
-                        Clipboard.setStringAsync(addr);
-                        Alert.alert('Copied', 'Wallet address copied to clipboard');
+                        const addr = activeAddress || "";
+                        Clipboard.setString(addr);
+                        showToast('Address copied to clipboard', 'success');
                     }}
                     showBackButton
                     onBackPress={handleBackPress}
+                    showHome
+                    onHomePress={handleHomePress}
+                    showSettings
+                    onSettingsPress={handleSettingsPress}
                 />
             </View>
 
@@ -320,17 +425,17 @@ export default function ReceiveScreen() {
                                 onPress={() => handleChainFilter(chain.id)}
                                 style={[styles.chainFilterItem, selectedChainFilter === chain.id && styles.chainFilterItemActive]}
                             >
-                                <Image source={chain.logoURI || chain.logo} style={styles.chainFilterIcon} />
+                                <Image source={chain.logoURI || (chain as any).logo} style={styles.chainFilterIcon} />
                                 <Text style={[styles.chainFilterText, selectedChainFilter === chain.id && styles.chainFilterTextActive]}>{chain.name}</Text>
                             </TouchableOpacity>
                         ))}
                     </ScrollView>
 
                     {/* Token List */}
-                    {isFetchingTokens ? (
+                    {isFetchingMarket || isSearchingTokens ? (
                         <View style={styles.loadingContainer}>
                             <TIWILoader size={100} />
-                            <Text style={styles.loadingText}>Searching tokens...</Text>
+                            <Text style={styles.loadingText}>{searchQuery.trim() ? 'Searching tokens...' : 'Loading market...'}</Text>
                         </View>
                     ) : (
                         <View style={styles.tokenList}>
@@ -355,13 +460,13 @@ export default function ReceiveScreen() {
                                                             contentFit="cover"
                                                         />
                                                     </View>
-                                                    <View style={styles.chainBadge}>
-                                                        <Image
-                                                            source={chain?.logoURI || chain?.logo}
-                                                            style={styles.chainIcon}
-                                                            contentFit="contain"
-                                                        />
-                                                    </View>
+                                                     <View style={styles.chainBadge}>
+                                                         <Image
+                                                             source={chain?.logoURI || (chain as any)?.logo}
+                                                             style={styles.chainIcon}
+                                                             contentFit="contain"
+                                                         />
+                                                     </View>
                                                 </View>
 
                                                 <View style={styles.tokenDetails}>
@@ -374,12 +479,15 @@ export default function ReceiveScreen() {
                                                 <TouchableOpacity onPress={handleIrisScanPress} style={styles.irisScanButton}>
                                                     <Image source={IrisScanIcon} style={styles.irisScanIcon} contentFit="contain" />
                                                 </TouchableOpacity>
-                                                <TouchableOpacity onPress={() => {
-                                                    Clipboard.setStringAsync(address);
-                                                    Alert.alert('Copied', 'Address copied to clipboard');
-                                                }} style={styles.copyButton}>
-                                                    <Image source={CopyIcon} style={styles.copyIcon} contentFit="contain" />
-                                                </TouchableOpacity>
+                                                <TouchableOpacity 
+                                                onPress={() => {
+                                                    Clipboard.setString(address);
+                                                    showToast('Address copied to clipboard', 'success');
+                                                }}
+                                                style={styles.copyButton}
+                                            >
+                                                <Image source={CopyIcon} style={styles.copyIcon} contentFit="contain" />
+                                            </TouchableOpacity>
                                             </View>
                                         </TouchableOpacity>
                                     );

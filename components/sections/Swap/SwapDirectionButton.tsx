@@ -1,5 +1,5 @@
 import { colors } from '@/constants/colors';
-import { Image } from 'expo-image';
+import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
 
@@ -26,10 +26,10 @@ export const SwapDirectionButton: React.FC<SwapDirectionButtonProps> = ({
                 onPress={onPress}
                 style={styles.touchArea}
             >
-                <Image
-                    source={ArrowUp02}
-                    style={styles.icon}
-                    contentFit="contain"
+                <Ionicons
+                    name="swap-vertical"
+                    size={20}
+                    color={colors.primaryCTA}
                 />
             </TouchableOpacity>
         </View>

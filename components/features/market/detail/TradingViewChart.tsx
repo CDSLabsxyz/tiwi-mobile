@@ -1,6 +1,7 @@
 import { colors } from '@/constants/colors';
 import { useMarketTrades } from '@/hooks/useMarketTrades';
 import { api, TIWI_API_BASE_URL } from '@/lib/mobile/api-client';
+import { TV_CHART_HTML } from '@/constants/chart';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { WebView } from 'react-native-webview';
@@ -15,7 +16,7 @@ const timeframes = ['1m', '5m', '15m', '1h', '4h', '1D', 'More'];
  */
 
 // USE YOUR VERIFIED IP ADDRESS
-const CHART_URL = `${TIWI_API_BASE_URL}/charts/index.html`;
+// USES LIVE CHART BRIDGE FROM PRODUCTION
 
 interface TradingViewChartProps {
     symbol: string;
@@ -104,9 +105,9 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
                 else if (price && price < 1) pricescale = 100000000;
 
                 const symbolData = {
-                    name: symbol.includes('-USD') ? symbol : `${symbol}-USD`, // Show pretty name in chart legend
-                    ticker: tvSymbol, // Use machine-readable (address or pair) for API calls
-                    description: `${displayName}/${quoteSymbol}`,
+                    name: `${displayName}/${quoteSymbol}`,
+                    ticker: tvSymbol, 
+                    description: `${displayName}/${quoteSymbol} on TIWICAT`,
                     type: 'crypto',
                     session: '24x7',
                     timezone: 'Etc/UTC',
@@ -150,15 +151,18 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
         }
     };
 
-    const finalUrl = `${CHART_URL}?symbol=${tvSymbol}&interval=${tvInterval}&theme=dark`;
-
     return (
         <View style={styles.container}>
             <View style={styles.chartArea}>
                 <WebView
                     ref={webViewRef}
                     key={tvSymbol}
-                    source={{ uri: finalUrl }}
+                    source={{ 
+                        html: TV_CHART_HTML
+                            .split("getParam('symbol')").join(`'${tvSymbol}'`)
+                            .split("getParam('interval')").join(`'${tvInterval}'`),
+                        baseUrl: 'https://app.tiwiprotocol.xyz/charts/' 
+                    }}
                     onMessage={handleMessage}
                     style={styles.webview}
                     domStorageEnabled={true}
@@ -194,7 +198,7 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
 
 const styles = StyleSheet.create({
     container: { width: '100%', backgroundColor: '#010501' },
-    chartArea: { width: '100%', height: 340, position: 'relative' },
+    chartArea: { width: '100%', height: 450, position: 'relative' },
     webview: { flex: 1, backgroundColor: '#010501' },
     debugOverlay: {
         ...StyleSheet.absoluteFillObject,

@@ -53,7 +53,7 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = ({
                             ? require('@/assets/market/star-18.svg')
                             : require('@/assets/market/star.svg')
                         }
-                        style={[styles.icon, isFavorite && { tintColor: '#F7931A' }]}
+                        style={[styles.icon, { tintColor: isFavorite ? colors.primaryCTA : colors.mutedText }]}
                     />
                 </TouchableOpacity>
 

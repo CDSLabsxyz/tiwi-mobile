@@ -15,11 +15,12 @@ export interface MoralisTokenBalance {
     balance_formatted: string;
     usd_value: number;
     usd_price: number;
-    usd_price_24h_percent_change?: number;
-    usd_value_24h_percent_change?: number;
+    usd_price_24hr_percent_change?: number; // Moralis V2.2 uses 'hr'
+    usd_value_24hr_percent_change?: number;
     native_token?: boolean;
     portfolio_percentage?: number;
     verified_contract?: boolean;
+    possible_spam?: boolean;
 }
 
 export interface MoralisBalancesResponse {
@@ -74,70 +75,29 @@ class MoralisService {
             const results = await Promise.all(
                 chainIds.map(async (chainId) => {
                     const moralisChain = CHAIN_MAP[chainId];
-                    if (!moralisChain) return [];
+                    if (!moralisChain) {
+                        console.warn(`[MoralisService] No Moralis chain mapping for chainId: ${chainId}`);
+                        return [];
+                    }
 
                     try {
-                        // 1. Fetch Token Balances
+                        // 1. Fetch ALL Tokens (ERC20 + Native) using Optimized Wallet API
                         const tokenData = await this.fetcher<MoralisBalancesResponse>(
-                            `/wallets/${address}/tokens?chain=${moralisChain}`
+                            `/wallets/${address}/tokens?chain=${moralisChain}&exclude_spam=true`
                         );
-
-                        // 2. Fetch Native Liquidity Explicitly (Standard Fallback)
-                        let nativeToken: APIToken | null = null;
-                        try {
-                            const nativeData = await this.fetcher<{ balance: string }>(
-                                `/${address}/balance?chain=${moralisChain}`
-                            );
-
-                            if (nativeData && BigInt(nativeData.balance) > 0n) {
-                                // Map Chain ID to Native Symbol/Decimal
-                                const NATIVE_META: Record<number, { symbol: string, name: string, decimals: number }> = {
-                                    1: { symbol: 'ETH', name: 'Ethereum', decimals: 18 },
-                                    56: { symbol: 'BNB', name: 'BNB', decimals: 18 },
-                                    137: { symbol: 'MATIC', name: 'Polygon', decimals: 18 },
-                                    42161: { symbol: 'ETH', name: 'Ethereum', decimals: 18 },
-                                    8453: { symbol: 'ETH', name: 'Ethereum', decimals: 18 },
-                                    10: { symbol: 'ETH', name: 'Ethereum', decimals: 18 },
-                                };
-                                const meta = NATIVE_META[chainId] || { symbol: 'ETH', name: 'Native', decimals: 18 };
-
-                                // Use the conventional 0x0...0 for native, as requested by project consistency
-                                const NATIVE_ADDR = '0x0000000000000000000000000000000000000000';
-
-                                nativeToken = {
-                                    address: NATIVE_ADDR,
-                                    symbol: meta.symbol,
-                                    name: meta.name,
-                                    decimals: meta.decimals,
-                                    balance: nativeData.balance,
-                                    balanceFormatted: formatUnits(BigInt(nativeData.balance), meta.decimals),
-                                    usdValue: '0',
-                                    priceUSD: '0',
-                                    chainId: chainId,
-                                    verified: true,
-                                };
-                            }
-                        } catch (nativeErr: any) {
-                            if (nativeErr.message.includes("Invalid signature") || nativeErr.message.includes("401")) {
-                                console.error(`[MoralisService] API Key Rejected for Native fetch on ${moralisChain}. Check your .env key.`);
-                            } else {
-                                console.warn(`[MoralisService] Native fetch failed for ${moralisChain}:`, nativeErr.message);
-                            }
-                        }
+                        console.log(`[MoralisService] Raw token data for ${moralisChain}: ${tokenData.result?.length || 0} items`);
 
                         const tokens = (tokenData.result || [])
                             .map(token => {
                                 // A token is verified if it's explicitly native OR a verified contract
                                 // OR if it's a known native symbol (conservative fallback)
                                 const isVerified =
-                                    token.native_token === true ||
-                                    token.verified_contract === true ||
-                                    (token.symbol === 'BNB' && chainId === 56) ||
-                                    (token.symbol === 'MATIC' && chainId === 137) ||
-                                    (token.symbol === 'ETH' && [1, 42161, 8453, 10].includes(chainId));
+                                    (token.native_token === true || token.verified_contract === true) &&
+                                    token.possible_spam !== true;
 
                                 return {
-                                    address: token.token_address,
+                                    // Map Moralis fields to our APIToken interface
+                                    address: (token.token_address || '').toLowerCase(),
                                     symbol: token.symbol,
                                     name: token.name,
                                     decimals: token.decimals,
@@ -147,20 +107,15 @@ class MoralisService {
                                     priceUSD: token.usd_price?.toString() || '0',
                                     logoURI: token.logo || token.thumbnail,
                                     chainId: chainId,
-                                    priceChange24h: token.usd_price_24h_percent_change?.toString() || '0',
-                                    verified: isVerified,
-                                } as APIToken;
-                            })
-                            .filter(t => t.verified);
+                                    // CRITICAL: use 'usd_price_24hr_percent_change' (with 'r') as per Moralis V2.2 API
+                                    priceChange24h: token.usd_price_24hr_percent_change?.toString() || '0',
+                                    verified_contract: token.verified_contract === true,
+                                    possible_spam: token.possible_spam === true,
+                                    native_token: token.native_token === true,
+                                } as any;
+                            });
 
-                        // Combine and deduplicate (favoring the one in the token list if it has price data)
-                        if (nativeToken) {
-                            const nativeInList = tokens.find(t => t.address.toLowerCase() === '0x0000000000000000000000000000000000000000');
-                            if (!nativeInList) {
-                                tokens.unshift(nativeToken);
-                            }
-                        }
-
+                        console.log(`[MoralisService] Found ${tokens.length} total tokens on ${moralisChain}`);
                         return tokens;
                     } catch (e) {
                         console.error(`[MoralisService] Chain ${chainId} fetch error:`, e);
@@ -174,6 +129,47 @@ class MoralisService {
         } catch (error) {
             console.error('[MoralisService] Global fetch failed:', error);
             throw error;
+        }
+    }
+
+    /**
+     * Get transaction history for a wallet using Moralis
+     */
+    async getWalletHistory(address: string, chainIds: number[], limit = 50): Promise<any[]> {
+        try {
+            const allTx: any[] = [];
+            const results = await Promise.all(
+                chainIds.map(async (chainId) => {
+                    const moralisChain = CHAIN_MAP[chainId];
+                    if (!moralisChain) return [];
+
+                    try {
+                        const response = await this.fetcher<any>(
+                            `/wallets/${address}/history?chain=${moralisChain}&limit=${limit}`
+                        );
+                        return (response.result || []).map((tx: any) => ({
+                            ...tx,
+                            chainId,
+                            // Map Moralis fields to internal shape
+                            id: tx.hash,
+                            type: tx.category === 'token' ? 'swap' : (tx.from_address?.toLowerCase() === address.toLowerCase() ? 'sent' : 'received'),
+                            tokenSymbol: tx.token_symbol,
+                            tokenAddress: tx.token_address,
+                            amountFormatted: tx.value_decimal,
+                            usdValue: tx.value_usd ? `$${parseFloat(tx.value_usd).toFixed(2)}` : '$0.00',
+                            timestamp: new Date(tx.block_timestamp).getTime(),
+                        }));
+                    } catch (e) {
+                        return [];
+                    }
+                })
+            );
+
+            results.forEach(txs => allTx.push(...txs));
+            return allTx.sort((a, b) => b.timestamp - a.timestamp);
+        } catch (error) {
+            console.error('[MoralisService] History fetch failed:', error);
+            return [];
         }
     }
 }

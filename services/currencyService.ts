@@ -106,7 +106,7 @@ class CurrencyService {
         if (value < 0.1) {
             return formatPriceWithSubscript(value, {
                 symbol: symbol,
-                minDecimalsForSubscript: 4,
+                minDecimalsForSubscript: 5,
                 maxDisplayDecimals: 4
             });
         }

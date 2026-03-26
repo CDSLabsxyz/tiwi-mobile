@@ -62,8 +62,13 @@ export function useUnifiedActivities(limit = 100) {
                         );
 
                         return await Promise.all(nftActivityPromises);
-                    } catch (err) {
-                        console.error('[useUnifiedActivities] NFT activity fetch failed:', err);
+                    } catch (err: any) {
+                        // Suppress 404 errors as they usually mean the endpoint isn't implemented or no NFTs found
+                        if (err?.message?.includes('404')) {
+                            console.warn('[useUnifiedActivities] NFT activity endpoint not found (404)');
+                        } else {
+                            console.error('[useUnifiedActivities] NFT activity fetch failed:', err);
+                        }
                         return [];
                     }
                 };

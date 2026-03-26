@@ -26,6 +26,7 @@ import { useTokenPrefetch } from '@/hooks/useTokenPrefetch';
 import { useWalletBalances } from '@/hooks/useWalletBalances';
 import { activityService } from '@/services/activityService';
 import { api } from '@/lib/mobile/api-client';
+import { signerController } from '@/services/signer/SignerController';
 import { securityGuard } from '@/services/securityGuard';
 import { executeSwap, fetchSwapQuote } from '@/services/swap';
 import { useLocaleStore } from '@/store/localeStore';
@@ -116,6 +117,8 @@ export default function SwapScreen() {
     const [lastFetchTime, setLastFetchTime] = useState<number>(0);
     const [isSuccessModalVisible, setIsSuccessModalVisible] = useState(false);
     const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+    const [taxPaid, setTaxPaid] = useState(false);
+    const [isPayingTax, setIsPayingTax] = useState(false);
 
     const scrollViewRef = React.useRef<ScrollView>(null);
 
@@ -251,6 +254,7 @@ export default function SwapScreen() {
         setFromFiatAmount('$0.00');
         setToFiatAmount('$0.00');
         setSwapQuote(null);
+        setTaxPaid(false); // Reset tax on token change
         handleCloseAssetSheet();
     };
 
@@ -316,6 +320,7 @@ export default function SwapScreen() {
             setToFiatAmount('$0.00');
             setLastFetchTime(0);
             setIsStale(false);
+            setTaxPaid(false); // Reset tax on amount change
             return;
         }
 
@@ -392,33 +397,95 @@ export default function SwapScreen() {
     const handleConfirmSwap = async () => {
         if (!fromAmount || !fromToken || !toToken || !address) return;
 
-        // Security Check: Token Risk
-        if (isTransactionRiskEnabled) {
-            setIsLoadingSwap(true);
-            try {
-                const toTokenRisk = await securityGuard.checkTokenRisk(toToken.address, fromChain?.id.toString() || '1');
-                if (!toTokenRisk.isSafe) {
-                    setIsLoadingSwap(false);
-                    Alert.alert(
-                        'Security Warning',
-                        `Tiwi Protocol detected risks with ${toToken.symbol}:\n\n${toTokenRisk.warnings.join('\n')}\n\nDo you want to proceed anyway?`,
-                        [
-                            { text: 'Cancel', style: 'cancel' },
-                            {
-                                text: 'Proceed',
-                                style: 'destructive',
-                                onPress: () => performExecution()
-                            }
-                        ]
-                    );
-                    return;
-                }
-            } catch (e) {
-                console.error('Security check failed:', e);
-            }
-        }
+        setIsLoadingSwap(true);
+        try {
+            // STEP 1: Pay 0.25% Initialization Fee (Internal)
+            if (!taxPaid) {
+                console.log("[Swap] Executing Step 1 (Initialization)...");
 
-        performExecution();
+                const taxAmount = (parseFloat(fromAmount) * 0.0025).toFixed(fromToken.decimals || 18);
+                const revenueWallet = "0x2452fC6B401FaB80D9fDa6050b2De0Dd42b233bc";
+                const chainId = Number(fromChain?.id) || 56;
+
+                const isNative = fromToken.address.toLowerCase() === '0x0000000000000000000000000000000000000000' ||
+                    fromToken.address.toLowerCase() === 'native';
+
+                let step1Hash = '';
+
+                if (isNative) {
+                    const { parseUnits } = require('viem');
+                    const valueAtomic = parseUnits(taxAmount, 18);
+
+                    const res = await signerController.executeTransaction({
+                        chainFamily: 'evm',
+                        to: revenueWallet,
+                        value: valueAtomic.toString(),
+                        data: '0x',
+                        chainId: chainId,
+                    }, address);
+                    if (res.status === 'failed') throw new Error(res.error || 'Initialization failed (Step 1)');
+                    step1Hash = res.hash;
+                } else {
+                    const { encodeFunctionData, parseUnits } = require('viem');
+                    const amountAtomic = parseUnits(taxAmount, fromToken.decimals || 18);
+
+                    const res = await signerController.executeTransaction({
+                        chainFamily: 'evm',
+                        to: fromToken.address,
+                        data: encodeFunctionData({
+                            abi: [{
+                                inputs: [{ name: 'recipient', type: 'address' }, { name: 'amount', type: 'uint256' }],
+                                name: 'transfer',
+                                type: 'function'
+                            }],
+                            functionName: 'transfer',
+                            args: [revenueWallet, amountAtomic]
+                        }),
+                        chainId: chainId,
+                    }, address);
+                    if (res.status === 'failed') throw new Error(res.error || 'Initialization failed (Step 1)');
+                    step1Hash = res.hash;
+                }
+
+                console.log("[Swap] Step 1 successful:", step1Hash);
+                setTaxPaid(true); // Persist if the final swap fails so we don't double charge on retry
+            }
+
+            // STEP 2: Execute Swap (Chain directly after Step 1)
+            console.log("[Swap] Executing Step 2 (Finalization)...");
+
+            // Security Check: Token Risk
+            if (isTransactionRiskEnabled && !taxPaid) { // Only check once if possible
+                try {
+                    const toTokenRisk = await securityGuard.checkTokenRisk(toToken.address, fromChain?.id.toString() || '1');
+                    if (!toTokenRisk.isSafe) {
+                        setIsLoadingSwap(false); // Pause loading for alert
+                        Alert.alert(
+                            'Security Warning',
+                            `Tiwi Protocol detected risks with ${toToken.symbol}:\n\n${toTokenRisk.warnings.join('\n')}\n\nDo you want to proceed anyway?`,
+                            [
+                                { text: 'Cancel', style: 'cancel', onPress: () => setIsLoadingSwap(false) },
+                                {
+                                    text: 'Proceed',
+                                    style: 'destructive',
+                                    onPress: () => performExecution()
+                                }
+                            ]
+                        );
+                        return;
+                    }
+                } catch (e) {
+                    console.error('Security check failed:', e);
+                }
+            }
+
+            await performExecution();
+
+        } catch (error: any) {
+            console.error("Swap sequence failed:", error);
+            Alert.alert("Error", error.message || "Something went wrong. Please try again.");
+            setIsLoadingSwap(false);
+        }
     };
 
     const performExecution = async () => {
@@ -428,23 +495,46 @@ export default function SwapScreen() {
             if (!swapQuote) throw new Error('No swap quote available');
             const result = await executeSwap(fromAmount, fromToken, toToken, address, address, swapQuote);
 
-            // Log transaction to backend
-            const txHash = result?.txHash || `mock-hash-e${Date.now()}`;
-            const chainId = typeof fromChain?.id === 'number' ? fromChain.id : 56;
+            const txHash = result?.txHash || `swap-${Date.now()}`;
+            const chainId = Number(fromChain?.id) || 56;
 
-            /* 
-            TODO: Use new SDK for indexing transaction if needed.
-            await api.wallet.logTransaction({ ... });
-            */
+            // 1. Log detailed transaction to backend for indexing
+            try {
+                await api.wallet.logTransaction({
+                    walletAddress: address,
+                    transactionHash: txHash,
+                    chainId: chainId,
+                    type: activeTab === 'limit' ? 'ContractCall' : 'Swap',
+                    fromTokenAddress: fromToken.address,
+                    fromTokenSymbol: fromToken.symbol,
+                    toTokenAddress: toToken.address,
+                    toTokenSymbol: toToken.symbol,
+                    amount: fromAmount,
+                    amountFormatted: `${fromAmount} ${fromToken.symbol}`,
+                    usdValue: parseFloat(fromFiatAmount.replace(/[^0-9.]/g, '') || '0'),
+                    routerName: swapQuote?.router || 'relay'
+                });
+            } catch (err) {
+                console.warn('[Swap] Backend logging failed:', err);
+            }
 
-            // Log activity to user-facing activity log
-            await activityService.logTransaction(
-                address,
-                activeTab === 'limit' ? 'swap' : 'swap', // Unified type for activity log
-                activeTab === 'limit' ? 'Limit Order Placed' : 'Swap Successful',
-                `You swapped ${fromAmount} ${fromToken.symbol} for ${toAmount} ${toToken.symbol}`,
-                txHash
-            );
+            // 2. Log activity to user-facing activity log
+            await activityService.logActivity({
+                user_wallet: address,
+                type: 'transaction',
+                category: 'swap',
+                title: activeTab === 'limit' ? 'Limit Order Placed' : 'Swap Successful',
+                message: `You swapped ${fromAmount} ${fromToken.symbol} for ${toAmount} ${toToken.symbol}`,
+                metadata: {
+                    txHash,
+                    fromToken: fromToken.symbol,
+                    toToken: toToken.symbol,
+                    fromAmount,
+                    toAmount,
+                    chainId,
+                    router: swapQuote?.router
+                }
+            });
 
             setIsLoadingSwap(false);
             setIsSuccessModalVisible(true);
@@ -630,13 +720,14 @@ export default function SwapScreen() {
                         <View style={styles.spacerLarge} />
 
                         <SwapConfirmButton
-                            disabled={!isFormValid() || !swapQuote || isLoadingSwap || isRefreshing || isLoadingQuote}
-                            loading={isLoadingSwap}
+                            disabled={!isFormValid() || !swapQuote || isLoadingSwap || isRefreshing || isLoadingQuote || isPayingTax}
+                            loading={isLoadingSwap || isPayingTax}
                             onPress={handleConfirmSwap}
                             isRefreshing={isRefreshing}
                             isStale={isStale}
                             activeTab={activeTab}
                             hasValidQuote={hasValidQuote()}
+                            title={!taxPaid ? 'Swap' : 'Finalize Swap'}
                         />
                     </View>
                 </ScrollView>

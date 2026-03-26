@@ -21,6 +21,15 @@ const Scan = require('../../assets/home/iris-scan.svg');
 const Settings = require('../../assets/home/settings-03.svg');
 const ChevronLeftIcon = require('../../assets/swap/arrow-left-02.svg');
 
+const ChainIcons = {
+    EVM: require('../../assets/home/chains/ethereum.svg'),
+    SOLANA: require('../../assets/home/chains/solana.svg'),
+    TRON: require('../../assets/home/chains/tron.png'),
+    TON: require('../../assets/home/chains/ton.jpg'),
+    COSMOS: require('../../assets/home/chains/bsc.svg'), // placeholder
+    OSMOSIS: require('../../assets/home/chains/polygon.svg'), // placeholder
+};
+
 import { useNotifications } from '@/hooks/useNotifications';
 import { useWalletStore } from '@/store/walletStore';
 import { useRouter } from 'expo-router';
@@ -39,7 +48,7 @@ export const Header: React.FC<HeaderProps> = ({
     onBackPress,
 }) => {
     const router = useRouter();
-    const { address } = useWalletStore();
+    const { address, activeChain } = useWalletStore();
     const { unreadCount } = useNotifications();
     const fullAddress = walletAddress || address || '';
     const displayAddress = truncateAddress(fullAddress);
@@ -56,12 +65,19 @@ export const Header: React.FC<HeaderProps> = ({
                         <Image source={ChevronLeftIcon} style={styles.icon} contentFit="contain" />
                     </TouchableOpacity>
                 ) : (
-                    <View style={styles.logoContainer}>
-                        <Image
-                            source={displayIcon}
-                            style={styles.logo}
-                            contentFit="contain"
-                        />
+                    <View style={styles.logoWrapper}>
+                        <View style={styles.logoContainer}>
+                            <Image
+                                source={displayIcon}
+                                style={styles.logo}
+                                contentFit="contain"
+                            />
+                        </View>
+                        {activeChain && (
+                            <View style={styles.logoChainBadge}>
+                                <Image source={(ChainIcons as any)[activeChain]} style={styles.iconFull} contentFit="contain" />
+                            </View>
+                        )}
                     </View>
                 )}
 
@@ -73,6 +89,11 @@ export const Header: React.FC<HeaderProps> = ({
                     <Text style={styles.walletText}>
                         {fullAddress ? displayAddress : 'Connect Wallet'}
                     </Text>
+                    {fullAddress && (
+                        <View style={styles.chainBadge}>
+                            <Text style={styles.chainBadgeText}>{activeChain === 'SOLANA' ? 'SOL' : activeChain}</Text>
+                        </View>
+                    )}
                     {!disableWalletModal && (
                         <Image
                             source={ArrowDown01}
@@ -125,9 +146,38 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         gap: 8, // gap-2
     },
+    logoWrapper: {
+        position: 'relative',
+        width: 32,
+        height: 32,
+    },
     logoContainer: {
-        width: 24, // Matches other icons (w-6)
-        height: 24,
+        width: '100%',
+        height: '100%',
+        backgroundColor: colors.bgCards,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: colors.bgStroke,
+        padding: 4,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    logoChainBadge: {
+        position: 'absolute',
+        bottom: -4,
+        right: -4,
+        width: 16,
+        height: 16,
+        borderRadius: 8,
+        backgroundColor: colors.bg,
+        borderWidth: 1,
+        borderColor: colors.bgSemi,
+        padding: 2,
+        zIndex: 5,
+    },
+    iconFull: {
+        width: '100%',
+        height: '100%',
     },
     backButton: {
         width: 24,
@@ -153,6 +203,18 @@ const styles = StyleSheet.create({
         fontFamily: 'Manrope-Medium',
         fontSize: 14,
         color: colors.bodyText,
+    },
+    chainBadge: {
+        backgroundColor: colors.bgStroke,
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 4,
+        marginLeft: 0,
+    },
+    chainBadgeText: {
+        fontFamily: 'Manrope-Bold',
+        fontSize: 10,
+        color: colors.primaryCTA,
     },
     arrowIcon: {
         width: 16, // w-4

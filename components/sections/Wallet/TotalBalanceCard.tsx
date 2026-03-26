@@ -77,11 +77,13 @@ export const TotalBalanceCard: React.FC<TotalBalanceCardProps> = ({
                 <View style={styles.changeRow}>
                     {isBalanceVisible ? (
                         <>
-                            <Text style={[
-                                styles.changeText,
-                                { color: portfolioChange.amount.startsWith('-') ? '#FB406E' : '#B1F128' }
-                            ]}>
-                                {portfolioChange.amount.startsWith('-') ? '-' : '+'}{formattedChangeAmount} ({portfolioChange.amount.startsWith('-') ? '' : '+'}{portfolioChange.percent}%)
+                            <Text 
+                                style={[
+                                    styles.changeText,
+                                    { color: parseFloat(portfolioChange.amount) < 0 ? '#FB406E' : '#B1F128' }
+                                ]}
+                            >
+                                {parseFloat(portfolioChange.amount) >= 0 ? '+' : '-'}{formattedChangeAmount} ({parseFloat(portfolioChange.percent) >= 0 ? '+' : '-'}{Math.abs(parseFloat(portfolioChange.percent)).toFixed(2)}%)
                             </Text>
                             <TouchableOpacity activeOpacity={0.8} onPress={onTodayPress}>
                                 <Text style={styles.periodText}>

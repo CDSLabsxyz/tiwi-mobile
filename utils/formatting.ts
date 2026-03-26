@@ -36,7 +36,7 @@ export function formatPriceWithSubscript(
 ): string {
     const {
         symbol = '',
-        minDecimalsForSubscript = 4,
+        minDecimalsForSubscript = 5,
         maxDisplayDecimals = 4,
     } = options;
 
@@ -77,12 +77,11 @@ export function formatPriceWithSubscript(
         return `${isNegative ? '-' : ''}${symbol}${formatted}`;
     }
 
-    // Subscript notation for many leading zeros
+    // Subscript notation for many leading zeros (Web style: 0.0(9)7322)
     // Extract significant digits from the coefficient (remove dot)
-    const significantDigits = coefficient.replace('.', '').substring(0, maxDisplayDecimals);
-    const subscript = digitsToSubscript(leadingZeros.toString());
+    const significantDigits = (coefficient.replace('.', '') + '0000').substring(0, maxDisplayDecimals);
 
-    return `${isNegative ? '-' : ''}${symbol}0.0${subscript}${significantDigits}`;
+    return `${isNegative ? '-' : ''}${symbol}0.0(${leadingZeros})${significantDigits}`;
 }
 
 /**

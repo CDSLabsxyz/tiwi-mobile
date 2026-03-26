@@ -13,8 +13,11 @@ import { generateMnemonic, mnemonicToSeedSync } from '@scure/bip39';
 import { wordlist } from '@scure/bip39/wordlists/english.js';
 import { Keypair } from '@solana/web3.js';
 import * as bs58 from "bs58";
+import { Buffer } from 'buffer';
 import * as SecureStore from 'expo-secure-store';
 import { mnemonicToAccount, privateKeyToAccount } from 'viem/accounts';
+// ed25519-hd-key, tronweb, etc. are imported dynamically inside functions
+// to ensure polyfills are fully initialized first.
 
 export interface CreatedWallet {
     address: string; // Master/Primary (EVM)
@@ -33,19 +36,23 @@ const MNEMONIC_PREFIX = 'tiwi_wallet_mnem_';
 export const DERIVATION_PATHS: Record<ChainType, string> = {
     EVM: "m/44'/60'/0'/0/0",
     SOLANA: "m/44'/501'/0'/0'",
+    TRON: "m/44'/195'/0'/0/0",
+    TON: "m/44'/607'/0'/0'/0'",
+    COSMOS: "m/44'/118'/0'/0/0",
+    OSMOSIS: "m/44'/118'/0'/0/0",
 };
 
 /**
  * Generate a new wallet with a 12-word mnemonic phrase.
  * Uses 128-bits of entropy.
  */
-export function generateNewWallet(): CreatedWallet {
+export async function generateNewWallet(): Promise<CreatedWallet> {
     try {
         // 1. Generate Mnemonic (128 bits = 12 words)
         const mnemonic = generateMnemonic(wordlist, 128);
 
         // 2. Derive all addresses
-        const addresses = deriveMultiChainAddressesFromMnemonic(mnemonic);
+        const addresses = await deriveMultiChainAddressesFromMnemonic(mnemonic);
 
         return {
             address: addresses.EVM!,
@@ -61,17 +68,106 @@ export function generateNewWallet(): CreatedWallet {
 /**
  * Derive addresses for all supported chains from a mnemonic.
  */
-export function deriveMultiChainAddressesFromMnemonic(mnemonic: string): Record<ChainType, string> {
+export async function deriveMultiChainAddressesFromMnemonic(mnemonic: string): Promise<Record<ChainType, string>> {
     const addresses: any = {};
+    const trimmedMnemonic = mnemonic.trim();
+    const seed = mnemonicToSeedSync(trimmedMnemonic);
 
     // 1. EVM (Standard ETH)
-    const ethAccount = mnemonicToAccount(mnemonic);
+    const ethAccount = mnemonicToAccount(trimmedMnemonic);
     addresses.EVM = ethAccount.address;
 
-    // 2. SOLANA
-    const seed = mnemonicToSeedSync(mnemonic);
-    const solanaKeypair = Keypair.fromSeed(seed.slice(0, 32)); // Standard Solana derivation from seed
-    addresses.SOLANA = solanaKeypair.publicKey.toBase58();
+    // 2. SOLANA (m/44'/501'/0'/0')
+    try {
+        const { derivePath } = await import('ed25519-hd-key');
+        const seedHex = Array.from(seed).map(b => b.toString(16).padStart(2, '0')).join('');
+        const solanaDerived = derivePath(DERIVATION_PATHS.SOLANA, seedHex);
+        const solanaKeypair = Keypair.fromSeed(solanaDerived.key);
+        addresses.SOLANA = solanaKeypair.publicKey.toBase58();
+    } catch (e) {
+        console.error('[WalletService] Solana derivation failed:', e);
+    }
+
+    // 3. TRON (m/44'/195'/0'/0/0)
+    try {
+        const { HDKey: EthHDKey } = await import('ethereum-cryptography/hdkey');
+        const hd = EthHDKey.fromMasterSeed(seed);
+        const tronChild = hd.derive(DERIVATION_PATHS.TRON);
+        if (tronChild.privateKey) {
+            const privateKeyBuffer = Buffer.from(tronChild.privateKey);
+            const tronPrivateKeyHex = Array.from(privateKeyBuffer)
+                .map((b) => b.toString(16).padStart(2, '0'))
+                .join('');
+            
+            const TronModule = await import('tronweb');
+            // Support both { TronWeb } and { default: { TronWeb } } and { default: TronWeb }
+            const TronWebConstructor = TronModule.TronWeb || (TronModule.default && TronModule.default.TronWeb) || TronModule.default;
+            
+            if (typeof TronWebConstructor !== 'function') {
+                console.error('[WalletService] TronWeb constructor not found', TronModule);
+            } else {
+                const tronWebInstance = new TronWebConstructor({ fullHost: 'https://api.trongrid.io' });
+                addresses.TRON = tronWebInstance.address.fromPrivateKey(tronPrivateKeyHex);
+            }
+        }
+    } catch (e) {
+        console.error('[WalletService] Tron derivation failed:', e);
+    }
+
+    // 4. TON (m/44'/607'/0'/0'/0')
+    try {
+        const { HDKey: TonHDKey } = await import('@scure/bip32');
+        const tonSeed = mnemonicToSeedSync(trimmedMnemonic);
+        const tonHd = TonHDKey.fromMasterSeed(tonSeed);
+        const tonChild = tonHd.derive(DERIVATION_PATHS.TON);
+        
+        const { WalletContractV4 } = await import('@ton/ton');
+        
+        if (tonChild.publicKey) {
+            const tonWallet = WalletContractV4.create({
+                workchain: 0,
+                publicKey: Buffer.from(tonChild.publicKey)
+            });
+            
+            // Using non-bounceable user-friendly address (standard for user wallets)
+            addresses.TON = tonWallet.address.toString({ bounceable: false, testOnly: false });
+            console.log('[WalletService] Derived TON address:', addresses.TON);
+        }
+    } catch (e) {
+        console.error('[WalletService] TON derivation failed:', e);
+    }
+
+    // 5. COSMOS (m/44'/118'/0'/0/0) & 6. OSMOSIS
+    // 5. COSMOS (m/44'/118'/0'/0/0) & 6. OSMOSIS
+    try {
+        const { bech32 } = await import('bech32');
+        const { ripemd160 } = await import('ethereum-cryptography/ripemd160');
+        const { sha256 } = await import('ethereum-cryptography/sha256');
+
+        // Standard Cosmos derivation path
+        const path = DERIVATION_PATHS.COSMOS;
+        const hd = HDKey.fromMasterSeed(seed);
+        const child = hd.derive(path);
+
+        if (child.publicKey) {
+            // Cosmos address calculation:
+            // 1. SHA256 hash of the public key
+            const sha256Hash = sha256(child.publicKey);
+            // 2. RIPEMD160 hash of the result
+            const ripemdHash = ripemd160(sha256Hash);
+            
+            // 3. Bech32 encode the RIPEMD160 hash
+            const words = bech32.toWords(ripemdHash);
+            
+            addresses.COSMOS = bech32.encode('cosmos', words);
+            addresses.OSMOSIS = bech32.encode('osmo', words);
+            
+            console.log('[WalletService] Derived COSMOS (manual):', addresses.COSMOS);
+            console.log('[WalletService] Derived OSMOSIS (manual):', addresses.OSMOSIS);
+        }
+    } catch (e) {
+        console.error('[WalletService] Cosmos/Osmosis manual derivation failed:', e);
+    }
 
     return addresses;
 }
@@ -200,8 +296,8 @@ export function validatePrivateKey(key: string, chain: ChainType = 'EVM'): boole
     const cleanKey = key.startsWith('0x') ? key.slice(2) : key;
     if (chain === 'SOLANA') {
         try {
-            bs58.default.decode(key);
-            return true;
+            const decoded = (bs58 as any).decode ? (bs58 as any).decode(key) : (bs58 as any).default.decode(key);
+            return !!decoded;
         } catch {
             return false;
         }
@@ -216,7 +312,7 @@ export function validatePrivateKey(key: string, chain: ChainType = 'EVM'): boole
 export async function importWalletByMnemonic(mnemonic: string): Promise<CreatedWallet> {
     if (!validateMnemonic(mnemonic)) throw new Error('Invalid mnemonic');
 
-    const addresses = deriveMultiChainAddressesFromMnemonic(mnemonic);
+    const addresses = await deriveMultiChainAddressesFromMnemonic(mnemonic);
     const primaryAddress = addresses.EVM!;
 
     // Save EVM private key by default

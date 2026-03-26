@@ -14,7 +14,7 @@ import {
     type AssetActivity,
     type AssetDetail,
 } from "@/services/walletService";
-import { WALLET_ADDRESS } from "@/utils/wallet";
+import { useWalletStore } from "@/store/walletStore";
 import { Image } from "expo-image";
 import { useLocalSearchParams, usePathname, useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
@@ -33,6 +33,8 @@ export default function AssetActivitiesScreen() {
     const [activities, setActivities] = useState<AssetActivity[]>([]);
     const [asset, setAsset] = useState<AssetDetail | null>(null);
     const [isLoading, setIsLoading] = useState(true);
+
+    const { address: activeWalletAddress } = useWalletStore();
 
     // Fetch activities and asset detail
     useEffect(() => {
@@ -85,7 +87,7 @@ export default function AssetActivitiesScreen() {
                 <CustomStatusBar />
                 <View style={{ paddingTop: top || 0 }}>
                     <WalletHeader
-                        walletAddress={WALLET_ADDRESS}
+                        walletAddress={activeWalletAddress || ""}
                         onIrisScanPress={handleIrisScanPress}
                         onSettingsPress={handleSettingsPress}
                         showBackButton
@@ -118,7 +120,7 @@ export default function AssetActivitiesScreen() {
                 }}
             >
                 <WalletHeader
-                    walletAddress={WALLET_ADDRESS}
+                    walletAddress={activeWalletAddress || ""}
                     onIrisScanPress={handleIrisScanPress}
                     onSettingsPress={handleSettingsPress}
                     showBackButton

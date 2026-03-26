@@ -137,7 +137,7 @@ export class LocalSignerEngine implements SignerEngine {
 
             const hash = await walletClient.sendTransaction(txArgs);
 
-            return { hash, status: 'success'};
+            return { hash, status: 'success' };
         } catch (error: any) {
             console.error('[LocalSignerEngine] Transaction failed', error);
             return {

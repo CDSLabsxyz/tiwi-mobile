@@ -8,7 +8,7 @@ import { useTranslation } from '@/hooks/useLocalization';
 import { MarketCategory } from '@/hooks/useMarketPairs';
 import { api, MarketAsset, TokenItem } from '@/lib/mobile/api-client';
 import { useMarketStore } from '@/store/marketStore';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -28,12 +28,14 @@ const ArrowLeftIcon = require('../../assets/swap/arrow-left-02.svg');
 const imgLine327 = 'https://www.figma.com/api/mcp/asset/2040f48a-ef4a-465d-85f9-1bc8eb6c0987';
 const imgLine340 = 'https://www.figma.com/api/mcp/asset/a1a2844d-92df-45f5-9b95-980536c19b61';
 
-const subTabs: { id: MarketCategory | 'favourite'; label: string }[] = [
+const subTabs: { id: string; label: string }[] = [
     { id: 'favourite', label: 'Favourite' },
-    { id: 'hot', label: 'Top' },
-    { id: 'new', label: 'New' },
+    { id: 'explore', label: 'Explore' },
     { id: 'gainers', label: 'Gainers' },
     { id: 'losers', label: 'Losers' },
+    { id: 'hot', label: 'Hot' },
+    { id: 'spotlight', label: 'Spotlight' },
+    { id: 'listing', label: 'Listing' },
 ];
 
 const MarketListItemSkeleton = () => (
@@ -58,9 +60,11 @@ export default function MarketScreen() {
     const { t } = useTranslation();
     const params = useLocalSearchParams<{ category?: string }>();
 
-    const [marketType, setMarketType] = useState<'spot' | 'perp'>('spot');
+    const [marketType, setMarketType] = useState<any>('all');
+    const [sortBy, setSortBy] = useState<'volume' | 'performance' | 'price' | 'marketCap' | 'none'>('none');
+    const [sortDirection, setSortDirection] = useState<'asc' | 'desc' | 'none'>('none');
     const [activeSubTab, setActiveSubTab] = useState<string>(
-        (params.category as any) || 'hot'
+        (params.category as any) || 'explore'
     );
     const [searchQuery, setSearchQuery] = useState('');
     const [searchResults, setSearchResults] = useState<MarketAsset[]>([]);
@@ -70,10 +74,10 @@ export default function MarketScreen() {
 
     const { favorites, toggleFavorite, isFavorite } = useMarketStore();
 
-    const subTabs: { id: MarketCategory | 'favourite'; label: string }[] = useMemo(() => [
+    const subTabs: { id: string; label: string }[] = useMemo(() => [
         { id: 'favourite', label: t('home.favourite') },
-        { id: 'hot', label: t('home.top') },
-        { id: 'new', label: t('home.new') },
+        { id: 'explore', label: 'Explore' },
+        { id: 'listing', label: 'Listing' },
         { id: 'gainers', label: t('home.gainers') },
         { id: 'losers', label: t('home.losers') },
     ], [t]);
@@ -89,9 +93,19 @@ export default function MarketScreen() {
         data: marketPairs,
         isLoading: isPairsLoading,
     } = useEnrichedMarkets({
-        marketType: marketType === 'perp' ? 'perp' : 'spot',
+        marketType: marketType,
         limit: 250,
         enabled: activeSubTab !== 'favourite'
+    });
+
+    // Fetch Spotlight/Listing tokens (Mirroring Web)
+    const { data: adminTokens = [], isLoading: isAdminLoading } = useQuery({
+        queryKey: ['adminTokens', activeSubTab],
+        queryFn: () => api.tokenSpotlight.get({ 
+            category: activeSubTab === 'listing' ? 'listing' : 'spotlight',
+            activeOnly: true 
+        }),
+        enabled: activeSubTab === 'spotlight' || activeSubTab === 'listing',
     });
 
     // Staggered Prefetching (Phase 4: Optimization)
@@ -228,6 +242,44 @@ export default function MarketScreen() {
     const displayData = useMemo<MarketAsset[]>(() => {
         let tokens: MarketAsset[] = activeSubTab === 'favourite' ? favoriteTokens : [...((marketPairs as any) || [])];
 
+        // Process Admin tokens (Spotlight/Listing) from Database
+        if (activeSubTab === 'spotlight' || activeSubTab === 'listing') {
+            const tokensFromAPI = Array.isArray(adminTokens.tokens) ? adminTokens.tokens : [];
+            const today = new Date().toISOString().split('T')[0];
+
+            // 1. Filter by direct date logic (exactly like Web app line 133/165)
+            const active = tokensFromAPI.filter((t: any) =>
+                (!t.startDate || t.startDate <= today) &&
+                (!t.endDate || t.endDate >= today)
+            ).sort((a: any, b: any) => (a.rank || 0) - (b.rank || 0));
+
+            // 2. Map & Enrich with Price Data
+            tokens = active.map((st: any) => {
+                const enriched = (marketPairs || []).find(
+                    (et: any) => 
+                        et.symbol.toUpperCase() === st.symbol.toUpperCase() || 
+                        (st.address && et.address?.toLowerCase() === st.address.toLowerCase())
+                );
+                
+                if (enriched) return enriched;
+                
+                return {
+                    id: st.id || st.symbol,
+                    symbol: st.symbol,
+                    name: st.name || st.symbol,
+                    address: st.address || "",
+                    chainId: st.chainId || 56,
+                    logoURI: st.logo || "",
+                    price: '0',
+                    priceChange24h: 0,
+                    volume24h: 0,
+                    marketCap: 0,
+                    marketType: 'spot'
+                } as any;
+            });
+            return tokens;
+        }
+
         // 1. Sort/Filter based on sub-tab
         if (activeSubTab !== 'favourite') {
             if (activeSubTab === 'gainers') {
@@ -238,13 +290,21 @@ export default function MarketScreen() {
                 tokens = tokens
                     .filter(t => (t.priceChange24h ?? 0) < 0)
                     .sort((a, b) => (a.priceChange24h ?? 0) - (b.priceChange24h ?? 0));
-            } else if (activeSubTab === 'new') {
-                // Sort by rank/market cap for 'new' (lowest rank often means newer or smaller caps)
-                tokens = tokens.sort((a, b) => (a.marketCapRank ?? 999999) - (b.marketCapRank ?? 999999));
-            } else if (activeSubTab === 'hot') {
-                // Default API sorting is usually by volume/hot
+            } else if (activeSubTab === 'explore' || activeSubTab === 'hot') {
                 tokens = tokens.sort((a, b) => (b.volume24h ?? 0) - (a.volume24h ?? 0));
             }
+        }
+
+        // 2. Apply Custom Sorting
+        if (sortBy !== 'none' && sortDirection !== 'none') {
+            tokens = [...tokens].sort((a, b) => {
+                const multi = sortDirection === 'asc' ? 1 : -1;
+                if (sortBy === 'volume') return ((a.volume24h || 0) - (b.volume24h || 0)) * multi;
+                if (sortBy === 'marketCap') return ((a.marketCap || 0) - (b.marketCap || 0)) * multi;
+                if (sortBy === 'performance') return ((a.priceChange24h || 0) - (b.priceChange24h || 0)) * multi;
+                if (sortBy === 'price') return (parseFloat(String(a.price)) - parseFloat(String(b.price))) * multi;
+                return 0;
+            });
         }
 
         // 2. Apply Search
@@ -269,8 +329,9 @@ export default function MarketScreen() {
             return merged;
         }
 
-        // 3. TWC Priority Logic (Pin to 2nd position in Top/Gainers)
-        if (activeSubTab === 'hot' || activeSubTab === 'gainers') {
+        // 3. TWC Priority Logic (Pin to 1st position in Explore/Gainers)
+        const isCoreDiscovery = activeSubTab === 'explore' || activeSubTab === 'gainers' || activeSubTab === 'hot';
+        if (isCoreDiscovery && searchQuery.trim() === '') {
             const TWC_ADDRESS = '0xDA1060158F7D593667cCE0a15DB346BB3FfB3596'.toLowerCase();
             const twcIndex = tokens.findIndex(t =>
                 (t.address && t.address.toLowerCase() === TWC_ADDRESS) ||
@@ -279,35 +340,34 @@ export default function MarketScreen() {
 
             if (twcIndex > -1) {
                 const [twcToken] = tokens.splice(twcIndex, 1);
-                // Insert at index 1 (2nd position) if list has enough items
-                if (tokens.length >= 1) {
-                    tokens.splice(1, 0, twcToken as EnrichedMarket);
-                } else {
-                    tokens.unshift(twcToken as EnrichedMarket);
-                }
+                tokens.unshift(twcToken as any);
             }
         }
 
         return tokens;
-    }, [activeSubTab, favoriteTokens, marketPairs, searchQuery, searchResults]);
+    }, [activeSubTab, favoriteTokens, marketPairs, adminTokens, searchQuery, searchResults, sortBy, sortDirection, queryClient]);
 
-    const isLoading = activeSubTab === 'favourite' ? isFavLoading : isPairsLoading;
+    const isLoading = activeSubTab === 'favourite' 
+        ? isFavLoading 
+        : (activeSubTab === 'spotlight' || activeSubTab === 'listing')
+            ? isAdminLoading
+            : isPairsLoading;
 
     // Prefetch detail data early for ultra-fast navigation
-    const handleTokenPress = useCallback(async (token: EnrichedMarket) => {
+    const handleTokenPress = useCallback(async (token: MarketAsset) => {
         setIsNavigating(true);
 
         const currentContext = marketType; // 'spot' or 'perp'
         const route = currentContext === 'perp'
-            ? `/market/futures/${token.displaySymbol || token.symbol}`
-            : `/market/spot/${token.displaySymbol || token.symbol}`;
+            ? `/market/futures/${(token as any).displaySymbol || token.symbol}`
+            : `/market/spot/${(token as any).displaySymbol || token.symbol}`;
 
         router.push({
             pathname: route as any,
             params: {
-                address: token.contractAddress || token.baseToken?.address || token.address,
+                address: (token as any).contractAddress || (token as any).baseToken?.address || token.address,
                 chainId: token.chainId,
-                symbol: token.displaySymbol || token.symbol,
+                symbol: (token as any).displaySymbol || token.symbol,
                 provider: token.provider,
                 name: token.name,
                 marketType: currentContext
@@ -318,7 +378,7 @@ export default function MarketScreen() {
         setTimeout(() => setIsNavigating(false), 200);
     }, [marketType, router]);
 
-    const renderItem = useCallback(({ item }: { item: EnrichedMarket }) => (
+    const renderItem = useCallback(({ item }: { item: MarketAsset }) => (
         <TokenListItem
             key={item.id || `${item.chainId}-${item.address}`}
             token={item as any}
@@ -429,21 +489,48 @@ export default function MarketScreen() {
             <View style={[styles.headerContainer, { paddingTop: top }]}>
                 {/* Spot/Perp Tabs */}
                 <View style={styles.mainTabsContainer}>
-                    <View style={styles.tabsLeft}>
-                        {/* Spot Tab */}
+                    <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={styles.tabsLeft}
+                    >
+                        {/* All/Swap Tab */}
                         <TouchableOpacity
-                            onPress={() => setMarketType('spot')}
+                            onPress={() => setMarketType('all')}
                             style={styles.tabButton}
                         >
                             <Text
                                 style={[
                                     styles.tabText,
-                                    { color: marketType === 'spot' ? colors.primaryCTA : colors.mutedText }
+                                    { color: marketType === 'all' ? colors.primaryCTA : colors.mutedText }
+                                ]}
+                            >
+                                All
+                            </Text>
+                            {marketType === 'all' && (
+                                <View style={styles.activeTabIndicatorWrapper}>
+                                    <Image
+                                        source={{ uri: imgLine327 }}
+                                        style={styles.activeTabIndicator}
+                                        contentFit="contain"
+                                    />
+                                </View>
+                            )}
+                        </TouchableOpacity>
+                        {/* Spot Tab */}
+                        <TouchableOpacity
+                            onPress={() => setMarketType('Spot')}
+                            style={styles.tabButton}
+                        >
+                            <Text
+                                style={[
+                                    styles.tabText,
+                                    { color: marketType === 'Spot' ? colors.primaryCTA : colors.mutedText }
                                 ]}
                             >
                                 Spot
                             </Text>
-                            {marketType === 'spot' && (
+                            {marketType === 'Spot' && (
                                 <View style={styles.activeTabIndicatorWrapper}>
                                     <Image
                                         source={{ uri: imgLine327 }}
@@ -456,18 +543,18 @@ export default function MarketScreen() {
 
                         {/* Perp Tab */}
                         <TouchableOpacity
-                            onPress={() => setMarketType('perp')}
+                            onPress={() => setMarketType('Perps')}
                             style={styles.tabButton}
                         >
                             <Text
                                 style={[
                                     styles.tabText,
-                                    { color: marketType === 'perp' ? colors.primaryCTA : colors.mutedText }
+                                    { color: marketType === 'Perps' ? colors.primaryCTA : colors.mutedText }
                                 ]}
                             >
                                 Perp
                             </Text>
-                            {marketType === 'perp' && (
+                            {marketType === 'Perps' && (
                                 <View style={styles.activeTabIndicatorWrapper}>
                                     <Image
                                         source={{ uri: imgLine327 }}
@@ -477,7 +564,55 @@ export default function MarketScreen() {
                                 </View>
                             )}
                         </TouchableOpacity>
-                    </View>
+
+                        {/* Stocks Tab */}
+                        <TouchableOpacity
+                            onPress={() => setMarketType('Stocks')}
+                            style={styles.tabButton}
+                        >
+                            <Text
+                                style={[
+                                    styles.tabText,
+                                    { color: marketType === 'Stocks' ? colors.primaryCTA : colors.mutedText }
+                                ]}
+                            >
+                                Stocks
+                            </Text>
+                            {marketType === 'Stocks' && (
+                                <View style={styles.activeTabIndicatorWrapper}>
+                                    <Image
+                                        source={{ uri: imgLine327 }}
+                                        style={styles.activeTabIndicator}
+                                        contentFit="contain"
+                                    />
+                                </View>
+                            )}
+                        </TouchableOpacity>
+
+                        {/* Forex Tab */}
+                        <TouchableOpacity
+                            onPress={() => setMarketType('Forex')}
+                            style={styles.tabButton}
+                        >
+                            <Text
+                                style={[
+                                    styles.tabText,
+                                    { color: marketType === 'Forex' ? colors.primaryCTA : colors.mutedText }
+                                ]}
+                            >
+                                Forex
+                            </Text>
+                            {marketType === 'Forex' && (
+                                <View style={styles.activeTabIndicatorWrapper}>
+                                    <Image
+                                        source={{ uri: imgLine327 }}
+                                        style={styles.activeTabIndicator}
+                                        contentFit="contain"
+                                    />
+                                </View>
+                            )}
+                        </TouchableOpacity>
+                    </ScrollView>
 
                     {/* Search Icon */}
                     <TouchableOpacity
@@ -527,6 +662,46 @@ export default function MarketScreen() {
                         );
                     })}
                 </ScrollView>
+
+                {/* Sorting UI */}
+                <View style={styles.sortingContainer}>
+                    <TouchableOpacity 
+                        onPress={() => {
+                            if (sortBy === 'volume') setSortDirection(prev => prev === 'desc' ? 'asc' : 'desc');
+                            else { setSortBy('volume'); setSortDirection('desc'); }
+                        }}
+                        style={[styles.sortButton, sortBy === 'volume' && styles.activeSortButton]}
+                    >
+                        <Text style={[styles.sortText, sortBy === 'volume' && styles.activeSortText]}>Vol</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                        onPress={() => {
+                            if (sortBy === 'performance') setSortDirection(prev => prev === 'desc' ? 'asc' : 'desc');
+                            else { setSortBy('performance'); setSortDirection('desc'); }
+                        }}
+                        style={[styles.sortButton, sortBy === 'performance' && styles.activeSortButton]}
+                    >
+                        <Text style={[styles.sortText, sortBy === 'performance' && styles.activeSortText]}>Change</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                        onPress={() => {
+                            if (sortBy === 'price') setSortDirection(prev => prev === 'desc' ? 'asc' : 'desc');
+                            else { setSortBy('price'); setSortDirection('desc'); }
+                        }}
+                        style={[styles.sortButton, sortBy === 'price' && styles.activeSortButton]}
+                    >
+                        <Text style={[styles.sortText, sortBy === 'price' && styles.activeSortText]}>Price</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                        onPress={() => {
+                            if (sortBy === 'marketCap') setSortDirection(prev => prev === 'desc' ? 'asc' : 'desc');
+                            else { setSortBy('marketCap'); setSortDirection('desc'); }
+                        }}
+                        style={[styles.sortButton, sortBy === 'marketCap' && styles.activeSortButton]}
+                    >
+                        <Text style={[styles.sortText, sortBy === 'marketCap' && styles.activeSortText]}>MCap</Text>
+                    </TouchableOpacity>
+                </View>
             </View>
 
             {/* Token List */}
@@ -697,6 +872,32 @@ const styles = StyleSheet.create({
         fontSize: 12,
         lineHeight: 16,
         letterSpacing: 0.012,
+    },
+    sortingContainer: {
+        flexDirection: 'row',
+        paddingHorizontal: 20,
+        paddingBottom: 8,
+        gap: 8,
+    },
+    sortButton: {
+        paddingHorizontal: 12,
+        paddingVertical: 4,
+        borderRadius: 8,
+        backgroundColor: colors.bgSemi,
+        borderWidth: 1,
+        borderColor: colors.bgStroke,
+    },
+    activeSortButton: {
+        borderColor: colors.primaryCTA + '50',
+        backgroundColor: colors.primaryCTA + '10',
+    },
+    sortText: {
+        fontSize: 10,
+        fontFamily: 'Manrope-Medium',
+        color: colors.bodyText,
+    },
+    activeSortText: {
+        color: colors.primaryCTA,
     },
 });
 

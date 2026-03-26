@@ -356,7 +356,7 @@ class MarketModule {
      * Unified market list (CMC > CoinGecko > Binance > Aster).
      */
     list(params?: {
-        marketType?: 'all' | 'spot' | 'swap' | 'perp';
+        marketType?: string;
         limit?: number;
     }): Promise<MarketListResponse> {
         return apiFetch(this.base, '/api/v1/market/list', undefined, {
@@ -514,6 +514,32 @@ class WalletModule {
         return apiFetch(this.base, '/api/v1/wallet/register', {
             method: 'POST',
             body: JSON.stringify({ address, source }),
+        });
+    }
+
+    /**
+     * POST /api/v1/tiwi/transactions
+     * Log a transaction performed via the app.
+     */
+    logTransaction(txData: {
+        walletAddress: string;
+        transactionHash: string;
+        chainId: number;
+        type: string;
+        fromTokenAddress?: string;
+        fromTokenSymbol?: string;
+        toTokenAddress?: string;
+        toTokenSymbol?: string;
+        amount: string;
+        amountFormatted: string;
+        usdValue?: number;
+        routerName?: string;
+        blockNumber?: number;
+        blockTimestamp?: string;
+    }): Promise<any> {
+        return apiFetch(this.base, '/api/v1/tiwi/transactions', {
+            method: 'POST',
+            body: JSON.stringify(txData),
         });
     }
 }
@@ -723,9 +749,15 @@ class JupiterModule {
 class TokenSpotlightModule {
     constructor(private base: string) { }
 
-    /** GET /api/v1/token-spotlight */
-    get(): Promise<any> {
-        return apiFetch(this.base, '/api/v1/token-spotlight');
+    /** 
+     * GET /api/v1/token-spotlight 
+     * category: 'spotlight' | 'listing'
+     */
+    get(params?: { category?: 'spotlight' | 'listing'; activeOnly?: boolean }): Promise<any> {
+        return apiFetch(this.base, '/api/v1/token-spotlight', undefined, {
+            category: params?.category,
+            activeOnly: params?.activeOnly ? 'true' : undefined
+        });
     }
 }
 

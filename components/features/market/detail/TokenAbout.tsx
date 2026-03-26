@@ -1,6 +1,7 @@
 import { colors } from '@/constants/colors';
 import { EnrichedMarket } from '@/services/apiClient';
 import { truncateAddress } from '@/utils/wallet';
+import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { Image } from 'expo-image';
 import React, { useMemo } from 'react';
@@ -10,8 +11,25 @@ interface TokenAboutProps {
     token: EnrichedMarket;
 }
 
-export const TokenAbout: React.FC<TokenAboutProps> = ({ token }) => {
+function getChainName(chainId: number, symbol?: string): string | null {
+    if (symbol === "BTC" || symbol === "BITCOIN") return "Bitcoin Network";
+    const chains: Record<number, string> = {
+        1: "Ethereum",
+        56: "BNB Chain",
+        137: "Polygon",
+        42161: "Arbitrum",
+        10: "Optimism",
+        8453: "Base",
+        43114: "Avalanche",
+        250: "Fantom",
+        7565164: "Solana",
+    };
+    return chains[chainId] || `Chain ${chainId}`;
+}
+
+export const TokenAbout: React.FC<TokenAboutProps & { chainId?: number }> = ({ token, chainId }) => {
     const handleCopy = async (text: string, label: string) => {
+        if (!text) return;
         await Clipboard.setStringAsync(text);
         Alert.alert('Copied', `${label} copied to clipboard`);
     };
@@ -22,150 +40,98 @@ export const TokenAbout: React.FC<TokenAboutProps> = ({ token }) => {
         Linking.openURL(fullUrl).catch(() => Alert.alert('Error', 'Could not open link'));
     };
 
-    /**
-     * getBestWebsite: Scores websites based on proximity to token name/symbol.
-     * Prioritizes short, official-looking domains like solana.com over ctosolana.com
-     */
+    const effectiveAddress = (token as any).address && (token as any).address.startsWith('0x') 
+        ? (token as any).address 
+        : (token as any).contractAddress && (token as any).contractAddress.startsWith('0x')
+            ? (token as any).contractAddress
+            : (token as any).baseToken?.address && (token as any).baseToken?.address.startsWith('0x')
+                ? (token as any).baseToken?.address
+                : null;
+
+    const effectiveSymbol = token.symbol || (token as any).baseToken?.symbol || '';
+    const effectiveName = token.name || (token as any).baseToken?.name || '';
+    const displayChainId = chainId || (token as any).chainId || 56;
+
     const bestWebsite = useMemo(() => {
-        const sites = [
-            ...(token.metadata?.websites?.map(w => w.url) || []),
-            token.metadata?.website,
-            token.website
-        ].filter((url): url is string => !!url);
-
-        if (sites.length === 0) return null;
-
-        const tokenSymbol = token.symbol.toLowerCase();
-        const tokenName = (token.baseToken?.name || token.name).toLowerCase().replace(/\s/g, '');
-
-        const scoreSite = (url: string) => {
-            try {
-                const domain = url.toLowerCase().replace(/^(https?:\/\/)?(www\.)?/, '').split('/')[0];
-                let score = 0;
-
-                // 1. Exact domain match (e.g. solana.com matches "solana")
-                if (domain.startsWith(tokenSymbol + '.') || domain.startsWith(tokenName + '.')) {
-                    score += 100;
-                }
-
-                // 2. Contains name
-                if (domain.includes(tokenName) || domain.includes(tokenSymbol)) {
-                    score += 50;
-                }
-
-                // 3. Shorter domains are usually more "official" (e.g. solana.com vs solana-foundation.com)
-                score -= domain.length;
-
-                return score;
-            } catch (e) {
-                return 0;
-            }
-        };
-
-        return sites.sort((a, b) => scoreSite(b) - scoreSite(a))[0];
+        return token.website || (token as any).metadata?.website || (token as any).metadata?.websites?.[0]?.url;
     }, [token]);
 
-    /**
-     * bestTwitter: Extracts or constructs a clean Twitter URL.
-     */
     const bestTwitter = useMemo(() => {
-        const twitterUrl = token.metadata?.socials?.find(s => s.type === 'twitter')?.url || token.socials?.twitter;
+        const twitterUrl = (token as any).twitter || (token as any).metadata?.socials?.find((s: any) => s.type === 'twitter')?.url;
         if (!twitterUrl) return null;
-
-        // Ensure it's a full URL
         if (twitterUrl.startsWith('http')) return twitterUrl;
         return `https://x.com/${twitterUrl.replace('@', '')}`;
     }, [token]);
 
-    const rows: Array<{
-        label: string;
-        value: string;
-        fullValue?: string;
-        copyable?: boolean;
-        linkable?: boolean;
-    }> = [
-            {
-                label: 'Token Name',
-                value: token.baseToken?.name || token.name,
-                copyable: false,
-                linkable: false
-            },
-            {
-                label: 'Official X',
-                value: bestTwitter ? `@${bestTwitter.split('/').pop()}` : 'N/A',
-                fullValue: bestTwitter || undefined,
-                copyable: false,
-                linkable: !!bestTwitter
-            },
-            // {
-            //     label: 'Telegram',
-            //     value: telegramUrl ? 'Join Community' : 'N/A',
-            //     fullValue: telegramUrl || undefined,
-            //     copyable: false,
-            //     linkable: !!telegramUrl
-            // },
-            {
-                label: 'Website',
-                value: bestWebsite || 'N/A',
-                fullValue: bestWebsite || undefined,
-                copyable: false,
-                linkable: !!bestWebsite
-            },
-            {
-                label: 'Contract Address',
-                value: truncateAddress(token.address!) || 'N/A',
-                fullValue: token.address || undefined,
-                copyable: true,
-                linkable: false
-            },
-            { label: 'Network', value: token.networkName || '-', copyable: false, linkable: false }
-        ];
+    const bestTelegram = useMemo(() => {
+        const url = (token as any).telegram || (token as any).metadata?.socials?.find((s: any) => s.type === 'telegram')?.url;
+        if (!url) return null;
+        if (url.startsWith('http')) return url;
+        return `https://t.me/${url.replace('@', '')}`;
+    }, [token]);
 
-    const description = token.metadata?.description || token.description;
+    const bestDiscord = useMemo(() => {
+        return (token as any).discord || (token as any).metadata?.socials?.find((s: any) => s.type === 'discord')?.url;
+    }, [token]);
+
+    const description = (token as any).description || (token as any).metadata?.description;
 
     return (
         <View style={styles.container}>
-            <Text style={styles.sectionTitle}>About</Text>
-
             {description && (
-                <View style={styles.descriptionContainer}>
+                <View style={[styles.card, { marginBottom: 16 }]}>
+                    <Text style={styles.sectionTitle}>About {effectiveSymbol || ''}</Text>
                     <Text style={styles.descriptionText}>{description}</Text>
                 </View>
             )}
 
-            <View style={styles.rowsContainer}>
-                {rows.map((row, index) => (
-                    <View key={index} style={styles.row}>
-                        <Text style={styles.label}>{row.label}</Text>
+            <View style={styles.card}>
+                <Text style={styles.sectionTitle}>Info</Text>
+                
+                <View style={styles.row}>
+                    <Text style={styles.label}>Network</Text>
+                    <Text style={styles.value}>{getChainName(displayChainId, effectiveSymbol) || '-'}</Text>
+                </View>
+
+                {effectiveAddress && effectiveAddress.startsWith('0x') && (
+                    <View style={styles.row}>
+                        <Text style={styles.label}>Contract</Text>
                         <View style={styles.valueContainer}>
-                            <Text style={styles.value}>{row.value}</Text>
-
-                            {row.copyable && (
-                                <TouchableOpacity
-                                    onPress={() => handleCopy(row.fullValue!, row.label)}
-                                    style={styles.iconButton}
-                                >
-                                    <Image
-                                        source={require('@/assets/wallet/copy-01.svg')}
-                                        style={styles.icon}
-                                    />
-                                </TouchableOpacity>
-                            )}
-
-                            {row.linkable && (
-                                <TouchableOpacity
-                                    onPress={() => handleLink(row.fullValue!)}
-                                    style={styles.iconButton}
-                                >
-                                    <Image
-                                        source={require('@/assets/home/arrow-right-01.svg')}
-                                        style={styles.icon}
-                                    />
-                                </TouchableOpacity>
-                            )}
+                            <Text style={styles.value}>{truncateAddress(effectiveAddress)}</Text>
+                            <TouchableOpacity onPress={() => handleCopy(effectiveAddress, 'Contract')} style={styles.iconButton}>
+                                <Ionicons name="copy-outline" size={14} color={colors.mutedText} />
+                            </TouchableOpacity>
                         </View>
                     </View>
-                ))}
+                )}
+
+                {/* Social Links Grid */}
+                <View style={styles.socialGrid}>
+                    {bestWebsite && (
+                        <TouchableOpacity onPress={() => handleLink(bestWebsite)} style={styles.socialButton}>
+                            <Ionicons name="globe-outline" size={14} color="#FFF" />
+                            <Text style={styles.socialText}>Website</Text>
+                        </TouchableOpacity>
+                    )}
+                    {bestTwitter && (
+                        <TouchableOpacity onPress={() => handleLink(bestTwitter)} style={styles.socialButton}>
+                            <Ionicons name="logo-twitter" size={14} color="#FFF" />
+                            <Text style={styles.socialText}>Twitter</Text>
+                        </TouchableOpacity>
+                    )}
+                    {bestTelegram && (
+                        <TouchableOpacity onPress={() => handleLink(bestTelegram)} style={styles.socialButton}>
+                            <FontAwesome5 name="telegram-plane" size={14} color="#FFF" />
+                            <Text style={styles.socialText}>Telegram</Text>
+                        </TouchableOpacity>
+                    )}
+                    {bestDiscord && (
+                        <TouchableOpacity onPress={() => handleLink(bestDiscord)} style={styles.socialButton}>
+                            <Ionicons name="logo-discord" size={14} color="#FFF" />
+                            <Text style={styles.socialText}>Discord</Text>
+                        </TouchableOpacity>
+                    )}
+                </View>
             </View>
         </View>
     );
@@ -173,62 +139,75 @@ export const TokenAbout: React.FC<TokenAboutProps> = ({ token }) => {
 
 const styles = StyleSheet.create({
     container: {
-        paddingHorizontal: 20,
-        paddingVertical: 16,
-        backgroundColor: colors.bg,
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+    },
+    card: {
+        backgroundColor: colors.bgSemi,
+        borderRadius: 12,
+        padding: 16,
+        borderWidth: 1,
+        borderColor: colors.bgStroke,
     },
     sectionTitle: {
-        fontFamily: 'Manrope-SemiBold',
-        fontSize: 16,
+        fontFamily: 'Manrope-Bold',
+        fontSize: 14,
         color: colors.titleText,
         marginBottom: 12,
-    },
-    descriptionContainer: {
-        marginBottom: 20,
-        paddingBottom: 16,
-        borderBottomWidth: 1,
-        borderBottomColor: colors.bgStroke,
     },
     descriptionText: {
         fontFamily: 'Manrope-Medium',
         fontSize: 14,
         color: colors.bodyText,
         lineHeight: 20,
-    },
-    rowsContainer: {
-        width: '100%',
+        opacity: 0.8,
     },
     row: {
         flexDirection: 'row',
-        alignItems: 'center',
         justifyContent: 'space-between',
+        alignItems: 'center',
         paddingVertical: 8,
     },
     label: {
         fontFamily: 'Manrope-Medium',
         fontSize: 14,
-        color: colors.bodyText,
+        color: colors.mutedText,
     },
     valueContainer: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 8,
-        flex: 1,
-        justifyContent: 'flex-end',
     },
     value: {
         fontFamily: 'Manrope-Medium',
         fontSize: 14,
         color: colors.titleText,
-        textAlign: 'right',
-        maxWidth: '80%',
     },
     iconButton: {
         padding: 4,
     },
-    icon: {
-        width: 16,
-        height: 16,
-        tintColor: colors.bodyText,
+    socialGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
+        marginTop: 16,
+        paddingTop: 16,
+        borderTopWidth: 1,
+        borderTopColor: colors.bgStroke,
+    },
+    socialButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        backgroundColor: colors.bgCards,
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 8,
+    },
+    socialText: {
+        fontFamily: 'Manrope-SemiBold',
+        fontSize: 12,
+        color: '#FFF',
     },
 });
+

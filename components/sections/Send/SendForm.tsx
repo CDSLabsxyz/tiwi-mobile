@@ -18,6 +18,9 @@ import React, { useEffect, useState } from "react";
 import { Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { parseUnits } from "viem";
+import { Ionicons } from "@expo/vector-icons";
+import { SendTokenSelector } from "./SendTokenSelector";
+import { WhitelistSelectSheet } from "./WhitelistSelectSheet";
 
 const CheckmarkIcon = require("@/assets/swap/checkmark-circle-01.svg");
 const WalletIcon = require("@/assets/wallet/wallet-01.svg");

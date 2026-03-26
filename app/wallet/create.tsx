@@ -52,7 +52,7 @@ export default function CreateWalletScreen() {
 
         try {
             // 1. Generate new wallet in memory
-            const newWallet = generateNewWallet();
+            const newWallet = await generateNewWallet();
             await timer;
 
             // 2. Set wallet state and proceed to display seed

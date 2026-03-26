@@ -19,7 +19,6 @@ interface SwapDetailsCardProps {
     gasFee?: string;
     slippageTolerance?: string;
     twcFee?: string;
-    source?: string[];
     isLoading?: boolean;
     isRefreshing?: boolean;
     isStale?: boolean;
@@ -63,7 +62,6 @@ export const SwapDetailsCard: React.FC<SwapDetailsCardProps> = ({
     gasFee,
     slippageTolerance,
     twcFee,
-    source,
     isLoading = false,
     isRefreshing = false,
     isStale = false,
@@ -119,7 +117,6 @@ export const SwapDetailsCard: React.FC<SwapDetailsCardProps> = ({
     const displayGasFee = isLoading ? undefined : (gasFee || '$0.00');
     const displaySlippage = isLoading ? undefined : (slippageTolerance || '0%');
     const displayTwcFee = isLoading ? undefined : (twcFee || '$0.00');
-    const displaySource = isLoading ? undefined : (source || ['Best', '-']);
 
     return (
         <View style={styles.container}>
@@ -153,29 +150,6 @@ export const SwapDetailsCard: React.FC<SwapDetailsCardProps> = ({
                         )}
                     </View>
 
-                    {/* Source */}
-                    <View style={styles.detailRow}>
-                        <Text style={styles.detailLabel}>Source</Text>
-                        {isLoading ? (
-                            <Animated.View style={[styles.skeletonMedium, skeletonStyle]} />
-                        ) : (
-                            <View style={styles.sourceWrapper}>
-                                {displaySource?.map((item, index) => (
-                                    <View
-                                        key={index}
-                                        style={[
-                                            styles.sourceBadge,
-                                            item === 'Best' ? styles.bestBadge : styles.otherBadge,
-                                            index === 0 ? styles.firstBadge : styles.lastBadge,
-                                            (isRefreshing || isStale) && { opacity: 0.6 }
-                                        ]}
-                                    >
-                                        <Text style={styles.sourceText}>{item}</Text>
-                                    </View>
-                                ))}
-                            </View>
-                        )}
-                    </View>
 
                     {/* Slippage */}
                     <View style={styles.detailRow}>

@@ -171,7 +171,19 @@ export default function AssetDetailScreen() {
   };
 
   const handleReceivePress = () => {
-    router.push("/receive" as any);
+    if (!asset) return;
+
+    router.push({
+      pathname: "/receive",
+      params: {
+        symbol: asset.symbol,
+        name: asset.name,
+        logoURI: typeof asset.logo === "string" ? asset.logo : undefined,
+        chainId: asset.chainId,
+        address: asset.address,
+        isAutoSelected: "true"
+      },
+    } as any);
   };
 
   const handleSwapPress = () => {

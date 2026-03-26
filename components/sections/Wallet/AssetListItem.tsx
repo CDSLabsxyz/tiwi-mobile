@@ -29,14 +29,19 @@ interface AssetListItemProps {
 /**
  * Helper to generate mock sparkline data based on 24h change
  */
-const generateSparklineData = (change: number) => {
+const generateSparklineData = (changeRaw: any) => {
     const points = 20;
     const data = [];
+    const change = typeof changeRaw === 'number' ? changeRaw : parseFloat(String(changeRaw || 0));
+    
+    // If it's still NaN, default to 0
+    const safeChange = isNaN(change) ? 0 : change;
+
     let current = 100;
     for (let i = 0; i < points; i++) {
         // Add random noise but trend toward the final change
-        const trend = (change / points) * i;
-        const noise = (Math.random() - 0.5) * 2;
+        const trend = (safeChange / points) * i;
+        const noise = (Math.random() - 0.5) * 5; // More noise for better curve
         data.push(current + trend + noise);
     }
     return data;
@@ -131,14 +136,22 @@ export const AssetListItem: React.FC<AssetListItemProps> = ({
                     {isBalanceHidden ? '****' : `${formatTokenQuantity(asset.balanceFormatted.replace(/,/g, ''))} ${asset.symbol}`}
                 </Text>
 
-                {/* USD Value */}
+                {/* USD Value / Price Row */}
                 {isBalanceHidden ? (
                     <Text style={styles.usdValue}>****</Text>
                 ) : (
-                    <TokenPrice
-                        amount={asset.usdValue}
-                        style={styles.usdValue}
-                    />
+                    <View style={styles.priceRow}>
+                        <TokenPrice
+                            amount={asset.usdValue}
+                            style={styles.usdValue}
+                        />
+                        {/* Hide per-token percentage as per user request */}
+                        {/* {asset.change24h !== undefined && asset.change24h !== 0 && (
+                            <Text style={[styles.changeText, { color: asset.change24h >= 0 ? '#B1F128' : '#FB406E' }]}>
+                                {asset.change24h >= 0 ? '+' : ''}{asset.change24h.toFixed(2)}%
+                            </Text>
+                        )} */}
+                    </View>
                 )}
             </View>
         </TouchableOpacity>
@@ -257,6 +270,16 @@ const styles = StyleSheet.create({
         fontSize: 12,
         lineHeight: 18,
         color: '#8A929A',
-        textAlign: 'right',
+    },
+    priceRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'flex-end',
+        gap: 6,
+    },
+    changeText: {
+        fontFamily: 'Manrope-Medium',
+        fontSize: 12,
+        lineHeight: 18,
     },
 });

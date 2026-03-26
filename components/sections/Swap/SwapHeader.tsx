@@ -6,7 +6,7 @@ import { useRouter } from 'expo-router';
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-const TiwiCat = require('@/assets/home/tiwicat.svg');
+const TiwiLogo = require('@/assets/logo/tiwi-logo.svg');
 const ArrowDown01 = require('@/assets/home/arrow-down-01.svg');
 const ArrowLeft02 = require('@/assets/swap/arrow-left-02.svg');
 
@@ -66,30 +66,27 @@ export const SwapHeader: React.FC<SwapHeaderProps> = ({
 
             {/* Wallet identity row centered below */}
             <View style={styles.walletRow}>
-                <View style={styles.walletContent}>
-                    <View style={styles.tiwiCatContainer}>
+                <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={onWalletPress}
+                    style={styles.walletPill}
+                >
+                    <View style={styles.logoContainer}>
                         <Image
-                            source={TiwiCat}
+                            source={TiwiLogo}
                             style={styles.fullSize}
                             contentFit="contain"
                         />
                     </View>
-
-                    <TouchableOpacity
-                        activeOpacity={0.8}
-                        onPress={onWalletPress}
-                        style={styles.walletPill}
-                    >
-                        <Text style={styles.walletAddress}>
-                            {displayAddress}
-                        </Text>
-                        <Image
-                            source={ArrowDown01}
-                            style={styles.arrowDown}
-                            contentFit="contain"
-                        />
-                    </TouchableOpacity>
-                </View>
+                    <Text style={styles.walletAddress}>
+                        {displayAddress}
+                    </Text>
+                    <Image
+                        source={ArrowDown01}
+                        style={styles.arrowDown}
+                        contentFit="contain"
+                    />
+                </TouchableOpacity>
             </View>
         </View>
     );
@@ -140,17 +137,18 @@ const styles = StyleSheet.create({
     walletRow: {
         width: '100%',
         alignItems: 'center',
-        marginTop: 16,
+        marginTop: 12,
+        marginBottom: 20,
     },
     walletContent: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
     },
-    tiwiCatContainer: {
-        width: 32,
-        height: 32,
-        marginRight: 10,
+    logoContainer: {
+        width: 24,
+        height: 24,
+        marginRight: 8,
     },
     fullSize: {
         width: '100%',
@@ -160,13 +158,13 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         borderRadius: 100,
-        paddingHorizontal: 16,
-        paddingVertical: 8,
+        paddingHorizontal: 12,
+        paddingVertical: 6,
         backgroundColor: colors.bgSemi,
     },
     walletAddress: {
         fontFamily: 'Manrope-Medium',
-        fontSize: 14,
+        fontSize: 13,
         color: colors.bodyText,
     },
     arrowDown: {

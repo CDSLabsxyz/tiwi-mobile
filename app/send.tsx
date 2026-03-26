@@ -5,13 +5,15 @@ import { Image } from 'expo-image';
  * Matches Figma designs (node-id: 3279-118948, 3279-119800, etc.)
  */
 
-import { MultiSendForm } from '@/components/sections/Send/MultiSendForm';
-import { MultiSendReview } from '@/components/sections/Send/MultiSendReview';
-import { PasscodeScreen } from '@/components/sections/Send/PasscodeScreen';
-import { SendForm } from '@/components/sections/Send/SendForm';
-import { SendReview } from '@/components/sections/Send/SendReview';
-import { SendTokenSelector } from '@/components/sections/Send/SendTokenSelector';
-import { SendTokenSelectSheet } from '@/components/sections/Send/SendTokenSelectSheet';
+import {
+    MultiSendForm,
+    MultiSendReview,
+    PasscodeScreen,
+    SendForm,
+    SendReview,
+    SendTokenSelector,
+    SendTokenSelectSheet
+} from '@/components/sections/Send';
 import { WalletHeader } from '@/components/sections/Wallet/WalletHeader';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { colors } from '@/constants/colors';
@@ -123,7 +125,7 @@ export default function SendScreen() {
                 const chainOption = {
                     id: chain.id,
                     name: chain.name,
-                    icon: chain.logoURI || chain.logo
+                    icon: (chain as any).logoURI || (chain as any).logo
                 };
                 prePopulateFromAsset(tokenOption as any, chainOption, params.balance || '0', params.usdValue || '$0');
                 return;
@@ -144,7 +146,7 @@ export default function SendScreen() {
                             const chainOption = {
                                 id: chain.id,
                                 name: chain.name,
-                                icon: chain.logoURI || chain.logo
+                                icon: (chain as any).logoURI || (chain as any).logo
                             };
                             prePopulateFromAsset(tokenOption, chainOption, asset.balance, asset.usdValue);
                         }
@@ -193,7 +195,7 @@ export default function SendScreen() {
                 sendStore.setSelectedChain({
                     id: chain.id,
                     name: chain.name,
-                    icon: chain.logoURI || chain.logo
+                    icon: (chain as any).logoURI || (chain as any).logo
                 });
             }
         } else if (walletAddress && chains) {
@@ -207,7 +209,7 @@ export default function SendScreen() {
                             sendStore.setSelectedChain({
                                 id: chain.id,
                                 name: chain.name,
-                                icon: chain.logoURI || chain.logo
+                                icon: (chain as any).logoURI || (chain as any).logo
                             });
                         }
                     }

@@ -92,13 +92,13 @@ export class AcrossService {
                     amount: amountIn.toString(),
                     depositor: getAddress(fromAddress),
                     recipient: getAddress(recipient),
-                    slippage: slippageRatio, 
+                    slippage: slippageRatio,
                 });
 
                 console.log(`[AcrossService] getSwapQuote Success:`, quote);
 
                 const toAmountAtomic = quote.steps.destinationSwap?.outputAmount || quote.steps.bridge?.outputAmount || "0";
-                
+
                 return {
                     toAmount: formatUnits(BigInt(toAmountAtomic), toToken.decimals),
                     fiatAmount: quote.fees.total.amountUsd || "0",
@@ -172,8 +172,8 @@ export class AcrossService {
      * Fallback for same-chain swaps using local DEX routers
      */
     private async fetchSameChainDexQuote(
-        fromAmount: string, 
-        fromToken: TokenMinimal, 
+        fromAmount: string,
+        fromToken: TokenMinimal,
         toToken: TokenMinimal,
         userSlippage?: number
     ): Promise<SwapQuote | null> {
@@ -211,7 +211,7 @@ export class AcrossService {
             const toAmountFormatted = formatUnits(outputAmountAtomic, toToken.decimals);
 
             // Standard slippage for DEX swaps.
-            const finalSlippage = userSlippage || 0.5; 
+            const finalSlippage = userSlippage || 0.5;
 
             return {
                 toAmount: toAmountFormatted,

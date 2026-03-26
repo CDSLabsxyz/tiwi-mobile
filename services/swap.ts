@@ -56,7 +56,7 @@ export async function fetchSwapQuote(
             slippage: slippage,
             gasEstimate: response.route.fees?.gasUSD || '0',
             gasFee: response.route.fees?.gasUSD ? `$${response.route.fees.gasUSD}` : '0',
-            twcFee: '0.00%',
+            twcFee: '',
             source: [response.route.router ? response.route.router.charAt(0).toUpperCase() + response.route.router.slice(1) : 'Tiwi Router'],
             router: response.route.router,
             transactionRequest: response.transactionRequest,

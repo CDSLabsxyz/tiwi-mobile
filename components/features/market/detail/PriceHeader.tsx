@@ -1,6 +1,6 @@
 import { colors } from '@/constants/colors';
 import { EnrichedMarket } from '@/services/apiClient';
-import { formatPercentageChange, formatSmartPrice, formatSmartUSD } from '@/utils/formatting';
+import { formatPercentageChange, formatSmartPrice, formatSmartUSD, formatUSDPrice } from '@/utils/formatting';
 import { Image } from 'expo-image';
 import React, { useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -11,88 +11,43 @@ const imgChartCandle = "http://localhost:3845/assets/032b4d324a66506f1d09ab9ae61
 interface PriceHeaderProps {
     token: EnrichedMarket;
     quoteSymbol?: string;
+    chainName?: string;
 }
 
 export const PriceHeader: React.FC<PriceHeaderProps> = ({
     token,
-    quoteSymbol = 'USD'
+    quoteSymbol = 'USD',
+    chainName = 'BNB Chain' // Default
 }) => {
-    const [chartMode, setChartMode] = useState<'line' | 'candle'>('line');
     const isPositive = (token.priceChange24h || 0) >= 0;
     const { formatted: changeText } = formatPercentageChange(token.priceChange24h || 0);
+    const displayPrice = formatUSDPrice(token.priceUSD || '0');
 
     return (
         <View style={styles.container}>
-            {/* Symbol and Toggles Row */}
-            <View style={styles.pairRow}>
-                <View style={styles.tokenInfo}>
-                    <Image
-                        source={token.logoURI}
-                        style={styles.logo}
-                        contentFit="cover"
-                    />
-                    <View>
-                        <Text style={styles.symbol}>
-                            {token.symbol}
-                            <Text style={styles.quote}>/{quoteSymbol}</Text>
-                        </Text>
-                        <Text style={styles.tokenName}>{token.name}</Text>
+            <View style={styles.headerRow}>
+                <Image
+                    source={token.logoURI || token.logo}
+                    style={styles.logo}
+                    contentFit="cover"
+                />
+                <View style={styles.tokenMeta}>
+                    <View style={styles.symbolRow}>
+                        <Text style={styles.symbol}>{token.symbol}</Text>
+                        <View style={styles.badge}>
+                            <Text style={styles.badgeText}>{chainName}</Text>
+                        </View>
                     </View>
-                </View>
-
-                <View style={styles.chartToggle}>
-                    <TouchableOpacity
-                        onPress={() => setChartMode('line')}
-                        style={[styles.toggleBtn, chartMode === 'line' && styles.toggleActive]}
-                    >
-                        <Image
-                            source={require('@/assets/market/chart-line-data-02.svg')}
-                            style={[styles.toggleIcon, chartMode === 'line' && styles.toggleIconActive]}
-                        />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        onPress={() => setChartMode('candle')}
-                        style={[styles.toggleBtn, chartMode === 'candle' && styles.toggleActive]}
-                    >
-                        <Image
-                            source={require('@/assets/market/chart-01.svg')}
-                            style={[styles.toggleIcon, chartMode === 'candle' && styles.toggleIconActive]}
-                        />
-                    </TouchableOpacity>
-                </View>
-            </View>
-
-            {/* Price and Stats Row */}
-            <View style={styles.detailsRow}>
-                {/* Left: Price and Change */}
-                <View style={styles.priceContainer}>
-                    <Text style={styles.priceLabel}>
-                        {formatSmartPrice(token.priceUSD || '0')}
-                    </Text>
-                    <View style={styles.changeRow}>
+                    
+                    <View style={styles.priceRow}>
+                        <Text style={styles.price}>{displayPrice}</Text>
                         <Text style={[
-                            styles.changeText,
+                            styles.change,
                             { color: isPositive ? colors.success : colors.error }
                         ]}>
                             {changeText}
                         </Text>
-                        <Text style={styles.timeframeText}>1D</Text>
-                    </View>
-                </View>
-
-                {/* Right: Market Stats */}
-                <View style={styles.statsContainer}>
-                    <View style={styles.statRow}>
-                        <Text style={styles.statLabel}>M.cap</Text>
-                        <Text style={styles.statValue}>{formatSmartUSD(token.marketCap || 0)}</Text>
-                    </View>
-                    <View style={styles.statRow}>
-                        <Text style={styles.statLabel}>24H High</Text>
-                        <Text style={styles.statValue}>{formatSmartPrice(token.high24h || 0)}</Text>
-                    </View>
-                    <View style={styles.statRow}>
-                        <Text style={styles.statLabel}>24H Low</Text>
-                        <Text style={styles.statValue}>{formatSmartPrice(token.low24h || 0)}</Text>
+                        <Text style={styles.duration}>1D</Text>
                     </View>
                 </View>
             </View>
@@ -103,115 +58,66 @@ export const PriceHeader: React.FC<PriceHeaderProps> = ({
 const styles = StyleSheet.create({
     container: {
         paddingHorizontal: 20,
-        paddingVertical: 12,
+        paddingTop: 4,
+        paddingBottom: 12,
         backgroundColor: colors.bg,
     },
-    pairRow: {
+    headerRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'space-between',
-        marginBottom: 12,
-    },
-    tokenInfo: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
     },
     logo: {
-        width: 32,
-        height: 32,
-        borderRadius: 16,
+        width: 40,
+        height: 40,
+        borderRadius: 20,
         backgroundColor: colors.bgCards,
+        marginRight: 10,
     },
-    symbol: {
-        fontFamily: 'Manrope-SemiBold',
-        fontSize: 16,
-        color: colors.titleText,
-    },
-    quote: {
-        color: colors.bodyText,
-    },
-    tokenName: {
-        fontFamily: 'Manrope-Medium',
-        fontSize: 12,
-        color: colors.bodyText,
-        marginTop: -2,
-    },
-    chartToggle: {
-        flexDirection: 'row',
-        backgroundColor: colors.bgSemi,
-        borderRadius: 100,
-        padding: 2,
-        borderWidth: 1,
-        borderColor: colors.bgStroke,
-    },
-    toggleBtn: {
-        paddingHorizontal: 10,
-        paddingVertical: 4,
-        borderRadius: 100,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    toggleActive: {
-        backgroundColor: colors.bgStroke,
-    },
-    toggleIcon: {
-        width: 14,
-        height: 14,
-        tintColor: colors.bodyText,
-    },
-    toggleIconActive: {
-        tintColor: colors.titleText,
-    },
-    detailsRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'flex-start',
-    },
-    priceContainer: {
+    tokenMeta: {
         flex: 1,
+        justifyContent: 'center',
     },
-    priceLabel: {
-        fontFamily: 'Manrope-SemiBold',
-        fontSize: 28,
-        color: colors.titleText,
-        lineHeight: 34,
-    },
-    changeRow: {
+    symbolRow: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 6,
-        marginTop: 2,
+        marginBottom: 0,
     },
-    changeText: {
-        fontFamily: 'Manrope-Medium',
-        fontSize: 14,
-    },
-    timeframeText: {
-        fontFamily: 'Manrope-Medium',
-        fontSize: 14,
-        color: colors.bodyText,
-    },
-    statsContainer: {
-        alignItems: 'flex-end',
-        gap: 4,
-    },
-    statRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12,
-    },
-    statLabel: {
-        fontFamily: 'Manrope-Medium',
-        fontSize: 10,
-        color: colors.bodyText,
-        minWidth: 50,
-    },
-    statValue: {
-        fontFamily: 'Manrope-SemiBold',
-        fontSize: 12,
+    symbol: {
+        fontFamily: 'Manrope-Bold',
+        fontSize: 22,
         color: colors.titleText,
-        minWidth: 60,
-        textAlign: 'right',
+        letterSpacing: -0.5,
+    },
+    badge: {
+        backgroundColor: '#1E1E1E',
+        paddingHorizontal: 8,
+        paddingVertical: 3,
+        borderRadius: 6,
+    },
+    badgeText: {
+        fontFamily: 'Manrope-SemiBold',
+        fontSize: 11,
+        color: '#8A8A8A',
+    },
+    priceRow: {
+        flexDirection: 'row',
+        alignItems: 'baseline',
+        gap: 8,
+    },
+    price: {
+        fontFamily: 'Manrope-Bold',
+        fontSize: 20,
+        color: colors.titleText,
+        letterSpacing: -0.5,
+    },
+    change: {
+        fontFamily: 'Manrope-SemiBold',
+        fontSize: 14,
+    },
+    duration: {
+        fontFamily: 'Manrope-Medium',
+        fontSize: 14,
+        color: '#666',
     },
 });

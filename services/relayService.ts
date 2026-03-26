@@ -52,6 +52,11 @@ class RelayService {
             const isTaxToken = fromToken.address.toLowerCase() === '0xda1060158f7d593667cce0a15db346bb3ffb3596';
             const finalSlippage = isTaxToken ? Math.max(slippage || 0, 15.0) : (slippage || 0.5);
 
+            // RELAY TRICK: Quote for a lower amount to provide a safety buffer 
+            // for SDK simulation gaps / potential token taxes.
+            // For TWC (5% tax), we use a 95% quote. For others, 98% is a safe buffer.
+            const amountToQuote = isTaxToken ? (amountIn * 95n) / 100n : (amountIn * 98n) / 100n;
+
             const payload = {
                 chainId: Number(fromToken.chainId),
                 toChainId: Number(toToken.chainId),
@@ -59,7 +64,7 @@ class RelayService {
                 toCurrency: outputToken,
                 user: getAddress(fromAddress),
                 recipient: getAddress(recipient || fromAddress),
-                amount: amountIn.toString(),
+                amount: amountToQuote.toString(),
                 tradeType: 'EXACT_INPUT',
                 options: {
                     slippageTolerance: finalSlippage.toString(),
@@ -96,7 +101,12 @@ class RelayService {
                 txTo: quote.steps[0]?.items?.[0]?.data?.to || "",
                 txData: quote.steps[0]?.items?.[0]?.data?.data || "0x",
                 txValue: quote.steps[0]?.items?.[0]?.data?.value || "0",
-                raw: quote,
+                raw: {
+                    ...quote,
+                    _isRelayTrick: true,
+                    _quoteAmount: amountToQuote.toString(),
+                    _originalAmount: amountIn.toString()
+                },
                 router: 'relay',
             };
         } catch (error: any) {

@@ -6,6 +6,7 @@
 
 import type { ChainId } from "@/components/sections/Swap/ChainSelectSheet";
 import { api, WalletBalanceResponse } from "@/lib/mobile/api-client";
+import { moralisService } from "@/services/moralisService";
 import { useWalletStore } from "@/store/walletStore";
 import { formatTokenAmount } from "@/utils/formatting";
 
@@ -349,7 +350,7 @@ export interface AssetActivity {
 /**
  * Fetches all activities for an asset
  */
-export const getAllAssetActivities = async (assetId: string): Promise<AssetActivity[]> => {
+export const getAllAssetActivities = async (assetId: string, symbolOverride?: string): Promise<AssetActivity[]> => {
   try {
     // Get the asset detail to use the correct symbol
     const assetDetail = await fetchAssetDetail(assetId);
@@ -372,48 +373,60 @@ export const getAllAssetActivities = async (assetId: string): Promise<AssetActiv
       return `${months[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
     };
 
-    // Filter by token symbol and map to AssetActivity interface
+    // Filter by token symbol or address and map to AssetActivity interface
     const filteredActivities: AssetActivity[] = response.transactions
-      .filter((tx: any) => tx.tokenSymbol.toUpperCase() === symbol || tx.tokenAddress.toLowerCase() === assetId.toLowerCase())
+      .filter((tx: any) => {
+        const txSymbol = (tx.tokenSymbol || '').toUpperCase();
+        const txAddress = (tx.tokenAddress || '').toLowerCase();
+        const searchAddr = assetId.toLowerCase();
+
+        return txSymbol === symbol ||
+          txAddress === searchAddr ||
+          (symbol === 'ETH' && !txAddress); // Handle native ETH edge case
+      })
       .map((tx: any) => ({
         id: tx.id,
-        type: tx.type.toLowerCase() as any,
-        amount: `${formatTokenAmount(tx.amountFormatted)} ${tx.tokenSymbol}`,
-        usdValue: tx.usdValue,
-        usdAmount: parseFloat(tx.usdValue.replace(/[$,]/g, '')),
+        type: tx.type?.toLowerCase() as any || 'swap',
+        amount: `${formatTokenAmount(tx.amountFormatted || '0')} ${tx.tokenSymbol || symbol}`,
+        usdValue: tx.usdValue || '$0.00',
+        usdAmount: parseFloat((tx.usdValue || '0').replace(/[$,]/g, '')),
         timestamp: tx.timestamp,
         date: formatDate(tx.timestamp),
       }));
 
     return filteredActivities;
   } catch (error) {
-    console.error("Failed to fetch real activities, falling back to mocks:", error);
+    console.warn("Failed to fetch real activities from primary backend, trying Moralis fallback...", error);
 
-    // Fallback Mock Logic (Previous implementation)
-    await delay(400);
-    const assetDetail = await fetchAssetDetail(assetId);
-    const symbol = assetDetail.symbol;
-    const now = Date.now();
-    const oneDay = 24 * 60 * 60 * 1000;
-    const activityTypes: Array<'sent' | 'received' | 'swap' | 'stake' | 'unstake'> = ['sent', 'received', 'swap', 'stake', 'unstake'];
+    try {
+      const activeAddress = useWalletStore.getState().address;
+      if (!activeAddress) return [];
 
-    const formatDate = (date: Date): string => {
-      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      return `${months[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
-    };
+      const history = await moralisService.getWalletHistory(activeAddress, [1, 56, 137, 42161, 8453, 10]);
+      const symbol = symbolOverride?.toUpperCase();
 
-    return Array.from({ length: 10 }, (_, index) => {
-      const timestamp = now - (index * 2 * oneDay);
-      const amount = (0.017 + index * 0.01).toFixed(3);
-      return {
-        id: `mock-${index}`,
-        type: activityTypes[index % activityTypes.length],
-        amount: `${amount} ${symbol}`,
-        usdValue: `$${(parseFloat(amount) * 2500).toFixed(2)}`,
-        timestamp,
-        date: formatDate(new Date(timestamp)),
-      };
-    });
+      return history
+        .filter((tx: any) => {
+          const txSymbol = (tx.tokenSymbol || '').toUpperCase();
+          const txAddress = (tx.tokenAddress || '').toLowerCase();
+          const searchAddr = assetId.toLowerCase();
+
+          return (symbol && txSymbol === symbol) ||
+            txAddress === searchAddr ||
+            (symbol === 'ETH' && (!txAddress || txAddress === 'native' || txAddress === '0x0000000000000000000000000000000000000000'));
+        })
+        .map((tx: any) => ({
+          id: tx.id || tx.hash,
+          type: tx.type,
+          amount: `${tx.amountFormatted} ${tx.tokenSymbol || symbol || ''}`,
+          usdValue: tx.usdValue,
+          timestamp: tx.timestamp,
+          date: new Date(tx.timestamp).toLocaleDateString(),
+        }));
+    } catch (fallbackError) {
+      console.error("Moralis history fallback also failed:", fallbackError);
+      return [];
+    }
   }
 };
 
@@ -500,54 +513,68 @@ export const fetchAssetDetail = async (assetId: string): Promise<AssetDetail> =>
   const portfolio = await getPortfolioData();
   const portfolioAsset = portfolio.find((asset) => asset.id === assetId);
 
-  // If asset not found in portfolio, return default ETH data
+  // If asset not found in portfolio, try to get real data from the cache or API
   if (!portfolioAsset) {
-    // Generate mock chart data - positive trend (green) or negative trend (red)
-    const isPositive = Math.random() > 0.5;
-    const basePrice = 10000;
-    const variation = isPositive ? 0.1 : -0.1;
+    try {
+      console.log(`[fetchAssetDetail] Asset ${assetId} not in mock portfolio. Fetching real data...`);
 
-    const generateChartData = (points: number, trend: 'up' | 'down'): ChartDataPoint[] => {
-      const data: ChartDataPoint[] = [];
-      const now = Date.now();
-      const interval = 86400000 / points;
+      // Use current address
+      const activeAddress = useWalletStore.getState().address;
+      if (activeAddress) {
+        // Fetch all balances to find this specific one (most robust way)
+        // Ideally we'd have a getAssetDetail(address, assetId) on backend
+        const resp = await api.wallet.balances({ address: activeAddress }) as any;
+        const balances = Array.isArray(resp?.balances) ? resp.balances : (Array.isArray(resp) ? resp : []);
 
-      for (let i = 0; i < points; i++) {
-        const timestamp = now - (points - i) * interval;
-        const noise = (Math.random() - 0.5) * 0.02;
-        const trendValue = trend === 'up'
-          ? basePrice * (1 + (i / points) * variation + noise)
-          : basePrice * (1 - (i / points) * Math.abs(variation) + noise);
+        const realAsset = balances.find((b: any) =>
+          b.address?.toLowerCase() === assetId.toLowerCase() ||
+          (assetId.toLowerCase() === 'native' && b.address?.toLowerCase() === '0x0000000000000000000000000000000000000000')
+        );
 
-        data.push({
-          timestamp,
-          value: Math.max(trendValue, basePrice * 0.9),
-        });
+        if (realAsset) {
+          const isPositive = parseFloat(realAsset.priceChange24h || '0') >= 0;
+          const activities = await getAllAssetActivities(assetId, realAsset.symbol);
+
+          return {
+            id: assetId,
+            symbol: realAsset.symbol,
+            name: realAsset.name,
+            logo: realAsset.logoURI || realAsset.logo,
+            balance: realAsset.balanceFormatted || realAsset.balance,
+            usdValue: `$${parseFloat(realAsset.usdValue || '0').toFixed(2)}`,
+            priceUSD: realAsset.priceUSD || '0',
+            change24h: parseFloat(realAsset.priceChange24h || '0') / 100,
+            change24hAmount: `${isPositive ? '+' : ''}${parseFloat(realAsset.priceChange24h || '0').toFixed(2)}%`,
+            chainId: realAsset.chainId as any,
+            address: realAsset.address,
+            decimals: realAsset.decimals || 18,
+            chartData: {
+              '1D': [], '1W': [], '1M': [], '1Y': [], '5Y': [], 'All': []
+            },
+            activities: activities,
+          };
+        }
       }
+    } catch (e) {
+      console.error("[fetchAssetDetail] Failed to fetch real asset detail:", e);
+    }
 
-      return data;
-    };
-
+    // FINAL FALLBACK: Mock ETH
     return {
       id: assetId,
       symbol: 'ETH',
       name: 'Ethereum',
       logo: 'https://www.figma.com/api/mcp/asset/142d5172-a920-40ef-a06c-8e381f587e81',
-      balance: '0.01912343',
-      usdValue: '$10,234.23',
-      change24h: isPositive ? 0.1 : -0.1,
-      change24hAmount: isPositive ? '0,10%' : '-0,10%',
+      balance: '0.00',
+      usdValue: '$0.00',
+      change24h: 0,
+      change24hAmount: '0.00%',
       priceUSD: '1800.00',
-      chainId: 'ethereum', // Default to Ethereum if asset not found
+      chainId: 'ethereum',
       address: 'native',
       decimals: 18,
       chartData: {
-        '1D': generateChartData(24, isPositive ? 'up' : 'down'),
-        '1W': generateChartData(7, isPositive ? 'up' : 'down'),
-        '1M': generateChartData(30, isPositive ? 'up' : 'down'),
-        '1Y': generateChartData(12, isPositive ? 'up' : 'down'),
-        '5Y': generateChartData(60, isPositive ? 'up' : 'down'),
-        'All': generateChartData(100, isPositive ? 'up' : 'down'),
+        '1D': [], '1W': [], '1M': [], '1Y': [], '5Y': [], 'All': []
       },
       activities: [],
     };
@@ -628,7 +655,7 @@ export const fetchAssetDetail = async (assetId: string): Promise<AssetDetail> =>
     logo: portfolioAsset.logo,
     balance: portfolioAsset.balance,
     usdValue: portfolioAsset.usdValue,
-    priceUSD: portfolioAsset.usdValue.replace('$', '').replace(',', ''),
+    priceUSD: (portfolioAsset.usdValue || '0').replace(/[$,]/g, ''),
     change24h: portfolioAsset.change24h / 100, // Convert percentage to decimal
     change24hAmount: change24hAmount,
     chainId: portfolioAsset.chainId, // Preserve chain information from portfolio

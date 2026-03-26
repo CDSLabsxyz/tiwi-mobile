@@ -666,9 +666,13 @@ class TiwiApiClient {
             query.append('chainIds', params.chains.join(','));
         }
 
-        const response = await this.fetcher<{ tokens: MarketTokenPair[] }>(`/api/v1/tokens?${query.toString()}`);
-
-        return response.tokens;
+        try {
+            const response = await this.fetcher<any>(`/api/v1/market-pairs?${query.toString()}`);
+            return response.markets || response.tokens || response.data || [];
+        } catch (e) {
+            console.warn('[TiwiAPI] getMarketPairs fallback to empty array:', e);
+            return [];
+        }
     }
 
     /**

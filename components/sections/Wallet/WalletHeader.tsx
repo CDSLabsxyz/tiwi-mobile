@@ -5,6 +5,7 @@
  */
 
 import { colors } from '@/constants/colors';
+import { useWalletStore } from '@/store/walletStore';
 import { truncateAddress } from '@/utils/wallet';
 import { Image } from 'expo-image';
 import React from 'react';
@@ -15,6 +16,16 @@ const IrisScanIcon = require('../../../assets/home/iris-scan.svg');
 const SettingsIcon = require('../../../assets/home/settings-03.svg');
 const ChevronLeftIcon = require('../../../assets/swap/arrow-left-02.svg');
 const TransactionHistoryIcon = require('../../../assets/home/transaction-history.svg');
+const TiwiLogo = require('../../../assets/images/tiwi-logo.svg');
+
+const ChainIcons = {
+    EVM: require('../../../assets/home/chains/ethereum.svg'),
+    SOLANA: require('../../../assets/home/chains/solana.svg'),
+    TRON: require('../../../assets/home/chains/tron.png'),
+    TON: require('../../../assets/home/chains/ton.jpg'),
+    COSMOS: require('../../../assets/home/chains/bsc.svg'), // placeholder
+    OSMOSIS: require('../../../assets/home/chains/polygon.svg'), // placeholder
+};
 
 interface WalletHeaderProps {
     walletAddress: string;
@@ -27,6 +38,8 @@ interface WalletHeaderProps {
     showIrisScan?: boolean;
     showSettings?: boolean;
     onCopyPress?: () => void;
+    showHome?: boolean;
+    onHomePress?: () => void;
 }
 
 /**
@@ -43,7 +56,10 @@ export const WalletHeader: React.FC<WalletHeaderProps> = ({
     showIrisScan = false,
     showSettings = true,
     onCopyPress,
+    showHome = false,
+    onHomePress,
 }) => {
+    const { activeChain } = useWalletStore();
     const displayAddress = truncateAddress(walletAddress);
 
     return (
@@ -67,12 +83,19 @@ export const WalletHeader: React.FC<WalletHeaderProps> = ({
 
                 {/* Tiwicat Logo */}
                 {!showBackButton && (
-                    <View style={styles.logoContainer}>
-                        <Image
-                            source={TiwicatIcon}
-                            style={styles.iconFull}
-                            contentFit="contain"
-                        />
+                    <View style={styles.logoWrapper}>
+                        <View style={styles.logoContainer}>
+                            <Image
+                                source={TiwicatIcon}
+                                style={styles.iconFull}
+                                contentFit="contain"
+                            />
+                        </View>
+                        {activeChain && (
+                            <View style={styles.logoChainBadge}>
+                                <Image source={(ChainIcons as any)[activeChain]} style={styles.iconFull} contentFit="contain" />
+                            </View>
+                        )}
                     </View>
                 )}
 
@@ -81,6 +104,9 @@ export const WalletHeader: React.FC<WalletHeaderProps> = ({
                     <Text style={styles.addressText}>
                         {displayAddress}
                     </Text>
+                    <View style={styles.chainBadge}>
+                        <Text style={styles.chainBadgeText}>{activeChain === 'SOLANA' ? 'SOL' : activeChain}</Text>
+                    </View>
                 </View>
             </View>
 
@@ -130,6 +156,21 @@ export const WalletHeader: React.FC<WalletHeaderProps> = ({
                         />
                     </TouchableOpacity>
                 )}
+                
+                {/* Home Icon */}
+                {showHome && (
+                    <TouchableOpacity
+                        activeOpacity={0.8}
+                        onPress={onHomePress}
+                        style={styles.iconButton}
+                    >
+                        <Image
+                            source={TiwiLogo}
+                            style={styles.iconFull}
+                            contentFit="contain"
+                        />
+                    </TouchableOpacity>
+                )}
             </View>
         </View>
     );
@@ -154,21 +195,60 @@ const styles = StyleSheet.create({
         height: 24,
         marginRight: 0,
     },
-    logoContainer: {
+    logoWrapper: {
+        position: 'relative',
         width: 32,
         height: 32,
     },
+    logoContainer: {
+        width: '100%',
+        height: '100%',
+        backgroundColor: colors.bgCards,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: colors.bgStroke,
+        padding: 4,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    logoChainBadge: {
+        position: 'absolute',
+        bottom: -4,
+        right: -4,
+        width: 16,
+        height: 16,
+        borderRadius: 8,
+        backgroundColor: colors.bg,
+        borderWidth: 1,
+        borderColor: colors.bgSemi,
+        padding: 2,
+        zIndex: 5,
+    },
     addressPill: {
         backgroundColor: colors.bgSemi,
-        paddingHorizontal: 16,
+        paddingHorizontal: 12, // slightly smaller padding to house the badge
         paddingVertical: 6.5,
         borderRadius: 100,
         overflow: 'hidden',
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
     },
     addressText: {
         fontFamily: 'Manrope-Medium',
         fontSize: 14,
         color: colors.bodyText,
+    },
+    chainBadge: {
+        backgroundColor: colors.bgStroke,
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 4,
+    },
+    chainBadgeText: {
+        fontFamily: 'Manrope-Bold',
+        fontSize: 10,
+        color: colors.primaryCTA,
     },
     rightSection: {
         flexDirection: 'row',

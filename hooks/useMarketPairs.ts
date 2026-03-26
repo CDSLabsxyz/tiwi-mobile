@@ -30,7 +30,7 @@ export const useMarketPairs = (options: UseMarketPairsOptions) => {
     });
 
     const data = useMemo(() => {
-        if (!query.data) return [];
+        if (!query.data || !Array.isArray(query.data)) return [];
 
         let tokens = [...query.data];
 
