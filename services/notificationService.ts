@@ -129,6 +129,60 @@ class NotificationService {
     }
 
     /**
+     * Send a local notification for transaction events
+     */
+    async sendTransactionNotification(type: 'swap' | 'received' | 'sent' | 'failed' | 'confirmed', details?: { symbol?: string; amount?: string; txHash?: string }) {
+        const configs: Record<string, { title: string; body: string; icon?: string }> = {
+            swap: {
+                title: 'Swap Completed',
+                body: details?.symbol
+                    ? `Your swap of ${details.amount || ''} ${details.symbol} was successful.`
+                    : 'Your swap was completed successfully.',
+            },
+            received: {
+                title: 'Payment Received',
+                body: details?.symbol
+                    ? `You received ${details.amount || ''} ${details.symbol}.`
+                    : 'You received a new payment.',
+            },
+            sent: {
+                title: 'Transfer Sent',
+                body: details?.symbol
+                    ? `You sent ${details.amount || ''} ${details.symbol}.`
+                    : 'Your transfer was sent successfully.',
+            },
+            failed: {
+                title: 'Transaction Failed',
+                body: details?.symbol
+                    ? `Your ${details.symbol} transaction failed. Please try again.`
+                    : 'A transaction has failed. Please try again.',
+            },
+            confirmed: {
+                title: 'On-chain Confirmation',
+                body: details?.txHash
+                    ? `Transaction ${details.txHash.slice(0, 10)}... confirmed on-chain.`
+                    : 'Your transaction has been confirmed on-chain.',
+            },
+        };
+
+        const config = configs[type] || configs.swap;
+
+        try {
+            await Notifications.scheduleNotificationAsync({
+                content: {
+                    title: config.title,
+                    body: config.body,
+                    data: { type: 'transaction', txType: type, ...details },
+                    sound: 'default',
+                },
+                trigger: null,
+            });
+        } catch (e) {
+            console.warn('[NotificationService] Failed to send local notification:', e);
+        }
+    }
+
+    /**
      * Deactivate a token (e.g. on logout)
      */
     async deactivateToken(token: string) {

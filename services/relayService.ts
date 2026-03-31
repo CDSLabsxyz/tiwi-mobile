@@ -41,6 +41,18 @@ class RelayService {
 
             const amountIn = parseUnits(fromAmount, fromToken.decimals);
 
+            // Validate addresses are EVM hex format before proceeding
+            const isValidEvmAddress = (addr: string) => /^0x[a-fA-F0-9]{40}$/.test(addr);
+
+            if (!isNativeToken(fromToken.address) && !isValidEvmAddress(fromToken.address)) {
+                console.warn(`[RelayService] Skipping: from address ${fromToken.address} is not EVM`);
+                return null;
+            }
+            if (!isNativeToken(toToken.address) && !isValidEvmAddress(toToken.address)) {
+                console.warn(`[RelayService] Skipping: to address ${toToken.address} is not EVM`);
+                return null;
+            }
+
             // RELAY USES 0x000... FOR NATIVE TOKENS
             const inputToken = isNativeToken(fromToken.address)
                 ? '0x0000000000000000000000000000000000000000'
@@ -116,10 +128,10 @@ class RelayService {
                 router: 'relay',
             };
         } catch (error: any) {
-            console.error(`[RelayService] Quote failure for ${fromToken.symbol} -> ${toToken.symbol}:`, error.message);
+            console.warn(`[RelayService] Quote failure for ${fromToken.symbol} -> ${toToken.symbol}:`, error.message);
 
             if (error.response?.data) {
-                console.error("[RelayService] API Error:", JSON.stringify(error.response.data));
+                console.warn("[RelayService] API Error:", JSON.stringify(error.response.data));
             }
             return null;
         }

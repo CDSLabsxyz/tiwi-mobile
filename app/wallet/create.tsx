@@ -45,15 +45,12 @@ export default function CreateWalletScreen() {
 
     const handleSelectMethod = async () => {
         setIsLoading(true);
-        // Allow one frame for the overlay to mount before starting heavy generation
-        await new Promise(resolve => setTimeout(resolve, 50));
-        // Artificial delay for premium high-fidelity feel
-        const timer = new Promise(resolve => setTimeout(resolve, 2000));
+        // Give the overlay enough time to mount and animate before heavy crypto work
+        await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 300)));
 
         try {
             // 1. Generate new wallet in memory
             const newWallet = await generateNewWallet();
-            await timer;
 
             // 2. Set wallet state and proceed to display seed
             setWallet(newWallet);
@@ -138,7 +135,7 @@ export default function CreateWalletScreen() {
                     />
                 )}
                 {step === 'finalize' && wallet && (
-                    <FinalizeStep address={wallet.address} onComplete={handleFinalize} />
+                    <FinalizeStep address={wallet.address} addresses={wallet.addresses} onComplete={handleFinalize} />
                 )}
             </View>
 

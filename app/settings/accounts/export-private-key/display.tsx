@@ -23,21 +23,55 @@ export default function ExportPrivateKeyDisplayScreen() {
     const { top } = useSafeAreaInsets();
     const router = useRouter();
     const params = useLocalSearchParams<{ returnTo?: string }>();
-    const { address } = useWalletStore();
+    const { address, activeGroupId, walletGroups, activeChain } = useWalletStore();
     const [privateKey, setPrivateKey] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [copied, setCopied] = useState(false);
 
+    // Find current wallet group to get EVM address (keys are stored by EVM address)
+    const currentGroup = (walletGroups || []).find(w => w.id === activeGroupId);
+
     useEffect(() => {
         const fetchKey = async () => {
+            if (!currentGroup && !address) {
+                setIsLoading(false);
+                return;
+            }
+
+            // Try active chain address first, then EVM address as fallback
+            const chainAddr = currentGroup?.addresses?.[activeChain || 'EVM'];
+            const evmAddr = currentGroup?.addresses?.EVM;
+
+            // Try current chain key first
+            if (chainAddr) {
+                const key = await getSecurePrivateKey(chainAddr, activeChain || 'EVM');
+                if (key) {
+                    setPrivateKey(key);
+                    setIsLoading(false);
+                    return;
+                }
+            }
+
+            // Fallback: try EVM key (most common storage)
+            if (evmAddr) {
+                const key = await getSecurePrivateKey(evmAddr, 'EVM');
+                if (key) {
+                    setPrivateKey(key);
+                    setIsLoading(false);
+                    return;
+                }
+            }
+
+            // Last resort: try raw address
             if (address) {
                 const key = await getSecurePrivateKey(address);
                 setPrivateKey(key);
             }
+
             setIsLoading(false);
         };
         fetchKey();
-    }, [address]);
+    }, [address, activeGroupId, activeChain]);
 
     // Handle phone back button
     useEffect(() => {

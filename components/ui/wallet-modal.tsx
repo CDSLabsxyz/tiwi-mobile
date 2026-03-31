@@ -62,8 +62,8 @@ const ALL_NETWORKS = [
     { id: 'SOLANA', name: 'Solana', chain: 'SOLANA', icon: require('../../assets/home/chains/solana.svg') },
     { id: 'TRON', name: 'Tron', chain: 'TRON', icon: require('../../assets/home/chains/tron.png') },
     { id: 'TON', name: 'TON', chain: 'TON', icon: require('../../assets/home/chains/ton.jpg') },
-    { id: 'COSMOS', name: 'Cosmos', chain: 'COSMOS', icon: require('../../assets/home/chains/bsc.svg') },
-    { id: 'OSMOSIS', name: 'Osmosis', chain: 'OSMOSIS', icon: require('../../assets/home/chains/polygon.svg') },
+    { id: 'COSMOS', name: 'Cosmos', chain: 'COSMOS', icon: require('../../assets/home/chains/cosmos.svg') },
+    { id: 'OSMOSIS', name: 'Osmosis', chain: 'OSMOSIS', icon: require('../../assets/home/chains/osmosis.svg') },
 ] as const;
 
 const ChainIcons = {
@@ -71,8 +71,8 @@ const ChainIcons = {
     SOLANA: require('../../assets/home/chains/solana.svg'),
     TRON: require('../../assets/home/chains/tron.png'),
     TON: require('../../assets/home/chains/ton.jpg'),
-    COSMOS: require('../../assets/home/chains/bsc.svg'),
-    OSMOSIS: require('../../assets/home/chains/polygon.svg'),
+    COSMOS: require('../../assets/home/chains/cosmos.svg'),
+    OSMOSIS: require('../../assets/home/chains/osmosis.svg'),
 };
 
 /**

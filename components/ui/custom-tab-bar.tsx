@@ -113,6 +113,9 @@ export const CustomTabBar: React.FC<BottomTabBarProps> = ({ state, descriptors, 
                 onPress={() => router.push('/swap')}
                 style={[styles.floatingButton, { bottom: insets.bottom + 12 }]}
             >
+                {Platform.OS === 'android' && (
+                    <View style={styles.androidGlow} />
+                )}
                 <Image
                     source={MenuSwapGif}
                     style={styles.fullSize}
@@ -199,14 +202,23 @@ const styles = StyleSheet.create({
         height: 90,
         alignItems: 'center',
         justifyContent: 'center',
-        borderRadius: 45,
         backgroundColor: 'transparent',
-        // Glow effect
-        shadowColor: colors.primaryCTA,
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.9,
-        shadowRadius: 20,
-        elevation: 15,
+        overflow: 'visible',
+        ...Platform.select({
+            ios: {
+                shadowColor: colors.primaryCTA,
+                shadowOffset: { width: 0, height: 0 },
+                shadowOpacity: 0.9,
+                shadowRadius: 20,
+            },
+        }),
+    },
+    androidGlow: {
+        position: 'absolute',
+        width: 70,
+        height: 70,
+        borderRadius: 35,
+        backgroundColor: 'rgba(177, 241, 40, 0.25)',
     },
     fullSize: {
         width: '100%',

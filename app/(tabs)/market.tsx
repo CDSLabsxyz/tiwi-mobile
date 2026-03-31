@@ -72,7 +72,7 @@ export default function MarketScreen() {
     const [isSearchVisible, setIsSearchVisible] = useState(false);
     const [isNavigating, setIsNavigating] = useState(false);
 
-    const { favorites, toggleFavorite, isFavorite } = useMarketStore();
+    const { favorites, toggleFavorite, isFavorite, getFavoriteTokens } = useMarketStore();
 
     const subTabs: { id: string; label: string }[] = useMemo(() => [
         { id: 'favourite', label: t('home.favourite') },
@@ -123,71 +123,23 @@ export default function MarketScreen() {
         return () => clearTimeout(timer);
     }, [queryClient, marketType]);
 
-    // Fetch favorites
-    const [favoriteTokens, setFavoriteTokens] = useState<MarketAsset[]>([]);
-    const [isFavLoading, setIsFavLoading] = useState(false);
-
-    useEffect(() => {
-        if (activeSubTab !== 'favourite') return;
-
-        const loadFavs = async () => {
-            if (favorites.length === 0) {
-                setFavoriteTokens([]);
-                return;
-            }
-
-            setIsFavLoading(true);
-            try {
-                const promises = favorites.map(async (id) => {
-                    const [chainId, address] = id.split('-');
-                    try {
-                        const response = await api.tokens.list({
-                            address,
-                            chains: [parseInt(chainId)],
-                            limit: 1
-                        });
-                        return response.tokens[0];
-                    } catch (e) {
-                        return null;
-                    }
-                });
-
-                const results = await Promise.all(promises);
-                const validResults = results.filter((t): t is TokenItem => !!t && !!t.address);
-
-                const mappedFavs: MarketAsset[] = validResults.map(t => {
-                    const cleanSymbol = t.symbol.toUpperCase();
-                    const displaySymbol = (cleanSymbol.includes('/') || cleanSymbol.includes('-')) ? cleanSymbol : `${cleanSymbol}-USD`;
-
-                    return {
-                        ...t,
-                        id: t.id || `${t.chainId}-${t.address}`,
-                        address: t.address,
-                        symbol: t.symbol,
-                        displaySymbol,
-                        name: t.name,
-                        chainId: t.chainId,
-                        price: t.priceUSD || '0',
-                        logoURI: t.logoURI || '',
-                        priceChange24h: t.priceChange24h || 0,
-                        volume24h: t.volume24h || 0,
-                        marketCap: t.marketCap || 0,
-                        marketType: 'spot',
-                        provider: 'onchain',
-                        rank: t.marketCapRank || 999
-                    } as any;
-                });
-
-                setFavoriteTokens(mappedFavs);
-            } catch (error) {
-                console.error('[MarketScreen] Error loading favorites:', error);
-            } finally {
-                setIsFavLoading(false);
-            }
-        };
-
-        loadFavs();
-    }, [activeSubTab, favorites]);
+    // Load favorites from store (no API call needed)
+    const favoriteTokens = useMemo<MarketAsset[]>(() => {
+        const saved = getFavoriteTokens();
+        return saved.map(t => ({
+            ...t,
+            displaySymbol: t.symbol.toUpperCase(),
+            price: t.priceUSD || '0',
+            logoURI: t.logoURI || '',
+            priceChange24h: t.priceChange24h || 0,
+            volume24h: 0,
+            marketCap: 0,
+            marketType: 'spot',
+            provider: 'onchain',
+            rank: 999,
+        } as any));
+    }, [favorites]);
+    const isFavLoading = false;
 
     // Backend Search Logic
     useEffect(() => {
@@ -206,7 +158,7 @@ export default function MarketScreen() {
 
                 const mappedResults: MarketAsset[] = response.tokens.map(t => {
                     const cleanSymbol = t.symbol.toUpperCase();
-                    const displaySymbol = (cleanSymbol.includes('/') || cleanSymbol.includes('-')) ? cleanSymbol : `${cleanSymbol}-USD`;
+                    const displaySymbol = cleanSymbol;
 
                     return {
                         ...t,
@@ -329,8 +281,8 @@ export default function MarketScreen() {
             return merged;
         }
 
-        // 3. TWC Priority Logic (Pin to 1st position in Explore/Gainers)
-        const isCoreDiscovery = activeSubTab === 'explore' || activeSubTab === 'gainers' || activeSubTab === 'hot';
+        // 3. TWC Priority Logic (Pin to 1st position)
+        const isCoreDiscovery = activeSubTab === 'explore' || activeSubTab === 'favourite' || activeSubTab === 'gainers';
         if (isCoreDiscovery && searchQuery.trim() === '') {
             const TWC_ADDRESS = '0xDA1060158F7D593667cCE0a15DB346BB3FfB3596'.toLowerCase();
             const twcIndex = tokens.findIndex(t =>

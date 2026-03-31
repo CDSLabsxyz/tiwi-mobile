@@ -240,14 +240,18 @@ export const useWalletStore = create<WalletState>()(
         const activeGroup = state.walletGroups.find(g => g.id === state.activeGroupId);
         if (!activeGroup || activeGroup.type !== 'mnemonic') return;
 
+        // Skip if all chain addresses are already derived
+        const allChains: ChainType[] = ['EVM', 'SOLANA', 'TRON', 'TON', 'COSMOS', 'OSMOSIS'];
+        const missingChains = allChains.filter(c => !activeGroup.addresses[c]);
+        if (missingChains.length === 0) return;
+
         try {
-          // Attempt to retrieve mnemonic for the group
           const mnemonic = await getSecureMnemonic(activeGroup.id);
           if (mnemonic) {
             const newAddresses = await deriveMultiChainAddressesFromMnemonic(mnemonic);
-            
+
             // Merge new addresses into existing group
-            const updatedGroups = state.walletGroups.map(g => {
+            const updatedGroups = get().walletGroups.map(g => {
               if (g.id === activeGroup.id) {
                 return {
                   ...g,
@@ -258,7 +262,7 @@ export const useWalletStore = create<WalletState>()(
             });
 
             set({ walletGroups: updatedGroups });
-            
+
             // Refresh active address if it was null for the current chain
             const refreshedGroup = updatedGroups.find(g => g.id === activeGroup.id);
             if (refreshedGroup && refreshedGroup.addresses[state.activeChain]) {

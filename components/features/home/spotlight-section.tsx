@@ -3,6 +3,7 @@ import { colors } from '@/constants/colors';
 import { useTranslation } from '@/hooks/useLocalization';
 import { SpotlightToken } from '@/types';
 import { Image } from 'expo-image';
+import { useRouter } from 'expo-router';
 import React from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
@@ -23,6 +24,7 @@ export const SpotlightSection: React.FC<SpotlightSectionProps> = ({
     onTokenPress,
 }) => {
     const { t } = useTranslation();
+    const router = useRouter();
 
     if (isLoading) {
         return (
@@ -58,7 +60,7 @@ export const SpotlightSection: React.FC<SpotlightSectionProps> = ({
             {/* Header */}
             <View style={styles.header}>
                 <Text style={styles.title}>{t('home.spotlight')}</Text>
-                <TouchableOpacity activeOpacity={0.7}>
+                <TouchableOpacity activeOpacity={0.7} onPress={() => router.push({ pathname: '/(tabs)/market', params: { category: 'spotlight' } } as any)}>
                     <Image
                         source={require('../../../assets/home/arrow-right-01.svg')}
                         style={styles.headerIcon}

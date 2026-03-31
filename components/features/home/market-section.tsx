@@ -28,17 +28,16 @@ export const MarketSection: React.FC<MarketSectionProps> = ({
     const router = useRouter();
     const { t } = useTranslation();
     const queryClient = useQueryClient();
-    const [activeTab, setActiveTab] = useState<string>('hot');
-    const { favorites, isFavorite } = useMarketStore();
+    const [activeTab, setActiveTab] = useState<string>('explore');
+    const { favorites, isFavorite, getFavoriteTokens } = useMarketStore();
 
     const tabs: { id: string; label: string }[] = useMemo(() => [
         { id: 'favourite', label: t('home.favourite') },
         { id: 'explore', label: 'Explore' },
-        { id: 'gainers', label: t('home.gainers') },
-        { id: 'losers', label: t('home.losers') },
-        { id: 'hot', label: 'Hot' },
         { id: 'spotlight', label: 'Spotlight' },
         { id: 'listing', label: 'Listing' },
+        { id: 'gainers', label: t('home.gainers') },
+        { id: 'losers', label: t('home.losers') },
     ], [t]);
 
     // 1. Fetch market data using unified hook
@@ -61,70 +60,22 @@ export const MarketSection: React.FC<MarketSectionProps> = ({
         enabled: activeTab === 'spotlight' || activeTab === 'listing',
     });
 
-    // 3. Fetch favorites
-    const [favoriteTokens, setFavoriteTokens] = useState<MarketAsset[]>([]);
-    const [isFavLoading, setIsFavLoading] = useState(false);
-
-    useEffect(() => {
-        if (activeTab !== 'favourite') return;
-
-        const loadFavs = async () => {
-            if (favorites.length === 0) {
-                setFavoriteTokens([]);
-                return;
-            }
-
-            setIsFavLoading(true);
-            try {
-                const promises = favorites.map(async (id) => {
-                    const [chainId, address] = id.split('-');
-                    try {
-                        const response = await api.tokens.list({
-                            address,
-                            chains: [parseInt(chainId)],
-                            limit: 1
-                        });
-                        return response.tokens[0];
-                    } catch (e) {
-                        return null;
-                    }
-                });
-
-                const results = await Promise.all(promises);
-                const validResults = results.filter((t): t is TokenItem => !!t && !!t.address);
-
-                const mappedFavs: MarketAsset[] = validResults.map(t => {
-                    const cleanSymbol = t.symbol.toUpperCase();
-                    const displaySymbol = (cleanSymbol.includes('/') || cleanSymbol.includes('-')) ? cleanSymbol : `${cleanSymbol}-USD`;
-
-                    return {
-                        ...t,
-                        id: t.id || `${t.chainId}-${t.address}`,
-                        address: t.address,
-                        symbol: t.symbol,
-                        displaySymbol,
-                        name: t.name,
-                        chainId: t.chainId,
-                        price: t.priceUSD || '0',
-                        logoURI: t.logoURI || '',
-                        priceChange24h: t.priceChange24h || 0,
-                        volume24h: t.volume24h || 0,
-                        marketCap: t.marketCap || 0,
-                        marketType: 'spot',
-                        provider: 'onchain',
-                    } as any;
-                });
-
-                setFavoriteTokens(mappedFavs);
-            } catch (error) {
-                console.error('[MarketSection] Error loading favorites:', error);
-            } finally {
-                setIsFavLoading(false);
-            }
-        };
-
-        loadFavs();
-    }, [activeTab, favorites]);
+    // 3. Load favorites from store (no API call needed)
+    const favoriteTokens = useMemo<MarketAsset[]>(() => {
+        const saved = getFavoriteTokens();
+        return saved.map(t => ({
+            ...t,
+            displaySymbol: t.symbol.toUpperCase(),
+            price: t.priceUSD || '0',
+            logoURI: t.logoURI || '',
+            priceChange24h: t.priceChange24h || 0,
+            volume24h: 0,
+            marketCap: 0,
+            marketType: 'spot',
+            provider: 'onchain',
+        } as any));
+    }, [favorites]);
+    const isFavLoading = false;
 
     // 4. Derive display data
     const displayData = useMemo<MarketAsset[]>(() => {
@@ -133,13 +84,8 @@ export const MarketSection: React.FC<MarketSectionProps> = ({
         // Process Admin tokens (Spotlight/Listing) from Database
         if (activeTab === 'spotlight' || activeTab === 'listing') {
             const tokensFromAPI = Array.isArray(adminTokens.tokens) ? adminTokens.tokens : [];
-            const today = new Date().toISOString().split('T')[0];
 
-            // 1. Filter by direct date logic (exactly like Web app)
-            const active = tokensFromAPI.filter((t: any) => 
-                (!t.startDate || t.startDate <= today) && 
-                (!t.endDate || t.endDate >= today)
-            ).sort((a: any, b: any) => (a.rank || 0) - (b.rank || 0));
+            const active = tokensFromAPI.sort((a: any, b: any) => (a.rank || 0) - (b.rank || 0));
 
             return active.map((st: any) => {
                 const enriched = (marketPairs || []).find(
@@ -175,11 +121,20 @@ export const MarketSection: React.FC<MarketSectionProps> = ({
                 tokens = tokens
                     .filter(t => (t.priceChange24h ?? 0) < 0)
                     .sort((a, b) => (a.priceChange24h ?? 0) - (b.priceChange24h ?? 0));
-            } else if (activeTab === 'explore' || activeTab === 'hot') {
+            } else if (activeTab === 'explore') {
                 tokens = tokens.sort((a, b) => (b.volume24h ?? 0) - (a.volume24h ?? 0));
             } else if (activeTab === 'explore') {
                 // For Explore on home, we just show top tokens by volume as well or default order
                 tokens = tokens.sort((a, b) => (b.volume24h ?? 0) - (a.volume24h ?? 0));
+            }
+        }
+
+        // Always put TWC first in explore
+        if (activeTab === 'explore' || activeTab === 'favourite') {
+            const twcIndex = tokens.findIndex(t => t.symbol?.toUpperCase() === 'TWC');
+            if (twcIndex > 0) {
+                const [twc] = tokens.splice(twcIndex, 1);
+                tokens.unshift(twc);
             }
         }
 

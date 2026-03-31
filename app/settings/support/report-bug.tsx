@@ -6,11 +6,13 @@ import * as Device from 'expo-device';
 import * as DocumentPicker from 'expo-document-picker';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
     Alert,
     KeyboardAvoidingView,
+    Modal,
     Platform,
     Pressable,
     ScrollView,
@@ -78,11 +80,29 @@ export default function ReportBugScreen() {
     const [logFileMime, setLogFileMime] = useState<string | null>(null);
     const [sendDeviceInfo, setSendDeviceInfo] = useState(true);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [modalVisible, setModalVisible] = useState(false);
+    const [modalTitle, setModalTitle] = useState('');
+    const [modalMessage, setModalMessage] = useState('');
+    const [modalIsSuccess, setModalIsSuccess] = useState(false);
+
+    const showModal = (title: string, message: string, isSuccess: boolean = false) => {
+        setModalTitle(title);
+        setModalMessage(message);
+        setModalIsSuccess(isSuccess);
+        setModalVisible(true);
+    };
+
+    const handleModalDismiss = () => {
+        setModalVisible(false);
+        if (modalIsSuccess) {
+            router.back();
+        }
+    };
 
     const handlePickImage = async () => {
         const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (status !== 'granted') {
-            Alert.alert('Permission Denied', 'Media library access is required to upload screenshots.');
+            showModal('Permission Denied', 'Media library access is required to upload screenshots.');
             return;
         }
 
@@ -119,12 +139,12 @@ export default function ReportBugScreen() {
 
     const handleSubmit = async () => {
         if (!description.trim()) {
-            Alert.alert('Error', 'Please describe the issue before submitting.');
+            showModal('Error', 'Please describe the issue before submitting.');
             return;
         }
 
         if (!userWallet) {
-            Alert.alert('Error', 'Wallet not connected.');
+            showModal('Error', 'Wallet not connected.');
             return;
         }
 
@@ -173,16 +193,14 @@ export default function ReportBugScreen() {
             const response = await api.bugReports.submit(payload);
             console.log("🚀 ~ handleSubmit ~ response:", response)
 
-            if (response) { // SDK returns parsed json
-                Alert.alert('Success', 'Your bug report has been submitted.', [
-                    { text: 'OK', onPress: () => router.back() }
-                ]);
+            if (response) {
+                showModal('Success', 'Your bug report has been submitted.', true);
             } else {
                 throw new Error('Failed to submit report');
             }
         } catch (error) {
             console.log("🚀 ~ handleSubmit ~ error:", error)
-            Alert.alert('Error', 'Failed to submit bug report. Please try again.');
+            showModal('Error', 'Failed to submit bug report. Please try again.');
         } finally {
             setIsSubmitting(false);
         }
@@ -293,6 +311,34 @@ export default function ReportBugScreen() {
                     </TouchableOpacity>
                 </ScrollView>
             </KeyboardAvoidingView>
+
+            {/* Custom Modal */}
+            <Modal
+                visible={modalVisible}
+                transparent
+                animationType="fade"
+                onRequestClose={handleModalDismiss}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContainer}>
+                        <Ionicons
+                            name={modalIsSuccess ? 'checkmark-circle' : 'alert-circle'}
+                            size={48}
+                            color={modalIsSuccess ? '#B1F128' : '#FF4D4D'}
+                            style={{ marginBottom: 12 }}
+                        />
+                        <Text style={styles.modalTitle}>{modalTitle}</Text>
+                        <Text style={styles.modalMessage}>{modalMessage}</Text>
+                        <TouchableOpacity
+                            style={styles.modalButton}
+                            onPress={handleModalDismiss}
+                            activeOpacity={0.8}
+                        >
+                            <Text style={styles.modalButtonText}>OK</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
         </View>
     );
 }
@@ -432,5 +478,49 @@ const styles = StyleSheet.create({
     },
     submitButtonDisabled: {
         opacity: 0.6,
+    },
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: 40,
+    },
+    modalContainer: {
+        width: '100%',
+        backgroundColor: '#111810',
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: '#1F261E',
+        paddingVertical: 32,
+        paddingHorizontal: 24,
+        alignItems: 'center',
+    },
+    modalTitle: {
+        fontFamily: 'Manrope-Bold',
+        fontSize: 18,
+        color: '#FFFFFF',
+        marginBottom: 8,
+    },
+    modalMessage: {
+        fontFamily: 'Manrope-Regular',
+        fontSize: 14,
+        color: '#B5B5B5',
+        textAlign: 'center',
+        marginBottom: 24,
+        lineHeight: 20,
+    },
+    modalButton: {
+        width: '100%',
+        height: 48,
+        backgroundColor: '#B1F128',
+        borderRadius: 24,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    modalButtonText: {
+        fontFamily: 'Manrope-Bold',
+        fontSize: 16,
+        color: '#010501',
     },
 });

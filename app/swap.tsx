@@ -36,7 +36,7 @@ import { useSwapStore } from '@/store/swapStore';
 import { useWalletStore } from '@/store/walletStore';
 import { formatCompactNumber, formatFiatValue, formatTokenAmount } from '@/utils/formatting';
 import { useLocalSearchParams, usePathname, useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -112,6 +112,8 @@ export default function SwapScreen() {
     const [whenPriceTarget, setWhenPriceTarget] = useState<'from' | 'to'>('to');
 
     const [isLoadingQuote, setIsLoadingQuote] = useState(false);
+    const [customExpiryValue, setCustomExpiryValue] = useState('');
+    const [customExpiryUnit, setCustomExpiryUnit] = useState<'hours' | 'days' | 'months'>('days');
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [isStale, setIsStale] = useState(false);
     const [isLoadingSwap, setIsLoadingSwap] = useState(false);
@@ -131,7 +133,31 @@ export default function SwapScreen() {
         }
     }, [isKeyboardVisible]);
 
-    const { address } = useWalletStore();
+    const { address, walletGroups, activeGroupId } = useWalletStore();
+
+    // Map chainId to wallet chain type
+    const getChainTypeFromId = (chainId: any): string => {
+        if (typeof chainId !== 'number') return 'EVM';
+        if (chainId === 7565164 || chainId === 1399811149) return 'SOLANA';
+        if (chainId === 728126428) return 'TRON';
+        if (chainId === 1100 || chainId === 99999) return 'TON';
+        if (chainId === 118 || chainId === 99998) return 'COSMOS';
+        return 'EVM';
+    };
+
+    // Get wallet address for a specific chain
+    const getAddressForChain = useCallback((chainId: any) => {
+        const group = walletGroups.find(g => g.id === activeGroupId);
+        if (!group) return address || '';
+        const chainType = getChainTypeFromId(chainId);
+        return (group.addresses as any)?.[chainType] || address || '';
+    }, [walletGroups, activeGroupId, address]);
+
+    // Determine if this is a bridge (cross-chain) or same-chain swap
+    const isBridge = useMemo(() => {
+        if (!fromChain || !toChain) return false;
+        return fromChain.id !== toChain.id;
+    }, [fromChain, toChain]);
     const { isTransactionRiskEnabled } = useSecurityStore();
     const { data: balanceData } = useWalletBalances();
 
@@ -168,6 +194,9 @@ export default function SwapScreen() {
 
     // 2. Fetch Prices Updates (BNB & TWC) silently in background
     useEffect(() => {
+        // Skip default price updates if we're pre-populating from params
+        if (hasParams && !paramsAppliedRef.current) return;
+
         const updatePrices = async () => {
             try {
                 // Silently update chain icons if missing
@@ -208,11 +237,15 @@ export default function SwapScreen() {
     }, [chains, fromChain?.id, toChain?.id]);
 
     // 2. Pre-populate from params if coming from asset detail
+    const hasParams = !!(params.symbol && params.chainId);
+    const paramsAppliedRef = React.useRef(false);
+
     useEffect(() => {
-        if (params.symbol && params.chainId && chains) {
+        if (hasParams && chains && !paramsAppliedRef.current) {
             const chain = chains.find(c => String(c.id) === params.chainId);
 
             if (chain) {
+                paramsAppliedRef.current = true;
                 const chainOption = {
                     id: chain.id,
                     name: chain.name,
@@ -221,19 +254,21 @@ export default function SwapScreen() {
                 setFromChain(chainOption);
                 setFromToken({
                     id: params.assetId || params.symbol,
-                    symbol: params.symbol,
-                    name: params.name || params.symbol,
+                    symbol: params.symbol!,
+                    name: params.name || params.symbol!,
                     icon: params.logo,
                     balanceToken: params.balance || '0.00',
                     balanceFiat: params.usdValue || '$0.00',
                     priceUSD: params.priceUSD || '0',
                     address: params.assetId || '',
                     chainId: chainOption.id,
-                    decimals: 18 // Default
+                    decimals: 18
                 } as any);
+                setToChain(null);
+                setToToken(null);
             }
         }
-    }, [params.symbol, params.chainId, chains]);
+    }, [hasParams, chains]);
 
     const handleOpenAssetSheet = (target: 'from' | 'to', initialStep: 'chains' | 'tokens' = 'tokens') => {
         setAssetSheetTarget(target);
@@ -332,7 +367,9 @@ export default function SwapScreen() {
             setIsStale(false); // Reset stale on manual change
         }
         try {
-            const fetchedQuote = await fetchSwapQuote(fromAmount, fromToken, toToken, address || '', address || '', slippage);
+            const fromAddr = getAddressForChain(fromToken.chainId);
+            const toAddr = getAddressForChain(toToken.chainId);
+            const fetchedQuote = await fetchSwapQuote(fromAmount, fromToken, toToken, fromAddr, toAddr, slippage);
 
             if (fetchedQuote) {
                 setSwapQuote(fetchedQuote);
@@ -613,7 +650,9 @@ export default function SwapScreen() {
                 console.log('[Swap] All approvals done, proceeding to swap...');
             }
 
-            const result = await executeSwap(fromAmount, fromToken, toToken, address, address, swapQuote);
+            const fromAddr = getAddressForChain(fromToken.chainId);
+            const toAddr = getAddressForChain(toToken.chainId);
+            const result = await executeSwap(fromAmount, fromToken, toToken, fromAddr, toAddr, swapQuote);
 
             const txHash = result?.txHash || `swap-${Date.now()}`;
             const chainId = Number(fromChain?.id) || 56;
@@ -753,16 +792,6 @@ export default function SwapScreen() {
 
                         <View style={styles.spacerLarge} />
 
-                        <ChainSelectorCard
-                            chainName={fromChain?.name || 'Select Chain'}
-                            chainIcon={fromChain?.icon || require('@/assets/home/chains/ethereum.svg')}
-                            onPress={() => openChainSheet('from')}
-                        />
-
-                        <View style={styles.sectionLabelWrapper}>
-                            <Text style={styles.sectionLabel}>Token</Text>
-                        </View>
-
                         <View style={styles.cardsContainer}>
                             <SwapTokenCard
                                 variant="from"
@@ -775,7 +804,7 @@ export default function SwapScreen() {
                                 fiatAmount={fromFiatAmount}
                                 balanceText={fromToken?.balanceToken || '0.00'}
                                 onAmountChange={setFromAmount}
-                                onTokenPress={() => handleOpenAssetSheet('from', 'tokens')}
+                                onTokenPress={() => handleOpenAssetSheet('from', 'chains')}
                                 onMaxPress={() => handlePercentagePress(100)}
                                 onInputPress={() => setIsKeyboardVisible(true)}
                             />
@@ -791,7 +820,7 @@ export default function SwapScreen() {
                                     amount={formatTokenAmount(toAmount)}
                                     fiatAmount={toFiatAmount}
                                     balanceText={toToken?.balanceToken || '0.00'}
-                                    onTokenPress={() => handleOpenAssetSheet('to', 'tokens')}
+                                    onTokenPress={() => handleOpenAssetSheet('to', 'chains')}
                                     isLoadingQuote={isLoadingQuote}
                                     isRefreshing={isRefreshing}
                                     isStale={isStale}
@@ -833,6 +862,12 @@ export default function SwapScreen() {
                                 <ExpiresSection
                                     selectedOption={expiresOption}
                                     onSelect={setExpiresOption}
+                                    customValue={customExpiryValue}
+                                    customUnit={customExpiryUnit}
+                                    onCustomChange={(val, unit) => {
+                                        setCustomExpiryValue(val);
+                                        setCustomExpiryUnit(unit);
+                                    }}
                                 />
                             </View>
                         )}
@@ -847,7 +882,7 @@ export default function SwapScreen() {
                             isStale={isStale}
                             activeTab={activeTab}
                             hasValidQuote={hasValidQuote()}
-                            title={!taxPaid ? 'Swap' : 'Finalize Swap'}
+                            title={!taxPaid ? (isBridge ? 'Bridge' : 'Swap') : 'Finalize Swap'}
                         />
                     </View>
                 </ScrollView>

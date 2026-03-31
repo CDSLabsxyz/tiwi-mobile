@@ -8,11 +8,10 @@ import { WalletHeader } from '@/components/sections/Wallet/WalletHeader';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { colors } from '@/constants/colors';
 import { useChains } from '@/hooks/useChains';
-import { useEnrichedMarkets } from '@/hooks/useEnrichedMarkets';
 import { useTokens } from '@/hooks/useTokens';
 import { useToastStore } from '@/store/useToastStore';
 import { useWalletStore, ChainType } from '@/store/walletStore';
-import { truncateAddress } from '@/utils/wallet';
+import { truncateAddress, NATIVE_TOKEN_ADDRESS, MORALIS_NATIVE_ADDRESS } from '@/utils/wallet';
 import * as Clipboard from 'expo-clipboard';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, usePathname, useRouter } from 'expo-router';
@@ -21,6 +20,8 @@ import { ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, View 
 import { TIWILoader } from '@/components/ui/TIWILoader';
 import QRCode from 'react-native-qrcode-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { formatTokenQuantity, formatUSDPrice } from '@/utils/formatting';
+import { useWalletBalances } from '@/hooks/useWalletBalances';
 
 const CopyIcon = require('../assets/wallet/copy-01.svg');
 const CheckmarkIcon = require('../assets/swap/checkmark-circle-01.svg');
@@ -34,14 +35,14 @@ interface DisplayToken {
     logoURI: string;
     chainId: number;
     address: string;
-    chainType: 'evm' | 'solana' | 'bitcoin';
+    chainType: ChainType;
 }
 
 export default function ReceiveScreen() {
     const { top, bottom } = useSafeAreaInsets();
     const router = useRouter();
     const pathname = usePathname();
-    const params = useLocalSearchParams<{ 
+    const params = useLocalSearchParams<{
         tokenId?: string;
         symbol?: string;
         name?: string;
@@ -51,6 +52,7 @@ export default function ReceiveScreen() {
         isAutoSelected?: string;
     }>();
     const { walletGroups, activeAddress, activeChain } = useWalletStore();
+    const { data: balanceData } = useWalletBalances();
 
     const { showToast } = useToastStore();
     const [searchQuery, setSearchQuery] = useState('');
@@ -68,22 +70,34 @@ export default function ReceiveScreen() {
                 logoURI: params.logoURI || '',
                 chainId: cid,
                 address: params.address || '',
-                chainType: cid === 7565164 || cid === 1399811149 ? 'solana' : 'evm'
+                chainType: WALLET_CHAINS.find(wc => wc.id === cid)?.chain || 'EVM'
             });
         }
     }, [params]);
 
-    // Determine supported chain families based on connected wallets
-    const supportedChainTypes = useMemo(() => {
-        const types = new Set<string>();
-        walletGroups.forEach(g => {
-            if (g.addresses.EVM) types.add('EVM');
-            if (g.addresses.SOLANA) types.add('Solana');
-        });
-        return Array.from(types) as any[];
-    }, [walletGroups]);
+    const { data: chains } = useChains();
 
-    const { data: chains } = useChains(supportedChainTypes as any);
+    // Chain options from wallet addresses for filter chips (Canonical IDs)
+    const WALLET_CHAINS: { id: number; chain: ChainType; name: string; icon: any }[] = [
+        { id: 1, chain: 'EVM', name: 'Ethereum', icon: require('../assets/home/chains/ethereum.svg') },
+        { id: 56, chain: 'EVM', name: 'BSC', icon: require('../assets/home/chains/bsc.svg') },
+        { id: 137, chain: 'EVM', name: 'Polygon', icon: require('../assets/home/chains/polygon.svg') },
+        { id: 8453, chain: 'EVM', name: 'Base', icon: require('../assets/home/chains/base.png') },
+        { id: 10, chain: 'EVM', name: 'Optimism', icon: require('../assets/home/chains/optimism.png') },
+        { id: 42161, chain: 'EVM', name: 'Arbitrum', icon: require('../assets/home/chains/ethereum.svg') }, // Use ETH icon for Arbitrum
+        { id: 43114, chain: 'EVM', name: 'Avalanche', icon: require('../assets/home/chains/avalanche.svg') },
+        { id: 7565164, chain: 'SOLANA', name: 'Solana', icon: require('../assets/home/chains/solana.svg') },
+        { id: 728126428, chain: 'TRON', name: 'TRON', icon: require('../assets/home/chains/tron.png') },
+        { id: 1100, chain: 'TON', name: 'TON', icon: require('../assets/home/chains/ton.jpg') },
+        { id: 118, chain: 'COSMOS', name: 'Cosmos Hub', icon: require('../assets/home/chains/cosmos.svg') },
+    ];
+
+    // Only show chains that the wallet has addresses for
+    const activeGroup = walletGroups.find(g => g.id === useWalletStore.getState().activeGroupId);
+    const availableChains = useMemo(() => {
+        if (!activeGroup) return WALLET_CHAINS;
+        return WALLET_CHAINS.filter(wc => !!activeGroup.addresses?.[wc.chain]);
+    }, [activeGroup]);
 
     // IDs for fetching tokens
     const fetchChainIds = useMemo(() => {
@@ -91,112 +105,234 @@ export default function ReceiveScreen() {
         return chains?.map(c => c.id) || [];
     }, [selectedChainFilter, chains]);
 
-    // Fetch tokens from API
-    // 1. Fetch High Quality Market Tokens (Initial List)
-    const { data: marketTokens, isLoading: isFetchingMarket } = useEnrichedMarkets({
-        marketType: 'all',
-        limit: 50,
-        enabled: !searchQuery.trim()
-    });
-
-    // 2. Fetch Broad Tokens (Search only)
+    // Fetch tokens — same approach as swap token selector
+    // 1. Search tokens
     const { data: searchResponse, isLoading: isSearchingTokens } = useTokens({
         chains: fetchChainIds,
         query: searchQuery,
         limit: 50,
         enabled: searchQuery.trim().length > 0
     });
-    
-    const apiTokens = searchQuery.trim() ? (searchResponse?.tokens || []) : (marketTokens || []);
 
-    // Computed list of tokens to show
+    // 2. Default tokens for selected chain (or all chains)
+    const { data: defaultResponse, isLoading: isLoadingDefaults } = useTokens({
+        chains: selectedChainFilter ? [selectedChainFilter] : undefined,
+        limit: 50,
+        enabled: !searchQuery.trim(),
+    });
+
+    // ── Unified Token Logic (Inspired by Swap Selector) ───────────────────
     const displayTokens = useMemo(() => {
-        if (!apiTokens || !Array.isArray(apiTokens)) return [];
-
-        // --- MIRRORING SWAP PAGE SEARCH LOGIC ---
         const TWC_ADDRESS = '0xda1060158f7d593667cce0a15db346bb3ffb3596'.toLowerCase();
-        
-        // 1. Rigorous Filtering (Deduplicate & Junk Clear)
-        const seenSymbolChain = new Map<string, any>();
-        
-        apiTokens.forEach((t: any) => {
-            const symb = (t.symbol || '').toUpperCase().trim();
-            if (!symb) return;
-            
-            // 1. Basic Junk/Spam Filter
-            const nameLower = (t.name || '').toLowerCase();
-            if (nameLower.includes('pump.fun') || nameLower.includes('.com') || nameLower.includes('visit') || nameLower.includes('claim')) return;
-            if (/[\u4e00-\u9fa5]/.test(nameLower)) return;
+        const NATIVE_ADDRS = [NATIVE_TOKEN_ADDRESS, MORALIS_NATIVE_ADDRESS];
 
-            // 2. Global Deduplication by Symbol (Mirror Swap quality)
-            const key = symb; 
-            const existing = seenSymbolChain.get(key);
-            
-            const newVerified = !!t.verified;
-            const newHasLogo = !!(t.logoURI || t.logo);
-            const newLiq = parseFloat(t.liquidity?.toString() || '0');
+        // 1. Get tokens from API
+        const rawTokens = searchQuery.trim()
+            ? (searchResponse?.tokens || [])
+            : (defaultResponse?.tokens || []);
 
-            if (!existing) {
-                seenSymbolChain.set(key, t);
-            } else {
-                const existingVerified = !!existing.verified;
-                const existingHasLogo = !!(existing.logoURI || existing.logo);
-                const existingLiq = parseFloat(existing.liquidity?.toString() || '0');
+        // 2. Map to unified objects
+        const mappedApiTokens = rawTokens.map(t => {
+            const walletToken = balanceData?.tokens.find(
+                wt => wt.address.toLowerCase() === t.address.toLowerCase() && wt.chainId === t.chainId
+            );
+            const chainInfo = chains?.find(c => c.id === t.chainId);
+            const hasBalance = !!walletToken;
+            const balanceNum = parseFloat(walletToken?.balanceFormatted || '0');
+            const priceNum = parseFloat(t.priceUSD || '0');
+            const totalUSD = balanceNum * priceNum;
 
-                // DEDUPLICATION HEURISTICS (Exactly like the super-app swap logic)
-                // Priority 1: Verified tokens always win
-                if (newVerified && !existingVerified) {
-                    seenSymbolChain.set(key, t);
-                    return;
-                }
-                if (existingVerified && !newVerified) return;
+            return {
+                id: `${t.chainId}-${t.address}`,
+                symbol: t.symbol,
+                name: t.name,
+                logoURI: t.logoURI || t.logo,
+                chainIcon: chainInfo?.logoURI,
+                address: t.address,
+                chainId: t.chainId,
+                decimals: t.decimals ?? 18,
+                balanceToken: hasBalance
+                    ? `${formatTokenQuantity(walletToken!.balanceFormatted)} ${t.symbol}`
+                    : `0 ${t.symbol}`,
+                balanceFiat: totalUSD > 0 ? formatUSDPrice(totalUSD) : '$0.00',
+                isOwned: hasBalance,
+                usdValueNum: totalUSD,
+                _liquidity: parseFloat(t.liquidity?.toString() || '0'),
+                _verified: !!(t as any).verified,
+                chainType: WALLET_CHAINS.find(wc => wc.id === t.chainId)?.chain || 'EVM'
+            };
+        });
 
-                // Priority 2: Tokens with logos win over those without
-                if (newHasLogo && !existingHasLogo) {
-                    seenSymbolChain.set(key, t);
-                    return;
-                }
-                if (existingHasLogo && !newHasLogo) return;
+        // 3. Add wallet tokens that might not be in API results
+        const ownedTokensOnChain = (balanceData?.tokens || [])
+            .filter(wt => {
+                if (selectedChainFilter) return wt.chainId === selectedChainFilter;
+                return true;
+            })
+            .filter(wt => {
+                // Deduplicate with API results
+                return !mappedApiTokens.some(at => at.address.toLowerCase() === wt.address.toLowerCase() && at.chainId === wt.chainId);
+            })
+            .map(wt => {
+                const chainInfo = chains?.find(c => c.id === wt.chainId);
+                const usdVal = parseFloat(wt.usdValue || '0');
+                return {
+                    id: `${wt.chainId}-${wt.address}`,
+                    symbol: wt.symbol,
+                    name: wt.name,
+                    logoURI: wt.logoURI,
+                    chainIcon: chainInfo?.logoURI,
+                    address: wt.address,
+                    chainId: wt.chainId,
+                    decimals: wt.decimals ?? 18,
+                    balanceToken: `${formatTokenQuantity(wt.balanceFormatted)} ${wt.symbol}`,
+                    balanceFiat: usdVal > 0 ? formatUSDPrice(usdVal) : '$0.00',
+                    isOwned: true,
+                    usdValueNum: usdVal,
+                    _liquidity: 0,
+                    _verified: true,
+                    chainType: WALLET_CHAINS.find(wc => wc.id === wt.chainId)?.chain || 'EVM'
+                };
+            });
 
-                // Priority 3: Finally use liquidity as tie-breaker
-                if (newLiq > existingLiq) {
-                    seenSymbolChain.set(key, t);
-                }
+        const allTokens = [...mappedApiTokens, ...ownedTokensOnChain];
+
+        // 4. Strict chain filter and search filter
+        const filtered = allTokens.filter(t => {
+            if (selectedChainFilter && t.chainId !== selectedChainFilter) return false;
+
+            if (searchQuery.trim()) {
+                const q = searchQuery.toLowerCase();
+                return t.symbol.toLowerCase().includes(q) || t.name.toLowerCase().includes(q) || t.address.toLowerCase().includes(q);
+            }
+
+            // Spam filtering (similar to Swap sheet)
+            const name = t.name?.toLowerCase() || '';
+            const symbol = t.symbol?.toLowerCase() || '';
+            const address = t.address?.toLowerCase() || '';
+
+            if (address.endsWith('pump') || name.includes('pump.fun')) return false;
+            if (/[\u4e00-\u9fa5]/.test(name)) return false; // Hide Chinese spam
+
+            const spamKw = ['.com', '.xyz', 'claim', 'airdrop', 'visit', 'free', 'reward', 'voucher'];
+            if (spamKw.some(k => name.includes(k) || symbol.includes(k))) return false;
+
+            return true;
+        });
+
+        // 5. Deduplicate by chain+symbol
+        const seen = new Map<string, any>();
+        filtered.forEach(t => {
+            const key = `${t.chainId}-${t.symbol.toUpperCase()}`;
+            const existing = seen.get(key);
+            if (!existing || (t.isOwned && !existing.isOwned) || (t._liquidity > existing._liquidity)) {
+                seen.set(key, t);
             }
         });
 
-        const filtered = Array.from(seenSymbolChain.values());
+        // 6. Final Sort: Ownership, Native priority, Solana ecosystem priority, then market metrics
+        return Array.from(seen.values()).sort((a, b) => {
+            // Owned tokens always first
+            if (a.isOwned && !b.isOwned) return -1;
+            if (!a.isOwned && b.isOwned) return 1;
 
-        return filtered.map(t => ({
-            symbol: t.symbol,
-            name: t.name,
-            logoURI: t.logoURI || t.logo,
-            chainId: t.chainId,
-            address: t.address,
-            liquidity: parseFloat(t.liquidity?.toString() || '0'),
-            verified: !!t.verified,
-            chainType: t.chainId === 7565164 || t.chainId === 1399811149 ? 'solana' : 'evm'
-        })) as any[];
-    }, [apiTokens]);
+            // Solana specific ecosystem priority for non-owned tokens
+            if ((selectedChainFilter === 7565164 || a.chainId === 7565164) && !a.isOwned && !b.isOwned) {
+                const solPrio = (t: any) => {
+                    const symbol = t.symbol.toUpperCase();
+                    const addr = t.address?.toLowerCase();
+                    if (t.isNative || symbol === 'SOL') return 100; // SOL
+                    if (addr === 'epjfwdd5aufqssqem2qn1xzybapc8g4weggkzwytdt1v' || symbol === 'USDC') return 90; // USDC
+                    if (addr === 'es9vmfrzadcstmdamrjs4nhaf79ppu36hmrf6s5je6m' || symbol === 'USDT') return 80; // USDT
+                    return 0;
+                };
+                const pA = solPrio(a);
+                const pB = solPrio(b);
+                if (pA !== pB) return pB - pA;
+            }
+
+            // Native priority (general)
+            const aN = NATIVE_ADDRS.includes(a.address.toLowerCase()) || a.isNative;
+            const bN = NATIVE_ADDRS.includes(b.address.toLowerCase()) || b.isNative;
+            if (aN && !bN) return -1;
+            if (!aN && bN) return 1;
+
+            // TWC next
+            if (a.address.toLowerCase() === TWC_ADDRESS && b.address.toLowerCase() !== TWC_ADDRESS) return -1;
+            if (a.address.toLowerCase() !== TWC_ADDRESS && b.address.toLowerCase() === TWC_ADDRESS) return 1;
+
+            // Verified / Liquidity
+            if (a._verified && !b._verified) return -1;
+            if (!a._verified && b._verified) return 1;
+            return b._liquidity - a._liquidity;
+        });
+    }, [searchResponse, defaultResponse, balanceData, selectedChainFilter, chains, searchQuery]);
 
     // Get actual wallet address based on chain type
-    const getAddressForToken = (token: DisplayToken) => {
-        if (token.chainType.toUpperCase() === activeChain) {
-            return activeAddress || 'No Address';
-        }
-
-        const targetChain = token.chainType.toUpperCase() as any;
+    const getAddressForToken = (token: any) => {
+        const targetChain = String(token.chainType || 'EVM').toUpperCase() as ChainType;
         const activeGroupId = useWalletStore.getState().activeGroupId;
         const group = walletGroups.find(g => g.id === activeGroupId);
-        if (group && (group.addresses as any)[targetChain]) {
-            return (group.addresses as any)[targetChain]!;
+        if (group && group.addresses[targetChain]) {
+            return group.addresses[targetChain]!;
         }
-        
         return activeAddress || 'No Address';
     };
 
-    const handleTokenSelect = (token: DisplayToken) => {
-        setSelectedToken(token);
+    const handleTokenSelect = (token: any) => {
+        setSelectedToken({
+            symbol: token.symbol,
+            name: token.name,
+            logoURI: token.logoURI,
+            chainId: token.chainId,
+            address: token.address,
+            chainType: token.chainType
+        });
+    };
+
+    const renderToken = (item: any, key: string) => {
+        const chain = chains?.find(c => c.id === item.chainId);
+        const address = getAddressForToken(item);
+        return (
+            <TouchableOpacity
+                key={key}
+                activeOpacity={0.8}
+                onPress={() => handleTokenSelect(item)}
+                style={styles.tokenItem}
+            >
+                <View style={styles.tokenInfo}>
+                    <View style={styles.tokenIconWrapper}>
+                        <View style={styles.tokenIconContainer}>
+                            <Image
+                                source={item.symbol.toUpperCase() === 'TIWICAT' ? require('../assets/home/tiwicat.svg') : item.logoURI}
+                                style={styles.tokenIcon}
+                                contentFit="cover"
+                            />
+                        </View>
+                        <View style={styles.chainBadge}>
+                            <Image
+                                source={chain?.logoURI || (chain as any)?.logo}
+                                style={styles.chainIcon}
+                                contentFit="contain"
+                            />
+                        </View>
+                    </View>
+                    <View style={styles.tokenDetails}>
+                        <Text style={styles.tokenSymbol}>{item.symbol}</Text>
+                        <Text style={styles.tokenAddress}>{truncateAddress(address)}</Text>
+                    </View>
+                </View>
+                <TouchableOpacity
+                    onPress={async () => {
+                        await Clipboard.setStringAsync(address);
+                        showToast('Address copied', 'success');
+                    }}
+                    style={styles.copyButton}
+                >
+                    <Image source={CopyIcon} style={styles.copyIcon} contentFit="contain" />
+                </TouchableOpacity>
+            </TouchableOpacity>
+        );
     };
 
     const handleCopy = async () => {
@@ -222,7 +358,6 @@ export default function ReceiveScreen() {
             });
         } catch (error: any) {
             console.error('Failed to share address:', error);
-            // Fallback to copy if sharing fails
             await Clipboard.setStringAsync(address);
             showToast('Wallet address copied to clipboard', 'success');
         }
@@ -233,7 +368,6 @@ export default function ReceiveScreen() {
             router.back();
             return;
         }
-
         if (selectedToken) {
             setSelectedToken(null);
         } else {
@@ -245,7 +379,7 @@ export default function ReceiveScreen() {
         const currentRoute = pathname || '/receive';
         router.push(`/settings?returnTo=${encodeURIComponent(currentRoute)}` as any);
     };
-    
+
     const handleHomePress = () => {
         router.replace('/(tabs)' as any);
     };
@@ -266,7 +400,6 @@ export default function ReceiveScreen() {
         return (
             <View style={[styles.container, { backgroundColor: colors.bg }]}>
                 <CustomStatusBar />
-
                 <View style={[styles.header, { paddingTop: top || 0 }]}>
                     <WalletHeader
                         walletAddress={address}
@@ -278,76 +411,39 @@ export default function ReceiveScreen() {
                         onHomePress={handleHomePress}
                     />
                 </View>
-
                 <ScrollView
                     style={styles.scrollView}
-                    contentContainerStyle={[
-                        styles.qrScrollContent,
-                        { paddingBottom: (bottom || 16) + 24 }
-                    ]}
+                    contentContainerStyle={[styles.qrScrollContent, { paddingBottom: (bottom || 16) + 24 }]}
                     showsVerticalScrollIndicator={false}
                 >
                     <View style={styles.qrMainContent}>
                         <View style={styles.warningBanner}>
                             <Text style={styles.warningText}>
                                 <Text>Only send </Text>
-                                <Text style={styles.warningBold}>
-                                    {selectedToken.name} ({selectedToken.symbol})
-                                </Text>
+                                <Text style={styles.warningBold}>{selectedToken.name} ({selectedToken.symbol})</Text>
                                 <Text> via </Text>
                                 <Text style={styles.warningBold}>{chain?.name || 'its native network'}</Text>
                                 <Text> to this address. Other assets will be lost forever.</Text>
                             </Text>
                         </View>
-
                         <View style={styles.qrSection}>
                             <View style={styles.qrContainer}>
-                                <QRCode
-                                    value={address}
-                                    size={254}
-                                    color="#000000"
-                                    backgroundColor="#FFFFFF"
-                                />
+                                <QRCode value={address} size={254} color="#000000" backgroundColor="#FFFFFF" />
                             </View>
-
                             <View style={styles.addressContainer}>
                                 <Text style={styles.addressText}>{address}</Text>
                             </View>
-
                             <View style={styles.actionButtons}>
                                 <View style={styles.actionButtonWrapper}>
-                                    <TouchableOpacity
-                                        activeOpacity={0.8}
-                                        onPress={handleCopy}
-                                        style={styles.actionButton}
-                                    >
-                                        <Image
-                                            source={CheckmarkIcon}
-                                            style={[styles.actionIcon, { opacity: copied ? 1 : 0 }]}
-                                            contentFit="contain"
-                                        />
-                                        {!copied && (
-                                            <Image
-                                                source={CopyIcon}
-                                                style={[styles.actionIcon, { position: 'absolute' }]}
-                                                contentFit="contain"
-                                            />
-                                        )}
+                                    <TouchableOpacity activeOpacity={0.8} onPress={handleCopy} style={styles.actionButton}>
+                                        <Image source={CheckmarkIcon} style={[styles.actionIcon, { opacity: copied ? 1 : 0 }]} contentFit="contain" />
+                                        {!copied && <Image source={CopyIcon} style={[styles.actionIcon, { position: 'absolute' }]} contentFit="contain" />}
                                     </TouchableOpacity>
                                     <Text style={styles.actionLabel}>Copy</Text>
                                 </View>
-
                                 <View style={styles.actionButtonWrapper}>
-                                    <TouchableOpacity
-                                        activeOpacity={0.8}
-                                        onPress={handleShare}
-                                        style={styles.actionButton}
-                                    >
-                                        <Image
-                                            source={ShareIcon}
-                                            style={styles.actionIcon}
-                                            contentFit="contain"
-                                        />
+                                    <TouchableOpacity activeOpacity={0.8} onPress={handleShare} style={styles.actionButton}>
+                                        <Image source={ShareIcon} style={styles.actionIcon} contentFit="contain" />
                                     </TouchableOpacity>
                                     <Text style={styles.actionLabel}>Share</Text>
                                 </View>
@@ -363,17 +459,11 @@ export default function ReceiveScreen() {
     return (
         <View style={[styles.container, { backgroundColor: colors.bg }]}>
             <CustomStatusBar />
-
             <View style={[styles.header, { paddingTop: top || 0 }]}>
                 <WalletHeader
                     walletAddress={activeAddress || ""}
                     onIrisScanPress={handleIrisScanPress}
-                    // showCopy
-                    onCopyPress={() => {
-                        const addr = activeAddress || "";
-                        Clipboard.setString(addr);
-                        showToast('Address copied to clipboard', 'success');
-                    }}
+                    onCopyPress={() => { Clipboard.setStringAsync(activeAddress || ""); showToast('Address copied to clipboard', 'success'); }}
                     showBackButton
                     onBackPress={handleBackPress}
                     showHome
@@ -382,19 +472,13 @@ export default function ReceiveScreen() {
                     onSettingsPress={handleSettingsPress}
                 />
             </View>
-
             <ScrollView
                 style={styles.scrollView}
-                contentContainerStyle={[
-                    styles.listScrollContent,
-                    { paddingBottom: (bottom || 16) + 24 }
-                ]}
+                contentContainerStyle={[styles.listScrollContent, { paddingBottom: (bottom || 16) + 24 }]}
                 showsVerticalScrollIndicator={false}
             >
                 <View style={styles.listMainContent}>
                     <Text style={styles.title}>Receive Asset</Text>
-
-                    {/* Search Bar */}
                     <View style={styles.searchBar}>
                         <Image source={SearchIcon} style={styles.searchIcon} contentFit="contain" />
                         <TextInput
@@ -405,98 +489,50 @@ export default function ReceiveScreen() {
                             style={styles.searchInput}
                         />
                     </View>
-
-                    {/* Chain Filter Bar */}
-                    <ScrollView
-                        horizontal
-                        showsHorizontalScrollIndicator={false}
-                        style={styles.chainFilterBar}
-                        contentContainerStyle={styles.chainFilterContent}
-                    >
-                        <TouchableOpacity
-                            onPress={() => handleChainFilter(null)}
-                            style={[styles.chainFilterItem, !selectedChainFilter && styles.chainFilterItemActive]}
-                        >
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chainFilterBar} contentContainerStyle={styles.chainFilterContent}>
+                        <TouchableOpacity onPress={() => handleChainFilter(null)} style={[styles.chainFilterItem, !selectedChainFilter && styles.chainFilterItemActive]}>
                             <Text style={[styles.chainFilterText, !selectedChainFilter && styles.chainFilterTextActive]}>All</Text>
                         </TouchableOpacity>
-                        {chains?.map((chain) => (
-                            <TouchableOpacity
-                                key={chain.id}
-                                onPress={() => handleChainFilter(chain.id)}
-                                style={[styles.chainFilterItem, selectedChainFilter === chain.id && styles.chainFilterItemActive]}
-                            >
-                                <Image source={chain.logoURI || (chain as any).logo} style={styles.chainFilterIcon} />
-                                <Text style={[styles.chainFilterText, selectedChainFilter === chain.id && styles.chainFilterTextActive]}>{chain.name}</Text>
+                        {availableChains.map((wc) => (
+                            <TouchableOpacity key={wc.id} onPress={() => handleChainFilter(wc.id)} style={[styles.chainFilterItem, selectedChainFilter === wc.id && styles.chainFilterItemActive]}>
+                                <Image source={wc.icon} style={styles.chainFilterIcon} contentFit="contain" />
+                                <Text style={[styles.chainFilterText, selectedChainFilter === wc.id && styles.chainFilterTextActive]}>{wc.name}</Text>
                             </TouchableOpacity>
                         ))}
                     </ScrollView>
-
-                    {/* Token List */}
-                    {isFetchingMarket || isSearchingTokens ? (
+                    {isSearchingTokens || isLoadingDefaults ? (
                         <View style={styles.loadingContainer}>
                             <TIWILoader size={100} />
-                            <Text style={styles.loadingText}>{searchQuery.trim() ? 'Searching tokens...' : 'Loading market...'}</Text>
+                            <Text style={styles.loadingText}>{searchQuery.trim() ? 'Searching tokens...' : 'Loading tokens...'}</Text>
                         </View>
                     ) : (
                         <View style={styles.tokenList}>
                             {displayTokens.length > 0 ? (
-                                displayTokens.map((item, index) => {
-                                    const chain = chains?.find(c => c.id === item.chainId);
-                                    const address = getAddressForToken(item);
-
+                                (() => {
+                                    const owned = displayTokens.filter(t => t.isOwned);
+                                    const others = displayTokens.filter(t => !t.isOwned);
                                     return (
-                                        <TouchableOpacity
-                                            key={`${item.chainId}-${item.symbol}-${index}`}
-                                            activeOpacity={0.8}
-                                            onPress={() => handleTokenSelect(item)}
-                                            style={styles.tokenItem}
-                                        >
-                                            <View style={styles.tokenInfo}>
-                                                <View style={styles.tokenIconWrapper}>
-                                                    <View style={styles.tokenIconContainer}>
-                                                        <Image
-                                                            source={item.symbol.toUpperCase() === 'TIWICAT' ? require('../assets/home/tiwicat.svg') : item.logoURI}
-                                                            style={styles.tokenIcon}
-                                                            contentFit="cover"
-                                                        />
-                                                    </View>
-                                                     <View style={styles.chainBadge}>
-                                                         <Image
-                                                             source={chain?.logoURI || (chain as any)?.logo}
-                                                             style={styles.chainIcon}
-                                                             contentFit="contain"
-                                                         />
-                                                     </View>
-                                                </View>
-
-                                                <View style={styles.tokenDetails}>
-                                                    <Text style={styles.tokenSymbol}>{item.symbol}</Text>
-                                                    <Text style={styles.tokenAddress}>{truncateAddress(address)}</Text>
-                                                </View>
-                                            </View>
-
-                                            <View style={styles.tokenRight}>
-                                                <TouchableOpacity onPress={handleIrisScanPress} style={styles.irisScanButton}>
-                                                    <Image source={IrisScanIcon} style={styles.irisScanIcon} contentFit="contain" />
-                                                </TouchableOpacity>
-                                                <TouchableOpacity 
-                                                onPress={() => {
-                                                    Clipboard.setString(address);
-                                                    showToast('Address copied to clipboard', 'success');
-                                                }}
-                                                style={styles.copyButton}
-                                            >
-                                                <Image source={CopyIcon} style={styles.copyIcon} contentFit="contain" />
-                                            </TouchableOpacity>
-                                            </View>
-                                        </TouchableOpacity>
+                                        <>
+                                            {owned.length > 0 && (
+                                                <>
+                                                    <Text style={styles.sectionHeader}>Your Assets</Text>
+                                                    {owned.map((item, index) => renderToken(item, `owned-${index}`))}
+                                                </>
+                                            )}
+                                            {others.length > 0 && (
+                                                <>
+                                                    <Text style={styles.sectionHeader}>Other Tokens</Text>
+                                                    {others.map((item, index) => renderToken(item, `other-${index}`))}
+                                                </>
+                                            )}
+                                        </>
                                     );
-                                })
-                            ) : (
+                                })()
+                            ) : !selectedChainFilter || displayTokens.length === 0 ? (
                                 <View style={styles.emptyContainer}>
                                     <Text style={styles.emptyText}>No tokens found</Text>
                                 </View>
-                            )}
+                            ) : null}
                         </View>
                     )}
                 </View>
@@ -514,6 +550,16 @@ const styles = StyleSheet.create({
     },
     scrollView: {
         flex: 1,
+    },
+    sectionHeader: {
+        fontSize: 14,
+        fontFamily: 'Manrope-Bold',
+        color: colors.primaryCTA,
+        marginTop: 20,
+        marginBottom: 12,
+        paddingHorizontal: 4,
+        textTransform: 'uppercase',
+        letterSpacing: 1,
     },
     qrScrollContent: {
         paddingTop: 24,

@@ -29,15 +29,13 @@ export default function ContactSupportScreen() {
         let url = '';
         switch (type) {
             case 'email':
-                url = 'mailto:support@tiwiecosystem.com';
+                url = 'mailto:support@tiwiprotocol.xyz';
                 break;
             case 'telegram':
-                // Official handle as requested for tiwicat/tiwiecosystem
-                url = 'https://t.me/TiwiEcosystem';
+                url = 'https://t.me/TIWIEcosystemSupport';
                 break;
             case 'X':
-                // Official handle as requested for tiwicat/tiwiecosystem
-                url = 'https://x.com/TiwiEcosystem';
+                url = 'https://x.com/tiwiprotocol';
                 break;
         }
 

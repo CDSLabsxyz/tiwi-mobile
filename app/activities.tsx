@@ -5,6 +5,7 @@ import { UnifiedActivity, useUnifiedActivities } from '@/hooks/useUnifiedActivit
 import { useWalletStore } from '@/store/walletStore';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
 import React, { useMemo, useState } from 'react';
 import { FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -71,6 +72,20 @@ export default function ActivitiesScreen() {
         return `${addr.slice(0, 6)}...${addr.slice(-4)}`.toUpperCase();
     };
 
+    const getExplorerUrl = (hash: string, chainId?: number) => {
+        const explorers: Record<number, string> = {
+            1: 'https://etherscan.io/tx/',
+            56: 'https://bscscan.com/tx/',
+            137: 'https://polygonscan.com/tx/',
+            8453: 'https://basescan.org/tx/',
+            10: 'https://optimistic.etherscan.io/tx/',
+            43114: 'https://snowtrace.io/tx/',
+            42161: 'https://arbiscan.io/tx/',
+        };
+        const base = explorers[chainId || 56] || explorers[56];
+        return `${base}${hash}`;
+    };
+
     const renderActivityItem = ({ item }: { item: UnifiedActivity }) => {
         const isReceived = item.category === 'Received' || item.title.toLowerCase().includes('received');
         const amountColor = isReceived ? '#498F00' : colors.titleText;
@@ -81,7 +96,8 @@ export default function ActivitiesScreen() {
                 activeOpacity={0.7}
                 onPress={() => {
                     if (item.hash) {
-                        // Potential detail view logic
+                        const url = getExplorerUrl(item.hash, item.chainId);
+                        WebBrowser.openBrowserAsync(url);
                     }
                 }}
             >

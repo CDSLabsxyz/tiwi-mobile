@@ -161,9 +161,9 @@ export const SwapDetailsCard: React.FC<SwapDetailsCardProps> = ({
                         )}
                     </View>
 
-                    {/* TWC Fee */}
+                    {/* Protocol Fee */}
                     <View style={styles.detailRow}>
-                        <Text style={styles.detailLabel}>TWC Fee</Text>
+                        <Text style={styles.detailLabel}>Protocol Fee</Text>
                         {isLoading ? (
                             <Animated.View style={[styles.skeletonSmall, skeletonStyle]} />
                         ) : (

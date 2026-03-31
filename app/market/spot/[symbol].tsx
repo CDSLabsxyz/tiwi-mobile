@@ -7,6 +7,7 @@ import { TokenPriceChange } from '@/components/features/market/detail/TokenPrice
 import { TokenTransactionsSummary } from '@/components/features/market/detail/TokenTransactionsSummary';
 import { TokenTransactions } from '@/components/features/market/detail/TokenTransactions';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
+import { TIWILoader } from '@/components/ui/TIWILoader';
 import { colors } from '@/constants/colors';
 import { useEnrichedMarketDetail } from '@/hooks/useEnrichedMarketDetail';
 import { useMarketStore } from '@/store/marketStore';
@@ -68,6 +69,22 @@ export default function SpotMarketDetail() {
 
     const router = useRouter();
 
+    // Build consistent favorite ID
+    const favoriteId = token?.id || symbol || '';
+
+    const handleToggleFavorite = () => {
+        toggleFavorite(favoriteId, {
+            id: favoriteId,
+            symbol: token?.symbol || symbol,
+            name: token?.name || name || symbol,
+            address: effectiveAddress || address,
+            chainId: parsedChainId,
+            logoURI: token?.logoURI || token?.logo,
+            priceUSD: pool?.priceUsd?.toString() || token?.priceUSD,
+            priceChange24h: token?.priceChange24h || 0,
+        });
+    };
+
     const handleTrade = () => {
         router.push({
             pathname: '/swap',
@@ -84,11 +101,10 @@ export default function SpotMarketDetail() {
 
     if (isEnrichedLoading) {
         return (
-            <View style={styles.container}>
+            <View style={[styles.container, styles.center, {}]}>
                 <CustomStatusBar />
-                <View style={styles.center}>
-                    <Text style={styles.loadingText}>Loading...</Text>
-                </View>
+                <TIWILoader size={80} />
+                <Text style={styles.loadingText}>FETCHING MARKET DATA...</Text>
             </View>
         );
     }
@@ -108,8 +124,8 @@ export default function SpotMarketDetail() {
             <ScreenHeader
                 symbol={token.displaySymbol || token.symbol}
                 logoURI={token.logoURI}
-                isFavorite={isFavorite(token.id)}
-                onToggleFavorite={() => toggleFavorite(token.id)}
+                isFavorite={isFavorite(favoriteId)}
+                onToggleFavorite={handleToggleFavorite}
             />
 
             <ScrollView
@@ -202,14 +218,14 @@ export default function SpotMarketDetail() {
             {/* Bottom Action Bar (Matches Web Mobile Design with star icon next to button) */}
             <View style={[styles.actionBar, { paddingBottom: Math.max(bottom, 20) }]}>
                 <TouchableOpacity
-                    onPress={() => toggleFavorite(token.id)}
+                    onPress={handleToggleFavorite}
                     activeOpacity={0.7}
                     style={styles.favoriteButton}
                 >
                     <Ionicons
-                        name={isFavorite(token.id) ? "star" : "star-outline"}
+                        name={isFavorite(favoriteId) ? "star" : "star-outline"}
                         size={24}
-                        color={isFavorite(token.id) ? colors.primaryCTA : colors.mutedText}
+                        color={isFavorite(favoriteId) ? colors.primaryCTA : colors.mutedText}
                     />
                 </TouchableOpacity>
 
@@ -235,9 +251,10 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
     },
     loadingText: {
-        fontFamily: 'Manrope-Medium',
-        fontSize: 16,
-        color: colors.bodyText,
+        color: colors.primaryCTA,
+        marginTop: 16,
+        fontSize: 10,
+        fontWeight: 'bold',
     },
     tabContainer: {
         flexDirection: 'row',

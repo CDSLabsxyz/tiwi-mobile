@@ -25,7 +25,7 @@ export default function FuturesMarketDetail() {
     const { isFavorite, toggleFavorite } = useMarketStore();
     const [activeTab, setActiveTab] = React.useState<SubTab>('Order Book');
 
-    const router = useRouter(); // Initialize router
+    const router = useRouter();
 
     const { data: token, isLoading } = useEnrichedMarketDetail({
         symbol: symbol || '',
@@ -71,14 +71,29 @@ export default function FuturesMarketDetail() {
         );
     }
 
+    const favoriteId = token.id || symbol || '';
+
+    const handleToggleFavorite = () => {
+        toggleFavorite(favoriteId, {
+            id: favoriteId,
+            symbol: token.symbol || symbol,
+            name: token.name || symbol,
+            address: token.address || address,
+            chainId: token.chainId || (chainId ? parseInt(chainId) : undefined),
+            logoURI: token.logoURI || token.logo,
+            priceUSD: token.priceUSD,
+            priceChange24h: token.priceChange24h || 0,
+        });
+    };
+
     return (
         <View style={styles.container}>
             <CustomStatusBar />
             <ScreenHeader
                 symbol={token.displaySymbol || token.symbol}
                 logoURI={token.logoURI}
-                isFavorite={isFavorite(token.id)}
-                onToggleFavorite={() => toggleFavorite(token.id)}
+                isFavorite={isFavorite(favoriteId)}
+                onToggleFavorite={handleToggleFavorite}
             />
 
             <ScrollView

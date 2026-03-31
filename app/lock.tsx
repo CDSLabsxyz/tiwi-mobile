@@ -9,8 +9,9 @@ import { SecurityKeypad } from '@/components/ui/security/SecurityKeypad';
 import { useSecurityStore } from '@/store/securityStore';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
-import { BackHandler, StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import React, { useEffect, useRef, useState } from 'react';
+import { Animated, BackHandler, Easing, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import * as LocalAuthentication from 'expo-local-authentication';
@@ -20,17 +21,19 @@ import { useTranslation } from '@/hooks/useLocalization';
 import { activityService } from '@/services/activityService';
 import { useWalletStore } from '@/store/walletStore';
 
-// Biometric icon
-const FingerprintIcon = require('@/assets/security/fingerprint.svg');
 
 export default function LockScreen() {
     const { top, bottom } = useSafeAreaInsets();
     const router = useRouter();
     const { t } = useTranslation();
-    const { unlockApp, isBiometricsEnabled, verifyPasscode: verifyStorePasscode } = useSecurityStore();
+    const { unlockApp, isBiometricsEnabled, isFaceUnlockEnabled, verifyPasscode: verifyStorePasscode } = useSecurityStore();
     const { address } = useWalletStore();
     const [code, setCode] = useState('');
     const [isError, setIsError] = useState(false);
+    const [faceStatus, setFaceStatus] = useState<'idle' | 'scanning' | 'success' | 'failed'>('idle');
+    const scanAnim = useRef(new Animated.Value(0)).current;
+
+    const biometricEnabled = isBiometricsEnabled || isFaceUnlockEnabled;
 
     useEffect(() => {
         // Prevent going back
@@ -42,6 +45,16 @@ export default function LockScreen() {
             backAction
         );
         return () => backHandler.remove();
+    }, []);
+
+    // Auto-trigger biometric/face unlock on mount
+    useEffect(() => {
+        if (biometricEnabled) {
+            const timer = setTimeout(() => {
+                handleBiometric();
+            }, 400);
+            return () => clearTimeout(timer);
+        }
     }, []);
 
     const handlePress = (digit: string) => {
@@ -92,17 +105,32 @@ export default function LockScreen() {
         }
     };
 
+    const startScanAnimation = () => {
+        scanAnim.setValue(0);
+        Animated.loop(
+            Animated.sequence([
+                Animated.timing(scanAnim, { toValue: 1, duration: 800, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+                Animated.timing(scanAnim, { toValue: 0, duration: 800, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+            ])
+        ).start();
+    };
+
     const handleBiometric = async () => {
         try {
+            setFaceStatus('scanning');
+            startScanAnimation();
+
             const result = await LocalAuthentication.authenticateAsync({
                 promptMessage: t('lock.biometric_prompt'),
                 fallbackLabel: 'Use Passcode',
             });
 
+            scanAnim.stopAnimation();
+
             if (result.success) {
+                setFaceStatus('success');
                 Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-                // Log security activity
                 if (address) {
                     activityService.logSecurityEvent(
                         address,
@@ -112,18 +140,47 @@ export default function LockScreen() {
                     );
                 }
 
-                unlockApp();
-                router.replace('/(tabs)');
+                setTimeout(() => {
+                    unlockApp();
+                    router.replace('/(tabs)');
+                }, 500);
+            } else {
+                setFaceStatus('failed');
+                setTimeout(() => setFaceStatus('idle'), 2000);
             }
         } catch (e) {
             console.log('Biometric error', e);
+            setFaceStatus('failed');
+            setTimeout(() => setFaceStatus('idle'), 2000);
         }
     };
 
     return (
         <View style={[styles.container, { paddingTop: top }]}>
             <View style={styles.content}>
-                {/* Logo or Icon could go here */}
+                {biometricEnabled && (
+                    <TouchableOpacity onPress={handleBiometric} style={styles.faceIconContainer} activeOpacity={0.7}>
+                        <Animated.View style={[
+                            styles.faceIconRing,
+                            faceStatus === 'scanning' && { borderColor: '#B1F128', opacity: scanAnim.interpolate({ inputRange: [0, 1], outputRange: [0.4, 1] }) },
+                            faceStatus === 'success' && { borderColor: '#B1F128' },
+                            faceStatus === 'failed' && { borderColor: '#FF4D4D' },
+                        ]}>
+                            <Ionicons
+                                name={faceStatus === 'success' ? 'checkmark-circle' : faceStatus === 'failed' ? 'close-circle' : 'scan-outline'}
+                                size={32}
+                                color={faceStatus === 'success' ? '#B1F128' : faceStatus === 'failed' ? '#FF4D4D' : '#888'}
+                            />
+                        </Animated.View>
+                        <Text style={[
+                            styles.faceStatusText,
+                            faceStatus === 'success' && { color: '#B1F128' },
+                            faceStatus === 'failed' && { color: '#FF4D4D' },
+                        ]}>
+                            {faceStatus === 'scanning' ? 'Scanning...' : faceStatus === 'success' ? 'Verified' : faceStatus === 'failed' ? 'Not recognized' : 'Tap to unlock'}
+                        </Text>
+                    </TouchableOpacity>
+                )}
 
                 <Text style={styles.title}>{t('lock.welcome_back')}</Text>
                 <Text style={styles.subtitle}>{t('lock.enter_passcode')}</Text>
@@ -141,8 +198,8 @@ export default function LockScreen() {
                 <SecurityKeypad
                     onPress={handlePress}
                     onDelete={handleDelete}
-                    onBiometric={isBiometricsEnabled ? handleBiometric : undefined}
-                    showBiometric={isBiometricsEnabled}
+                    onBiometric={biometricEnabled ? handleBiometric : undefined}
+                    showBiometric={biometricEnabled}
                     biometricIcon={true}
                 />
             </View>
@@ -178,6 +235,25 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         marginBottom: 20
+    },
+    faceIconContainer: {
+        alignItems: 'center',
+        marginBottom: 24,
+    },
+    faceIconRing: {
+        width: 64,
+        height: 64,
+        borderRadius: 32,
+        borderWidth: 2,
+        borderColor: '#333',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 8,
+    },
+    faceStatusText: {
+        fontFamily: 'Manrope-Medium',
+        fontSize: 12,
+        color: '#888',
     },
     errorText: {
         position: 'absolute',

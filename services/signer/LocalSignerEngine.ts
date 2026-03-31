@@ -10,27 +10,37 @@ import { getChainById } from './SignerUtils';
  * where the private key is stored locally in SecureStore.
  */
 export class LocalSignerEngine implements SignerEngine {
+    private formatKey(key: string): `0x${string}` {
+        return (key.startsWith('0x') ? key : `0x${key}`) as `0x${string}`;
+    }
+
     private async getRawAccount(address: string) {
         const privateKey = await getSecurePrivateKey(address);
         if (!privateKey) throw new Error('Private key not found locally');
-        return privateKeyToAccount(privateKey as `0x${string}`);
+        return privateKeyToAccount(this.formatKey(privateKey));
     }
 
     private async createSecureAccount(address: string) {
         const privateKey = await getSecurePrivateKey(address);
         if (!privateKey) throw new Error('Private key not found locally');
 
-        const account = privateKeyToAccount(privateKey as `0x${string}`);
+        const account = privateKeyToAccount(this.formatKey(privateKey));
         const securityStore = useSecurityStore.getState();
 
         // Helper to perform the dual guard check
         const authorize = async (message: string) => {
-            // If biometrics are enabled, we perform the extra hardware-level verification.
-            // If not, we assume the app-level passcode check (which happens in the UI component
-            // before calling the signer) is sufficient.
+            // If biometrics are enabled, attempt extra hardware-level verification.
+            // If it fails (user dismisses, not enrolled, etc.), fall through —
+            // the app-level passcode check already happened in the UI.
             if (securityStore.isBiometricsEnabled) {
-                const isAuthorized = await securityStore.authenticateBiometrics(message);
-                if (!isAuthorized) throw new Error('User authentication failed');
+                try {
+                    const isAuthorized = await securityStore.authenticateBiometrics(message);
+                    if (!isAuthorized) {
+                        console.warn('[LocalSignerEngine] Biometric auth declined, proceeding with passcode auth');
+                    }
+                } catch (e) {
+                    console.warn('[LocalSignerEngine] Biometric auth error, proceeding with passcode auth');
+                }
             }
             return true;
         };

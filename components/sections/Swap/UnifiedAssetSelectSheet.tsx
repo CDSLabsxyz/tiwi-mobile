@@ -10,6 +10,7 @@ import { Image as ExpoImage } from 'expo-image';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Dimensions, FlatList, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import { useWalletStore, ChainType } from '@/store/walletStore';
 import { SelectionBottomSheet } from './SelectionBottomSheet';
 
 // Reuse types from existing sheets
@@ -53,6 +54,7 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
     const { data: chains, isLoading: isLoadingChains } = useChains();
     // console.log("🚀 ~ UnifiedAssetSelectSheet ~ chains:", chains)
     const { data: balanceData } = useWalletBalances();
+    const { walletGroups, activeGroupId } = useWalletStore();
     const [debouncedQuery, setDebouncedQuery] = useState('');
 
     useEffect(() => {
@@ -97,9 +99,27 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
     }));
 
     // --- Chain Logic ---
+    const WALLET_CHAINS_TYPES: Record<number, ChainType> = {
+        1: 'EVM', 56: 'EVM', 137: 'EVM', 8453: 'EVM', 10: 'EVM', 42161: 'EVM', 43114: 'EVM',
+        7565164: 'SOLANA', 728126428: 'TRON', 1100: 'TON', 118: 'COSMOS', 12345: 'OSMOSIS'
+    };
+
+    const activeGroup = useMemo(() => 
+        walletGroups.find(g => g.id === activeGroupId),
+        [walletGroups, activeGroupId]
+    );
+
     const filteredChains = useMemo(() => {
         if (!chains) return [];
-        const mapped = chains.map(c => ({
+        
+        // 1. Filter chains that the wallet has addresses for (Sync with receive.tsx)
+        const supported = chains.filter(c => {
+            const type = WALLET_CHAINS_TYPES[c.id] || 'EVM';
+            return !!activeGroup?.addresses?.[type];
+        });
+
+        // 2. Map and search filter
+        const mapped = supported.map(c => ({
             id: c.id,
             name: c.name,
             icon: c.logoURI || (c as any).logo || require('@/assets/home/chains/ethereum.svg'),
@@ -110,12 +130,19 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
             c.name.toLowerCase().includes(chainSearchQuery.toLowerCase()) ||
             c.symbol?.toLowerCase().includes(chainSearchQuery.toLowerCase())
         );
-    }, [chains, chainSearchQuery]);
+    }, [chains, chainSearchQuery, activeGroup]);
 
     // --- Token Logic ---
-    const stableChains = useMemo(() =>
-        (selectedChain && selectedChain.id !== 'all') ? [selectedChain.id as number] : undefined,
-        [selectedChain]);
+    // Fetch all chain IDs if "All Networks" is selected, matching receive.tsx behavior
+    const stableChains = useMemo(() => {
+        if (selectedChain && selectedChain.id !== 'all') return [selectedChain.id as number];
+        
+        // Filter out chains not supported by wallet when in "All Networks" mode
+        return chains?.filter(c => {
+            const type = WALLET_CHAINS_TYPES[c.id] || 'EVM';
+            return !!activeGroup?.addresses?.[type];
+        }).map(c => c.id) || [];
+    }, [selectedChain, chains, activeGroup]);
 
     const isSearching = debouncedQuery.length > 0;
 
@@ -127,164 +154,51 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
     } = useTokens({
         query: debouncedQuery,
         chains: stableChains,
-        enabled: isSearching, // Only fetch when user is actively searching
+        limit: 50,
+        enabled: isSearching,
     });
-    const tokens = response?.tokens;
 
-    // ── NO SEARCH: only wallet-owned tokens ─────────────────────────────
-    const walletTokenOptions: TokenOption[] = useMemo(() => {
-        if (!balanceData?.tokens) return [];
-        return balanceData.tokens
-            .filter(wt => {
-                // Filter by selected chain if one is chosen (not "All Networks")
-                if (selectedChain && selectedChain.id !== 'all') {
-                    return wt.chainId === selectedChain.id;
-                }
-                return true;
-            })
-            .sort((a, b) => parseFloat(b.usdValue || '0') - parseFloat(a.usdValue || '0'))
-            .map(wt => {
-                const chainInfo = chains?.find(c => c.id === wt.chainId);
-                const usdVal = parseFloat(wt.usdValue || '0');
-                return {
-                    id: `${wt.chainId}-${wt.address}`,
-                    symbol: wt.symbol,
-                    name: wt.name,
-                    icon: wt.logoURI,
-                    chainIcon: chainInfo?.logoURI,
-                    tvl: 'N/A',
-                    balanceFiat: usdVal > 0 ? formatUSDPrice(usdVal) : '$0.00',
-                    balanceToken: `${formatTokenQuantity(wt.balanceFormatted)} ${wt.symbol}`,
-                    address: wt.address,
-                    chainId: wt.chainId,
-                    decimals: wt.decimals ?? 18,
-                    priceUSD: wt.priceUSD,
-                    isOwned: true,
-                    usdValueNum: usdVal,
-                } as TokenOption;
-            });
-    }, [balanceData, selectedChain, chains]);
+    // Auto-fetch popular tokens for the chain when no search query
+    const shouldFetchDefaults = !isSearching;
 
-    // ── WITH SEARCH: full API list, intensive filtering + deduplication ──
-    const searchTokenOptions: TokenOption[] = useMemo(() => {
-        if (!isSearching || !tokens) return [];
+    const {
+        data: defaultResponse,
+        isLoading: isLoadingDefaults,
+    } = useTokens({
+        chains: stableChains,
+        limit: 50,
+        enabled: shouldFetchDefaults,
+    });
 
+    // ── Unified Token Logic (Ported from Receive Screen) ───────────────────
+    const tokenOptions = useMemo(() => {
         const TWC_ADDRESS = '0xda1060158f7d593667cce0a15db346bb3ffb3596'.toLowerCase();
-        const NATIVE_ADDRS = [NATIVE_TOKEN_ADDRESS, MORALIS_NATIVE_ADDRESS];
+        const SOL_NATIVE = '11111111111111111111111111111111';
+        const NATIVE_ADDRS = [NATIVE_TOKEN_ADDRESS, MORALIS_NATIVE_ADDRESS, SOL_NATIVE, 'native'];
 
-        // ── LAYER 1: chain scope ──────────────────────────────────────────
-        const inScope = tokens.filter(t => {
-            if (selectedChain && selectedChain.id !== 'all') {
-                return t.chainId === selectedChain.id;
-            }
-            return true;
-        });
-
-        // ── LAYER 2: always-allow list (native + TWC) ─────────────────────
-        const alwaysAllow = (t: any) => {
-            const address = t.address?.toLowerCase() || '';
-            const symbol = t.symbol?.toLowerCase() || '';
-            const chainInfo = chains?.find((c: any) => c.id === t.chainId);
-            const nativeSym = chainInfo?.nativeCurrency?.symbol?.toLowerCase();
-            const isNative = NATIVE_ADDRS.includes(address) || (nativeSym && symbol === nativeSym);
-            return isNative || address === TWC_ADDRESS;
+        // Curated priority symbols by chain per user request
+        const CHAIN_PRIORITY: Record<number, string[]> = {
+            56: ['BNB', 'USDT', 'USDC', 'WBNB', 'TWC', 'WKC', 'TWT', 'CAKE', 'BUSD'], // BSC
+            1: ['ETH', 'USDT', 'USDC', 'WETH', 'WBTC', 'DAI', 'LINK', 'UNI'], // ETH
+            7565164: ['SOL', 'USDC', 'USDT', 'JUP', 'RAY', 'BONK'], // Solana
+            137: ['POL', 'USDT', 'USDC', 'WETH', 'DAI'], // Polygon
+            42161: ['ETH', 'USDC', 'USDT', 'ARB'], // Arbitrum
+            10: ['ETH', 'USDC', 'USDT', 'OP'], // Optimism
+            8453: ['ETH', 'USDC', 'USDT', 'AERO'], // Base
+            136105027: ['TON', 'USDT', 'NOT', 'DOGS'] // TON
         };
 
-        // ── LAYER 3: must have a real icon (no icon = fallback = likely scam) ─
-        const hasRealIcon = (t: any) => {
-            const uri = t.logoURI;
-            if (!uri) return false;
-            if (typeof uri !== 'string') return false;
-            if (uri.trim() === '') return false;
-            return true;
-        };
+        // 1. Get tokens from API
+        const rawTokens = isSearching
+            ? (response?.tokens || [])
+            : (defaultResponse?.tokens || []);
 
-        // ── LAYER 4: honeypot / vanity address detector ───────────────────
-        // e.g. 0x...4444, 0x...6666, 0x...0000 endings are common honeypot patterns
-        const isHoneypotAddress = (address: string) => {
-            const clean = address.toLowerCase().replace('0x', '');
-            // Repeating last 4 chars (e.g. 4444, 0000, aaaa, 6666)
-            const last4 = clean.slice(-4);
-            if (/^(.)\1{3}$/.test(last4)) return true;
-            // Ends in all zeros (burn address style)
-            if (clean.endsWith('000000')) return true;
-            return false;
-        };
-
-        // ── LAYER 5: spam heuristics ─────────────────────────────────────
-        const isSpam = (t: any) => {
-            const name = t.name?.toLowerCase() || '';
-            const symbol = t.symbol?.toLowerCase() || '';
-            const address = t.address?.toLowerCase() || '';
-
-            if (address.endsWith('pump') || name.includes('pump.fun')) return true;
-            // Catch more spam keywords including Chinese characters often used for spam
-            if (/[\u4e00-\u9fa5]/.test(name) || /[\u4e00-\u9fa5]/.test(symbol)) return true;
-            const spamKw = [
-                '.com', '.xyz', '.net', '.io', '.org', '.me',
-                'claim', 'airdrop', 'visit', 'free', 'reward', 'voucher',
-                'gift', 'win', 'bonus', 'ticket', 'receive', 'verify',
-                'elon', 'trump', 'safe'
-            ];
-            if (spamKw.some(k => name.includes(k) || symbol.includes(k))) return true;
-
-            return false;
-        };
-
-        // ── LAYER 6: minimum liquidity gate ────────────────────────────────────
-        // Some APIs/metadata might not return liquidity. Use a 0 check to allow those,
-        // or a very low value just to let legit tokens with 0 liquidity slip past
-        // if they pass all other rigorous checks. Duplicate layer handles the rest!
-        const hasLiquidity = (t: any) => {
-            if (alwaysAllow(t)) return true; // don't gate native/TWC
-            if (t.liquidity === undefined || t.liquidity === null) return true; // API didn't give liquidity info, let it pass
-            const liq = parseFloat(t.liquidity?.toString() || '0');
-            return liq >= 0; // The earlier $100 gate blocked too many legit low-cap tokens
-        };
-
-        // ── Apply all layers ──────────────────────────────────────────────
-        const filtered = inScope.filter(t => {
-            if (alwaysAllow(t)) return true; // sacred list bypasses all checks
-            if (!hasRealIcon(t)) return false;
-            if (isHoneypotAddress(t.address || '')) return false;
-            if (isSpam(t)) return false;
-            if (!hasLiquidity(t)) return false;
-
-            // Clear unverified/scam: must be verified OR have significant liquidity ($5000+) OR a sacred entry
-            const isVerified = !!(t as any).verified;
-            const liq = parseFloat(t.liquidity?.toString() || '0');
-            // Gate unverified tokens to have some minimum liquidity (clears zero-liq spam airdrops)
-            // Scams usually don't have $5000+ real, sustained liquidity.
-            if (!isVerified && liq < 5000) return false;
-
-            return true;
-        });
-
-        // ── LAYER 7: deduplicate — same symbol + same chain → keep highest liquidity ─
-        const seenSymbolChain = new Map<string, any>();
-        filtered.forEach(t => {
-            const key = `${t.chainId}-${(t.symbol || '').toUpperCase()}`;
-            const existing = seenSymbolChain.get(key);
-            if (!existing) {
-                seenSymbolChain.set(key, t);
-            } else {
-                // Prefer: verified > has icon > higher liquidity
-                const existingLiq = parseFloat(existing.liquidity?.toString() || '0');
-                const newLiq = parseFloat(t.liquidity?.toString() || '0');
-                const existingVerified = !!(existing as any).verified;
-                const newVerified = !!(t as any).verified;
-                if (newVerified && !existingVerified) seenSymbolChain.set(key, t);
-                else if (!existingVerified && !newVerified && newLiq > existingLiq) seenSymbolChain.set(key, t);
-            }
-        });
-        const deduped = Array.from(seenSymbolChain.values());
-
-        // ── Map to TokenOption ────────────────────────────────────────────
-        const mapped = deduped.map(t => {
+        // 2. Map to unified objects
+        const mappedApiTokens = rawTokens.map(t => {
             const walletToken = balanceData?.tokens.find(
                 wt => wt.address.toLowerCase() === t.address.toLowerCase() && wt.chainId === t.chainId
             );
-            const chainInfo = chains?.find((c: any) => c.id === t.chainId);
+            const chainInfo = chains?.find(c => c.id === t.chainId);
             const hasBalance = !!walletToken;
             const balanceNum = parseFloat(walletToken?.balanceFormatted || '0');
             const priceNum = parseFloat(t.priceUSD || '0');
@@ -293,36 +207,139 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
             return {
                 id: `${t.chainId}-${t.address}`,
                 symbol: t.symbol,
-                name: t.name,
-                icon: t.logoURI,
+                name: (t.symbol === 'TWC' || t.symbol === 'TIWICAT') ? 'TIWICAT' : t.name,
+                icon: t.logoURI || (t as any).logo,
                 chainIcon: chainInfo?.logoURI,
-                tvl: t.liquidity ? `$${parseFloat(t.liquidity.toString()).toLocaleString()}` : 'N/A',
-                balanceFiat: totalUSD > 0 ? formatUSDPrice(totalUSD) : '$0.00',
-                balanceToken: hasBalance
-                    ? `${formatTokenQuantity(walletToken!.balanceFormatted)} ${t.symbol}`
-                    : `0 ${t.symbol}`,
                 address: t.address,
                 chainId: t.chainId,
                 decimals: t.decimals ?? 18,
-                priceUSD: t.priceUSD,
+                balanceToken: hasBalance
+                    ? `${formatTokenQuantity(walletToken!.balanceFormatted)} ${t.symbol}`
+                    : `0 ${t.symbol}`,
+                balanceFiat: totalUSD > 0 ? formatUSDPrice(totalUSD) : '$0.00',
                 isOwned: hasBalance,
                 usdValueNum: totalUSD,
+                priceUSD: t.priceUSD,
                 _liquidity: parseFloat(t.liquidity?.toString() || '0'),
                 _verified: !!(t as any).verified,
-            } as any;
+                isNative: NATIVE_ADDRS.includes(t.address?.toLowerCase()) || (chainInfo?.nativeCurrency?.symbol === t.symbol)
+            };
         });
 
-        // ── Sort: owned first → native → TWC → verified → liquidity ─────
-        return mapped.sort((a: any, b: any) => {
+        // 3. Add wallet tokens that might not be in API results
+        const ownedTokensOnChain = (balanceData?.tokens || [])
+            .filter(wt => {
+                const chainMatch = (selectedChain && selectedChain.id !== 'all') ? wt.chainId === selectedChain.id : true;
+                return chainMatch;
+            })
+            .filter(wt => {
+                // Deduplicate with API results
+                return !mappedApiTokens.some(at => at.address.toLowerCase() === wt.address.toLowerCase() && at.chainId === wt.chainId);
+            })
+            .map(wt => {
+                const chainInfo = chains?.find(c => c.id === wt.chainId);
+                const usdVal = parseFloat(wt.usdValue || '0');
+                const isNative = NATIVE_ADDRS.includes(wt.address.toLowerCase()) || (chainInfo?.nativeCurrency?.symbol === wt.symbol);
+                return {
+                    id: `${wt.chainId}-${wt.address}`,
+                    symbol: wt.symbol,
+                    name: (wt.symbol === 'TWC' || wt.symbol === 'TIWICAT') ? 'TIWICAT' : wt.name,
+                    icon: wt.logoURI,
+                    chainIcon: chainInfo?.logoURI,
+                    address: wt.address,
+                    chainId: wt.chainId,
+                    decimals: wt.decimals ?? 18,
+                    balanceToken: `${formatTokenQuantity(wt.balanceFormatted)} ${wt.symbol}`,
+                    balanceFiat: usdVal > 0 ? formatUSDPrice(usdVal) : '$0.00',
+                    isOwned: true,
+                    usdValueNum: usdVal,
+                    priceUSD: wt.priceUSD,
+                    _liquidity: 0,
+                    _verified: true,
+                    isNative: isNative
+                };
+            });
+
+        const allTokens = [...mappedApiTokens, ...ownedTokensOnChain];
+
+        // 4. Filtering and Spam Detection
+        const filtered = allTokens.filter(t => {
+            if (selectedChain && selectedChain.id !== 'all' && t.chainId !== selectedChain.id) return false;
+
+            if (isSearching) {
+                const q = debouncedQuery.toLowerCase();
+                return t.symbol.toLowerCase().includes(q) || t.name.toLowerCase().includes(q) || t.address.toLowerCase().includes(q);
+            }
+
+            // Spam filtering (Tightened per user request)
+            const name = t.name?.toLowerCase() || '';
+            const symbol = t.symbol?.toLowerCase() || '';
+            const address = t.address?.toLowerCase() || '';
+
+            if (address.endsWith('pump') || name.includes('pump.fun')) return false;
+            
+            // Comprehensive Chinese/CJK range to catch "科太币" and "飞马"
+            const cjkPattern = /[\u4e00-\u9fff\u3400-\u4dbf\u2e80-\u2eff\u3000-\u303f]/;
+            if (cjkPattern.test(name) || cjkPattern.test(symbol)) return false;
+
+            const spamKw = ['.com', '.xyz', 'claim', 'airdrop', 'visit', 'free', 'reward', 'voucher', 'bonus', 'gift'];
+            if (spamKw.some(k => name.includes(k) || symbol.includes(k))) return false;
+
+            // Filter out fake "ETH" or "BNB" not on native address (Eggman style)
+            const symUpper = t.symbol.toUpperCase();
+            if ((symUpper === 'ETH' || symUpper === 'BNB' || symUpper === 'SOL') && !t.isNative) {
+                // If it's a major native symbol but not flagged as native by address, it's likely a scam
+                if (!NATIVE_ADDRS.includes(address)) return false;
+            }
+
+            return true;
+        });
+
+        // 5. Deduplicate by chain+symbol
+        const seen = new Map<string, any>();
+        filtered.forEach(t => {
+            const key = `${t.chainId}-${t.symbol.toUpperCase()}`;
+            const existing = seen.get(key);
+            if (!existing || (t.isOwned && !existing.isOwned) || (t._liquidity > existing._liquidity)) {
+                seen.set(key, t);
+            }
+        });
+
+        // 6. Final Sort: Ownership, Native priority, Solana ecosystem priority, then market metrics
+        const sorted = Array.from(seen.values()).sort((a, b) => {
             // Owned tokens always first
             if (a.isOwned && !b.isOwned) return -1;
             if (!a.isOwned && b.isOwned) return 1;
             if (a.isOwned && b.isOwned) return b.usdValueNum - a.usdValueNum;
 
-            // Native token next
-            const nsym = chains?.find((c: any) => c.id === a.chainId)?.nativeCurrency?.symbol?.toUpperCase();
-            const aN = NATIVE_ADDRS.includes(a.address.toLowerCase()) || (nsym && a.symbol.toUpperCase() === nsym);
-            const bN = NATIVE_ADDRS.includes(b.address.toLowerCase()) || (nsym && b.symbol.toUpperCase() === nsym);
+            // Curated chain-specific priority (Hardcoded list per user request)
+            const prioList = CHAIN_PRIORITY[a.chainId] || [];
+            const prioBList = CHAIN_PRIORITY[b.chainId] || [];
+            const indexA = prioList.indexOf(a.symbol.toUpperCase());
+            const indexB = prioList.indexOf(b.symbol.toUpperCase());
+
+            if (indexA !== -1 && indexB === -1) return -1;
+            if (indexA === -1 && indexB !== -1) return 1;
+            if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+
+            // Solana specific ecosystem priority for non-owned tokens (Fallback)
+            if ((selectedChain?.id === 7565164 || a.chainId === 7565164) && !a.isOwned && !b.isOwned) {
+                const solPrio = (t: any) => {
+                    const sym = t.symbol.toUpperCase();
+                    const addr = t.address?.toLowerCase();
+                    if (t.isNative || sym === 'SOL') return 100;
+                    if (addr === 'epjfwdd5aufqssqem2qn1xzybapc8g4weggkzwytdt1v' || sym === 'USDC') return 90;
+                    if (addr === 'es9vmfrzadcstmdamrjs4nhaf79ppu36hmrf6s5je6m' || sym === 'USDT') return 80;
+                    return 0;
+                };
+                const pA = solPrio(a);
+                const pB = solPrio(b);
+                if (pA !== pB) return pB - pA;
+            }
+
+            // Native priority (general fallback)
+            const aN = a.isNative;
+            const bN = b.isNative;
             if (aN && !bN) return -1;
             if (!aN && bN) return 1;
 
@@ -330,17 +347,20 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
             if (a.address.toLowerCase() === TWC_ADDRESS && b.address.toLowerCase() !== TWC_ADDRESS) return -1;
             if (a.address.toLowerCase() !== TWC_ADDRESS && b.address.toLowerCase() === TWC_ADDRESS) return 1;
 
-            // Verified before unverified
+            // Verified / Liquidity
             if (a._verified && !b._verified) return -1;
             if (!a._verified && b._verified) return 1;
-
-            // Higher liquidity first
             return b._liquidity - a._liquidity;
-        }) as TokenOption[];
-    }, [tokens, balanceData, selectedChain, chains, isSearching]);
+        });
 
-    // Active list: wallet when browsing, API results when searching
-    const tokenOptions = isSearching ? searchTokenOptions : walletTokenOptions;
+        // 7. Limit curated "Other Tokens" to exactly 8, while showing all owned tokens
+        if (isSearching) return sorted;
+
+        const owned = sorted.filter(t => t.isOwned);
+        const othersCurated = sorted.filter(t => !t.isOwned).slice(0, 8);
+        
+        return [...owned, ...othersCurated];
+    }, [response, defaultResponse, balanceData, selectedChain, chains, debouncedQuery, isSearching]);
 
 
     const handleChainSelect = (chain: any) => {
@@ -475,6 +495,67 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
         />
     ), [handleTokenSelect, selectedTokenId, isFetchingTokens]);
 
+    const renderTokenList = () => {
+        if (isLoadingTokens || (isPlaceholderData && tokenOptions.length === 0)) {
+            return (
+                <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+                    <TokenSkeleton />
+                    <TokenSkeleton />
+                    <TokenSkeleton />
+                    <TokenSkeleton />
+                    <TokenSkeleton />
+                </ScrollView>
+            );
+        }
+
+        if (isSearching) {
+            return (
+                <FlatList
+                    data={tokenOptions}
+                    renderItem={renderTokenItem}
+                    keyExtractor={item => item.id}
+                    style={styles.scroll}
+                    contentContainerStyle={styles.scrollContent}
+                    showsVerticalScrollIndicator={false}
+                    keyboardShouldPersistTaps="handled"
+                />
+            );
+        }
+
+        const owned = tokenOptions.filter(t => t.isOwned);
+        const others = tokenOptions.filter(t => !t.isOwned);
+
+        return (
+            <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                {owned.length > 0 && (
+                    <>
+                        <Text style={styles.sectionHeader}>Your Assets</Text>
+                        {owned.map(t => (
+                            <React.Fragment key={`owned-${t.id}`}>
+                                {renderTokenItem({ item: t })}
+                            </React.Fragment>
+                        ))}
+                    </>
+                )}
+                {others.length > 0 && (
+                    <>
+                        <Text style={styles.sectionHeader}>Other Tokens</Text>
+                        {others.map(t => (
+                            <React.Fragment key={`other-${t.id}`}>
+                                {renderTokenItem({ item: t })}
+                            </React.Fragment>
+                        ))}
+                    </>
+                )}
+                {tokenOptions.length === 0 && (
+                    <View style={styles.emptyContainer}>
+                        <Text style={styles.emptyText}>No tokens found</Text>
+                    </View>
+                )}
+            </ScrollView>
+        );
+    };
+
     return (
         <SelectionBottomSheet
             visible={visible}
@@ -524,28 +605,7 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
                             </View>
                         </View>
 
-                        {(isLoadingTokens || (isPlaceholderData && tokenOptions.length === 0)) ? (
-                            <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
-                                <TokenSkeleton />
-                                <TokenSkeleton />
-                                <TokenSkeleton />
-                                <TokenSkeleton />
-                                <TokenSkeleton />
-                            </ScrollView>
-                        ) : (
-                            <FlatList
-                                data={tokenOptions}
-                                renderItem={renderTokenItem}
-                                keyExtractor={item => item.id}
-                                style={styles.scroll}
-                                contentContainerStyle={styles.scrollContent}
-                                showsVerticalScrollIndicator={false}
-                                keyboardShouldPersistTaps="handled"
-                                initialNumToRender={10}
-                                maxToRenderPerBatch={10}
-                                windowSize={5}
-                            />
-                        )}
+                        {renderTokenList()}
                     </View>
                 </Animated.View>
             </View>
@@ -556,6 +616,26 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
 const styles = StyleSheet.create({
     content: {
         flex: 1,
+    },
+    sectionHeader: {
+        fontSize: 14,
+        fontFamily: 'Manrope-Bold',
+        color: colors.primaryCTA,
+        marginTop: 20,
+        marginBottom: 12,
+        paddingHorizontal: 4,
+        textTransform: 'uppercase',
+        letterSpacing: 1,
+    },
+    emptyContainer: {
+        padding: 40,
+        alignItems: 'center',
+    },
+    emptyText: {
+        fontFamily: 'Manrope-Medium',
+        fontSize: 14,
+        color: colors.bodyText,
+        opacity: 0.5,
     },
     tokenSearchWrapper: {
         paddingHorizontal: 16,

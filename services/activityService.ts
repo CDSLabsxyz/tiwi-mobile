@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import type { PostgrestResponse } from '@supabase/supabase-js';
+import { notificationService } from './notificationService';
 
 export type ActivityType = 'transaction' | 'reward' | 'governance' | 'security' | 'system';
 
@@ -142,6 +143,22 @@ class ActivityService {
         txHash?: string,
         metadata: Record<string, any> = {}
     ): Promise<boolean> {
+        // Fire local push notification for transaction events
+        const notifType = txType === 'swap' ? 'swap'
+            : txType === 'received' ? 'received'
+            : txType === 'sent' ? 'sent'
+            : txType === 'failed' ? 'failed'
+            : txType === 'confirmed' ? 'confirmed'
+            : null;
+
+        if (notifType) {
+            notificationService.sendTransactionNotification(notifType, {
+                symbol: metadata?.symbol,
+                amount: metadata?.amount,
+                txHash,
+            });
+        }
+
         return this.logActivity({
             user_wallet: walletAddress,
             type: 'transaction',

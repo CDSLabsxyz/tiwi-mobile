@@ -5,14 +5,10 @@ export function useSpotlightTokens(activeOnly: boolean = true) {
     return useQuery({
         queryKey: ['spotlightTokens', activeOnly],
         queryFn: async () => {
-            const tokens = await api.tokenSpotlight.get({ category: 'spotlight', activeOnly: true });
-            const today = new Date().toISOString().split('T')[0];
-            
-            // Mirroring Web App logic (startDate <= today <= endDate)
-            const active = (tokens || []).filter((t: any) => 
-                (!t.startDate || t.startDate <= today) && 
-                (!t.endDate || t.endDate >= today)
-            ).sort((a: any, b: any) => (a.rank || 0) - (b.rank || 0));
+            const response = await api.tokenSpotlight.get({ category: 'spotlight', activeOnly: true });
+            const tokens = Array.isArray(response) ? response : response?.tokens || [];
+
+            const active = tokens.sort((a: any, b: any) => (a.rank || 0) - (b.rank || 0));
 
             return active.map((t: any) => ({
                 ...t,

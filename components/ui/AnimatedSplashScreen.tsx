@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Dimensions, StyleSheet } from 'react-native';
-import { useVideoPlayer, VideoView } from 'expo-video';
+// UNCOMMENT FOR EAS BUILD:
+// import LottieView from 'lottie-react-native';
 
-const SplashVideo = require('../../assets/GIF/Splash_Screen.mp4');
+// const SplashAnimation = require('../../assets/lottie/Animation - 1774567551825.json');
 const { width, height } = Dimensions.get('window');
 
 interface AnimatedSplashScreenProps {
@@ -14,47 +15,23 @@ interface AnimatedSplashScreenProps {
 export const AnimatedSplashScreen: React.FC<AnimatedSplashScreenProps> = ({ isReady, onAnimationComplete, onLoaded }) => {
     const fadeAnim = useRef(new Animated.Value(1)).current;
     const [animationFinished, setAnimationFinished] = useState(false);
-    const [videoFinished, setVideoFinished] = useState(false);
-    const [hasStarted, setHasStarted] = useState(false);
-
-    const player = useVideoPlayer(SplashVideo, (p) => {
-        p.loop = false;
-        p.play();
-    });
 
     useEffect(() => {
-        const subscription = player.addListener('playToEnd', () => {
-            setVideoFinished(true);
-        });
-
-        // Trigger onLoaded as soon as we have some status/metadata
-        const statusSub = player.addListener('statusChange', (status) => {
-            if (status === 'readyToPlay' && !hasStarted) {
-                setHasStarted(true);
-                if (onLoaded) onLoaded();
-            }
-        });
-
-        return () => {
-            subscription.remove();
-            statusSub.remove();
-        };
-    }, [player, onLoaded, hasStarted]);
+        if (onLoaded) onLoaded();
+    }, []);
 
     useEffect(() => {
-        // We only exit when BOTH the Video has finished playing AND the app is ready.
-        if (isReady && videoFinished) {
-            // Exit Animation: Fade out
+        if (isReady) {
             Animated.timing(fadeAnim, {
                 toValue: 0,
-                duration: 800, 
+                duration: 800,
                 useNativeDriver: true,
             }).start(() => {
                 setAnimationFinished(true);
                 onAnimationComplete();
             });
         }
-    }, [isReady, videoFinished]);
+    }, [isReady]);
 
     if (animationFinished) return null;
 
@@ -65,14 +42,16 @@ export const AnimatedSplashScreen: React.FC<AnimatedSplashScreenProps> = ({ isRe
                 { opacity: fadeAnim }
             ]}
         >
-            <VideoView
-                player={player}
-                style={styles.video}
-                contentFit="contain"
-                allowsFullscreen={false}
-                allowsPictureInPicture={false}
-                useNativeControls={false}
+            {/* UNCOMMENT FOR EAS BUILD:
+            <LottieView
+                source={SplashAnimation}
+                autoPlay
+                loop={false}
+                onAnimationFinish={() => {}}
+                style={styles.animation}
+                resizeMode="cover"
             />
+            */}
         </Animated.View>
     );
 };
@@ -85,7 +64,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         zIndex: 999999,
     },
-    video: {
+    animation: {
         width: width,
         height: height,
     },

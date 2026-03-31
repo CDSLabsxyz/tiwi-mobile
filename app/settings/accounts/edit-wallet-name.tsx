@@ -24,7 +24,7 @@ export default function EditWalletNameScreen() {
     const { top, bottom } = useSafeAreaInsets();
     const router = useRouter();
     const params = useLocalSearchParams<{ returnTo?: string }>();
-    const { name, updateWalletName } = useWalletStore();
+    const { name, activeGroupId, updateGroupName } = useWalletStore();
     const [walletName, setWalletName] = useState(name || '');
     const [isSaving, setIsSaving] = useState(false);
 
@@ -56,7 +56,9 @@ export default function EditWalletNameScreen() {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
         try {
-            updateWalletName(walletName.trim());
+            if (activeGroupId) {
+                updateGroupName(activeGroupId, walletName.trim());
+            }
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
             // Navigate back

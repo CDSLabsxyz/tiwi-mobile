@@ -9,7 +9,7 @@ import { useMemo } from 'react';
 const ALL_SUPPORTED_CHAIN_IDS = [1, 56, 137, 42161, 8453, 10, 43114, 59144, 250, 42220, 100, 7565164, 1100];
 
 export function useWalletBalances() {
-    const { activeAddress, _hasHydrated } = useWalletStore();
+    const { activeAddress, activeGroupId, walletGroups, _hasHydrated } = useWalletStore();
     const selectedChains = useFilterStore((state) => state.chains);
 
     const chainIdsForFetch = useMemo(() => {
@@ -19,29 +19,97 @@ export function useWalletBalances() {
         return ALL_SUPPORTED_CHAIN_IDS;
     }, [selectedChains]);
 
+    // Collect all addresses from the active wallet group
+    const allAddresses = useMemo(() => {
+        const group = walletGroups.find(g => g.id === activeGroupId);
+        if (!group) return activeAddress ? [activeAddress] : [];
+        const addrs = new Set<string>();
+        if (group.addresses?.EVM) addrs.add(group.addresses.EVM);
+        if (group.addresses?.SOLANA) addrs.add(group.addresses.SOLANA);
+        if (group.addresses?.TRON) addrs.add(group.addresses.TRON);
+        if (group.addresses?.TON) addrs.add(group.addresses.TON);
+        if (group.addresses?.COSMOS) addrs.add(group.addresses.COSMOS);
+        if (group.addresses?.OSMOSIS) addrs.add(group.addresses.OSMOSIS);
+        if (addrs.size === 0 && activeAddress) addrs.add(activeAddress);
+        return Array.from(addrs);
+    }, [walletGroups, activeGroupId, activeAddress]);
+
     return useQuery({
-        queryKey: ['walletBalances', activeAddress, chainIdsForFetch],
+        queryKey: ['walletBalances', allAddresses, chainIdsForFetch],
         queryFn: async () => {
-            if (!_hasHydrated || !activeAddress) {
+            if (!_hasHydrated || allAddresses.length === 0) {
                 return { tokens: [], totalNetWorthUsd: '0.00', portfolioChange: { amount: '0.00', percent: '0.00' } };
             }
 
             try {
-                // 1. Fetch from primary backend or fallback to Moralis
+                // 1. Fetch balances for ALL wallet addresses in parallel
                 let rawBalances: any[] = [];
-                try {
-                    const resp = await api.wallet.balances({
-                        address: activeAddress,
-                        chains: chainIdsForFetch,
-                    }) as any;
-                    rawBalances = Array.isArray(resp?.balances) ? resp.balances : (Array.isArray(resp) ? resp : []);
-                } catch (e) {
-                    console.warn('[useWalletBalances] Primary backend fetch failed.');
+
+                const isEvmAddress = (addr: string) => /^0x[a-fA-F0-9]{40}$/.test(addr);
+
+                // Get chain-typed addresses from wallet group
+                const group = walletGroups.find(g => g.id === activeGroupId);
+                const evmAddr = group?.addresses?.EVM;
+                const solAddr = group?.addresses?.SOLANA;
+                const tronAddr = group?.addresses?.TRON;
+
+                const fetchPromises: Promise<any[]>[] = [];
+
+                // 1. EVM balances (primary + Moralis fallback)
+                if (evmAddr && isEvmAddress(evmAddr)) {
+                    fetchPromises.push((async () => {
+                        try {
+                            const resp = await api.wallet.balances({
+                                address: evmAddr,
+                                chains: chainIdsForFetch,
+                            }) as any;
+                            return Array.isArray(resp?.balances) ? resp.balances : (Array.isArray(resp) ? resp : []);
+                        } catch {
+                            try {
+                                return await moralisService.getWalletBalances(evmAddr, chainIdsForFetch);
+                            } catch {
+                                return [];
+                            }
+                        }
+                    })());
                 }
 
-                if (rawBalances.length === 0) {
-                    rawBalances = await moralisService.getWalletBalances(activeAddress, chainIdsForFetch);
+                // 2. Solana balances
+                if (solAddr) {
+                    fetchPromises.push((async () => {
+                        try {
+                            console.log('[useWalletBalances] Fetching Solana balances for:', solAddr);
+                            const resp = await api.wallet.balances({
+                                address: solAddr,
+                                chains: [7565164],
+                            }) as any;
+                            const balances = Array.isArray(resp?.balances) ? resp.balances : (Array.isArray(resp) ? resp : []);
+                            console.log('[useWalletBalances] Solana balances found:', balances.length);
+                            return balances;
+                        } catch (e: any) {
+                            console.warn('[useWalletBalances] Solana balance fetch failed:', e.message);
+                            return [];
+                        }
+                    })());
                 }
+
+                // 3. TRON balances
+                if (tronAddr) {
+                    fetchPromises.push((async () => {
+                        try {
+                            const resp = await api.wallet.balances({
+                                address: tronAddr,
+                                chains: [728126428],
+                            }) as any;
+                            return Array.isArray(resp?.balances) ? resp.balances : (Array.isArray(resp) ? resp : []);
+                        } catch {
+                            return [];
+                        }
+                    })());
+                }
+
+                const results = await Promise.all(fetchPromises);
+                rawBalances = results.flat();
 
                 // 2. Deduplicate
                 const dedupedMap = new Map<string, any>();
@@ -67,6 +135,10 @@ export function useWalletBalances() {
                         // 0. MANDATORY: Must have some balance to even be considered
                         if (balance <= 0.000001) return false;
 
+                        // 0.5 BLACKLIST — known spam tokens
+                        const BLACKLISTED_SYMBOLS = ['SN3'];
+                        if (BLACKLISTED_SYMBOLS.includes(symbol)) return false;
+
                         // 1. SACRED LIST (Native/Trustable)
                         const isSacred = ['ETH', 'BNB', 'SOL', 'MATIC', 'POL', 'AVAX', 'BASE', 'ARB', 'OP', 'USDT', 'USDC', 'DAI', 'CAKE'].includes(symbol) ||
                             addr === '0x0000000000000000000000000000000000000000' ||
@@ -88,11 +160,26 @@ export function useWalletBalances() {
                         const chg = parseFloat(b.priceChange24h || '0');
                         if (Math.abs(chg) > 10000) return false;
 
-                        // Rule 4: Unverified must have at least $1.00 value AND a real logo
+                        // Rule 4: Spam name/symbol detection
+                        const spamKw = ['.com', '.xyz', '.net', '.io', '.org', 'claim', 'airdrop', 'visit', 'free', 'reward', 'voucher', 'gift', 'win', 'bonus'];
+                        if (spamKw.some(k => name.includes(k) || symbol.toLowerCase().includes(k))) return false;
+                        if (/[\u4e00-\u9fa5]/.test(name)) return false;
+
+                        // Rule 5: Honeypot address patterns (repeated chars at end)
+                        if (addr) {
+                            const clean = addr.replace('0x', '');
+                            const last4 = clean.slice(-4);
+                            if (/^(.)\1{3}$/.test(last4)) return false;
+                        }
+
+                        // Rule 6: Unverified must have at least $1.00 value AND a real logo
                         // OR at least $5.00 value even without a logo
+                        // BUT also must not be a possible_spam token
+                        if (b.possible_spam === true) return false;
+
                         if (hasRealLogo && usdValue >= 1.00) return true;
                         if (usdValue >= 5.00) return true;
-                        
+
                         return false;
                     })
                     .map(b => ({

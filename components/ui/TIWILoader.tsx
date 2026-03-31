@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import React from 'react';
-import { Dimensions, StyleSheet, View, ViewStyle } from 'react-native';
+import { Platform, StyleSheet, View, ViewStyle } from 'react-native';
 
 export type TIWILoaderVariant = 'standard' | 'intro';
 
@@ -31,7 +31,7 @@ export const TIWILoader: React.FC<TIWILoaderProps> = ({
                 overflow: 'hidden',
                 alignItems: 'center',
                 justifyContent: 'center',
-                backgroundColor: '#000000', // Ensure overflow is hidden behind a solid color
+                backgroundColor: '#000000',
             }}>
                 <Image
                     source={variant === 'intro' ? INTRO_GIF : LOADER_GIF}

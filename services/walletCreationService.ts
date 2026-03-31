@@ -15,9 +15,13 @@ import { Keypair } from '@solana/web3.js';
 import * as bs58 from "bs58";
 import { Buffer } from 'buffer';
 import * as SecureStore from 'expo-secure-store';
+import { InteractionManager } from 'react-native';
 import { mnemonicToAccount, privateKeyToAccount } from 'viem/accounts';
 // ed25519-hd-key, tronweb, etc. are imported dynamically inside functions
 // to ensure polyfills are fully initialized first.
+
+/** Yield to the UI thread so animations/renders can proceed */
+const yieldToUI = () => new Promise<void>(resolve => setTimeout(resolve, 0));
 
 export interface CreatedWallet {
     address: string; // Master/Primary (EVM)
@@ -48,8 +52,13 @@ export const DERIVATION_PATHS: Record<ChainType, string> = {
  */
 export async function generateNewWallet(): Promise<CreatedWallet> {
     try {
+        // Wait for UI interactions (overlay animation) to complete
+        await new Promise<void>(resolve => InteractionManager.runAfterInteractions(() => resolve()));
+        await yieldToUI();
+
         // 1. Generate Mnemonic (128 bits = 12 words)
         const mnemonic = generateMnemonic(wordlist, 128);
+        await yieldToUI();
 
         // 2. Derive all addresses
         const addresses = await deriveMultiChainAddressesFromMnemonic(mnemonic);
@@ -72,10 +81,12 @@ export async function deriveMultiChainAddressesFromMnemonic(mnemonic: string): P
     const addresses: any = {};
     const trimmedMnemonic = mnemonic.trim();
     const seed = mnemonicToSeedSync(trimmedMnemonic);
+    await yieldToUI();
 
     // 1. EVM (Standard ETH)
     const ethAccount = mnemonicToAccount(trimmedMnemonic);
     addresses.EVM = ethAccount.address;
+    await yieldToUI();
 
     // 2. SOLANA (m/44'/501'/0'/0')
     try {
@@ -87,6 +98,7 @@ export async function deriveMultiChainAddressesFromMnemonic(mnemonic: string): P
     } catch (e) {
         console.error('[WalletService] Solana derivation failed:', e);
     }
+    await yieldToUI();
 
     // 3. TRON (m/44'/195'/0'/0/0)
     try {
@@ -113,6 +125,7 @@ export async function deriveMultiChainAddressesFromMnemonic(mnemonic: string): P
     } catch (e) {
         console.error('[WalletService] Tron derivation failed:', e);
     }
+    await yieldToUI();
 
     // 4. TON (m/44'/607'/0'/0'/0')
     try {
@@ -136,8 +149,8 @@ export async function deriveMultiChainAddressesFromMnemonic(mnemonic: string): P
     } catch (e) {
         console.error('[WalletService] TON derivation failed:', e);
     }
+    await yieldToUI();
 
-    // 5. COSMOS (m/44'/118'/0'/0/0) & 6. OSMOSIS
     // 5. COSMOS (m/44'/118'/0'/0/0) & 6. OSMOSIS
     try {
         const { bech32 } = await import('bech32');

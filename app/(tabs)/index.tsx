@@ -284,7 +284,7 @@ export default function HomeScreen() {
           <View style={styles.paddedContent}>
             <QuickActionsSection />
             <StakeBanner />
-            {homeData.spotlight.length > 0 && (
+            {(homeData.spotlight.length > 0 || homeData.isLoading) && (
               <SpotlightSection
                 tokens={homeData.spotlight}
                 isLoading={homeData.isLoading}
