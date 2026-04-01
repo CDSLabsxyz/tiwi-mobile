@@ -13,6 +13,43 @@ import { formatTokenAmount } from "@/utils/formatting";
 // Simulate API delay
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+// Nexxend token logo URL builder
+const NEXXEND_BASE = 'https://nexxend.xyz';
+
+function getDefaultTokenLogo(symbol?: string, address?: string): string | undefined {
+    if (!address && !symbol) return undefined;
+
+    // Known chain-specific native token logos from Nexxend
+    const NATIVE_LOGOS: Record<string, string> = {
+        ETH: `${NEXXEND_BASE}/api/v1/tokens/1/0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/logo`,
+        WETH: `${NEXXEND_BASE}/api/v1/tokens/1/0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2/logo`,
+        BNB: `${NEXXEND_BASE}/api/v1/tokens/56/0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/logo`,
+        WBNB: `${NEXXEND_BASE}/api/v1/tokens/56/0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c/logo`,
+        USDT: `${NEXXEND_BASE}/api/v1/tokens/56/0x55d398326f99059ff775485246999027b3197955/logo`,
+        USDC: `${NEXXEND_BASE}/api/v1/tokens/1/0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48/logo`,
+        DAI: `${NEXXEND_BASE}/api/v1/tokens/1/0x6b175474e89094c44da98b954eedeac495271d0f/logo`,
+        MATIC: `${NEXXEND_BASE}/api/v1/tokens/137/0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/logo`,
+        POL: `${NEXXEND_BASE}/api/v1/tokens/137/0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/logo`,
+        AVAX: `${NEXXEND_BASE}/api/v1/tokens/43114/0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/logo`,
+        ARB: `${NEXXEND_BASE}/api/v1/tokens/42161/0x912ce59144191c1204e64559fe8253a0e49e6548/logo`,
+        OP: `${NEXXEND_BASE}/api/v1/tokens/10/0x4200000000000000000000000000000000000042/logo`,
+        CAKE: `${NEXXEND_BASE}/api/v1/tokens/56/0x0e09fabb73bd3ade0a17ecc321fd13a19e81ce82/logo`,
+        TWC: `${NEXXEND_BASE}/api/v1/tokens/56/0xda1060158f7d593667cce0a15db346bb3ffb3596/logo`,
+        SOL: `${NEXXEND_BASE}/api/v1/tokens/7565164/So11111111111111111111111111111111111111112/logo`,
+        WSOL: `${NEXXEND_BASE}/api/v1/tokens/7565164/So11111111111111111111111111111111111111112/logo`,
+    };
+
+    const sym = (symbol || '').toUpperCase();
+    if (NATIVE_LOGOS[sym]) return NATIVE_LOGOS[sym];
+
+    // TWC by address
+    if (address?.toLowerCase() === '0xda1060158f7d593667cce0a15db346bb3ffb3596') {
+        return NATIVE_LOGOS.TWC;
+    }
+
+    return undefined;
+}
+
 export interface PortfolioChange {
   amount: string; // e.g., "+$61.69"
   percent: string; // e.g., "+2.51%"
@@ -80,13 +117,13 @@ export const fetchWalletData = async (address: string): Promise<WalletData> => {
       id: `${b.chainId}-${b.address || i}`,
       symbol: b.symbol,
       name: b.name,
-      logo: b.logoURI || 'https://via.placeholder.com/100?text=Token',
+      logo: b.logoURI || getDefaultTokenLogo(b.symbol, b.address),
       balance: b.balanceFormatted || b.balance,
       usdValue: `$${parseFloat(b.usdValue || '0').toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
       change24h: parseFloat(b.priceChange24h || '0'),
       chainId: b.chainId as any,
       address: b.address,
-      decimals: b.decimals || 18,
+      decimals: b.decimals || (b.address?.toLowerCase() === '0xda1060158f7d593667cce0a15db346bb3ffb3596' ? 9 : 18),
       chartData: 'https://www.figma.com/api/mcp/asset/a34680f1-9f3f-432d-9c1d-762d12a6bd6b',
     }));
 

@@ -50,14 +50,56 @@ export const MarketSection: React.FC<MarketSectionProps> = ({
         enabled: activeTab !== 'favourite'
     });
 
-    // 2. Fetch Spotlight/Listing tokens (Mirroring Web)
+    // 2. Fetch Spotlight/Listing tokens with price enrichment (like web app)
     const { data: adminTokens = [], isLoading: isAdminLoading } = useQuery({
-        queryKey: ['adminTokens', activeTab],
-        queryFn: () => api.tokenSpotlight.get({ 
-            category: activeTab === 'listing' ? 'listing' : 'spotlight',
-            activeOnly: true 
-        }),
+        queryKey: ['homeAdminEnriched', activeTab],
+        queryFn: async () => {
+            const res = await api.tokenSpotlight.get({
+                category: activeTab === 'listing' ? 'listing' : 'spotlight',
+                activeOnly: true
+            });
+            const raw = Array.isArray(res.tokens) ? res.tokens : [];
+            const today = new Date().toISOString().split('T')[0];
+            const active = raw
+                .filter((t: any) => (!t.startDate || t.startDate <= today) && (!t.endDate || t.endDate >= today))
+                .sort((a: any, b: any) => (a.rank || 0) - (b.rank || 0));
+
+            const enriched = await Promise.all(active.map(async (st: any) => {
+                const match = (marketPairs || []).find((et: any) =>
+                    et.symbol?.toUpperCase() === st.symbol?.toUpperCase() ||
+                    (st.address && et.address?.toLowerCase() === st.address?.toLowerCase())
+                );
+                if (match && match.price && parseFloat(String(match.price)) > 0) {
+                    return { ...match, logoURI: match.logoURI || match.logo || st.logo || '' };
+                }
+                const cid = st.chainId || 56;
+                if (st.address) {
+                    try {
+                        const info = await api.tokenInfo.get(cid, st.address);
+                        const pool = info?.pool;
+                        if (pool) {
+                            return {
+                                id: st.id || `${cid}-${st.address}`, symbol: st.symbol, displaySymbol: st.symbol,
+                                name: st.name || st.symbol, address: st.address, chainId: cid,
+                                logoURI: st.logo || info?.token?.logo || '', logo: st.logo || info?.token?.logo || '',
+                                price: pool.priceUsd ? String(pool.priceUsd) : '0', priceUSD: pool.priceUsd ? String(pool.priceUsd) : '0',
+                                priceChange24h: pool.priceChange24h || 0, volume24h: pool.volume24h || 0,
+                                marketCap: pool.marketCap || 0, marketType: 'spot',
+                            };
+                        }
+                    } catch {}
+                }
+                return {
+                    id: st.id || st.symbol, symbol: st.symbol, displaySymbol: st.symbol,
+                    name: st.name || st.symbol, address: st.address || '', chainId: cid,
+                    logoURI: st.logo || '', logo: st.logo || '', price: '0', priceUSD: '0',
+                    priceChange24h: 0, volume24h: 0, marketCap: 0, marketType: 'spot',
+                };
+            }));
+            return { tokens: enriched };
+        },
         enabled: activeTab === 'spotlight' || activeTab === 'listing',
+        staleTime: 30 * 1000,
     });
 
     // 3. Load favorites from store (no API call needed)
@@ -81,35 +123,10 @@ export const MarketSection: React.FC<MarketSectionProps> = ({
     const displayData = useMemo<MarketAsset[]>(() => {
         let tokens: MarketAsset[] = activeTab === 'favourite' ? favoriteTokens : [...((marketPairs as any) || [])];
 
-        // Process Admin tokens (Spotlight/Listing) from Database
+        // Spotlight/Listing tokens already enriched with prices
         if (activeTab === 'spotlight' || activeTab === 'listing') {
-            const tokensFromAPI = Array.isArray(adminTokens.tokens) ? adminTokens.tokens : [];
-
-            const active = tokensFromAPI.sort((a: any, b: any) => (a.rank || 0) - (b.rank || 0));
-
-            return active.map((st: any) => {
-                const enriched = (marketPairs || []).find(
-                    (et: any) => 
-                        et.symbol.toUpperCase() === st.symbol.toUpperCase() || 
-                        (st.address && et.address?.toLowerCase() === st.address.toLowerCase())
-                );
-                
-                if (enriched) return enriched;
-                
-                return {
-                    id: st.id || st.symbol,
-                    symbol: st.symbol,
-                    name: st.name || st.symbol,
-                    address: st.address || "",
-                    chainId: st.chainId || 56,
-                    logoURI: st.logo || "",
-                    price: '0',
-                    priceChange24h: 0,
-                    volume24h: 0,
-                    marketCap: 0,
-                    marketType: 'spot'
-                } as any;
-            }).slice(0, 5);
+            const enrichedTokens = Array.isArray(adminTokens.tokens) ? adminTokens.tokens : [];
+            return enrichedTokens.slice(0, 5) as any;
         }
 
         if (activeTab !== 'favourite') {

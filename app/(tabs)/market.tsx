@@ -1,3 +1,4 @@
+import { MarketComingSoon, type ComingSoonMarket } from '@/components/features/market/MarketComingSoon';
 import { TokenListItem } from '@/components/sections/Market/TokenListItem';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { LoadingOverlay } from '@/components/ui/LoadingOverlay';
@@ -61,6 +62,7 @@ export default function MarketScreen() {
     const params = useLocalSearchParams<{ category?: string }>();
 
     const [marketType, setMarketType] = useState<any>('all');
+    const isComingSoonTab = marketType !== 'all';
     const [sortBy, setSortBy] = useState<'volume' | 'performance' | 'price' | 'marketCap' | 'none'>('none');
     const [sortDirection, setSortDirection] = useState<'asc' | 'desc' | 'none'>('none');
     const [activeSubTab, setActiveSubTab] = useState<string>(
@@ -77,6 +79,7 @@ export default function MarketScreen() {
     const subTabs: { id: string; label: string }[] = useMemo(() => [
         { id: 'favourite', label: t('home.favourite') },
         { id: 'explore', label: 'Explore' },
+        { id: 'spotlight', label: 'Spotlight' },
         { id: 'listing', label: 'Listing' },
         { id: 'gainers', label: t('home.gainers') },
         { id: 'losers', label: t('home.losers') },
@@ -98,14 +101,84 @@ export default function MarketScreen() {
         enabled: activeSubTab !== 'favourite'
     });
 
-    // Fetch Spotlight/Listing tokens (Mirroring Web)
+    // Fetch Spotlight/Listing tokens with price enrichment (matching web app)
     const { data: adminTokens = [], isLoading: isAdminLoading } = useQuery({
-        queryKey: ['adminTokens', activeSubTab],
-        queryFn: () => api.tokenSpotlight.get({ 
-            category: activeSubTab === 'listing' ? 'listing' : 'spotlight',
-            activeOnly: true 
-        }),
+        queryKey: ['adminTokensEnriched', activeSubTab],
+        queryFn: async () => {
+            const res = await api.tokenSpotlight.get({
+                category: activeSubTab === 'listing' ? 'listing' : 'spotlight',
+                activeOnly: true
+            });
+            const tokensFromAPI = Array.isArray(res.tokens) ? res.tokens : [];
+            const today = new Date().toISOString().split('T')[0];
+
+            const active = tokensFromAPI
+                .filter((t: any) => (!t.startDate || t.startDate <= today) && (!t.endDate || t.endDate >= today))
+                .sort((a: any, b: any) => (a.rank || 0) - (b.rank || 0));
+
+            // Enrich each token with price data from token-info API (like web app)
+            const enriched = await Promise.all(active.map(async (st: any) => {
+                // Try match from market pairs first
+                const market = (marketPairs || []).find(
+                    (et: any) =>
+                        et.symbol?.toUpperCase() === st.symbol?.toUpperCase() ||
+                        (st.address && et.address?.toLowerCase() === st.address?.toLowerCase())
+                );
+                if (market && market.price && parseFloat(String(market.price)) > 0) {
+                    return { ...market, logoURI: market.logoURI || market.logo || st.logo || '' };
+                }
+
+                // Fetch from token-info API (exactly like web app)
+                const chainId = st.chainId || 56;
+                if (st.address) {
+                    try {
+                        const info = await api.tokenInfo.get(chainId, st.address);
+                        const pool = info?.pool;
+                        if (pool) {
+                            return {
+                                id: st.id || `${chainId}-${st.address}`,
+                                symbol: st.symbol,
+                                displaySymbol: st.symbol,
+                                name: st.name || info?.token?.name || st.symbol,
+                                address: st.address,
+                                chainId,
+                                logoURI: st.logo || info?.token?.logo || '',
+                                logo: st.logo || info?.token?.logo || '',
+                                price: pool.priceUsd ? String(pool.priceUsd) : '0',
+                                priceUSD: pool.priceUsd ? String(pool.priceUsd) : '0',
+                                priceChange24h: pool.priceChange24h || 0,
+                                volume24h: pool.volume24h || 0,
+                                marketCap: pool.marketCap || 0,
+                                liquidity: pool.liquidity || 0,
+                                marketType: 'spot',
+                            };
+                        }
+                    } catch {}
+                }
+
+                // Fallback: no price data
+                return {
+                    id: st.id || st.symbol,
+                    symbol: st.symbol,
+                    displaySymbol: st.symbol,
+                    name: st.name || st.symbol,
+                    address: st.address || '',
+                    chainId,
+                    logoURI: st.logo || '',
+                    logo: st.logo || '',
+                    price: '0',
+                    priceUSD: '0',
+                    priceChange24h: 0,
+                    volume24h: 0,
+                    marketCap: 0,
+                    marketType: 'spot',
+                };
+            }));
+
+            return { tokens: enriched };
+        },
         enabled: activeSubTab === 'spotlight' || activeSubTab === 'listing',
+        staleTime: 30 * 1000,
     });
 
     // Staggered Prefetching (Phase 4: Optimization)
@@ -194,42 +267,10 @@ export default function MarketScreen() {
     const displayData = useMemo<MarketAsset[]>(() => {
         let tokens: MarketAsset[] = activeSubTab === 'favourite' ? favoriteTokens : [...((marketPairs as any) || [])];
 
-        // Process Admin tokens (Spotlight/Listing) from Database
+        // Spotlight/Listing tokens are already enriched with prices from the query
         if (activeSubTab === 'spotlight' || activeSubTab === 'listing') {
-            const tokensFromAPI = Array.isArray(adminTokens.tokens) ? adminTokens.tokens : [];
-            const today = new Date().toISOString().split('T')[0];
-
-            // 1. Filter by direct date logic (exactly like Web app line 133/165)
-            const active = tokensFromAPI.filter((t: any) =>
-                (!t.startDate || t.startDate <= today) &&
-                (!t.endDate || t.endDate >= today)
-            ).sort((a: any, b: any) => (a.rank || 0) - (b.rank || 0));
-
-            // 2. Map & Enrich with Price Data
-            tokens = active.map((st: any) => {
-                const enriched = (marketPairs || []).find(
-                    (et: any) => 
-                        et.symbol.toUpperCase() === st.symbol.toUpperCase() || 
-                        (st.address && et.address?.toLowerCase() === st.address.toLowerCase())
-                );
-                
-                if (enriched) return enriched;
-                
-                return {
-                    id: st.id || st.symbol,
-                    symbol: st.symbol,
-                    name: st.name || st.symbol,
-                    address: st.address || "",
-                    chainId: st.chainId || 56,
-                    logoURI: st.logo || "",
-                    price: '0',
-                    priceChange24h: 0,
-                    volume24h: 0,
-                    marketCap: 0,
-                    marketType: 'spot'
-                } as any;
-            });
-            return tokens;
+            const enrichedTokens = Array.isArray(adminTokens.tokens) ? adminTokens.tokens : [];
+            return enrichedTokens as any;
         }
 
         // 1. Sort/Filter based on sub-tab
@@ -386,11 +427,19 @@ export default function MarketScreen() {
                     </View>
 
                     {/* Top Tokens Label */}
-                    <View style={styles.topTokensLabelContainer}>
-                        <Text style={styles.topTokensLabel}>Top Tokens</Text>
-                    </View>
+                    {!isComingSoonTab && (
+                        <View style={styles.topTokensLabelContainer}>
+                            <Text style={styles.topTokensLabel}>Top Tokens</Text>
+                        </View>
+                    )}
                 </View>
 
+                {isComingSoonTab ? (
+                    <MarketComingSoon
+                        market={marketType as ComingSoonMarket}
+                        onOpenSwap={() => setMarketType('all')}
+                    />
+                ) : (
                 <FlatList
                     data={displayData}
                     renderItem={renderItem}
@@ -422,6 +471,7 @@ export default function MarketScreen() {
                         ) : null
                     }
                 />
+                )}
 
                 {/* <LoadingOverlay
                     visible={isNavigating}
@@ -446,7 +496,7 @@ export default function MarketScreen() {
                         showsHorizontalScrollIndicator={false}
                         contentContainerStyle={styles.tabsLeft}
                     >
-                        {/* All/Swap Tab */}
+                        {/* Swap Tab */}
                         <TouchableOpacity
                             onPress={() => setMarketType('all')}
                             style={styles.tabButton}
@@ -457,7 +507,7 @@ export default function MarketScreen() {
                                     { color: marketType === 'all' ? colors.primaryCTA : colors.mutedText }
                                 ]}
                             >
-                                All
+                                Swap
                             </Text>
                             {marketType === 'all' && (
                                 <View style={styles.activeTabIndicatorWrapper}>
@@ -579,114 +629,121 @@ export default function MarketScreen() {
                     </TouchableOpacity>
                 </View>
 
-                {/* Sub-Tabs */}
-                <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.subTabsContent}
-                >
-                    {subTabs.map((tab) => {
-                        const isActive = activeSubTab === tab.id;
-                        return (
-                            <TouchableOpacity
-                                key={tab.id}
-                                onPress={() => {
-                                    // Let the ripple animation play for a split second
-                                    setActiveSubTab(tab.id);
-                                }}
-                                style={[
-                                    styles.subTabButton,
-                                    { backgroundColor: isActive ? '#081f02' : colors.bgSemi }
-                                ]}
-                            >
-                                <Text
-                                    style={[
-                                        styles.subTabText,
-                                        {
-                                            fontFamily: isActive ? 'Manrope-SemiBold' : 'Manrope-Medium',
-                                            color: isActive ? colors.primaryCTA : colors.bodyText
-                                        }
-                                    ]}
-                                >
-                                    {tab.label}
-                                </Text>
-                            </TouchableOpacity>
-                        );
-                    })}
-                </ScrollView>
+                {/* Sub-Tabs & Sort — only for Swap tab */}
+                {!isComingSoonTab && (
+                    <>
+                        <ScrollView
+                            horizontal
+                            showsHorizontalScrollIndicator={false}
+                            contentContainerStyle={styles.subTabsContent}
+                        >
+                            {subTabs.map((tab) => {
+                                const isActive = activeSubTab === tab.id;
+                                return (
+                                    <TouchableOpacity
+                                        key={tab.id}
+                                        onPress={() => setActiveSubTab(tab.id)}
+                                        style={[
+                                            styles.subTabButton,
+                                            { backgroundColor: isActive ? '#081f02' : colors.bgSemi }
+                                        ]}
+                                    >
+                                        <Text
+                                            style={[
+                                                styles.subTabText,
+                                                {
+                                                    fontFamily: isActive ? 'Manrope-SemiBold' : 'Manrope-Medium',
+                                                    color: isActive ? colors.primaryCTA : colors.bodyText
+                                                }
+                                            ]}
+                                        >
+                                            {tab.label}
+                                        </Text>
+                                    </TouchableOpacity>
+                                );
+                            })}
+                        </ScrollView>
 
-                {/* Sorting UI */}
-                <View style={styles.sortingContainer}>
-                    <TouchableOpacity 
-                        onPress={() => {
-                            if (sortBy === 'volume') setSortDirection(prev => prev === 'desc' ? 'asc' : 'desc');
-                            else { setSortBy('volume'); setSortDirection('desc'); }
-                        }}
-                        style={[styles.sortButton, sortBy === 'volume' && styles.activeSortButton]}
-                    >
-                        <Text style={[styles.sortText, sortBy === 'volume' && styles.activeSortText]}>Vol</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity 
-                        onPress={() => {
-                            if (sortBy === 'performance') setSortDirection(prev => prev === 'desc' ? 'asc' : 'desc');
-                            else { setSortBy('performance'); setSortDirection('desc'); }
-                        }}
-                        style={[styles.sortButton, sortBy === 'performance' && styles.activeSortButton]}
-                    >
-                        <Text style={[styles.sortText, sortBy === 'performance' && styles.activeSortText]}>Change</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity 
-                        onPress={() => {
-                            if (sortBy === 'price') setSortDirection(prev => prev === 'desc' ? 'asc' : 'desc');
-                            else { setSortBy('price'); setSortDirection('desc'); }
-                        }}
-                        style={[styles.sortButton, sortBy === 'price' && styles.activeSortButton]}
-                    >
-                        <Text style={[styles.sortText, sortBy === 'price' && styles.activeSortText]}>Price</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity 
-                        onPress={() => {
-                            if (sortBy === 'marketCap') setSortDirection(prev => prev === 'desc' ? 'asc' : 'desc');
-                            else { setSortBy('marketCap'); setSortDirection('desc'); }
-                        }}
-                        style={[styles.sortButton, sortBy === 'marketCap' && styles.activeSortButton]}
-                    >
-                        <Text style={[styles.sortText, sortBy === 'marketCap' && styles.activeSortText]}>MCap</Text>
-                    </TouchableOpacity>
-                </View>
+                        <View style={styles.sortingContainer}>
+                            <TouchableOpacity
+                                onPress={() => {
+                                    if (sortBy === 'volume') setSortDirection(prev => prev === 'desc' ? 'asc' : 'desc');
+                                    else { setSortBy('volume'); setSortDirection('desc'); }
+                                }}
+                                style={[styles.sortButton, sortBy === 'volume' && styles.activeSortButton]}
+                            >
+                                <Text style={[styles.sortText, sortBy === 'volume' && styles.activeSortText]}>Vol</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                onPress={() => {
+                                    if (sortBy === 'performance') setSortDirection(prev => prev === 'desc' ? 'asc' : 'desc');
+                                    else { setSortBy('performance'); setSortDirection('desc'); }
+                                }}
+                                style={[styles.sortButton, sortBy === 'performance' && styles.activeSortButton]}
+                            >
+                                <Text style={[styles.sortText, sortBy === 'performance' && styles.activeSortText]}>Change</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                onPress={() => {
+                                    if (sortBy === 'price') setSortDirection(prev => prev === 'desc' ? 'asc' : 'desc');
+                                    else { setSortBy('price'); setSortDirection('desc'); }
+                                }}
+                                style={[styles.sortButton, sortBy === 'price' && styles.activeSortButton]}
+                            >
+                                <Text style={[styles.sortText, sortBy === 'price' && styles.activeSortText]}>Price</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                onPress={() => {
+                                    if (sortBy === 'marketCap') setSortDirection(prev => prev === 'desc' ? 'asc' : 'desc');
+                                    else { setSortBy('marketCap'); setSortDirection('desc'); }
+                                }}
+                                style={[styles.sortButton, sortBy === 'marketCap' && styles.activeSortButton]}
+                            >
+                                <Text style={[styles.sortText, sortBy === 'marketCap' && styles.activeSortText]}>MCap</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </>
+                )}
             </View>
 
-            {/* Token List */}
-            <FlatList
-                data={displayData}
-                renderItem={renderItem}
-                keyExtractor={(item) => item.id || `${item.chainId}-${item.address}`}
-                contentContainerStyle={[
-                    styles.scrollContent,
-                    { paddingBottom: bottom + 100 }
-                ]}
-                initialNumToRender={12}
-                maxToRenderPerBatch={10}
-                windowSize={10}
-                removeClippedSubviews={Platform.OS === 'android'}
-                showsVerticalScrollIndicator={false}
-                ListHeaderComponent={
-                    isLoading ? (
-                        <View style={{ width: '100%' }}>
-                            {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
-                                <MarketListItemSkeleton key={i} />
-                            ))}
-                        </View>
-                    ) : null
-                }
-                ListEmptyComponent={
-                    !isLoading ? (
-                        <View style={styles.emptyState}>
-                            <Text style={styles.emptyText}>No tokens found</Text>
-                        </View>
-                    ) : null
-                }
-            />
+            {/* Token List or Coming Soon */}
+            {isComingSoonTab ? (
+                <MarketComingSoon
+                    market={marketType as ComingSoonMarket}
+                    onOpenSwap={() => setMarketType('all')}
+                />
+            ) : (
+                <FlatList
+                    data={displayData}
+                    renderItem={renderItem}
+                    keyExtractor={(item) => item.id || `${item.chainId}-${item.address}`}
+                    contentContainerStyle={[
+                        styles.scrollContent,
+                        { paddingBottom: bottom + 100 }
+                    ]}
+                    initialNumToRender={12}
+                    maxToRenderPerBatch={10}
+                    windowSize={10}
+                    removeClippedSubviews={Platform.OS === 'android'}
+                    showsVerticalScrollIndicator={false}
+                    ListHeaderComponent={
+                        isLoading ? (
+                            <View style={{ width: '100%' }}>
+                                {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+                                    <MarketListItemSkeleton key={i} />
+                                ))}
+                            </View>
+                        ) : null
+                    }
+                    ListEmptyComponent={
+                        !isLoading ? (
+                            <View style={styles.emptyState}>
+                                <Text style={styles.emptyText}>No tokens found</Text>
+                            </View>
+                        ) : null
+                    }
+                />
+            )}
 
             <LoadingOverlay
                 visible={isNavigating}

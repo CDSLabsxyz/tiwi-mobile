@@ -1,7 +1,7 @@
 import { PriceHeader } from '@/components/features/market/detail/PriceHeader';
 import { ScreenHeader } from '@/components/features/market/detail/ScreenHeader';
 import { TokenAbout } from '@/components/features/market/detail/TokenAbout';
-import { TradingViewChart } from '@/components/features/market/detail/TradingViewChart';
+import { TokenChart } from '@/components/features/market/detail/TokenChart';
 import { TokenPoolStats } from '@/components/features/market/detail/TokenPoolStats';
 import { TokenPriceChange } from '@/components/features/market/detail/TokenPriceChange';
 import { TokenTransactionsSummary } from '@/components/features/market/detail/TokenTransactionsSummary';
@@ -103,7 +103,7 @@ export default function SpotMarketDetail() {
         return (
             <View style={[styles.container, styles.center, {}]}>
                 <CustomStatusBar />
-                <TIWILoader size={80} />
+                <TIWILoader size={80} style={{ flex: 0 }} />
                 <Text style={styles.loadingText}>FETCHING MARKET DATA...</Text>
             </View>
         );
@@ -126,6 +126,8 @@ export default function SpotMarketDetail() {
                 logoURI={token.logoURI}
                 isFavorite={isFavorite(favoriteId)}
                 onToggleFavorite={handleToggleFavorite}
+                chainId={parsedChainId}
+                tokenAddress={effectiveAddress}
             />
 
             <ScrollView
@@ -138,19 +140,13 @@ export default function SpotMarketDetail() {
                         price: pool?.priceUsd ? pool.priceUsd.toString() : token.price,
                         priceChange24h: pool?.priceChange24h !== undefined ? pool.priceChange24h : token.priceChange24h
                     }} 
-                    chainName={getChainName(tokenInfo?.chainId || parsedChainId)}
+                    chainName={getChainName(tokenInfo?.chainId || parsedChainId, token.symbol)}
                 />
 
-                <TradingViewChart
-                    symbol={token.displaySymbol || token.symbol}
-                    baseSymbol={token.symbol}
-                    marketType="spot"
-                    precision={token.decimals}
-                    price={pool?.priceUsd || (typeof token.price === 'string' ? parseFloat(token.price) : token.price)}
-                    baseAddress={effectiveAddress}
-                    quoteAddress={pool?.address === effectiveAddress ? undefined : pool?.address}
-                    chainId={parsedChainId}
-                    provider={token.provider}
+                <TokenChart
+                    baseToken={effectiveAddress || token.symbol}
+                    chainId={parsedChainId || 56}
+                    tokenSymbol={token.symbol}
                 />
 
                 {/* Sub Tabs Toggle (Matches web transition between tabs) */}
@@ -252,7 +248,7 @@ const styles = StyleSheet.create({
     },
     loadingText: {
         color: colors.primaryCTA,
-        marginTop: 16,
+        marginTop: 4,
         fontSize: 10,
         fontWeight: 'bold',
     },

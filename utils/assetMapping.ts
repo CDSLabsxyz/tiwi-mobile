@@ -93,7 +93,7 @@ export const mapAssetToTokenOption = (
   return {
     ...tokenData,
     address: asset.address || tokenData.address || '',
-    decimals: asset.decimals || tokenData.decimals || 18,
+    decimals: asset.decimals || tokenData.decimals || ((asset.address || tokenData.address || '').toLowerCase() === '0xda1060158f7d593667cce0a15db346bb3ffb3596' ? 9 : 18),
     tvl: "$1,000,000",
     balanceFiat: usdValue,
     balanceToken: `${balance} ${tokenData.symbol || asset.symbol.toUpperCase()}`,

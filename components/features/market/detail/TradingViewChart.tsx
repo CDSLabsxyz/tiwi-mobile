@@ -121,27 +121,58 @@ export const TradingViewChart: React.FC<TradingViewChartProps> = ({
             }
 
             if (data.type === 'GET_BARS') {
-                const history = await api.charts.history({
-                    symbol: tvSymbol,
-                    resolution: data.resolution,
-                    from: data.from,
-                    to: data.to,
-                    countback: data.countBack
-                });
-
-                // Support both UDF and Array formats
                 let bars: any[] = [];
-                if (history.t) {
-                    bars = history.t.map((t: any, i: number) => ({
-                        time: t * 1000, low: history.l[i], high: history.h[i],
-                        open: history.o[i], close: history.c[i], volume: history.v?.[i] || 0
-                    }));
-                } else if (Array.isArray(history)) {
-                    bars = history.map((b: any) => ({
-                        time: (b.time || b.t) * 1000, open: b.open || b.o,
-                        high: b.high || b.h, low: b.low || b.l,
-                        close: b.close || b.c, volume: b.volume || b.v || 0
-                    }));
+
+                // Try new token chart API first (for on-chain tokens)
+                if (baseAddress && chainId) {
+                    try {
+                        const chartResp = await api.charts.token({
+                            baseToken: baseAddress,
+                            chainId: chainId,
+                            resolution: data.resolution,
+                            from: data.from,
+                            to: data.to,
+                            countback: data.countBack,
+                        });
+
+                        if (chartResp?.bars?.length > 0) {
+                            bars = chartResp.bars.map((b: any) => ({
+                                time: b.time * 1000,
+                                open: b.open, high: b.high, low: b.low, close: b.close,
+                                volume: b.volume || 0
+                            }));
+                        }
+                    } catch {
+                        // Fall through to legacy history API
+                    }
+                }
+
+                // Fallback: legacy charts/history API
+                if (bars.length === 0) {
+                    try {
+                        const history = await api.charts.history({
+                            symbol: tvSymbol,
+                            resolution: data.resolution,
+                            from: data.from,
+                            to: data.to,
+                            countback: data.countBack
+                        });
+
+                        if (history.t) {
+                            bars = history.t.map((t: any, i: number) => ({
+                                time: t * 1000, low: history.l[i], high: history.h[i],
+                                open: history.o[i], close: history.c[i], volume: history.v?.[i] || 0
+                            }));
+                        } else if (Array.isArray(history)) {
+                            bars = history.map((b: any) => ({
+                                time: (b.time || b.t) * 1000, open: b.open || b.o,
+                                high: b.high || b.h, low: b.low || b.l,
+                                close: b.close || b.c, volume: b.volume || b.v || 0
+                            }));
+                        }
+                    } catch {
+                        addLog("Chart data unavailable");
+                    }
                 }
 
                 webViewRef.current?.injectJavaScript(`window.onNativeResponse({ requestId: "${data.id}", data: ${JSON.stringify(bars)} });`);

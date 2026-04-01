@@ -29,13 +29,41 @@ const MAX_AUDIO_DURATION = 60000; // 60 seconds in milliseconds
 
 /**
  * Chatbot Screen Component
- * AI chat interface with real functionality
- * Matches Figma design exactly (node-id: 3331-39463)
+ * Currently in development — shows coming soon screen
  */
 export default function ChatbotScreen() {
   const router = useRouter();
   const { top, bottom } = useSafeAreaInsets();
-  const [messages, setMessages] = useState<ChatMessage[]>([]); // No mock data
+
+  // ── COMING SOON MODE ──
+  const COMING_SOON = true;
+
+  if (COMING_SOON) {
+    return (
+      <View style={{ flex: 1, backgroundColor: '#000000' }}>
+        <CustomStatusBar />
+        <View style={{ paddingTop: top, paddingHorizontal: 20, paddingBottom: 12, flexDirection: 'row', alignItems: 'center' }}>
+          <TouchableOpacity onPress={() => router.back()} style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#121712', alignItems: 'center', justifyContent: 'center' }}>
+            <Image source={require('@/assets/settings/arrow-left-02.svg')} style={{ width: 20, height: 20 }} contentFit="contain" />
+          </TouchableOpacity>
+          <Text style={{ flex: 1, textAlign: 'center', fontFamily: 'Manrope-Bold', fontSize: 18, color: '#FFFFFF', marginRight: 40 }}>TIWI AI</Text>
+        </View>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 }}>
+          <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: 'rgba(177, 241, 40, 0.08)', borderWidth: 1, borderColor: 'rgba(177, 241, 40, 0.2)', alignItems: 'center', justifyContent: 'center', marginBottom: 24 }}>
+            <Image source={require('@/assets/logo/tiwi-logo.svg')} style={{ width: 48, height: 48 }} contentFit="contain" />
+          </View>
+          <Text style={{ fontFamily: 'Manrope-Bold', fontSize: 24, color: '#FFFFFF', textAlign: 'center', marginBottom: 12 }}>Coming Soon</Text>
+          <Text style={{ fontFamily: 'Manrope-Regular', fontSize: 15, color: '#888888', textAlign: 'center', lineHeight: 22 }}>
+            TIWI AI is being fine-tuned to give you the best DeFi experience. Our team is building an intelligent assistant that understands crypto, markets, and your portfolio.
+          </Text>
+          <Text style={{ fontFamily: 'Manrope-Medium', fontSize: 13, color: '#B1F128', textAlign: 'center', marginTop: 20 }}>Stay tuned for updates</Text>
+        </View>
+      </View>
+    );
+  }
+  // ── END COMING SOON ──
+
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [selectedImages, setSelectedImages] = useState<{ uri: string; mimeType: string }[]>([]);
   const [isRecording, setIsRecording] = useState(false);

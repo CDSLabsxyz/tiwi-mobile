@@ -2,7 +2,7 @@ import { OrderBook } from '@/components/features/market/detail/OrderBook';
 import { PriceHeader } from '@/components/features/market/detail/PriceHeader';
 import { RecentTrades } from '@/components/features/market/detail/RecentTrades';
 import { ScreenHeader } from '@/components/features/market/detail/ScreenHeader';
-import { TradingViewChart } from '@/components/features/market/detail/TradingViewChart';
+import { TokenChart } from '@/components/features/market/detail/TokenChart';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { colors } from '@/constants/colors';
 import { useEnrichedMarketDetail } from '@/hooks/useEnrichedMarketDetail';
@@ -101,16 +101,10 @@ export default function FuturesMarketDetail() {
                 contentContainerStyle={{ paddingBottom: bottom + 100 }}
             >
                 <PriceHeader token={token} />
-                <TradingViewChart
-                    symbol={token.displaySymbol || token.symbol}
-                    baseSymbol={token.symbol}
-                    marketType="perp"
-                    precision={token.decimals}
-                    price={typeof token.price === 'string' ? parseFloat(token.price) : token.price}
-                    baseAddress={token.baseToken?.address || token.contractAddress || token.address}
-                    quoteAddress={token.quoteToken?.address}
-                    chainId={token.chainId}
-                    provider={token.provider}
+                <TokenChart
+                    baseToken={token.baseToken?.address || token.contractAddress || token.address || token.symbol}
+                    chainId={token.chainId || 56}
+                    tokenSymbol={token.symbol}
                 />
 
                 {/* Tabs for Order Book / Trades */}

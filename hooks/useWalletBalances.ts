@@ -1,12 +1,94 @@
 import { api } from '@/lib/mobile/api-client';
 import { moralisService } from '@/services/moralisService';
+import { notificationService } from '@/services/notificationService';
 import { useFilterStore } from '@/store/filterStore';
 import { useWalletStore } from '@/store/walletStore';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
-// Major chains supported by Tiwi (defaults for fetching if no specific filter is active)
+// Major chains supported by Tiwi
 const ALL_SUPPORTED_CHAIN_IDS = [1, 56, 137, 42161, 8453, 10, 43114, 59144, 250, 42220, 100, 7565164, 1100];
+
+const isEvmAddress = (addr: string) => /^0x[a-fA-F0-9]{40}$/.test(addr);
+
+// Nexxend logo fallback for tokens missing logoURI
+const NEXXEND_LOGO_MAP: Record<string, string> = {
+    ETH: 'https://nexxend.xyz/api/v1/tokens/1/0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/logo',
+    WETH: 'https://nexxend.xyz/api/v1/tokens/1/0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2/logo',
+    BNB: 'https://nexxend.xyz/api/v1/tokens/56/0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/logo',
+    WBNB: 'https://nexxend.xyz/api/v1/tokens/56/0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c/logo',
+    USDT: 'https://nexxend.xyz/api/v1/tokens/56/0x55d398326f99059ff775485246999027b3197955/logo',
+    USDC: 'https://nexxend.xyz/api/v1/tokens/1/0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48/logo',
+    DAI: 'https://nexxend.xyz/api/v1/tokens/1/0x6b175474e89094c44da98b954eedeac495271d0f/logo',
+    MATIC: 'https://nexxend.xyz/api/v1/tokens/137/0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/logo',
+    POL: 'https://nexxend.xyz/api/v1/tokens/137/0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/logo',
+    AVAX: 'https://nexxend.xyz/api/v1/tokens/43114/0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/logo',
+    ARB: 'https://nexxend.xyz/api/v1/tokens/42161/0x912ce59144191c1204e64559fe8253a0e49e6548/logo',
+    OP: 'https://nexxend.xyz/api/v1/tokens/10/0x4200000000000000000000000000000000000042/logo',
+    CAKE: 'https://nexxend.xyz/api/v1/tokens/56/0x0e09fabb73bd3ade0a17ecc321fd13a19e81ce82/logo',
+    SOL: 'https://nexxend.xyz/api/v1/tokens/7565164/So11111111111111111111111111111111111111112/logo',
+    WSOL: 'https://nexxend.xyz/api/v1/tokens/7565164/So11111111111111111111111111111111111111112/logo',
+    TWC: 'https://nexxend.xyz/api/v1/tokens/56/0xda1060158f7d593667cce0a15db346bb3ffb3596/logo',
+    TRX: 'https://nexxend.xyz/api/v1/tokens/728126428/native/logo',
+    TON: 'https://nexxend.xyz/api/v1/tokens/1360104473/native/logo',
+    ATOM: 'https://nexxend.xyz/api/v1/tokens/118/native/logo',
+    LINK: 'https://nexxend.xyz/api/v1/tokens/1/0x514910771af9ca656af840dff83e8264ecf986ca/logo',
+    UNI: 'https://nexxend.xyz/api/v1/tokens/1/0x1f9840a85d5af5bf1d1762f925bdaddc4201f984/logo',
+    AAVE: 'https://nexxend.xyz/api/v1/tokens/1/0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9/logo',
+};
+
+function getLogoFallback(symbol?: string): string | undefined {
+    return NEXXEND_LOGO_MAP[(symbol || '').toUpperCase()];
+}
+
+// Spam/quality filtering
+const BLACKLISTED_SYMBOLS = ['SN3', 'BSB'];
+const SACRED_SYMBOLS = ['ETH', 'BNB', 'SOL', 'WSOL', 'MATIC', 'POL', 'AVAX', 'BASE', 'ARB', 'OP', 'USDT', 'USDC', 'DAI', 'CAKE', 'TRX', 'TON', 'ATOM', 'OSMO'];
+const SACRED_ADDRESSES = ['0x0000000000000000000000000000000000000000', '0x0000000000000000000000000000000000001010', 'So11111111111111111111111111111111111111112'];
+const SPAM_KEYWORDS = ['.com', '.xyz', '.net', '.io', '.org', 'claim', 'airdrop', 'visit', 'free', 'reward', 'voucher', 'gift', 'win', 'bonus'];
+
+function filterToken(b: any): boolean {
+    const usdValue = parseFloat(b.usdValue || '0');
+    const balance = parseFloat(b.balanceFormatted || b.balance || '0');
+    const symbol = (b.symbol || '').toUpperCase();
+    const name = (b.name || '').toLowerCase();
+    const addr = b.address?.toLowerCase() || '';
+
+    if (balance <= 0.000001) return false;
+    if (BLACKLISTED_SYMBOLS.includes(symbol)) return false;
+    if (/[\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]/.test(name) || /[\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]/.test(symbol)) return false;
+    if (SACRED_SYMBOLS.includes(symbol) || SACRED_ADDRESSES.includes(addr)) return true;
+
+    const isTWC = symbol === 'TWC' || addr === '0xda1060158f7d593667cce0a15db346bb3ffb3596';
+    if (isTWC) return true;
+
+    const isVerified = b.verified === true || b.verified_contract === true || b.native_token === true;
+    const hasRealLogo = b.logoURI && !b.logoURI.includes('/placeholder/');
+    if (isVerified) return usdValue > 0.01 || !!hasRealLogo;
+
+    const chg = parseFloat(b.priceChange24h || '0');
+    if (Math.abs(chg) > 10000) return false;
+    if (SPAM_KEYWORDS.some(k => name.includes(k) || symbol.toLowerCase().includes(k))) return false;
+    if (addr && /^(.)\1{3}$/.test(addr.replace('0x', '').slice(-4))) return false;
+    if (b.possible_spam === true) return false;
+    if (hasRealLogo && usdValue >= 1.00) return true;
+    if (usdValue >= 5.00) return true;
+
+    return false;
+}
+
+function normalizeToken(b: any) {
+    const sym = (b.symbol || '').toUpperCase();
+    return {
+        ...b,
+        symbol: sym === 'WSOL' ? 'SOL' : b.symbol,
+        name: sym === 'WSOL' ? 'Solana' : (b.name || b.symbol || 'Unknown'),
+        logoURI: b.logoURI || b.logo || getLogoFallback(b.symbol),
+        balanceFormatted: b.balanceFormatted || b.balance || '0',
+        usdValue: b.usdValue || '0',
+        priceChange24h: parseFloat(b.priceChange24h || '0'),
+    };
+}
 
 export function useWalletBalances() {
     const { activeAddress, activeGroupId, walletGroups, _hasHydrated } = useWalletStore();
@@ -19,232 +101,131 @@ export function useWalletBalances() {
         return ALL_SUPPORTED_CHAIN_IDS;
     }, [selectedChains]);
 
-    // Collect all addresses from the active wallet group
-    const allAddresses = useMemo(() => {
-        const group = walletGroups.find(g => g.id === activeGroupId);
-        if (!group) return activeAddress ? [activeAddress] : [];
-        const addrs = new Set<string>();
-        if (group.addresses?.EVM) addrs.add(group.addresses.EVM);
-        if (group.addresses?.SOLANA) addrs.add(group.addresses.SOLANA);
-        if (group.addresses?.TRON) addrs.add(group.addresses.TRON);
-        if (group.addresses?.TON) addrs.add(group.addresses.TON);
-        if (group.addresses?.COSMOS) addrs.add(group.addresses.COSMOS);
-        if (group.addresses?.OSMOSIS) addrs.add(group.addresses.OSMOSIS);
-        if (addrs.size === 0 && activeAddress) addrs.add(activeAddress);
-        return Array.from(addrs);
-    }, [walletGroups, activeGroupId, activeAddress]);
+    const group = useMemo(() => walletGroups.find(g => g.id === activeGroupId), [walletGroups, activeGroupId]);
 
     return useQuery({
-        queryKey: ['walletBalances', allAddresses, chainIdsForFetch],
+        queryKey: ['walletBalances', activeAddress, activeGroupId, chainIdsForFetch],
         queryFn: async () => {
-            if (!_hasHydrated || allAddresses.length === 0) {
+            if (!_hasHydrated || !activeAddress) {
                 return { tokens: [], totalNetWorthUsd: '0.00', portfolioChange: { amount: '0.00', percent: '0.00' } };
             }
 
             try {
-                // 1. Fetch balances for ALL wallet addresses in parallel
-                let rawBalances: any[] = [];
-
-                const isEvmAddress = (addr: string) => /^0x[a-fA-F0-9]{40}$/.test(addr);
-
-                // Get chain-typed addresses from wallet group
-                const group = walletGroups.find(g => g.id === activeGroupId);
                 const evmAddr = group?.addresses?.EVM;
                 const solAddr = group?.addresses?.SOLANA;
                 const tronAddr = group?.addresses?.TRON;
 
-                const fetchPromises: Promise<any[]>[] = [];
+                let rawBalances: any[] = [];
+                let backendTotalUSD: string | null = null;
+                let backendDailyChange: number | null = null;
+                let backendDailyChangeUSD: string | null = null;
 
-                // 1. EVM balances (primary + Moralis fallback)
+                // ── 1. TIWI Backend (PRIMARY) for EVM ──
                 if (evmAddr && isEvmAddress(evmAddr)) {
-                    fetchPromises.push((async () => {
+                    try {
+                        const resp = await api.wallet.balances({ address: evmAddr, chains: chainIdsForFetch }) as any;
+                        const balances = Array.isArray(resp?.balances) ? resp.balances : (Array.isArray(resp) ? resp : []);
+                        rawBalances.push(...balances);
+
+                        // Capture portfolio-level metrics from TIWI backend
+                        if (resp?.totalUSD) backendTotalUSD = resp.totalUSD;
+                        if (resp?.dailyChange != null) backendDailyChange = resp.dailyChange;
+                        if (resp?.dailyChangeUSD) backendDailyChangeUSD = resp.dailyChangeUSD;
+                    } catch {
+                        // ── Moralis FALLBACK for EVM ──
                         try {
-                            const resp = await api.wallet.balances({
-                                address: evmAddr,
-                                chains: chainIdsForFetch,
-                            }) as any;
-                            return Array.isArray(resp?.balances) ? resp.balances : (Array.isArray(resp) ? resp : []);
+                            console.warn('[useWalletBalances] TIWI backend failed, falling back to Moralis');
+                            const moralisTokens = await moralisService.getWalletBalances(evmAddr, chainIdsForFetch);
+                            rawBalances.push(...moralisTokens);
                         } catch {
-                            try {
-                                return await moralisService.getWalletBalances(evmAddr, chainIdsForFetch);
-                            } catch {
-                                return [];
-                            }
+                            console.warn('[useWalletBalances] Moralis fallback also failed');
                         }
-                    })());
-                }
-
-                // 2. Solana balances
-                if (solAddr) {
-                    fetchPromises.push((async () => {
-                        try {
-                            console.log('[useWalletBalances] Fetching Solana balances for:', solAddr);
-                            const resp = await api.wallet.balances({
-                                address: solAddr,
-                                chains: [7565164],
-                            }) as any;
-                            const balances = Array.isArray(resp?.balances) ? resp.balances : (Array.isArray(resp) ? resp : []);
-                            console.log('[useWalletBalances] Solana balances found:', balances.length);
-                            return balances;
-                        } catch (e: any) {
-                            console.warn('[useWalletBalances] Solana balance fetch failed:', e.message);
-                            return [];
-                        }
-                    })());
-                }
-
-                // 3. TRON balances
-                if (tronAddr) {
-                    fetchPromises.push((async () => {
-                        try {
-                            const resp = await api.wallet.balances({
-                                address: tronAddr,
-                                chains: [728126428],
-                            }) as any;
-                            return Array.isArray(resp?.balances) ? resp.balances : (Array.isArray(resp) ? resp : []);
-                        } catch {
-                            return [];
-                        }
-                    })());
-                }
-
-                const results = await Promise.all(fetchPromises);
-                rawBalances = results.flat();
-
-                // Debug: log raw balances count and any non-standard entries
-                console.log('[useWalletBalances] Total raw balances:', rawBalances.length);
-                rawBalances.forEach((b, i) => {
-                    const sym = b.symbol?.toUpperCase() || 'UNKNOWN';
-                    if (!['ETH', 'BNB', 'MATIC', 'USDT', 'USDC', 'TWC', 'CAKE', 'DAI'].includes(sym)) {
-                        console.log(`[useWalletBalances] Raw #${i}:`, JSON.stringify({ symbol: b.symbol, chainId: b.chainId, chain: b.chain, balance: b.balanceFormatted || b.balance_formatted || b.balance, usdValue: b.usdValue || b.usd_value, address: b.address || b.token_address }));
                     }
-                });
+                }
 
-                // 2. Deduplicate
+                // ── 2. Solana balances ──
+                if (solAddr) {
+                    try {
+                        const resp = await api.wallet.balances({ address: solAddr, chains: [7565164] }) as any;
+                        const balances = Array.isArray(resp?.balances) ? resp.balances : (Array.isArray(resp) ? resp : []);
+                        rawBalances.push(...balances);
+                    } catch (e: any) {
+                        console.warn('[useWalletBalances] Solana fetch failed:', e.message);
+                    }
+                }
+
+                // ── 3. TRON balances ──
+                if (tronAddr) {
+                    try {
+                        const resp = await api.wallet.balances({ address: tronAddr, chains: [728126428] }) as any;
+                        const balances = Array.isArray(resp?.balances) ? resp.balances : (Array.isArray(resp) ? resp : []);
+                        rawBalances.push(...balances);
+                    } catch {
+                        // TRON balance fetch failed silently
+                    }
+                }
+
+                // ── 4. Deduplicate ──
                 const dedupedMap = new Map<string, any>();
                 rawBalances.forEach(b => {
                     if (!b) return;
-                    const isNative = b.address?.toLowerCase() === 'native' ||
-                        b.address?.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' ||
-                        b.address?.toLowerCase() === '0x0000000000000000000000000000000000000000';
+                    const isNative = ['native', '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee', '0x0000000000000000000000000000000000000000'].includes(b.address?.toLowerCase() || '');
                     const addr = isNative ? '0x0000000000000000000000000000000000000000' : b.address?.toLowerCase();
-                    const key = `${addr}-${b.chainId}-${b.symbol?.toUpperCase()}`;
+                    const key = `${addr}-${b.chainId}-${(b.symbol || '').toUpperCase()}`;
                     if (!dedupedMap.has(key)) dedupedMap.set(key, b);
                 });
 
-                // 3. Filter spam and dust with extreme prejudice
+                // ── 5. Filter spam + normalize ──
                 const tokens = Array.from(dedupedMap.values())
-                    .filter(b => {
-                        const usdValue = parseFloat(b.usdValue || '0');
-                        const balance = parseFloat(b.balanceFormatted || b.balance || '0');
-                        const symbol = (b.symbol || '').toUpperCase();
-                        const name = (b.name || '').toLowerCase();
-                        const addr = b.address?.toLowerCase();
+                    .filter(filterToken)
+                    .map(normalizeToken);
 
-                        // 0. MANDATORY: Must have some balance to even be considered
-                        if (balance <= 0.000001) return false;
+                // ── 6. Portfolio metrics ──
+                // Use TIWI backend values if available, otherwise calculate from tokens
+                let totalNetWorthUsd: string;
+                let portfolioChangeAmount: string;
+                let portfolioChangePercent: string;
 
-                        // 0.5 BLACKLIST — known spam tokens
-                        const BLACKLISTED_SYMBOLS = ['SN3', 'BSB'];
-                        if (BLACKLISTED_SYMBOLS.includes(symbol)) return false;
+                if (backendTotalUSD) {
+                    // TIWI backend provided portfolio metrics — use directly
+                    totalNetWorthUsd = parseFloat(backendTotalUSD).toFixed(2);
+                    portfolioChangePercent = backendDailyChange != null ? backendDailyChange.toFixed(2) : '0.00';
+                    portfolioChangeAmount = backendDailyChangeUSD ? parseFloat(backendDailyChangeUSD).toFixed(2) : '0.00';
+                } else {
+                    // Fallback: calculate from individual tokens (Moralis path)
+                    const totalUsdToday = tokens.reduce((sum, t) => sum + parseFloat(t.usdValue || '0'), 0);
+                    let totalUsdYesterday = 0;
+                    let totalGainUsd = 0;
 
-                        // 0.6 Block Chinese/Japanese/Korean character tokens (always spam airdrops)
-                        if (/[\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]/.test(name) || /[\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]/.test(symbol)) return false;
-
-                        // 1. SACRED LIST (Native/Trustable)
-                        const isSacred = ['ETH', 'BNB', 'SOL', 'WSOL', 'MATIC', 'POL', 'AVAX', 'BASE', 'ARB', 'OP', 'USDT', 'USDC', 'DAI', 'CAKE', 'TRX', 'TON', 'ATOM', 'OSMO'].includes(symbol) ||
-                            addr === '0x0000000000000000000000000000000000000000' ||
-                            addr === '0x0000000000000000000000000000000000001010' ||
-                            addr === 'So11111111111111111111111111111111111111112'; // Wrapped SOL
-                        if (isSacred) return true;
-
-                        // 2. VERIFIED / PROJECT TOKENS (TWC)
-                        const isVerified = b.verified === true || b.verified_contract === true || b.native_token === true;
-                        const isTWC = symbol === 'TWC' || addr === '0xda1060158f7d593667cce0a15db346bb3ffb3596';
-                        
-                        // Rule 1: Show project tokens if they have balance
-                        if (isTWC) return true;
-                        
-                        // Rule 2: Show Verified tokens if they have value or a real logo
-                        const hasRealLogo = b.logoURI && !b.logoURI.includes('/placeholder/');
-                        if (isVerified) return usdValue > 0.01 || hasRealLogo;
-
-                        // Rule 3: Hide suspicious gains
-                        const chg = parseFloat(b.priceChange24h || '0');
-                        if (Math.abs(chg) > 10000) return false;
-
-                        // Rule 4: Spam name/symbol detection
-                        const spamKw = ['.com', '.xyz', '.net', '.io', '.org', 'claim', 'airdrop', 'visit', 'free', 'reward', 'voucher', 'gift', 'win', 'bonus'];
-                        if (spamKw.some(k => name.includes(k) || symbol.toLowerCase().includes(k))) return false;
-                        if (/[\u4e00-\u9fa5]/.test(name)) return false;
-
-                        // Rule 5: Honeypot address patterns (repeated chars at end)
-                        if (addr) {
-                            const clean = addr.replace('0x', '');
-                            const last4 = clean.slice(-4);
-                            if (/^(.)\1{3}$/.test(last4)) return false;
+                    tokens.forEach((token) => {
+                        const valToday = parseFloat(token.usdValue || '0');
+                        const chg = token.priceChange24h || 0;
+                        if (valToday > 0) {
+                            const safeChange = Math.max(chg, -99.99);
+                            const valYesterday = valToday / (1 + safeChange / 100);
+                            totalUsdYesterday += valYesterday;
+                            totalGainUsd += (valToday - valYesterday);
                         }
+                    });
 
-                        // Rule 6: Unverified must have at least $1.00 value AND a real logo
-                        // OR at least $5.00 value even without a logo
-                        // BUT also must not be a possible_spam token
-                        if (b.possible_spam === true) return false;
+                    const pctChange = totalUsdYesterday > 0 ? (totalGainUsd / totalUsdYesterday) * 100 : 0;
 
-                        if (hasRealLogo && usdValue >= 1.00) return true;
-                        if (usdValue >= 5.00) return true;
+                    totalNetWorthUsd = totalUsdToday.toFixed(2);
+                    portfolioChangeAmount = totalGainUsd.toFixed(2);
+                    portfolioChangePercent = pctChange.toFixed(2);
+                }
 
-                        return false;
-                    })
-                    .map(b => ({
-                        ...b,
-                        symbol: (b.symbol || '').toUpperCase() === 'WSOL' ? 'SOL' : b.symbol,
-                        name: (b.symbol || '').toUpperCase() === 'WSOL' ? 'Solana' : (b.name || b.symbol || 'Unknown'),
-                        balanceFormatted: b.balanceFormatted || b.balance || '0',
-                        usdValue: b.usdValue || '0',
-                        priceChange24h: parseFloat(b.priceChange24h || '0'),
-                    }));
+                const sortedTokens = tokens.sort((a, b) => parseFloat(b.usdValue) - parseFloat(a.usdValue));
 
-                // 4. Weighted Calculation
-                const totalUsd = tokens.reduce((sum, t) => sum + parseFloat(t.usdValue || "0"), 0);
-                let weightedDailyChange = 0;
-                let totalDailyChangeUSD = 0;
-
-                // 4. Correct Portfolio Change Calculation (Basis: Yesterday's Value)
-                const totalUsdToday = tokens.reduce((sum, t) => sum + parseFloat(t.usdValue || "0"), 0);
-                let totalUsdYesterday = 0;
-                let totalGainUsd = 0;
-
-                tokens.forEach((token) => {
-                    const valToday = parseFloat(token.usdValue || "0");
-                    const chg = token.priceChange24h || 0;
-
-                    if (valToday > 0) {
-                        // Avoid division by zero for -100% drops
-                        const safeChange = Math.max(chg, -99.99);
-                        const valYesterday = valToday / (1 + safeChange / 100);
-
-                        totalUsdYesterday += valYesterday;
-                        totalGainUsd += (valToday - valYesterday);
-
-                        if (Math.abs(chg) > 0.01) {
-                            console.log(`[useWalletBalances] Token: ${token.symbol} | Today: $${valToday.toFixed(2)} | Change: ${chg.toFixed(2)}% | Yesterday: $${valYesterday.toFixed(2)}`);
-                        }
-                    }
-                });
-
-                // Portfolio % = (Total Gain / Total Value Yesterday) * 100
-                const portfolioChangePercent = totalUsdYesterday > 0
-                    ? (totalGainUsd / totalUsdYesterday) * 100
-                    : 0;
-
-                console.log(`[useWalletBalances] FINAL: Today $${totalUsdToday.toFixed(2)}, Yesterday $${totalUsdYesterday.toFixed(2)}, Gain $${totalGainUsd.toFixed(2)} (${portfolioChangePercent.toFixed(2)}%)`);
+                // Check for significant price movements and send alerts
+                notificationService.checkPriceAlerts(sortedTokens);
 
                 return {
-                    tokens: tokens.sort((a, b) => parseFloat(b.usdValue) - parseFloat(a.usdValue)),
-                    totalNetWorthUsd: totalUsdToday.toFixed(2),
+                    tokens: sortedTokens,
+                    totalNetWorthUsd,
                     portfolioChange: {
-                        amount: totalGainUsd.toFixed(2),
-                        percent: portfolioChangePercent.toFixed(2),
+                        amount: portfolioChangeAmount,
+                        percent: portfolioChangePercent,
                     },
                 };
             } catch (error) {

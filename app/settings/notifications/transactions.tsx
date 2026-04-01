@@ -19,12 +19,14 @@ const notificationOptions: NotificationOption[] = [
     { id: 'received', label: 'Received Payment' },
     { id: 'failed', label: 'Failed Transactions' },
     { id: 'confirmed', label: 'On-chain confirmations' },
+    { id: 'price_alerts', label: 'Price Alerts' },
 ];
 
 export default function TransactionsNotificationsScreen() {
     const { bottom } = useSafeAreaInsets();
     const [notifications, setNotifications] = useState<Record<string, boolean>>({
         swap: true,
+        price_alerts: true,
         received: true,
         failed: true,
         confirmed: true,

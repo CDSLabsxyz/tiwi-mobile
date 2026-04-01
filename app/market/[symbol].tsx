@@ -3,7 +3,8 @@
  * Implements spot trading detail view for a selected pair using new SDK hooks.
  */
 
-import { TradingViewChart } from '@/components/features/market/detail/TradingViewChart';
+import { TokenChart } from '@/components/features/market/detail/TokenChart';
+import { getChainName } from '@/utils/chain';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { TIWILoader } from '@/components/ui/TIWILoader';
 import { colors } from '@/constants/colors';
@@ -13,7 +14,7 @@ import { formatCompactNumber } from '@/utils/formatting';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React from 'react';
-import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, ScrollView, Share, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // Icons using local assets
@@ -77,7 +78,7 @@ export default function MarketDetailScreen() {
     const aboutItems = [
         { label: 'Token Name', value: token.name || 'Unknown' },
         { label: 'Symbol', value: token.symbol || symbol },
-        { label: 'Network', value: token.chainName || (chainId === '56' ? 'BNB' : 'Chain ' + chainId) },
+        { label: 'Network', value: token.chainName || getChainName(token.chainId || chainId, token.symbol) },
         { label: 'Contract', value: token.address ? `${token.address.slice(0, 6)}...${token.address.slice(-4)}` : 'N/A', copyable: !!token.address, fullValue: token.address },
         { label: 'Official X', value: token.socials?.twitter || 'N/A', linkable: !!token.socials?.twitter },
         { label: 'Website', value: token.socials?.website || 'N/A', linkable: !!token.socials?.website },
@@ -96,7 +97,18 @@ export default function MarketDetailScreen() {
 
                     <View style={styles.headerRight}>
                         <Image source={StarIcon} style={styles.smallIcon} contentFit="contain" />
-                        <Image source={ShareIcon} style={styles.smallIcon} contentFit="contain" />
+                        <TouchableOpacity onPress={async () => {
+                            const cid = chainId || '56';
+                            const addr = token?.address || symbol;
+                            const url = `https://app.tiwiprotocol.xyz/token/${cid}/${addr}`;
+                            await Share.share({
+                                message: `Check out ${token?.symbol || symbol} on TIWI Protocol - the multichain DeFi super-app.\n\n${url}\n\nDownload TIWI Protocol to trade, swap, and earn across 10+ chains.`,
+                                url,
+                                title: `${token?.symbol || symbol} on TIWI Protocol`,
+                            });
+                        }}>
+                            <Image source={ShareIcon} style={styles.smallIcon} contentFit="contain" />
+                        </TouchableOpacity>
                     </View>
                 </View>
             </View>
@@ -138,14 +150,12 @@ export default function MarketDetailScreen() {
                     </View>
                 </View>
 
-                {/* Live TradingView Chart */}
+                {/* Chart */}
                 <View style={styles.chartWrapper}>
-                    <TradingViewChart
-                        symbol={token.symbol || symbol}
-                        baseAddress={token.address}
-                        chainId={token.chainId}
-                        provider="onchain"
-                        price={parseFloat(token.priceUSD || '0')}
+                    <TokenChart
+                        baseToken={token.address || token.symbol || symbol}
+                        chainId={token.chainId || parseInt(chainId || '56')}
+                        tokenSymbol={token.symbol}
                     />
                 </View>
 

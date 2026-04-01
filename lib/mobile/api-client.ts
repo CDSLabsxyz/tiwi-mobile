@@ -494,16 +494,21 @@ class WalletModule {
      */
     transactions(params: {
         address: string;
+        chains?: number[];
         chainId?: number;
+        types?: string[];
         limit?: number;
         offset?: number;
+        timeWindow?: '24h' | '7d' | '30d';
     }): Promise<any> {
         return apiFetch(this.base, '/api/v1/wallet/transactions', undefined, {
             address: params.address,
-            chainId: params.chainId,
+            chains: params.chains?.join(',') || (params.chainId ? String(params.chainId) : undefined),
+            types: params.types?.join(','),
             limit: params.limit,
             offset: params.offset,
-        });
+            timeWindow: params.timeWindow,
+        } as any);
     }
 
     /**
@@ -651,13 +656,13 @@ class NftsModule {
     constructor(private base: string) { }
 
     /**
-     * GET /api/v1/nfts
+     * GET /api/v1/nft/wallet
      * List NFTs for a wallet.
      */
-    list(params: { address: string; chainIds?: number[] }): Promise<{ nfts: any[] }> {
-        return apiFetch(this.base, '/api/v1/nfts', undefined, {
+    list(params: { address: string; chainIds?: number[] }): Promise<{ nfts: any[]; total: number }> {
+        return apiFetch(this.base, '/api/v1/nft/wallet', undefined, {
             address: params.address,
-            chainIds: params.chainIds?.join(','),
+            chains: params.chainIds?.join(','),
         });
     }
 
@@ -706,6 +711,38 @@ class ChartsModule {
         countback?: number;
     }): Promise<any> {
         return apiFetch(this.base, '/api/v1/charts/history', undefined, params as any);
+    }
+
+    /**
+     * GET /api/v1/charts/token
+     * Mobile-friendly chart with candles, points, summary stats, and metadata.
+     */
+    token(params: {
+        baseToken: string;
+        quoteToken?: string;
+        chainId?: number;
+        baseChainId?: number;
+        quoteChainId?: number;
+        resolution?: string;
+        range?: string;
+        from?: number;
+        to?: number;
+        countback?: number;
+        filled?: boolean;
+    }): Promise<any> {
+        return apiFetch(this.base, '/api/v1/charts/token', undefined, {
+            baseToken: params.baseToken,
+            quoteToken: params.quoteToken || 'USD',
+            chainId: params.chainId,
+            baseChainId: params.baseChainId,
+            quoteChainId: params.quoteChainId,
+            resolution: params.resolution || '15',
+            range: params.range || '1D',
+            from: params.from,
+            to: params.to,
+            countback: params.countback,
+            filled: params.filled,
+        } as any);
     }
 }
 

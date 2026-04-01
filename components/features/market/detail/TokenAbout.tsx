@@ -11,21 +11,7 @@ interface TokenAboutProps {
     token: EnrichedMarket;
 }
 
-function getChainName(chainId: number, symbol?: string): string | null {
-    if (symbol === "BTC" || symbol === "BITCOIN") return "Bitcoin Network";
-    const chains: Record<number, string> = {
-        1: "Ethereum",
-        56: "BNB Chain",
-        137: "Polygon",
-        42161: "Arbitrum",
-        10: "Optimism",
-        8453: "Base",
-        43114: "Avalanche",
-        250: "Fantom",
-        7565164: "Solana",
-    };
-    return chains[chainId] || `Chain ${chainId}`;
-}
+import { getChainName } from '@/utils/chain';
 
 export const TokenAbout: React.FC<TokenAboutProps & { chainId?: number }> = ({ token, chainId }) => {
     const handleCopy = async (text: string, label: string) => {

@@ -2,7 +2,7 @@ import { colors } from '@/constants/colors';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import React from 'react';
-import { Share, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Share, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface ScreenHeaderProps {
@@ -10,25 +10,35 @@ interface ScreenHeaderProps {
     logoURI?: string;
     isFavorite?: boolean;
     onToggleFavorite?: () => void;
+    chainId?: number;
+    tokenAddress?: string;
 }
 
 export const ScreenHeader: React.FC<ScreenHeaderProps> = ({
     symbol,
     logoURI,
     isFavorite,
-    onToggleFavorite
+    onToggleFavorite,
+    chainId,
+    tokenAddress,
 }) => {
     const router = useRouter();
     const insets = useSafeAreaInsets();
 
     const handleShare = async () => {
         try {
+            const cid = chainId || 56;
+            const addr = tokenAddress || symbol.toUpperCase();
+            const tokenUrl = `https://app.tiwiprotocol.xyz/token/${cid}/${addr}`;
+            const deepLink = `tiwiprotocol://token/${cid}/${addr}`;
+
             await Share.share({
-                message: `Check out ${symbol} on Tiwi!`,
-                url: `https://app.tiwiprotocol.xyz/market/${symbol.toLowerCase()}`
+                message: `Check out ${symbol} on TIWI Protocol - the multichain DeFi super-app.\n\n${tokenUrl}\n\nDownload TIWI Protocol to trade, swap, and earn across 10+ chains.`,
+                url: tokenUrl,
+                title: `${symbol} on TIWI Protocol`,
             });
         } catch (error) {
-            console.error(error);
+            console.warn('Share failed:', error);
         }
     };
 

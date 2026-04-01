@@ -200,6 +200,90 @@ class NotificationService {
     }
 
     /**
+     * Send price update notification for tokens with significant movement
+     */
+    async sendPriceAlert(symbol: string, changePercent: number, currentPrice: number) {
+        // Check user preferences
+        try {
+            const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+            const prefsRaw = await AsyncStorage.getItem('tiwi_notification_prefs');
+            if (prefsRaw) {
+                const prefs = JSON.parse(prefsRaw);
+                if (prefs['price_alerts'] === false) return;
+            }
+        } catch {}
+
+        const isUp = changePercent >= 0;
+        const direction = isUp ? 'up' : 'down';
+        const formattedChange = Math.abs(changePercent).toFixed(2);
+        const formattedPrice = currentPrice < 0.01
+            ? `$${currentPrice.toExponential(2)}`
+            : `$${currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+        try {
+            await Notifications.scheduleNotificationAsync({
+                content: {
+                    title: `${symbol} Price Update`,
+                    body: `${symbol} is ${direction} ${formattedChange}% — now at ${formattedPrice}`,
+                    data: { type: 'price_alert', symbol, changePercent, currentPrice },
+                    sound: 'default',
+                },
+                trigger: null,
+            });
+        } catch (e) {
+            console.warn('[NotificationService] Price alert failed:', e);
+        }
+    }
+
+    /**
+     * Check wallet tokens for significant price movements and send alerts
+     * Called periodically from the app
+     */
+    async checkPriceAlerts(tokens: any[]) {
+        const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+        const ALERT_KEY = 'tiwi_last_price_alerts';
+        const THRESHOLD = 3; // Alert when change > 3%
+        const TWC_THRESHOLD = 1; // Alert TWC at 1% change (more sensitive)
+        const COOLDOWN_MS = 60 * 60 * 1000; // 1 hour cooldown per token
+
+        try {
+            // Load last alert timestamps
+            const lastAlertsRaw = await AsyncStorage.getItem(ALERT_KEY);
+            const lastAlerts: Record<string, number> = lastAlertsRaw ? JSON.parse(lastAlertsRaw) : {};
+            const now = Date.now();
+            let updated = false;
+
+            for (const token of tokens) {
+                const sym = (token.symbol || '').toUpperCase();
+                const change = Math.abs(parseFloat(token.priceChange24h || '0'));
+                const price = parseFloat(token.priceUSD || token.usdValue || '0');
+                const isTWC = sym === 'TWC';
+                const threshold = isTWC ? TWC_THRESHOLD : THRESHOLD;
+
+                // Skip if below threshold
+                if (change < threshold) continue;
+                // Skip if price is 0
+                if (price <= 0) continue;
+
+                // Cooldown check
+                const lastAlert = lastAlerts[sym] || 0;
+                if (now - lastAlert < COOLDOWN_MS) continue;
+
+                // Send alert
+                await this.sendPriceAlert(sym, parseFloat(token.priceChange24h || '0'), price);
+                lastAlerts[sym] = now;
+                updated = true;
+            }
+
+            if (updated) {
+                await AsyncStorage.setItem(ALERT_KEY, JSON.stringify(lastAlerts));
+            }
+        } catch (e) {
+            console.warn('[NotificationService] Price alert check failed:', e);
+        }
+    }
+
+    /**
      * Deactivate a token (e.g. on logout)
      */
     async deactivateToken(token: string) {
