@@ -2,10 +2,12 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { SettingsHeader } from '@/components/ui/settings-header';
 import { ToggleSwitch } from '@/components/ui/toggle-switch';
-import React, { useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import React, { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as Notifications from 'expo-notifications';
+
+const STORAGE_KEY = 'tiwi_notification_prefs';
 
 interface NotificationOption {
     id: string;
@@ -13,62 +15,34 @@ interface NotificationOption {
 }
 
 const notificationOptions: NotificationOption[] = [
-    { id: 'swap-completed', label: 'Swap Completed' },
-    { id: 'received-payment', label: 'Received Payment' },
-    { id: 'failed-transactions', label: 'Failed Transactions' },
-    { id: 'on-chain-confirmations', label: 'On-chain confirmations' },
+    { id: 'swap', label: 'Swap Completed' },
+    { id: 'received', label: 'Received Payment' },
+    { id: 'failed', label: 'Failed Transactions' },
+    { id: 'confirmed', label: 'On-chain confirmations' },
 ];
 
 export default function TransactionsNotificationsScreen() {
     const { bottom } = useSafeAreaInsets();
     const [notifications, setNotifications] = useState<Record<string, boolean>>({
-        'swap-completed': true,
-        'received-payment': true,
-        'failed-transactions': true,
-        'on-chain-confirmations': true,
+        swap: true,
+        received: true,
+        failed: true,
+        confirmed: true,
     });
 
+    // Load persisted settings
+    useEffect(() => {
+        AsyncStorage.getItem(STORAGE_KEY).then(val => {
+            if (val) {
+                try { setNotifications(JSON.parse(val)); } catch {}
+            }
+        });
+    }, []);
+
     const handleToggle = async (id: string, value: boolean) => {
-        setNotifications((prev) => ({
-            ...prev,
-            [id]: value,
-        }));
-
-        if (value) {
-            let title = '';
-            let body = '';
-
-            switch (id) {
-                case 'swap-completed':
-                    title = 'Swap Completed 🔄';
-                    body = 'Your swap to USDC was successful.';
-                    break;
-                case 'received-payment':
-                    title = 'Payment Received 💰';
-                    body = 'You just received 500 TWC in your wallet.';
-                    break;
-                case 'failed-transactions':
-                    title = 'Transaction Failed ⚠️';
-                    body = 'Your previous transaction was reverted by the network.';
-                    break;
-                case 'on-chain-confirmations':
-                    title = 'Network Confirmed 🔗';
-                    body = 'Your recent transaction has been confirmed on the blockchain.';
-                    break;
-            }
-
-            if (title) {
-                await Notifications.scheduleNotificationAsync({
-                    content: {
-                        title: title,
-                        body: body,
-                        sound: true,
-                        data: { type: id }
-                    },
-                    trigger: null, // Trigger immediately as a sample 
-                });
-            }
-        }
+        const updated = { ...notifications, [id]: value };
+        setNotifications(updated);
+        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
     };
 
     return (
@@ -77,19 +51,13 @@ export default function TransactionsNotificationsScreen() {
 
             <ScrollView
                 style={styles.scrollView}
-                contentContainerStyle={[
-                    styles.scrollContent,
-                    { paddingBottom: (bottom || 16) + 24 }
-                ]}
+                contentContainerStyle={[styles.scrollContent, { paddingBottom: (bottom || 16) + 24 }]}
                 showsVerticalScrollIndicator={false}
-                alwaysBounceVertical={true}
             >
                 <View style={styles.listContainer}>
                     {notificationOptions.map((option) => (
                         <View key={option.id} style={styles.listItem}>
-                            <ThemedText style={styles.itemLabel}>
-                                {option.label}
-                            </ThemedText>
+                            <ThemedText style={styles.itemLabel}>{option.label}</ThemedText>
                             <ToggleSwitch
                                 value={notifications[option.id] || false}
                                 onValueChange={(value) => handleToggle(option.id, value)}
@@ -103,28 +71,10 @@ export default function TransactionsNotificationsScreen() {
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-    },
-    scrollView: {
-        flex: 1,
-    },
-    scrollContent: {
-        flexGrow: 1,
-        paddingTop: 40,
-        paddingHorizontal: 20,
-    },
-    listContainer: {
-        gap: 16,
-    },
-    listItem: {
-        height: 48,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-    },
-    itemLabel: {
-        fontSize: 16,
-        opacity: 0.9,
-    },
+    container: { flex: 1 },
+    scrollView: { flex: 1 },
+    scrollContent: { flexGrow: 1, paddingTop: 40, paddingHorizontal: 20 },
+    listContainer: { gap: 16 },
+    listItem: { height: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    itemLabel: { fontSize: 16, opacity: 0.9 },
 });

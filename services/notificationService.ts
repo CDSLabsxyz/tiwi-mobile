@@ -106,7 +106,7 @@ class NotificationService {
     async sendTestNotification() {
         await Notifications.scheduleNotificationAsync({
             content: {
-                title: "Security Verified ✅",
+                title: "Security Verified",
                 body: "Your notifications are active. We'll keep you updated",
                 data: { data: 'goes here' },
             },
@@ -130,8 +130,25 @@ class NotificationService {
 
     /**
      * Send a local notification for transaction events
+     * Respects user's notification preferences
      */
     async sendTransactionNotification(type: 'swap' | 'received' | 'sent' | 'failed' | 'confirmed', details?: { symbol?: string; amount?: string; txHash?: string }) {
+        // Check user preferences
+        try {
+            const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+            const prefsRaw = await AsyncStorage.getItem('tiwi_notification_prefs');
+            if (prefsRaw) {
+                const prefs = JSON.parse(prefsRaw);
+                // 'sent' maps to 'swap' preference (both are outgoing tx)
+                const prefKey = type === 'sent' ? 'swap' : type;
+                if (prefs[prefKey] === false) {
+                    console.log(`[NotificationService] ${type} notification disabled by user`);
+                    return;
+                }
+            }
+        } catch {
+            // If prefs can't be read, send notification anyway
+        }
         const configs: Record<string, { title: string; body: string; icon?: string }> = {
             swap: {
                 title: 'Swap Completed',

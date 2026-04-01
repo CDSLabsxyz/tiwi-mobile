@@ -1,9 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, Dimensions, StyleSheet } from 'react-native';
-// UNCOMMENT FOR EAS BUILD:
-// import LottieView from 'lottie-react-native';
+import LottieView from 'lottie-react-native';
 
-// const SplashAnimation = require('../../assets/lottie/Animation - 1774567551825.json');
+const SplashAnimation = require('../../assets/lottie/Animation - 1774567551825.json');
 const { width, height } = Dimensions.get('window');
 
 interface AnimatedSplashScreenProps {
@@ -15,13 +14,19 @@ interface AnimatedSplashScreenProps {
 export const AnimatedSplashScreen: React.FC<AnimatedSplashScreenProps> = ({ isReady, onAnimationComplete, onLoaded }) => {
     const fadeAnim = useRef(new Animated.Value(1)).current;
     const [animationFinished, setAnimationFinished] = useState(false);
+    const [lottieFinished, setLottieFinished] = useState(false);
+    const lottieRef = useRef<LottieView>(null);
 
     useEffect(() => {
         if (onLoaded) onLoaded();
     }, []);
 
+    const handleAnimationFinish = useCallback(() => {
+        setLottieFinished(true);
+    }, []);
+
     useEffect(() => {
-        if (isReady) {
+        if (isReady && lottieFinished) {
             Animated.timing(fadeAnim, {
                 toValue: 0,
                 duration: 800,
@@ -31,7 +36,7 @@ export const AnimatedSplashScreen: React.FC<AnimatedSplashScreenProps> = ({ isRe
                 onAnimationComplete();
             });
         }
-    }, [isReady]);
+    }, [isReady, lottieFinished]);
 
     if (animationFinished) return null;
 
@@ -42,16 +47,15 @@ export const AnimatedSplashScreen: React.FC<AnimatedSplashScreenProps> = ({ isRe
                 { opacity: fadeAnim }
             ]}
         >
-            {/* UNCOMMENT FOR EAS BUILD:
             <LottieView
+                ref={lottieRef}
                 source={SplashAnimation}
                 autoPlay
                 loop={false}
-                onAnimationFinish={() => {}}
+                onAnimationFinish={handleAnimationFinish}
                 style={styles.animation}
                 resizeMode="cover"
             />
-            */}
         </Animated.View>
     );
 };

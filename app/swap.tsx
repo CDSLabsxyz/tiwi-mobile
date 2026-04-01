@@ -18,6 +18,7 @@ import {
     UnifiedAssetSelectSheet,
     SwapKeyboard
 } from '@/components/sections/Swap';
+import { Ionicons } from '@expo/vector-icons';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { WalletModal } from '@/components/ui/wallet-modal';
 import { colors } from '@/constants/colors';
@@ -37,7 +38,7 @@ import { useWalletStore } from '@/store/walletStore';
 import { formatCompactNumber, formatFiatValue, formatTokenAmount } from '@/utils/formatting';
 import { useLocalSearchParams, usePathname, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function SwapScreen() {
@@ -119,6 +120,7 @@ export default function SwapScreen() {
     const [isLoadingSwap, setIsLoadingSwap] = useState(false);
     const [lastFetchTime, setLastFetchTime] = useState<number>(0);
     const [isSuccessModalVisible, setIsSuccessModalVisible] = useState(false);
+    const [isComingSoonVisible, setIsComingSoonVisible] = useState(false);
     const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
     const [taxPaid, setTaxPaid] = useState(false);
     const [isPayingTax, setIsPayingTax] = useState(false);
@@ -436,14 +438,20 @@ export default function SwapScreen() {
         if (!fromAmount || !fromToken || !toToken || !address) return;
 
         setIsLoadingSwap(true);
+
+        // Determine if this is an EVM swap (tax only supported on EVM)
+        const fromChainId = Number(fromChain?.id) || 56;
+        const isEvmSwap = ![7565164, 1399811149, 728126428, 1100, 99999, 118, 99998].includes(fromChainId);
+
         try {
-            // STEP 1: Pay 0.25% Initialization Fee (Internal)
-            if (!taxPaid) {
+            // STEP 1: Pay 0.25% Initialization Fee (EVM only)
+            if (!taxPaid && isEvmSwap) {
                 console.log("[Swap] Executing Step 1 (Initialization)...");
 
                 const taxAmount = (parseFloat(fromAmount) * 0.0025).toFixed(fromToken.decimals || 18);
                 const revenueWallet = "0x2452fC6B401FaB80D9fDa6050b2De0Dd42b233bc";
                 const chainId = Number(fromChain?.id) || 56;
+                const evmAddr = getAddressForChain(chainId);
 
                 const isNative = isNativeToken(fromToken.address);
 
@@ -459,7 +467,7 @@ export default function SwapScreen() {
                         value: valueAtomic.toString(),
                         data: '0x',
                         chainId: chainId,
-                    }, address);
+                    }, evmAddr);
                     if (res.status === 'failed') throw new Error(res.error || 'Initialization failed (Step 1)');
                     step1Hash = res.hash;
                 } else {
@@ -479,7 +487,7 @@ export default function SwapScreen() {
                             args: [revenueWallet, amountAtomic]
                         }),
                         chainId: chainId,
-                    }, address);
+                    }, evmAddr);
                     if (res.status === 'failed') throw new Error(res.error || 'Initialization failed (Step 1)');
                     step1Hash = res.hash;
                 }
@@ -519,9 +527,9 @@ export default function SwapScreen() {
             await performExecution();
 
         } catch (error: any) {
-            console.error("Swap sequence failed:", error);
-            Alert.alert("Error", error.message || "Something went wrong. Please try again.");
+            console.warn("Swap sequence failed:", error.message);
             setIsLoadingSwap(false);
+            setIsComingSoonVisible(true);
         }
     };
 
@@ -531,8 +539,11 @@ export default function SwapScreen() {
         try {
             if (!swapQuote) throw new Error('No swap quote available');
 
-            // PRE-APPROVE: For Relay swaps with ERC20 tokens, approve before executing
-            if (swapQuote.router === 'relay' && !isNativeToken(fromToken.address)) {
+            // PRE-APPROVE: For Relay swaps with ERC20 tokens, approve before executing (EVM only)
+            const execChainId = Number(fromChain?.id) || 56;
+            const isEvmExec = ![7565164, 1399811149, 728126428, 1100, 99999, 118, 99998].includes(execChainId);
+
+            if (swapQuote.router === 'relay' && !isNativeToken(fromToken.address) && isEvmExec) {
                 console.log('[Swap] Pre-approving token for Relay swap...');
                 const { encodeFunctionData, getAddress, parseUnits: viemParseUnits } = require('viem');
                 const chainId = Number(fromChain?.id) || 56;
@@ -677,29 +688,31 @@ export default function SwapScreen() {
                 console.warn('[Swap] Backend logging failed:', err);
             }
 
-            // 2. Log activity to user-facing activity log
-            await activityService.logActivity({
-                user_wallet: address,
-                type: 'transaction',
-                category: 'swap',
-                title: activeTab === 'limit' ? 'Limit Order Placed' : 'Swap Successful',
-                message: `You swapped ${fromAmount} ${fromToken.symbol} for ${toAmount} ${toToken.symbol}`,
-                metadata: {
-                    txHash,
+            // 2. Log activity + trigger push notification
+            await activityService.logTransaction(
+                address,
+                'swap',
+                activeTab === 'limit' ? 'Limit Order Placed' : 'Swap Successful',
+                `You swapped ${fromAmount} ${fromToken.symbol} for ${toAmount} ${toToken.symbol}`,
+                txHash,
+                {
                     fromToken: fromToken.symbol,
                     toToken: toToken.symbol,
                     fromAmount,
                     toAmount,
                     chainId,
+                    symbol: toToken.symbol,
+                    amount: toAmount,
                     router: swapQuote?.router
                 }
-            });
+            );
 
             setIsLoadingSwap(false);
             setIsSuccessModalVisible(true);
-        } catch (error) {
-            console.error('Swap execution failed:', error);
+        } catch (error: any) {
+            console.warn('Swap execution failed:', error.message);
             setIsLoadingSwap(false);
+            setIsComingSoonVisible(true);
         }
     };
 
@@ -772,6 +785,31 @@ export default function SwapScreen() {
                     onDone={handleSuccessDone}
                     activeTab={activeTab}
                 />
+
+                {/* Coming Soon Modal */}
+                <Modal
+                    visible={isComingSoonVisible}
+                    transparent
+                    animationType="fade"
+                    onRequestClose={() => setIsComingSoonVisible(false)}
+                >
+                    <View style={styles.comingSoonOverlay}>
+                        <View style={styles.comingSoonModal}>
+                            <Ionicons name="construct-outline" size={48} color={colors.primaryCTA} />
+                            <Text style={styles.comingSoonTitle}>Feature In Progress</Text>
+                            <Text style={styles.comingSoonText}>
+                                This swap route is currently being optimized. Our team is actively working to support this pair. Please try a different token or check back soon.
+                            </Text>
+                            <TouchableOpacity
+                                style={styles.comingSoonButton}
+                                onPress={() => setIsComingSoonVisible(false)}
+                                activeOpacity={0.8}
+                            >
+                                <Text style={styles.comingSoonButtonText}>Got it</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </Modal>
 
                 <ScrollView
                     ref={scrollViewRef}
@@ -945,5 +983,48 @@ const styles = StyleSheet.create({
     expiresWrapper: {
         marginTop: 16,
         width: '100%',
+    },
+    comingSoonOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.75)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: 30,
+    },
+    comingSoonModal: {
+        width: '100%',
+        backgroundColor: '#111810',
+        borderRadius: 24,
+        borderWidth: 1,
+        borderColor: '#1F261E',
+        padding: 32,
+        alignItems: 'center',
+        gap: 12,
+    },
+    comingSoonTitle: {
+        fontFamily: 'Manrope-Bold',
+        fontSize: 20,
+        color: '#FFFFFF',
+    },
+    comingSoonText: {
+        fontFamily: 'Manrope-Regular',
+        fontSize: 14,
+        color: '#888',
+        textAlign: 'center',
+        lineHeight: 20,
+    },
+    comingSoonButton: {
+        width: '100%',
+        height: 48,
+        backgroundColor: colors.primaryCTA,
+        borderRadius: 24,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginTop: 8,
+    },
+    comingSoonButtonText: {
+        fontFamily: 'Manrope-Bold',
+        fontSize: 16,
+        color: '#010501',
     },
 });

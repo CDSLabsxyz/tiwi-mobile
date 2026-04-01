@@ -3,6 +3,7 @@ import { SettingsHeader } from '@/components/ui/settings-header';
 import { SettingsItem } from '@/components/ui/settings-item';
 import { ToggleSwitch } from '@/components/ui/toggle-switch';
 import { useRouter } from 'expo-router';
+import { Platform } from 'react-native';
 import React from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -35,12 +36,13 @@ export default function SecuritySettingsScreen() {
 
     const securityItems = [
         { label: 'Change PIN', icon: ResetPasswordIcon, route: '/settings/security/change-pin' },
-        {
+        // Face Unlock — iOS only (Android uses system fingerprint)
+        ...(Platform.OS === 'ios' ? [{
             label: 'Face Unlock',
             icon: FaceUnlockIcon,
             rightElement: <ToggleSwitch value={isFaceUnlockEnabled} onValueChange={handleToggleFaceUnlock} />,
             showChevron: false
-        },
+        }] : []),
         {
             label: 'Enable/Disable Biometrics',
             icon: BiometricAccessIcon,

@@ -244,5 +244,3 @@ export const SendTokenSelector: React.FC<SendTokenSelectorProps> = ({ onTokenPre
     </View>
   );
 };
-
-

@@ -1,10 +1,90 @@
 
 import { api, RouteRequest } from '@/lib/mobile/api-client';
+import { parseUnits } from 'viem';
 import { relayService } from './relayService';
 import { SwapQuote, TokenMinimal } from './swap/types';
 import { unifiedSwapManager } from './swap/UnifiedSwapManager';
 
 export * from './swap/types';
+
+const JUPITER_API = 'https://quote-api.jup.ag/v6';
+
+/**
+ * Fetch quote and swap transaction directly from Jupiter API
+ */
+async function fetchJupiterQuote(
+    fromAmount: string,
+    fromToken: TokenMinimal,
+    toToken: TokenMinimal,
+    userAddress: string,
+    slippage: number
+): Promise<SwapQuote | null> {
+    const inputMint = fromToken.address;
+    const outputMint = toToken.address;
+    const amountInLamports = parseUnits(fromAmount, fromToken.decimals).toString();
+    const slippageBps = Math.round(slippage * 100); // 0.5% -> 50 bps
+
+    console.log(`[Jupiter] Fetching quote: ${inputMint} -> ${outputMint}, amount: ${amountInLamports}`);
+
+    // 1. Get quote
+    const quoteRes = await fetch(
+        `${JUPITER_API}/quote?inputMint=${inputMint}&outputMint=${outputMint}&amount=${amountInLamports}&slippageBps=${slippageBps}`
+    );
+    if (!quoteRes.ok) {
+        const err = await quoteRes.text();
+        throw new Error(`Jupiter quote failed: ${err}`);
+    }
+    const quoteData = await quoteRes.json();
+
+    if (!quoteData || !quoteData.outAmount) {
+        throw new Error('Jupiter returned no quote');
+    }
+
+    console.log(`[Jupiter] Quote received: outAmount=${quoteData.outAmount}`);
+
+    // 2. Get swap transaction
+    const swapRes = await fetch(`${JUPITER_API}/swap`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            quoteResponse: quoteData,
+            userPublicKey: userAddress,
+            wrapAndUnwrapSol: true,
+            dynamicComputeUnitLimit: true,
+            prioritizationFeeLamports: 'auto',
+        }),
+    });
+    if (!swapRes.ok) {
+        const err = await swapRes.text();
+        throw new Error(`Jupiter swap tx failed: ${err}`);
+    }
+    const swapData = await swapRes.json();
+
+    if (!swapData.swapTransaction) {
+        throw new Error('Jupiter did not return swap transaction');
+    }
+
+    console.log(`[Jupiter] Swap transaction received (${swapData.swapTransaction.length} chars)`);
+
+    const outAmountFormatted = (Number(quoteData.outAmount) / Math.pow(10, toToken.decimals)).toString();
+    const priceImpact = quoteData.priceImpactPct || '0';
+
+    return {
+        toAmount: outAmountFormatted,
+        fiatAmount: '0',
+        slippage,
+        gasEstimate: '0',
+        gasFee: '$0.00',
+        twcFee: '',
+        source: ['Jupiter'],
+        router: 'jupiter',
+        raw: {
+            ...quoteData,
+            swapTransaction: swapData.swapTransaction,
+        },
+        quoteId: quoteData.contextSlot?.toString(),
+    };
+}
 
 /**
  * Swap service - handles swap-related API calls using the new Routing Engine
@@ -22,16 +102,32 @@ export async function fetchSwapQuote(
         throw new Error('Invalid amount');
     }
 
-    try {
-        console.log(`[SwapService] Checking Relay Protocol first...`);
-        const relayQuote = await relayService.fetchRelayQuote(fromAmount, fromToken, toToken, fromAddress, recipient, slippage);
-        
-        if (relayQuote) {
-            console.log(`[SwapService] Using Relay Protocol quote for ${fromToken.symbol} -> ${toToken.symbol}`);
-            return relayQuote;
+    // Solana chains — skip Relay (not supported for execution), use Tiwi Routing Engine (Jupiter)
+    const SOLANA_CHAIN_IDS = [7565164, 1399811149];
+    const isSolanaSwap = SOLANA_CHAIN_IDS.includes(Number(fromToken.chainId)) || SOLANA_CHAIN_IDS.includes(Number(toToken.chainId));
+
+    if (!isSolanaSwap) {
+        try {
+            console.log(`[SwapService] Checking Relay Protocol first...`);
+            const relayQuote = await relayService.fetchRelayQuote(fromAmount, fromToken, toToken, fromAddress, recipient, slippage);
+
+            if (relayQuote) {
+                console.log(`[SwapService] Using Relay Protocol quote for ${fromToken.symbol} -> ${toToken.symbol}`);
+                return relayQuote;
+            }
+        } catch (relayError) {
+            console.warn(`[SwapService] Relay quote fetch failed or unavailable, falling back to Tiwi Routing Engine:`, relayError);
         }
-    } catch (relayError) {
-        console.warn(`[SwapService] Relay quote fetch failed or unavailable, falling back to Tiwi Routing Engine:`, relayError);
+    } else {
+        console.log(`[SwapService] Solana swap detected — using Jupiter direct`);
+
+        // Direct Jupiter quote + swap transaction
+        try {
+            const jupiterQuote = await fetchJupiterQuote(fromAmount, fromToken, toToken, fromAddress, slippage);
+            if (jupiterQuote) return jupiterQuote;
+        } catch (jupError: any) {
+            console.warn('[SwapService] Jupiter direct failed:', jupError.message);
+        }
     }
 
     try {

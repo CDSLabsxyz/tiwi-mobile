@@ -111,6 +111,15 @@ export function useWalletBalances() {
                 const results = await Promise.all(fetchPromises);
                 rawBalances = results.flat();
 
+                // Debug: log raw balances count and any non-standard entries
+                console.log('[useWalletBalances] Total raw balances:', rawBalances.length);
+                rawBalances.forEach((b, i) => {
+                    const sym = b.symbol?.toUpperCase() || 'UNKNOWN';
+                    if (!['ETH', 'BNB', 'MATIC', 'USDT', 'USDC', 'TWC', 'CAKE', 'DAI'].includes(sym)) {
+                        console.log(`[useWalletBalances] Raw #${i}:`, JSON.stringify({ symbol: b.symbol, chainId: b.chainId, chain: b.chain, balance: b.balanceFormatted || b.balance_formatted || b.balance, usdValue: b.usdValue || b.usd_value, address: b.address || b.token_address }));
+                    }
+                });
+
                 // 2. Deduplicate
                 const dedupedMap = new Map<string, any>();
                 rawBalances.forEach(b => {
@@ -136,13 +145,17 @@ export function useWalletBalances() {
                         if (balance <= 0.000001) return false;
 
                         // 0.5 BLACKLIST — known spam tokens
-                        const BLACKLISTED_SYMBOLS = ['SN3'];
+                        const BLACKLISTED_SYMBOLS = ['SN3', 'BSB'];
                         if (BLACKLISTED_SYMBOLS.includes(symbol)) return false;
 
+                        // 0.6 Block Chinese/Japanese/Korean character tokens (always spam airdrops)
+                        if (/[\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]/.test(name) || /[\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]/.test(symbol)) return false;
+
                         // 1. SACRED LIST (Native/Trustable)
-                        const isSacred = ['ETH', 'BNB', 'SOL', 'MATIC', 'POL', 'AVAX', 'BASE', 'ARB', 'OP', 'USDT', 'USDC', 'DAI', 'CAKE'].includes(symbol) ||
+                        const isSacred = ['ETH', 'BNB', 'SOL', 'WSOL', 'MATIC', 'POL', 'AVAX', 'BASE', 'ARB', 'OP', 'USDT', 'USDC', 'DAI', 'CAKE', 'TRX', 'TON', 'ATOM', 'OSMO'].includes(symbol) ||
                             addr === '0x0000000000000000000000000000000000000000' ||
-                            addr === '0x0000000000000000000000000000000000001010';
+                            addr === '0x0000000000000000000000000000000000001010' ||
+                            addr === 'So11111111111111111111111111111111111111112'; // Wrapped SOL
                         if (isSacred) return true;
 
                         // 2. VERIFIED / PROJECT TOKENS (TWC)
@@ -184,6 +197,8 @@ export function useWalletBalances() {
                     })
                     .map(b => ({
                         ...b,
+                        symbol: (b.symbol || '').toUpperCase() === 'WSOL' ? 'SOL' : b.symbol,
+                        name: (b.symbol || '').toUpperCase() === 'WSOL' ? 'Solana' : (b.name || b.symbol || 'Unknown'),
                         balanceFormatted: b.balanceFormatted || b.balance || '0',
                         usdValue: b.usdValue || '0',
                         priceChange24h: parseFloat(b.priceChange24h || '0'),

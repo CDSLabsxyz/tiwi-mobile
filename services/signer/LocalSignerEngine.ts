@@ -1,5 +1,6 @@
 import { getSecurePrivateKey } from '@/services/walletCreationService';
 import { useSecurityStore } from '@/store/securityStore';
+import { useWalletStore } from '@/store/walletStore';
 import { createPublicClient, createWalletClient, http } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { ExecutionResult, SignerEngine, TransactionRequest } from './SignerTypes';
@@ -14,15 +15,46 @@ export class LocalSignerEngine implements SignerEngine {
         return (key.startsWith('0x') ? key : `0x${key}`) as `0x${string}`;
     }
 
+    /**
+     * Resolve the private key for any address.
+     * For non-EVM addresses (Solana, TRON, etc.), fall back to the EVM address
+     * since all keys are derived from the same mnemonic and stored under EVM.
+     */
+    private async resolvePrivateKey(address: string): Promise<string> {
+        // 1. Try direct lookup
+        let key = await getSecurePrivateKey(address);
+        if (key) return key;
+
+        // 2. Try with EVM chain type explicitly
+        key = await getSecurePrivateKey(address, 'EVM');
+        if (key) return key;
+
+        // 3. For non-EVM addresses, find the EVM address from the wallet group
+        const { walletGroups, activeGroupId } = useWalletStore.getState();
+        const group = walletGroups.find(g => g.id === activeGroupId);
+        if (group?.addresses?.EVM) {
+            key = await getSecurePrivateKey(group.addresses.EVM, 'EVM');
+            if (key) return key;
+        }
+
+        // 4. Try all wallet groups
+        for (const g of walletGroups) {
+            if (g.addresses?.EVM) {
+                key = await getSecurePrivateKey(g.addresses.EVM, 'EVM');
+                if (key) return key;
+            }
+        }
+
+        throw new Error('Private key not found locally');
+    }
+
     private async getRawAccount(address: string) {
-        const privateKey = await getSecurePrivateKey(address);
-        if (!privateKey) throw new Error('Private key not found locally');
+        const privateKey = await this.resolvePrivateKey(address);
         return privateKeyToAccount(this.formatKey(privateKey));
     }
 
     private async createSecureAccount(address: string) {
-        const privateKey = await getSecurePrivateKey(address);
-        if (!privateKey) throw new Error('Private key not found locally');
+        const privateKey = await this.resolvePrivateKey(address);
 
         const account = privateKeyToAccount(this.formatKey(privateKey));
         const securityStore = useSecurityStore.getState();

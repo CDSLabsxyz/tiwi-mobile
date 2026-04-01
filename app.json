@@ -37,11 +37,11 @@
         "expo-splash-screen",
         {
           "image": "./assets/logo/image.png",
-          "imageWidth": 200,
+          "imageWidth": 1,
           "resizeMode": "contain",
-          "backgroundColor": "#010501",
+          "backgroundColor": "#000000",
           "dark": {
-            "backgroundColor": "#010501"
+            "backgroundColor": "#000000"
           }
         }
       ],
@@ -60,8 +60,7 @@
           }
         }
       ],
-      "./plugins/withFastPbkdf2Fix.js",
-      "@react-native-community/datetimepicker"
+      "./plugins/withFastPbkdf2Fix.js"
     ],
     "experiments": {
       "typedRoutes": true,

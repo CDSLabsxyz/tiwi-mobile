@@ -207,19 +207,52 @@ export class RelayExecutor {
                         }
                     }
 
-                    if (!tx.to) {
-                        console.error(`[RelayExecutor] Step[${i}].Item[${j}] missing "to" address`);
-                        throw new Error('Relay did not provide valid transaction data.');
+                    // Determine if this step is for Solana
+                    const stepChainId = tx.chainId ? Number(tx.chainId) : Number(fromToken.chainId);
+                    const isSolanaStep = stepChainId === 7565164 || stepChainId === 1399811149;
+
+                    let hash: string;
+
+                    if (isSolanaStep) {
+                        // Solana transaction — Relay returns serialized tx in data field
+                        // The data may be base64 encoded transaction, or in tx.transaction/tx.psbt
+                        const solTxData = tx.data || tx.transaction || item.transaction || '';
+
+                        if (!solTxData) {
+                            console.warn(`[RelayExecutor] Step[${i}].Item[${j}] no Solana tx data found, dumping item keys:`, Object.keys(item), Object.keys(tx));
+                            // Try to find the transaction data anywhere in the item
+                            const fallbackData = JSON.stringify(item);
+                            console.warn(`[RelayExecutor] Full item:`, fallbackData.slice(0, 500));
+                            throw new Error('Relay did not provide Solana transaction data.');
+                        }
+
+                        console.log(`[RelayExecutor] Routing to Solana signer, data length: ${solTxData.length}`);
+                        const result = await signerController.executeTransaction({
+                            chainFamily: 'solana',
+                            to: tx.to || '',
+                            data: solTxData,
+                            value: tx.value?.toString() || '0',
+                            chainId: stepChainId,
+                        }, fromAddress);
+                        if (result.status === 'failed') {
+                            throw new Error(result.error || 'Solana transaction failed');
+                        }
+                        hash = result.hash;
+                    } else {
+                        // EVM transaction — must have 'to' address
+                        if (!tx.to) {
+                            console.error(`[RelayExecutor] Step[${i}].Item[${j}] missing "to" address`);
+                            throw new Error('Relay did not provide valid transaction data.');
+                        }
+
+                        console.log(`[RelayExecutor] Sending EVM tx to ${tx.to}, value: ${tx.value || '0'}`);
+                        hash = await walletClient.sendTransaction({
+                            to: tx.to as `0x${string}`,
+                            data: (tx.data || '0x') as `0x${string}`,
+                            value: tx.value ? BigInt(tx.value) : BigInt(0),
+                            chain: walletClient.chain,
+                        } as any);
                     }
-
-                    console.log(`[RelayExecutor] Sending tx to ${tx.to}, value: ${tx.value || '0'}`);
-
-                    // Send the transaction via walletClient (not SDK execute)
-                    const hash = await walletClient.sendTransaction({
-                        to: tx.to as `0x${string}`,
-                        data: (tx.data || '0x') as `0x${string}`,
-                        value: tx.value ? BigInt(tx.value) : BigInt(0),
-                    });
 
                     txHashes.push(hash);
                     console.log(`[RelayExecutor] Tx broadcast: ${hash}`);

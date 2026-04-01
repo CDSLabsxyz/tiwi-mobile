@@ -48,6 +48,13 @@ export class UnifiedSwapManager {
             return { success: false, error: "Managed relayer execution is currently disabled. Please use a standard router." };
         }
 
+        // Jupiter (Solana) — use TiwiExecutor with Solana chain family
+        if (router === 'jupiter' || router === 'jup') {
+            // Jupiter returns a serialized transaction — route through TiwiExecutor
+            // which will detect the Solana chain and use the Solana signer
+            return this.tiwiExecutor.execute(params);
+        }
+
         // Default to DEX executor
         if (router.includes('pancakeswap') || router.includes('uniswap') || router === 'dex' || router === 'unknown') {
             return this.dexExecutor.execute(params);

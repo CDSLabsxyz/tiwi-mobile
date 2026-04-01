@@ -11,7 +11,7 @@ import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, BackHandler, Easing, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Animated, BackHandler, Easing, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import * as LocalAuthentication from 'expo-local-authentication';
@@ -31,30 +31,40 @@ export default function LockScreen() {
     const [code, setCode] = useState('');
     const [isError, setIsError] = useState(false);
     const [faceStatus, setFaceStatus] = useState<'idle' | 'scanning' | 'success' | 'failed'>('idle');
+    const [hasFaceID, setHasFaceID] = useState(false);
     const scanAnim = useRef(new Animated.Value(0)).current;
 
-    const biometricEnabled = isBiometricsEnabled || isFaceUnlockEnabled;
+    // On Android: only fingerprint, no face unlock UI
+    // On iOS: face unlock if available
+    const isIOS = Platform.OS === 'ios';
+    const biometricEnabled = isIOS
+        ? (isBiometricsEnabled || isFaceUnlockEnabled)
+        : isBiometricsEnabled;
 
     useEffect(() => {
-        // Prevent going back
-        const backAction = () => {
-            return true;
-        };
-        const backHandler = BackHandler.addEventListener(
-            "hardwareBackPress",
-            backAction
-        );
+        const backHandler = BackHandler.addEventListener("hardwareBackPress", () => true);
         return () => backHandler.remove();
     }, []);
 
-    // Auto-trigger biometric/face unlock on mount
+    // Detect biometric type and auto-trigger on mount
     useEffect(() => {
-        if (biometricEnabled) {
-            const timer = setTimeout(() => {
-                handleBiometric();
-            }, 400);
-            return () => clearTimeout(timer);
-        }
+        if (!biometricEnabled) return;
+
+        const init = async () => {
+            try {
+                const types = await LocalAuthentication.supportedAuthenticationTypesAsync();
+                const supportsFace = types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION);
+                // Only show face UI on iOS
+                setHasFaceID(isIOS && supportsFace);
+            } catch {
+                // Ignore detection errors
+            }
+
+            // Auto-trigger on mount
+            setTimeout(() => handleBiometric(), 300);
+        };
+
+        init();
     }, []);
 
     const handlePress = (digit: string) => {
@@ -72,10 +82,8 @@ export default function LockScreen() {
     const handleVerify = async (inputCode: string) => {
         const isValid = await verifyStorePasscode(inputCode);
         if (isValid) {
-            // Success
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-            // Log security activity
             if (address) {
                 activityService.logSecurityEvent(
                     address,
@@ -88,7 +96,6 @@ export default function LockScreen() {
             unlockApp();
             router.replace('/(tabs)');
         } else {
-            // Error
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
             setIsError(true);
             setTimeout(() => {
@@ -120,9 +127,12 @@ export default function LockScreen() {
             setFaceStatus('scanning');
             startScanAnimation();
 
+            const promptMessage = hasFaceID ? 'Unlock with Face ID' : 'Unlock with Fingerprint';
+
             const result = await LocalAuthentication.authenticateAsync({
-                promptMessage: t('lock.biometric_prompt'),
+                promptMessage,
                 fallbackLabel: 'Use Passcode',
+                disableDeviceFallback: false,
             });
 
             scanAnim.stopAnimation();
@@ -134,16 +144,16 @@ export default function LockScreen() {
                 if (address) {
                     activityService.logSecurityEvent(
                         address,
-                        'biometric_unlock',
+                        hasFaceID ? 'face_unlock' : 'biometric_unlock',
                         'Security Alert',
-                        'App was successfully unlocked with biometrics.'
+                        `App was successfully unlocked with ${hasFaceID ? 'Face ID' : 'biometrics'}.`
                     );
                 }
 
                 setTimeout(() => {
                     unlockApp();
                     router.replace('/(tabs)');
-                }, 500);
+                }, 400);
             } else {
                 setFaceStatus('failed');
                 setTimeout(() => setFaceStatus('idle'), 2000);
@@ -155,10 +165,25 @@ export default function LockScreen() {
         }
     };
 
+    // Dynamic icon based on biometric type
+    const getBiometricIcon = () => {
+        if (faceStatus === 'success') return 'checkmark-circle';
+        if (faceStatus === 'failed') return 'close-circle';
+        return hasFaceID ? 'scan' : 'finger-print';
+    };
+
+    const getStatusText = () => {
+        if (faceStatus === 'scanning') return hasFaceID ? 'Scanning face...' : 'Scanning...';
+        if (faceStatus === 'success') return 'Verified';
+        if (faceStatus === 'failed') return 'Not recognized';
+        return hasFaceID ? 'Face ID' : 'Fingerprint';
+    };
+
     return (
         <View style={[styles.container, { paddingTop: top }]}>
             <View style={styles.content}>
-                {biometricEnabled && (
+                {/* Face unlock UI — iOS only */}
+                {biometricEnabled && isIOS && hasFaceID && (
                     <TouchableOpacity onPress={handleBiometric} style={styles.faceIconContainer} activeOpacity={0.7}>
                         <Animated.View style={[
                             styles.faceIconRing,
@@ -167,7 +192,7 @@ export default function LockScreen() {
                             faceStatus === 'failed' && { borderColor: '#FF4D4D' },
                         ]}>
                             <Ionicons
-                                name={faceStatus === 'success' ? 'checkmark-circle' : faceStatus === 'failed' ? 'close-circle' : 'scan-outline'}
+                                name={getBiometricIcon() as any}
                                 size={32}
                                 color={faceStatus === 'success' ? '#B1F128' : faceStatus === 'failed' ? '#FF4D4D' : '#888'}
                             />
@@ -177,7 +202,7 @@ export default function LockScreen() {
                             faceStatus === 'success' && { color: '#B1F128' },
                             faceStatus === 'failed' && { color: '#FF4D4D' },
                         ]}>
-                            {faceStatus === 'scanning' ? 'Scanning...' : faceStatus === 'success' ? 'Verified' : faceStatus === 'failed' ? 'Not recognized' : 'Tap to unlock'}
+                            {getStatusText()}
                         </Text>
                     </TouchableOpacity>
                 )}
@@ -200,7 +225,7 @@ export default function LockScreen() {
                     onDelete={handleDelete}
                     onBiometric={biometricEnabled ? handleBiometric : undefined}
                     showBiometric={biometricEnabled}
-                    biometricIcon={true}
+                    biometricIcon={!hasFaceID}
                 />
             </View>
         </View>
