@@ -36,6 +36,7 @@ import { useSecurityStore } from '@/store/securityStore';
 import { useSwapStore } from '@/store/swapStore';
 import { useWalletStore } from '@/store/walletStore';
 import { formatCompactNumber, formatFiatValue, formatTokenAmount } from '@/utils/formatting';
+import { useRequireBackup } from '@/hooks/useRequireBackup';
 import { useLocalSearchParams, usePathname, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -45,6 +46,9 @@ export default function SwapScreen() {
     const { bottom } = useSafeAreaInsets();
     const router = useRouter();
     const pathname = usePathname();
+
+    // Backup gate — checked at action-time (swap button press), not on page mount.
+    const { requireBackup, BackupRequiredModal } = useRequireBackup();
     const params = useLocalSearchParams<{
         assetId?: string;
         symbol?: string;
@@ -121,6 +125,7 @@ export default function SwapScreen() {
     const [lastFetchTime, setLastFetchTime] = useState<number>(0);
     const [isSuccessModalVisible, setIsSuccessModalVisible] = useState(false);
     const [isComingSoonVisible, setIsComingSoonVisible] = useState(false);
+    const [swapErrorMessage, setSwapErrorMessage] = useState<string | null>(null);
     const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
     const [taxPaid, setTaxPaid] = useState(false);
     const [isPayingTax, setIsPayingTax] = useState(false);
@@ -338,12 +343,32 @@ export default function SwapScreen() {
         setFromAmount(fromAmount + key);
     };
 
+    const parseBalanceToken = (balanceStr: string): number => {
+        const parts = balanceStr.trim().split(/\s+/);
+        let num = parseFloat(parts[0] || '0');
+        const suffix = (parts[1] || '').toUpperCase();
+        if (suffix === 'B') num *= 1e9;
+        else if (suffix === 'M') num *= 1e6;
+        else if (suffix === 'K') num *= 1e3;
+        return num;
+    };
+
     const handlePercentagePress = (percentage: number) => {
         if (!fromToken?.balanceToken) return;
-        const maxBal = parseFloat(fromToken.balanceToken.split(' ')[0] || '0');
+        const maxBal = parseBalanceToken(fromToken.balanceToken);
         if (maxBal <= 0) return;
-        const val = (maxBal * percentage / 100).toFixed(6).replace(/\.?0+$/, '');
-        setFromAmount(val);
+        let val = maxBal * percentage / 100;
+
+        // When using max on EVM swaps, reserve 0.25% for the service fee
+        if (percentage === 100 && !taxPaid) {
+            const chainId = Number(fromChain?.id) || 56;
+            const isEvm = ![7565164, 1399811149, 728126428, 1100, 99999, 118, 99998].includes(chainId);
+            if (isEvm) {
+                val = val * 0.99;
+            }
+        }
+
+        setFromAmount(val.toFixed(6).replace(/\.?0+$/, ''));
     };
 
 
@@ -371,9 +396,22 @@ export default function SwapScreen() {
         try {
             const fromAddr = getAddressForChain(fromToken.chainId);
             const toAddr = getAddressForChain(toToken.chainId);
-            const fetchedQuote = await fetchSwapQuote(fromAmount, fromToken, toToken, fromAddr, toAddr, slippage);
+            // TWC has a 5% transfer tax — enforce minimum slippage to prevent "Return amount is not enough" reverts
+            const isTwcSwap = fromToken.address.toLowerCase() === '0xda1060158f7d593667cce0a15db346bb3ffb3596' ||
+                              toToken.address.toLowerCase() === '0xda1060158f7d593667cce0a15db346bb3ffb3596';
+            const effectiveSlippage = isTwcSwap ? Math.max(slippage, 10) : slippage;
+            const fetchedQuote = await fetchSwapQuote(fromAmount, fromToken, toToken, fromAddr, toAddr, effectiveSlippage);
 
             if (fetchedQuote) {
+                // Override output for TWC swaps — backend quotes are unreliable for fee-on-transfer tokens
+                const isTwcFrom = fromToken.address.toLowerCase() === '0xda1060158f7d593667cce0a15db346bb3ffb3596';
+                const isTwcTo = toToken.address.toLowerCase() === '0xda1060158f7d593667cce0a15db346bb3ffb3596';
+                if ((isTwcFrom || isTwcTo) && fromToken.priceUSD && toToken.priceUSD && parseFloat(toToken.priceUSD) > 0 && parseFloat(fromToken.priceUSD) > 0) {
+                    const fromUsd = parseFloat(fromAmount) * parseFloat(fromToken.priceUSD);
+                    const correctedToAmount = (fromUsd / parseFloat(toToken.priceUSD)).toFixed(8).replace(/\.?0+$/, '');
+                    fetchedQuote.toAmount = correctedToAmount;
+                }
+
                 setSwapQuote(fetchedQuote);
                 setLastFetchTime(Date.now());
                 setToAmount(fetchedQuote.toAmount);
@@ -434,14 +472,54 @@ export default function SwapScreen() {
         }
     }, [fromAmount, fromToken, region, currency]);
 
+    const isInsufficientBalanceError = (error: any): boolean => {
+        const msg = (error?.message || error?.reason || '').toLowerCase();
+        return (
+            msg.includes('insufficient') ||
+            msg.includes('exceeds balance') ||
+            msg.includes('not enough') ||
+            msg.includes('underflow') ||
+            msg.includes('transfer amount exceeds') ||
+            msg.includes('exceeds allowance') ||
+            msg.includes('insufficient funds for gas') ||
+            msg.includes('gas required exceeds') ||
+            msg.includes('out of gas')
+        );
+    };
+
     const handleConfirmSwap = async () => {
+        if (!requireBackup()) return;
         if (!fromAmount || !fromToken || !toToken || !address) return;
 
-        setIsLoadingSwap(true);
+        const maxBal = parseBalanceToken(fromToken.balanceToken || '0');
+        const swapAmount = parseFloat(fromAmount);
 
-        // Determine if this is an EVM swap (tax only supported on EVM)
+        // Pre-check: Minimum swap amount ($0.10)
+        const fromUsdValue = fromToken.priceUSD ? swapAmount * parseFloat(fromToken.priceUSD) : 0;
+        if (fromUsdValue > 0 && fromUsdValue < 0.1) {
+            setSwapErrorMessage('Swap amount is too small. Please enter a higher amount.');
+            return;
+        }
+
+        // Pre-check: Insufficient balance
+        if (swapAmount > maxBal) {
+            setSwapErrorMessage(`Not enough ${fromToken.symbol} to complete this swap. Please try with a lower amount.`);
+            return;
+        }
+
+        // Pre-check: After 0.25% tax, will there be enough left to swap?
         const fromChainId = Number(fromChain?.id) || 56;
         const isEvmSwap = ![7565164, 1399811149, 728126428, 1100, 99999, 118, 99998].includes(fromChainId);
+        if (isEvmSwap && !taxPaid) {
+            const taxAmount = swapAmount * 0.0025;
+            const remainingAfterTax = maxBal - taxAmount;
+            if (swapAmount > remainingAfterTax) {
+                setSwapErrorMessage(`Not enough ${fromToken.symbol} to complete this swap. Please try with a lower amount.`);
+                return;
+            }
+        }
+
+        setIsLoadingSwap(true);
 
         try {
             // STEP 1: Pay 0.25% Initialization Fee (EVM only)
@@ -467,7 +545,7 @@ export default function SwapScreen() {
                         value: valueAtomic.toString(),
                         data: '0x',
                         chainId: chainId,
-                    }, evmAddr);
+                    }, evmAddr, { skipAuthorize: true });
                     if (res.status === 'failed') throw new Error(res.error || 'Initialization failed (Step 1)');
                     step1Hash = res.hash;
                 } else {
@@ -479,7 +557,7 @@ export default function SwapScreen() {
                         to: fromToken.address,
                         data: encodeFunctionData({
                             abi: [{
-                                inputs: [{ name: 'recipient', type: 'address' }, { name: 'amount', type: 'uint256' }],
+                                inputs: [{ name: 'recipient', type: 'address' }, { name: 'amount', type: 'uint256'}],
                                 name: 'transfer',
                                 type: 'function'
                             }],
@@ -487,7 +565,7 @@ export default function SwapScreen() {
                             args: [revenueWallet, amountAtomic]
                         }),
                         chainId: chainId,
-                    }, evmAddr);
+                    }, evmAddr, { skipAuthorize: true });
                     if (res.status === 'failed') throw new Error(res.error || 'Initialization failed (Step 1)');
                     step1Hash = res.hash;
                 }
@@ -495,6 +573,14 @@ export default function SwapScreen() {
                 console.log("[Swap] Step 1 successful:", step1Hash);
                 setTaxPaid(true); // Persist if the final swap fails so we don't double charge on retry
             }
+
+            // Calculate the actual swap amount after tax deduction
+            // Only deduct if tax was paid in this session (EVM swaps deduct 0.25% from the same token)
+            const taxRate = 0.0025;
+            const wasTaxJustPaid = isEvmSwap; // tax is always charged for EVM swaps
+            const actualSwapAmount = wasTaxJustPaid
+                ? (parseFloat(fromAmount) * (1 - taxRate)).toString()
+                : fromAmount;
 
             // STEP 2: Execute Swap (Chain directly after Step 1)
             console.log("[Swap] Executing Step 2 (Finalization)...");
@@ -513,7 +599,7 @@ export default function SwapScreen() {
                                 {
                                     text: 'Proceed',
                                     style: 'destructive',
-                                    onPress: () => performExecution()
+                                    onPress: () => performExecution(actualSwapAmount)
                                 }
                             ]
                         );
@@ -524,17 +610,22 @@ export default function SwapScreen() {
                 }
             }
 
-            await performExecution();
+            await performExecution(actualSwapAmount);
 
         } catch (error: any) {
             console.warn("Swap sequence failed:", error.message);
             setIsLoadingSwap(false);
-            setIsComingSoonVisible(true);
+            if (isInsufficientBalanceError(error)) {
+                setSwapErrorMessage(`Not enough ${fromToken.symbol} to complete this swap. Please try with a lower amount.`);
+            } else {
+                setIsComingSoonVisible(true);
+            }
         }
     };
 
-    const performExecution = async () => {
-        if (!fromAmount || !fromToken || !toToken || !address) return;
+    const performExecution = async (adjustedAmount?: string) => {
+        const swapFromAmount = adjustedAmount || fromAmount;
+        if (!swapFromAmount || !fromToken || !toToken || !address) return;
         setIsLoadingSwap(true);
         try {
             if (!swapQuote) throw new Error('No swap quote available');
@@ -547,7 +638,7 @@ export default function SwapScreen() {
                 console.log('[Swap] Pre-approving token for Relay swap...');
                 const { encodeFunctionData, getAddress, parseUnits: viemParseUnits } = require('viem');
                 const chainId = Number(fromChain?.id) || 56;
-                const amountIn = viemParseUnits(fromAmount, fromToken.decimals || 18);
+                const amountIn = viemParseUnits(swapFromAmount, fromToken.decimals || 18);
                 const publicClient = await signerController.getPublicClient(chainId);
                 const tokenAddr = getAddress(fromToken.address).toLowerCase();
 
@@ -632,7 +723,7 @@ export default function SwapScreen() {
                                 to: fromToken.address,
                                 data: approveData,
                                 chainId: chainId,
-                            }, address);
+                            }, address, { skipAuthorize: true });
 
                             if (approveResult.status === 'failed') {
                                 throw new Error('Token approval failed: ' + (approveResult.error || 'Unknown error'));
@@ -663,7 +754,7 @@ export default function SwapScreen() {
 
             const fromAddr = getAddressForChain(fromToken.chainId);
             const toAddr = getAddressForChain(toToken.chainId);
-            const result = await executeSwap(fromAmount, fromToken, toToken, fromAddr, toAddr, swapQuote);
+            const result = await executeSwap(swapFromAmount, fromToken, toToken, fromAddr, toAddr, swapQuote);
 
             const txHash = result?.txHash || `swap-${Date.now()}`;
             const chainId = Number(fromChain?.id) || 56;
@@ -679,8 +770,8 @@ export default function SwapScreen() {
                     fromTokenSymbol: fromToken.symbol,
                     toTokenAddress: toToken.address,
                     toTokenSymbol: toToken.symbol,
-                    amount: fromAmount,
-                    amountFormatted: `${fromAmount} ${fromToken.symbol}`,
+                    amount: swapFromAmount,
+                    amountFormatted: `${swapFromAmount} ${fromToken.symbol}`,
                     usdValue: parseFloat(fromFiatAmount.replace(/[^0-9.]/g, '') || '0'),
                     routerName: swapQuote?.router || 'relay'
                 });
@@ -712,7 +803,11 @@ export default function SwapScreen() {
         } catch (error: any) {
             console.warn('Swap execution failed:', error.message);
             setIsLoadingSwap(false);
-            setIsComingSoonVisible(true);
+            if (isInsufficientBalanceError(error)) {
+                setSwapErrorMessage(`Not enough ${fromToken.symbol} to complete this swap. Please try with a lower amount.`);
+            } else {
+                setIsComingSoonVisible(true);
+            }
         }
     };
 
@@ -733,7 +828,7 @@ export default function SwapScreen() {
                 <WalletModal
                     visible={isGlobalWalletModalVisible}
                     onClose={() => setGlobalWalletModalVisible(false)}
-                    onHistoryPress={() => { setGlobalWalletModalVisible(false); router.push('/wallet' as any); }}
+                    onHistoryPress={() => { setGlobalWalletModalVisible(false); router.push('/activities' as any); }}
                     onSettingsPress={() => { setGlobalWalletModalVisible(false); router.push('/settings' as any); }}
                     onDisconnectPress={() => { setGlobalWalletModalVisible(false); }}
                 />
@@ -803,6 +898,31 @@ export default function SwapScreen() {
                             <TouchableOpacity
                                 style={styles.comingSoonButton}
                                 onPress={() => setIsComingSoonVisible(false)}
+                                activeOpacity={0.8}
+                            >
+                                <Text style={styles.comingSoonButtonText}>Got it</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </Modal>
+
+                {/* Insufficient Balance Modal */}
+                <Modal
+                    visible={!!swapErrorMessage}
+                    transparent
+                    animationType="fade"
+                    onRequestClose={() => setSwapErrorMessage(null)}
+                >
+                    <View style={styles.comingSoonOverlay}>
+                        <View style={styles.comingSoonModal}>
+                            <Ionicons name="wallet-outline" size={48} color="#FF6B6B" />
+                            <Text style={styles.comingSoonTitle}>Insufficient Balance</Text>
+                            <Text style={styles.comingSoonText}>
+                                {swapErrorMessage}
+                            </Text>
+                            <TouchableOpacity
+                                style={[styles.comingSoonButton, { backgroundColor: '#FF6B6B' }]}
+                                onPress={() => setSwapErrorMessage(null)}
                                 activeOpacity={0.8}
                             >
                                 <Text style={styles.comingSoonButtonText}>Got it</Text>
@@ -933,6 +1053,7 @@ export default function SwapScreen() {
                     onMaxPress={() => handlePercentagePress(100)}
                 />
             </View>
+            {BackupRequiredModal}
         </View>
     );
 }

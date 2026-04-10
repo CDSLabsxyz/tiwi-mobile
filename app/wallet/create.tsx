@@ -21,6 +21,7 @@ export default function CreateWalletScreen() {
     const [step, setStep] = useState<CreateStep>('selection');
     const [wallet, setWallet] = useState<CreatedWallet | null>(null);
     const [isLoading, setIsLoading] = useState(false);
+    const [bypassedBackup, setBypassedBackup] = useState(false);
     const { addWalletGroup } = useWalletStore();
     const { setupPhase, setSetupPhase } = useSecurityStore();
 
@@ -62,19 +63,34 @@ export default function CreateWalletScreen() {
         }
     };
 
+    const persistWalletSecurely = async () => {
+        if (!wallet) return;
+        const { derivePrivateKeyFromMnemonic, saveSecureWallet, saveSecureMnemonic } = await import('@/services/walletCreationService');
+        const privateKey = `0x${derivePrivateKeyFromMnemonic(wallet.mnemonic)}`;
+        await saveSecureWallet(wallet.address, privateKey);
+        await saveSecureMnemonic(wallet.address, wallet.mnemonic);
+    };
+
     const handleConfirmSeed = async () => {
         if (!wallet) return;
         setIsLoading(true);
-
         try {
-            // 1. Derive & Save Securely (Address, PK, Mnemonic)
-            const { derivePrivateKeyFromMnemonic, saveSecureWallet, saveSecureMnemonic } = await import('@/services/walletCreationService');
-            const privateKey = `0x${derivePrivateKeyFromMnemonic(wallet.mnemonic)}`;
+            await persistWalletSecurely();
+            setBypassedBackup(false);
+            setStep('finalize');
+        } catch (error) {
+            console.error('Failed to securely save wallet:', error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
-            await saveSecureWallet(wallet.address, privateKey);
-            await saveSecureMnemonic(wallet.address, wallet.mnemonic);
-
-            // 2. Move to finalize
+    const handleSkipBackup = async () => {
+        if (!wallet) return;
+        setIsLoading(true);
+        try {
+            await persistWalletSecurely();
+            setBypassedBackup(true);
             setStep('finalize');
         } catch (error) {
             console.error('Failed to securely save wallet:', error);
@@ -91,7 +107,8 @@ export default function CreateWalletScreen() {
                 type: 'mnemonic',
                 primaryChain: 'EVM',
                 addresses: wallet.addresses,
-                source: 'internal'
+                source: 'internal',
+                isBackupComplete: !bypassedBackup,
             });
 
             // If we're adding a wallet from settings OR setup is already complete, skip onboarding
@@ -126,6 +143,7 @@ export default function CreateWalletScreen() {
                     <SeedDisplayStep
                         mnemonic={wallet.mnemonic}
                         onContinue={() => setStep('confirm_seed')}
+                        onSkip={handleSkipBackup}
                     />
                 )}
                 {step === 'confirm_seed' && wallet && (

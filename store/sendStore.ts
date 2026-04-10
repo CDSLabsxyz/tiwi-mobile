@@ -41,6 +41,7 @@ interface SendState {
   currentStep: "select-asset" | "enter-details" | "review" | "passcode" | "success";
   isInsufficientBalance: boolean;
   isInsufficientGas: boolean;
+  isContractRecipient: boolean;
 
   // Actions
   setActiveTab: (tab: SendTab) => void;
@@ -57,6 +58,7 @@ interface SendState {
   setCurrentStep: (step: SendState["currentStep"]) => void;
   setInsufficientBalance: (isInsufficient: boolean) => void;
   setInsufficientGas: (isInsufficient: boolean) => void;
+  setContractRecipient: (isContract: boolean) => void;
   resetSendState: () => void;
   prePopulateFromAsset: (token: TokenOption, chain: ChainOption, balance: string, usdValue: string) => void;
 }
@@ -77,6 +79,7 @@ const initialState = {
   currentStep: "select-asset" as const,
   isInsufficientBalance: false,
   isInsufficientGas: false,
+  isContractRecipient: false,
 };
 
 /**
@@ -120,6 +123,7 @@ export const useSendStore = create<SendState>((set, get) => ({
   setCurrentStep: (step) => set({ currentStep: step }),
   setInsufficientBalance: (isInsufficient) => set({ isInsufficientBalance: isInsufficient }),
   setInsufficientGas: (isInsufficient) => set({ isInsufficientGas: isInsufficient }),
+  setContractRecipient: (isContract) => set({ isContractRecipient: isContract }),
   resetSendState: () => set(initialState),
   prePopulateFromAsset: (token, chain, balance, usdValue) => {
     set({

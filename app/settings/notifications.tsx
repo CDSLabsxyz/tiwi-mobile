@@ -13,6 +13,7 @@ const CrownIcon = require('../../assets/settings/crown.svg');
 const UserGroupIcon = require('../../assets/settings/user-group-02.svg');
 const NewsIcon = require('../../assets/settings/news-01.svg');
 const AlertCircleIcon = require('../../assets/settings/alert-circle.svg');
+const PriceAlertIcon = require('../../assets/settings/alert-square.svg');
 
 interface NotificationCategory {
     id: string;
@@ -28,6 +29,12 @@ const notificationCategories: NotificationCategory[] = [
         title: 'Transactions',
         icon: TransactionHistoryIcon,
         route: '/settings/notifications/transactions',
+    },
+    {
+        id: 'price-alerts',
+        title: 'Price Alerts',
+        icon: PriceAlertIcon,
+        route: '/settings/notifications/price-alerts',
     },
     {
         id: 'rewards-earnings',

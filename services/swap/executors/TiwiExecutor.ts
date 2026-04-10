@@ -60,7 +60,7 @@ export class TiwiExecutor {
                     data: solanaTransaction,
                     value: '0',
                     chainId: chainId,
-                }, fromAddress);
+                }, fromAddress, { skipAuthorize: true });
 
                 if (result.status === 'success') {
                     return { success: true, txHash: result.hash };
@@ -90,7 +90,7 @@ export class TiwiExecutor {
                 data: txReq.data || '0x',
                 value: txReq.value?.toString() || '0',
                 chainId: chainId,
-            }, fromAddress);
+            }, fromAddress, { skipAuthorize: true });
 
             if (result.status === 'success') {
                 return { success: true, txHash: result.hash };

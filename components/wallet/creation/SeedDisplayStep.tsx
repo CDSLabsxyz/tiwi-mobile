@@ -1,22 +1,26 @@
 import { colors } from '@/constants/colors';
 import { Ionicons } from '@expo/vector-icons';
-import * as Clipboard from 'expo-clipboard';
 import React, { useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 interface SeedDisplayStepProps {
     mnemonic: string;
     onContinue: () => void;
+    onSkip?: () => void;
 }
 
-export default function SeedDisplayStep({ mnemonic, onContinue }: SeedDisplayStepProps) {
+export default function SeedDisplayStep({ mnemonic, onContinue, onSkip }: SeedDisplayStepProps) {
     const words = mnemonic.split(' ');
-    const [copied, setCopied] = useState(false);
+    const [showSkipModal, setShowSkipModal] = useState(false);
 
-    const handleCopy = async () => {
-        await Clipboard.setStringAsync(mnemonic);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
+    const handleSkip = () => {
+        if (!onSkip) return;
+        setShowSkipModal(true);
+    };
+
+    const handleConfirmSkip = () => {
+        setShowSkipModal(false);
+        onSkip?.();
     };
 
     return (
@@ -75,15 +79,53 @@ export default function SeedDisplayStep({ mnemonic, onContinue }: SeedDisplaySte
                     ))}
                 </View>
 
-                <TouchableOpacity style={styles.copyButton} onPress={handleCopy}>
-                    <Ionicons name={copied ? "checkmark-circle" : "copy-outline"} size={20} color={colors.primaryCTA} />
-                    <Text style={styles.copyButtonText}>{copied ? "Copied!" : "Copy to clipboard"}</Text>
-                </TouchableOpacity>
             </View>
 
             <TouchableOpacity style={styles.continueButton} onPress={onContinue}>
-                <Text style={styles.continueButtonText}>I've saved it</Text>
+                <Text style={styles.continueButtonText}>Backup Manually</Text>
             </TouchableOpacity>
+
+            {onSkip && (
+                <TouchableOpacity style={styles.skipButton} onPress={handleSkip}>
+                    <Text style={styles.skipButtonText}>Bypass Manual Backup</Text>
+                </TouchableOpacity>
+            )}
+
+            <Modal
+                visible={showSkipModal}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setShowSkipModal(false)}
+            >
+                <Pressable style={styles.modalOverlay} onPress={() => setShowSkipModal(false)}>
+                    <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
+                        <View style={styles.modalIconWrap}>
+                            <Ionicons name="warning" size={32} color="#FF9900" />
+                        </View>
+                        <Text style={styles.modalTitle}>Skip backup?</Text>
+                        <Text style={styles.modalBody}>
+                            You can back up your seed phrase later from Settings → Account Details. Until you do, you will not be able to send, swap, stake, or export your keys.
+                        </Text>
+
+                        <View style={styles.modalButtonRow}>
+                            <TouchableOpacity
+                                style={[styles.modalButton, styles.modalCancelButton]}
+                                onPress={() => setShowSkipModal(false)}
+                                activeOpacity={0.8}
+                            >
+                                <Text style={styles.modalCancelText}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.modalButton, styles.modalConfirmButton]}
+                                onPress={handleConfirmSkip}
+                                activeOpacity={0.8}
+                            >
+                                <Text style={styles.modalConfirmText}>Skip for now</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </Pressable>
+                </Pressable>
+            </Modal>
         </ScrollView>
     );
 }
@@ -231,5 +273,90 @@ const styles = StyleSheet.create({
         fontFamily: 'Manrope-Bold',
         fontSize: 16,
         color: '#010501',
+    },
+    skipButton: {
+        height: 56,
+        borderRadius: 28,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginTop: 12,
+        borderWidth: 1,
+        borderColor: '#1F261E',
+    },
+    skipButtonText: {
+        fontFamily: 'Manrope-Medium',
+        fontSize: 14,
+        color: colors.bodyText,
+    },
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(1, 5, 1, 0.8)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: 20,
+    },
+    modalCard: {
+        width: '100%',
+        maxWidth: 353,
+        backgroundColor: colors.bgCards,
+        borderRadius: 32,
+        borderWidth: 1,
+        borderColor: colors.bgStroke,
+        padding: 32,
+        alignItems: 'center',
+    },
+    modalIconWrap: {
+        width: 56,
+        height: 56,
+        borderRadius: 28,
+        backgroundColor: 'rgba(255, 153, 0, 0.1)',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 20,
+    },
+    modalTitle: {
+        fontFamily: 'Manrope-SemiBold',
+        fontSize: 18,
+        color: colors.titleText,
+        textAlign: 'center',
+        marginBottom: 8,
+    },
+    modalBody: {
+        fontFamily: 'Manrope-Regular',
+        fontSize: 13,
+        color: colors.bodyText,
+        textAlign: 'center',
+        lineHeight: 20,
+        marginBottom: 28,
+    },
+    modalButtonRow: {
+        flexDirection: 'row',
+        gap: 12,
+        width: '100%',
+    },
+    modalButton: {
+        flex: 1,
+        height: 52,
+        borderRadius: 100,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    modalCancelButton: {
+        backgroundColor: colors.bgSemi,
+        borderWidth: 1,
+        borderColor: colors.bgStroke,
+    },
+    modalCancelText: {
+        fontFamily: 'Manrope-Medium',
+        fontSize: 15,
+        color: colors.titleText,
+    },
+    modalConfirmButton: {
+        backgroundColor: colors.primaryCTA,
+    },
+    modalConfirmText: {
+        fontFamily: 'Manrope-Bold',
+        fontSize: 15,
+        color: colors.bg,
     },
 });

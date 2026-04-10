@@ -382,7 +382,7 @@ export const WalletModal: React.FC<WalletModalProps> = (props) => {
                                 >
                                     <View style={styles.walletItemLeft}>
                                         <View style={styles.miniAvatar}>
-                                            <ExpoImage source={TiwiCatToken} style={styles.iconFull} contentFit="contain" />
+                                            <ExpoImage source={TiwiLogo} style={styles.iconFull} contentFit="contain" />
                                         </View>
                                         <View>
                                             <Text style={[styles.walletName, isActive && styles.activeWalletText]}>

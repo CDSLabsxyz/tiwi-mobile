@@ -1,5 +1,6 @@
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { useSecurityStore, WhitelistedAddress } from '@/store/securityStore';
+import { useWalletStore } from '@/store/walletStore';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
@@ -23,10 +24,22 @@ export default function WhitelistAddressesScreen() {
     const { top, bottom } = useSafeAreaInsets();
     const router = useRouter();
     const { whitelistedAddresses, addWhitelistedAddress, removeWhitelistedAddress } = useSecurityStore();
+    const walletGroups = useWalletStore(state => state.walletGroups);
 
     const [isModalVisible, setIsModalVisible] = useState(false);
     const [newName, setNewName] = useState('');
     const [newAddress, setNewAddress] = useState('');
+
+    // Auto-pre-list the user's created/imported wallets in the whitelist
+    useEffect(() => {
+        const existing = new Set(whitelistedAddresses.map(a => a.address.toLowerCase()));
+        walletGroups.forEach(group => {
+            const primaryAddr = group.addresses[group.primaryChain];
+            if (primaryAddr && !existing.has(primaryAddr.toLowerCase())) {
+                addWhitelistedAddress(primaryAddr, group.name);
+            }
+        });
+    }, [walletGroups]);
 
     // Handle phone back button
     useEffect(() => {

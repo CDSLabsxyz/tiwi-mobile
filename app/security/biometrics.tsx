@@ -5,17 +5,21 @@ import { Image } from 'expo-image';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const FingerprintIcon = require('@/assets/security/fingerprint.svg');
+// Platform-specific branding: iOS = Face ID, Android = Biometrics (fingerprint).
+const isIOS = Platform.OS === 'ios';
+const authLabel = isIOS ? 'Face ID' : 'Biometrics';
+const authIcon = isIOS
+  ? require('@/assets/security/face-id.svg')
+  : require('@/assets/security/fingerprint.svg');
 
 export default function BiometricsScreen() {
   const { top, bottom } = useSafeAreaInsets();
   const router = useRouter();
   const enableBiometrics = useSecurityStore((state) => state.enableBiometrics);
   const [isSupported, setIsSupported] = useState(false);
-  const [authType, setAuthType] = useState<LocalAuthentication.AuthenticationType[]>([]);
 
   useEffect(() => {
     checkDeviceHardware();
@@ -25,22 +29,19 @@ export default function BiometricsScreen() {
     try {
       const hasHardware = await LocalAuthentication.hasHardwareAsync();
       const isEnrolled = await LocalAuthentication.isEnrolledAsync();
-      const types = await LocalAuthentication.supportedAuthenticationTypesAsync();
-
-      setAuthType(types);
       setIsSupported(hasHardware && isEnrolled);
     } catch (e) {
       console.log('Biometric check failed', e);
     }
   };
 
-  const isFaceID = authType.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION);
-
   const handleEnable = async () => {
     try {
       const result = await LocalAuthentication.authenticateAsync({
-        promptMessage: isFaceID ? 'Authenticate with Face ID' : 'Authenticate with Fingerprint',
+        promptMessage: `Authenticate with ${authLabel}`,
         fallbackLabel: 'Use Passcode',
+        disableDeviceFallback: true,
+        cancelLabel: 'Cancel',
       });
 
       if (result.success) {
@@ -56,10 +57,6 @@ export default function BiometricsScreen() {
     enableBiometrics(false);
     router.push('/security/notifications');
   };
-
-  const authIcon = isFaceID
-    ? require('@/assets/security/face-id.svg')
-    : require('@/assets/security/fingerprint.svg');
 
   return (
     <View style={[styles.container, { paddingTop: top }]}>
@@ -81,11 +78,9 @@ export default function BiometricsScreen() {
           />
         </View>
 
-        <Text style={styles.title}>
-          {isFaceID ? 'Set Up Face ID' : 'Set Up Fingerprint'}
-        </Text>
+        <Text style={styles.title}>Set Up {authLabel}</Text>
         <Text style={styles.subtitle}>
-          Unlock your account and authorize payments effortlessly with {isFaceID ? 'Face ID' : 'your fingerprint'}.
+          Unlock your account and authorize payments effortlessly with {authLabel}.
         </Text>
       </View>
 
@@ -97,9 +92,7 @@ export default function BiometricsScreen() {
           disabled={!isSupported}
         >
           <Text style={styles.primaryButtonText}>
-            {isSupported
-              ? (isFaceID ? 'Enable Face ID' : 'Enable Fingerprint')
-              : 'Biometrics Unavailable'}
+            {isSupported ? `Enable ${authLabel}` : `${authLabel} Unavailable`}
           </Text>
         </TouchableOpacity>
 

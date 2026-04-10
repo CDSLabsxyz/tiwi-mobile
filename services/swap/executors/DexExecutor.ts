@@ -8,7 +8,7 @@ import {
 } from 'viem';
 import { base, bsc, mainnet, polygon } from 'viem/chains';
 import { signerController } from '../../signer/SignerController';
-import { DEX_ROUTER_ABI, ERC20_ABI, WETH_ADDRESSES, isNativeToken } from '../constants';
+import { DEX_ROUTER_ABI, ERC20_ABI, PANCAKESWAP_V2_ROUTER, WETH_ADDRESSES, isNativeToken } from '../constants';
 import { ExecuteSwapParams, SwapExecutionResult, TokenMinimal } from '../types';
 
 /**
@@ -28,7 +28,7 @@ export class DexExecutor {
             if (!quote.raw) {
                 throw new Error("Invalid quote: Missing raw transaction data. Please refresh the quote.");
             }
-            const routerAddress = quote.raw.routerAddress as Address;
+            const routerAddress = (quote.raw?.routerAddress || PANCAKESWAP_V2_ROUTER[fromToken.chainId]) as Address;
             if (!routerAddress) throw new Error("Router address is missing from quote");
 
             const isNativeIn = isNativeToken(fromToken.address);
@@ -69,7 +69,7 @@ export class DexExecutor {
                             to: fromToken.address,
                             data: approveData,
                             chainId: fromToken.chainId,
-                        }, fromAddress);
+                        }, fromAddress, { skipAuthorize: true });
 
                         if (approveResult.status !== 'success') {
                             return { success: false, error: "Token approval failed: " + approveResult.error };
@@ -94,7 +94,7 @@ export class DexExecutor {
                 console.log("[DexExecutor] Missing calldata, constructing locally...");
                 const path = quote.raw?.path || this.getDefaultPath(fromToken, toToken);
                 const amountIn = parseUnits(fromAmount, fromToken.decimals);
-                const amountOutMin = this.calculateAmountOutMin(quote.toAmount, toToken.decimals, quote.slippage, toToken.address);
+                const amountOutMin = this.calculateAmountOutMin(quote.toAmount, toToken.decimals, quote.slippage, toToken.address, fromToken.address);
                 console.log("🚀 ~ DexExecutor ~ execute ~ amountOutMin:", amountOutMin)
                 const deadline = BigInt(Math.floor(Date.now() / 1000) + 60 * 20); // 20 mins
                 let fnName
@@ -170,7 +170,12 @@ export class DexExecutor {
         }
     }
 
-    private calculateAmountOutMin(toAmount: string, decimals: number, slippage: number, toTokenAddress?: string): bigint {
+    private calculateAmountOutMin(toAmount: string, decimals: number, slippage: number, toTokenAddress?: string, fromTokenAddress?: string): bigint {
+        // For TWC (fee-on-transfer token), set amountOutMin to 0 to avoid INSUFFICIENT_OUTPUT_AMOUNT
+        const twcAddress = '0xda1060158f7d593667cce0a15db346bb3ffb3596';
+        if (fromTokenAddress?.toLowerCase() === twcAddress || toTokenAddress?.toLowerCase() === twcAddress) {
+            return BigInt(0);
+        }
         const amount = parseUnits(toAmount, decimals);
         const slippageBps = BigInt(Math.floor(slippage * 100));
         return (amount * (BigInt(10000) - slippageBps)) / BigInt(10000);

@@ -105,6 +105,8 @@ export const PasscodeScreen: React.FC<PasscodeScreenProps> = ({ onSuccess }) => 
       const result = await LocalAuthentication.authenticateAsync({
         promptMessage: "Confirm Transaction",
         fallbackLabel: "Use Passcode",
+        disableDeviceFallback: true,
+        cancelLabel: 'Cancel',
       });
 
       if (result.success) {

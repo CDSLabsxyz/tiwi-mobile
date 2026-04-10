@@ -1,0 +1,50 @@
+# dependencies (EAS installs these)
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+
+# Native (prebuild generates these)
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+tsc_errors.log
+
+# macOS
+.DS_Store
+*.pem
+
+# local env files
+.env*.local
+
+# typescript
+*.tsbuildinfo
+
+# development files
+/.dev
+/tiwi-ai-backend
+/docs/Team Member Brief - TIWI Protocol.pdf
+
+# test files
+test_*.js
+list_across_support.js
+
+# local build artifacts
+build-*.apk
+build-*.aab
+android/
+ios/

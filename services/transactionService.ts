@@ -114,8 +114,10 @@ export const transactionService = {
             };
         }
 
-        // Execute via SignerController
-        const result = await signerController.executeTransaction(txRequest, fromAddress);
+        // Execute via SignerController.
+        // skipAuthorize: the user has already approved this action via the in-app
+        // passcode/biometric prompt before reaching this point — don't re-prompt.
+        const result = await signerController.executeTransaction(txRequest, fromAddress, { skipAuthorize: true });
 
         if (result.status === 'success' && result.hash) {
             // Log to backend
@@ -179,6 +181,86 @@ export const transactionService = {
                 chainId: params.chainId,
             };
         } else {
+            // ERC20 multi-send goes through disperseTokenSimple, which calls
+            // transferFrom on the token. We must approve the disperse contract
+            // for the total amount first or the call reverts with 0x.
+            try {
+                const chain = getChainById(params.chainId);
+                const publicClient = createPublicClient({ chain, transport: http() });
+
+                const ERC20_ALLOWANCE_ABI = [{
+                    name: 'allowance',
+                    type: 'function',
+                    stateMutability: 'view',
+                    inputs: [
+                        { name: 'owner', type: 'address' },
+                        { name: 'spender', type: 'address' },
+                    ],
+                    outputs: [{ name: '', type: 'uint256' }],
+                }] as const;
+
+                const ERC20_APPROVE_ABI = [{
+                    name: 'approve',
+                    type: 'function',
+                    stateMutability: 'nonpayable',
+                    inputs: [
+                        { name: 'spender', type: 'address' },
+                        { name: 'amount', type: 'uint256' },
+                    ],
+                    outputs: [{ name: '', type: 'bool' }],
+                }] as const;
+
+                const currentAllowance = (await publicClient.readContract({
+                    address: params.tokenAddress as `0x${string}`,
+                    abi: ERC20_ALLOWANCE_ABI,
+                    functionName: 'allowance',
+                    args: [fromAddress as `0x${string}`, disperseAddress as `0x${string}`],
+                })) as bigint;
+
+                if (currentAllowance < totalAmountBI) {
+                    // Approve max so subsequent multi-sends of the same token are gas-free.
+                    const MAX_UINT256 = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff');
+                    const approveData = encodeFunctionData({
+                        abi: ERC20_APPROVE_ABI,
+                        functionName: 'approve',
+                        args: [disperseAddress as `0x${string}`, MAX_UINT256],
+                    });
+
+                    const approveResult = await signerController.executeTransaction({
+                        chainFamily: 'evm',
+                        to: params.tokenAddress,
+                        data: approveData,
+                        value: '0',
+                        chainId: params.chainId,
+                    }, fromAddress, { skipAuthorize: true });
+
+                    if (approveResult.status !== 'success') {
+                        return {
+                            hash: '',
+                            status: 'failed',
+                            error: approveResult.error || 'Token approval failed',
+                        };
+                    }
+
+                    // Wait for the approval to be mined before the disperse call.
+                    try {
+                        await publicClient.waitForTransactionReceipt({
+                            hash: approveResult.hash as `0x${string}`,
+                            confirmations: 1,
+                        });
+                    } catch (waitErr) {
+                        console.warn('[multiSend] approve receipt wait failed, retrying disperse anyway:', waitErr);
+                    }
+                }
+            } catch (allowanceErr: any) {
+                console.error('[multiSend] allowance/approve flow failed:', allowanceErr);
+                return {
+                    hash: '',
+                    status: 'failed',
+                    error: allowanceErr?.message || 'Failed to approve token before multi-send',
+                };
+            }
+
             txRequest = {
                 chainFamily: 'evm',
                 to: disperseAddress,
@@ -192,7 +274,8 @@ export const transactionService = {
             };
         }
 
-        const result = await signerController.executeTransaction(txRequest, fromAddress);
+        // skipAuthorize: user already approved via the in-app passcode/biometric prompt.
+        const result = await signerController.executeTransaction(txRequest, fromAddress, { skipAuthorize: true });
         return result;
     },
 

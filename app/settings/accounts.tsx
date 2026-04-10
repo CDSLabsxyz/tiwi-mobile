@@ -62,6 +62,17 @@ export default function AccountSettingsScreen() {
     const isTiwiWallet = currentWallet?.type === 'mnemonic' || walletSource === 'internal';
     const accountType = isTiwiWallet ? 'TIWI Multichain Wallet' : 'External Wallet';
 
+    // Backup status: only internally-created mnemonic wallets need an in-app backup verification.
+    const needsBackup = currentWallet?.source === 'internal' && currentWallet?.type === 'mnemonic' && !currentWallet?.isBackupComplete;
+    const isBackupComplete = !needsBackup;
+    const showsBackupRow = currentWallet?.source === 'internal' && currentWallet?.type === 'mnemonic';
+
+    const handleBackupPress = () => {
+        if (!needsBackup) return;
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        router.push('/settings/accounts/backup-wallet' as any);
+    };
+
     useEffect(() => {
         const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
             handleBackPress();
@@ -103,11 +114,19 @@ export default function AccountSettingsScreen() {
         setNetworkDropdownOpen(false);
     };
 
+    const handleProtectedExport = (route: string) => {
+        if (needsBackup) {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+            return router.push('/settings/accounts/backup-wallet' as any);
+        }
+        router.push(route as any);
+    };
+
     const actions = [
-        { label: 'Edit Wallet Name', icon: PencilEditIcon, route: '/settings/accounts/edit-wallet-name', visible: true },
-        { label: 'Export Private Key', icon: CloudUploadIcon, route: '/settings/accounts/export-private-key', visible: isLocalWallet },
-        { label: 'Export Recovery Phrase', icon: CloudUploadIcon, route: '/settings/accounts/export-recovery-phrase', visible: isLocalWallet && currentWallet?.source === 'local' },
-        { label: 'Disconnect Wallet', icon: LogoutIcon, route: '/settings/accounts/disconnect-wallet', destructive: true, visible: true },
+        { label: 'Edit Wallet Name', icon: PencilEditIcon, onPress: () => router.push('/settings/accounts/edit-wallet-name' as any), visible: true },
+        { label: 'Export Private Key', icon: CloudUploadIcon, onPress: () => handleProtectedExport('/settings/accounts/export-private-key'), visible: isLocalWallet, locked: needsBackup },
+        { label: 'Export Seed Phrase', icon: CloudUploadIcon, onPress: () => handleProtectedExport('/settings/accounts/export-recovery-phrase'), visible: isLocalWallet && currentWallet?.type === 'mnemonic', locked: needsBackup },
+        { label: 'Disconnect Wallet', icon: LogoutIcon, onPress: () => router.push('/settings/accounts/disconnect-wallet' as any), destructive: true, visible: true },
     ].filter(a => a.visible);
 
     const handleGoHome = () => {
@@ -243,6 +262,41 @@ export default function AccountSettingsScreen() {
                         <ThemedText style={styles.infoLabel}>Account Type:</ThemedText>
                         <ThemedText style={styles.infoValue}>{accountType}</ThemedText>
                     </View>
+
+                    {/* Backup Status */}
+                    {showsBackupRow && (
+                        <View style={styles.infoGroup}>
+                            <ThemedText style={styles.infoLabel}>Seed Phrase Backup:</ThemedText>
+                            <TouchableOpacity
+                                activeOpacity={isBackupComplete ? 1 : 0.7}
+                                onPress={handleBackupPress}
+                                disabled={isBackupComplete}
+                                style={[
+                                    styles.backupRow,
+                                    { borderColor: isBackupComplete ? 'rgba(177, 241, 40, 0.3)' : 'rgba(255, 153, 0, 0.4)' },
+                                ]}
+                            >
+                                <View style={styles.backupRowLeft}>
+                                    <Ionicons
+                                        name={isBackupComplete ? 'checkmark-circle' : 'warning'}
+                                        size={20}
+                                        color={isBackupComplete ? colors.primaryCTA : '#FF9900'}
+                                    />
+                                    <ThemedText
+                                        style={[
+                                            styles.backupRowText,
+                                            { color: isBackupComplete ? colors.primaryCTA : '#FF9900' },
+                                        ]}
+                                    >
+                                        {isBackupComplete ? 'Backed Up' : 'Not Backed Up — Tap to Backup'}
+                                    </ThemedText>
+                                </View>
+                                {!isBackupComplete && (
+                                    <Ionicons name="chevron-forward" size={18} color="#FF9900" />
+                                )}
+                            </TouchableOpacity>
+                        </View>
+                    )}
                 </View>
 
                 {/* Action Buttons */}
@@ -251,13 +305,16 @@ export default function AccountSettingsScreen() {
                         <TouchableOpacity
                             key={index}
                             activeOpacity={0.7}
-                            onPress={() => router.push(action.route as any)}
+                            onPress={action.onPress}
                             style={[styles.actionButton, action.destructive && styles.actionButtonDestructive]}
                         >
                             <View style={styles.actionIconWrapper}>
                                 <Image source={action.icon} style={styles.fullSize} contentFit="contain" tintColor={action.destructive ? '#FF4D4D' : undefined} />
                             </View>
                             <ThemedText style={[styles.actionButtonText, action.destructive && { color: '#FF4D4D' }]}>{action.label}</ThemedText>
+                            {action.locked && (
+                                <Ionicons name="lock-closed" size={16} color="#FF9900" style={{ marginLeft: 4 }} />
+                            )}
                         </TouchableOpacity>
                     ))}
 
@@ -363,6 +420,17 @@ const styles = StyleSheet.create({
         borderRadius: 4,
         backgroundColor: colors.primaryCTA,
     },
+    backupRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingVertical: 12,
+        paddingHorizontal: 14,
+        borderRadius: 12,
+        borderWidth: 1,
+    },
+    backupRowLeft: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 },
+    backupRowText: { fontFamily: 'Manrope-Medium', fontSize: 14 },
     actionsSection: { width: '100%', gap: 8 },
     actionButton: {
         width: '100%', height: 54, backgroundColor: colors.bgCards,

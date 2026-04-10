@@ -106,7 +106,9 @@ export default function ImportWalletScreen() {
                 type: validation.type === 'mnemonic' ? 'mnemonic' : 'privateKey',
                 primaryChain: (selected === 'MULTI' ? 'EVM' : selected) as ChainType,
                 addresses: importedWallet.addresses,
-                source: 'imported'
+                source: 'imported',
+                // Imported wallets already have a seed/key stored externally — no in-app backup needed.
+                isBackupComplete: true,
             });
 
             // If we're adding a wallet from settings OR setup is already complete, skip onboarding

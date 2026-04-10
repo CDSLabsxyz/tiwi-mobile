@@ -19,6 +19,7 @@ import { useWalletStore } from '@/store/walletStore';
 import { formatCompactNumber } from '@/utils/formatting';
 import AntDesign from '@expo/vector-icons/AntDesign';
 import { Image } from 'expo-image';
+import { useRequireBackup } from '@/hooks/useRequireBackup';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
@@ -49,6 +50,9 @@ export default function StakeScreen() {
     const { top, bottom } = useSafeAreaInsets();
     const router = useRouter();
     const { symbol } = useLocalSearchParams<{ symbol: string }>();
+
+    // Backup gate — checked at action-time (stake button press), not on page mount.
+    const { requireBackup, BackupRequiredModal } = useRequireBackup();
     const [stakeType, setStakeType] = useState<StakeType>('Flexible');
     const [amount, setAmount] = useState('');
     const [selectedDuration, setSelectedDuration] = useState('30 Days');
@@ -192,6 +196,8 @@ export default function StakeScreen() {
     };
 
     const handleConfirm = async () => {
+        if (!requireBackup()) return;
+
         if (!isConnected) {
             showToast('Connect Wallet: Please connect your wallet to continue.', 'error');
             return;
@@ -597,6 +603,7 @@ const StakeProcessingModal = ({
                     )}
                 </View>
             </View>
+            {BackupRequiredModal}
         </View>
     );
 };

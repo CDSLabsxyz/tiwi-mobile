@@ -22,6 +22,7 @@ import { Alert, Platform, Text, TextInput, TouchableOpacity, View } from "react-
 import { parseUnits } from "viem";
 import { SendTokenSelector } from "./SendTokenSelector";
 import { WhitelistSelectSheet } from "./WhitelistSelectSheet";
+import { SwapKeyboard } from "@/components/sections/Swap";
 
 const AttachmentIcon = require("@/assets/wallet/attachment-square.svg");
 const WalletIcon = require("@/assets/wallet/wallet-01.svg");
@@ -29,9 +30,10 @@ const AddressBookIcon = require("@/assets/settings/address-book.svg");
 
 interface MultiSendFormProps {
   onNext: () => void;
+  onKeyboardToggle?: (visible: boolean) => void;
 }
 
-export const MultiSendForm: React.FC<MultiSendFormProps> = ({ onNext }) => {
+export const MultiSendForm: React.FC<MultiSendFormProps> = ({ onNext, onKeyboardToggle }) => {
   const sendStore = useSendStore();
   const { selectedToken, selectedChain, amountPerRecipient, setRecipients, setAmountPerRecipient, openTokenSheet, setInsufficientBalance, isInsufficientBalance, totalRecipients } = sendStore;
 
@@ -44,6 +46,12 @@ export const MultiSendForm: React.FC<MultiSendFormProps> = ({ onNext }) => {
 
   // Whitelist state
   const [isWhitelistSheetVisible, setIsWhitelistSheetVisible] = useState(false);
+
+  // Custom numeric keyboard
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  useEffect(() => {
+    onKeyboardToggle?.(isKeyboardVisible);
+  }, [isKeyboardVisible, onKeyboardToggle]);
 
   const { data: balanceData } = useWalletBalances();
   const { setInsufficientGas } = sendStore;
@@ -209,6 +217,26 @@ export const MultiSendForm: React.FC<MultiSendFormProps> = ({ onNext }) => {
       setRecipients(recipients);
     }
   };
+
+  // Custom-keyboard key handler
+  const handleKeyPress = (key: string) => {
+    const current = parseRawValue(localAmount);
+    if (key === "DELETE") {
+      handleAmountChange(current.slice(0, -1));
+      return;
+    }
+    if (key === "." && current.includes(".")) return;
+    if (key === "." && (!current || current === "")) {
+      handleAmountChange("0.");
+      return;
+    }
+    if (current.includes(".")) {
+      const [, dec] = current.split(".");
+      if (dec && dec.length >= 6) return;
+    }
+    handleAmountChange(current + key);
+  };
+
   const handlePasteAddresses = async () => {
     try {
       const text = await Clipboard.getStringAsync();
@@ -596,21 +624,25 @@ export const MultiSendForm: React.FC<MultiSendFormProps> = ({ onNext }) => {
                 gap: 3,
               }}
             >
-              <TextInput
-                placeholder="0.00"
-                placeholderTextColor={colors.titleText}
-                value={localAmount}
-                onChangeText={handleAmountChange}
-                keyboardType="decimal-pad"
-                style={{
-                  fontFamily: "Manrope-Medium",
-                  fontSize: 24,
-                  lineHeight: 32,
-                  color: colors.titleText,
-                  padding: 0,
-                  margin: 0,
-                }}
-              />
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => setIsKeyboardVisible(true)}
+                style={{ minHeight: 32, justifyContent: "center" }}
+              >
+                <Text
+                  style={{
+                    fontFamily: "Manrope-Medium",
+                    fontSize: 24,
+                    lineHeight: 32,
+                    color: localAmount ? colors.titleText : colors.bodyText,
+                    padding: 0,
+                    margin: 0,
+                  }}
+                  numberOfLines={1}
+                >
+                  {localAmount || "0.00"}
+                </Text>
+              </TouchableOpacity>
               <Text
                 style={{
                   fontFamily: "Manrope-Regular",
@@ -619,7 +651,16 @@ export const MultiSendForm: React.FC<MultiSendFormProps> = ({ onNext }) => {
                   color: colors.bodyText,
                 }}
               >
-                Total: ${(parseFloat(parseRawValue(localAmount) || "0") * totalRecipients).toFixed(2)}
+                {(() => {
+                  const perRecipient = parseFloat(parseRawValue(localAmount) || "0");
+                  const totalTokens = perRecipient * totalRecipients;
+                  const price = parseFloat(selectedToken?.priceUSD || "0");
+                  const totalUsd = totalTokens * price;
+                  const fmtUsd = totalUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                  const fmtTokens = totalTokens.toLocaleString(undefined, { maximumFractionDigits: 6 });
+                  const sym = selectedToken?.symbol || "";
+                  return `Total: ${fmtTokens} ${sym}${price > 0 ? `  ≈  $${fmtUsd}` : ""}`;
+                })()}
               </Text>
             </View>
           </View>
@@ -682,6 +723,14 @@ export const MultiSendForm: React.FC<MultiSendFormProps> = ({ onNext }) => {
         onSelect={() => { }} // Not used in multi-select mode
         multiSelect
         onMultiSelect={handleMultiSelectWhitelist}
+      />
+
+      <SwapKeyboard
+        visible={isKeyboardVisible}
+        onKeyPress={handleKeyPress}
+        onPercentagePress={handlePercentagePress}
+        onMaxPress={() => handlePercentagePress(100)}
+        onClose={() => setIsKeyboardVisible(false)}
       />
     </View>
   );

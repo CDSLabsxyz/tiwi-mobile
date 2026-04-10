@@ -619,6 +619,10 @@ class NotificationsModule {
             body: JSON.stringify(params),
         });
     }
+
+    // Push token registration is done directly against Supabase from the
+    // mobile client (services/notificationService.ts). The Postgres trigger
+    // handles fan-out, so no API endpoint is needed here.
 }
 
 /** FAQs */

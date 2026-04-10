@@ -11,13 +11,16 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "app.tiwiprotocol.xyz"
+      "bundleIdentifier": "app.tiwiprotocol.xyz",
+      "infoPlist": {
+        "UIBackgroundModes": ["remote-notification"]
+      }
     },
     "android": {
+      "icon": "./assets/logo/image.png",
       "adaptiveIcon": {
         "backgroundColor": "#010501",
-        "foregroundImage": "./assets/logo/image.png",
-        "monochromeImage": "./assets/images/tiwi-protocol-icon-monochrome.png"
+        "foregroundImage": "./assets/logo/image.png"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
@@ -46,6 +49,15 @@
         }
       ],
       "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/logo/image.png",
+          "color": "#B1F128",
+          "defaultChannel": "default",
+          "sounds": []
+        }
+      ],
       "expo-audio",
       "expo-video",
       "expo-asset",

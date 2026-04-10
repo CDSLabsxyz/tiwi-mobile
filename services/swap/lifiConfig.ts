@@ -31,7 +31,7 @@ export async function initializeLiFi() {
                     const address = walletStore.address;
                     if (!address) throw new Error('No wallet connected');
 
-                    return await signerController.getWalletClient(chainId, address);
+                    return await signerController.getWalletClient(chainId, address, { skipAuthorize: true });
                 },
             }),
         ],

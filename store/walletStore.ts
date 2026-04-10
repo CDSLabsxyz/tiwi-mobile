@@ -49,6 +49,7 @@ interface WalletState {
   setActiveGroup: (groupId: string) => void;
   setActiveChain: (chain: ChainType) => void;
   updateGroupName: (groupId: string, name: string) => void;
+  markBackupComplete: (groupId: string) => void;
   removeWalletGroup: (groupId: string) => void;
   syncActiveGroupAddresses: () => Promise<void>;
 
@@ -206,6 +207,13 @@ export const useWalletStore = create<WalletState>()(
         if (get().activeGroupId === groupId) {
           set({ name: newName });
         }
+      },
+
+      markBackupComplete: (groupId) => {
+        const updatedGroups = get().walletGroups.map(g =>
+          g.id === groupId ? { ...g, isBackupComplete: true } : g
+        );
+        set({ walletGroups: updatedGroups });
       },
 
       removeWalletGroup: (groupId) => {

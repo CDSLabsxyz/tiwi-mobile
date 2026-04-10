@@ -134,7 +134,10 @@ export const useSecurityStore = create<SecurityState>()(
                     const result = await LocalAuthentication.authenticateAsync({
                         promptMessage,
                         fallbackLabel: 'Use Passcode',
-                        disableDeviceFallback: false,
+                        // Don't fall back to the iOS device passcode — the in-app
+                        // passcode UI handles the fallback case.
+                        disableDeviceFallback: true,
+                        cancelLabel: 'Cancel',
                     });
 
                     return result.success;

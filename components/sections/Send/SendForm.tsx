@@ -17,10 +17,12 @@ import { Image } from "expo-image";
 import React, { useEffect, useState } from "react";
 import { Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { parseUnits } from "viem";
+import { createPublicClient, http, parseUnits } from "viem";
 import { Ionicons } from "@expo/vector-icons";
 import { SendTokenSelector } from "./SendTokenSelector";
 import { WhitelistSelectSheet } from "./WhitelistSelectSheet";
+import { SwapKeyboard } from "@/components/sections/Swap";
+import { getChainById } from "@/services/signer/SignerUtils";
 
 const CheckmarkIcon = require("@/assets/swap/checkmark-circle-01.svg");
 const WalletIcon = require("@/assets/wallet/wallet-01.svg");
@@ -29,9 +31,10 @@ const PlusIcon = require("@/assets/settings/add-square.svg");
 
 interface SendFormProps {
   onNext: () => void;
+  onKeyboardToggle?: (visible: boolean) => void;
 }
 
-export const SendForm: React.FC<SendFormProps> = ({ onNext }) => {
+export const SendForm: React.FC<SendFormProps> = ({ onNext, onKeyboardToggle }) => {
   const sendStore = useSendStore();
   const { isStrictModeEnabled, whitelistedAddresses, addWhitelistedAddress } = useSecurityStore();
   const { selectedToken, selectedChain, recipientAddress, amount, usdValue, setRecipientAddress, setAmount, openTokenSheet, setInsufficientBalance, isInsufficientBalance } = sendStore;
@@ -48,6 +51,18 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext }) => {
   const [showSaveSuggestion, setShowSaveSuggestion] = useState(false);
   const [isSavingToWhitelist, setIsSavingToWhitelist] = useState(false);
   const [newAddressName, setNewAddressName] = useState("");
+
+  // Custom numeric keyboard (matches Swap UX)
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  useEffect(() => {
+    onKeyboardToggle?.(isKeyboardVisible);
+  }, [isKeyboardVisible, onKeyboardToggle]);
+
+  // Contract-recipient guard: looks up bytecode at the address and rejects
+  // if it has any. Sending tokens to a smart contract that isn't designed
+  // to receive them usually loses the funds.
+  const [isContractRecipient, setIsContractRecipient] = useState(false);
+  const [isCheckingContract, setIsCheckingContract] = useState(false);
 
   const { data: balanceData } = useWalletBalances();
   const { setInsufficientGas } = sendStore;
@@ -86,6 +101,45 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext }) => {
       setShowSaveSuggestion(false);
     }
   }, [localAddress, selectedChain?.id, isStrictModeEnabled, whitelistedAddresses]);
+
+  // Detect smart-contract recipients on EVM chains. Debounced to avoid
+  // hammering the RPC on every keystroke.
+  useEffect(() => {
+    setIsContractRecipient(false);
+
+    const addr = localAddress.trim();
+    const chainIdNum = Number(selectedChain?.id);
+    // Only run for valid-looking EVM addresses (0x + 40 hex chars).
+    if (!/^0x[a-fA-F0-9]{40}$/.test(addr)) return;
+    if (!chainIdNum || isNaN(chainIdNum)) return;
+
+    let cancelled = false;
+    setIsCheckingContract(true);
+    const timer = setTimeout(async () => {
+      try {
+        const chain = getChainById(chainIdNum);
+        const client = createPublicClient({ chain, transport: http() });
+        const code = await client.getCode({ address: addr as `0x${string}` });
+        if (cancelled) return;
+        // EOA returns undefined or '0x'. Anything else is bytecode = contract.
+        const isContract = !!code && code !== '0x';
+        setIsContractRecipient(isContract);
+        sendStore.setContractRecipient(isContract);
+      } catch (e) {
+        // Network/RPC failures shouldn't block the user — leave the flag false
+        // and rely on the existing validation.
+        console.warn('[SendForm] contract check failed:', e);
+        sendStore.setContractRecipient(false);
+      } finally {
+        if (!cancelled) setIsCheckingContract(false);
+      }
+    }, 400);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [localAddress, selectedChain?.id]);
 
   // Validate amount when it changes
   useEffect(() => {
@@ -206,6 +260,25 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext }) => {
       setLocalAmount(formatWithCommas(raw));
       sendStore.setAmount(raw);
     }
+  };
+
+  // Custom-keyboard key handler — mirrors swap.tsx behaviour.
+  const handleKeyPress = (key: string) => {
+    const current = parseRawValue(localAmount);
+    if (key === "DELETE") {
+      handleAmountChange(current.slice(0, -1));
+      return;
+    }
+    if (key === "." && current.includes(".")) return;
+    if (key === "." && (!current || current === "")) {
+      handleAmountChange("0.");
+      return;
+    }
+    if (current.includes(".")) {
+      const [, dec] = current.split(".");
+      if (dec && dec.length >= 6) return;
+    }
+    handleAmountChange(current + key);
   };
 
   const handlePasteAddress = async () => {
@@ -455,6 +528,50 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext }) => {
             {addressError}
           </Text>
         )}
+
+        {!addressError && isCheckingContract && (
+          <Text
+            style={{
+              fontFamily: "Manrope-Regular",
+              fontSize: 10,
+              lineHeight: 14,
+              color: colors.bodyText,
+              paddingLeft: 17,
+              marginTop: 4,
+            }}
+          >
+            Checking address…
+          </Text>
+        )}
+
+        {!addressError && !isCheckingContract && isContractRecipient && (
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "flex-start",
+              gap: 6,
+              backgroundColor: "rgba(239, 68, 68, 0.08)",
+              borderWidth: 1,
+              borderColor: "rgba(239, 68, 68, 0.4)",
+              borderRadius: 12,
+              padding: 10,
+              marginTop: 6,
+            }}
+          >
+            <Ionicons name="warning" size={14} color="#EF4444" style={{ marginTop: 1 }} />
+            <Text
+              style={{
+                flex: 1,
+                fontFamily: "Manrope-Medium",
+                fontSize: 11,
+                lineHeight: 16,
+                color: "#EF4444",
+              }}
+            >
+              This address is a smart contract. Sending tokens here will likely lose them. Use a personal wallet address instead.
+            </Text>
+          </View>
+        )}
       </View>
 
       {/* Amount Input */}
@@ -529,22 +646,25 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext }) => {
                 gap: 3,
               }}
             >
-              <TextInput
-                placeholder="0.00"
-                placeholderTextColor={colors.titleText}
-                value={localAmount}
-                onChangeText={handleAmountChange}
-                keyboardType="decimal-pad"
-                style={{
-                  fontFamily: "Manrope-Medium",
-                  fontSize: 24,
-                  lineHeight: 32,
-                  color: colors.titleText,
-                  padding: 0,
-                  margin: 0,
-                  minHeight: 32,
-                }}
-              />
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => setIsKeyboardVisible(true)}
+                style={{ minHeight: 32, justifyContent: "center" }}
+              >
+                <Text
+                  style={{
+                    fontFamily: "Manrope-Medium",
+                    fontSize: 24,
+                    lineHeight: 32,
+                    color: localAmount ? colors.titleText : colors.bodyText,
+                    padding: 0,
+                    margin: 0,
+                  }}
+                  numberOfLines={1}
+                >
+                  {localAmount || "0.00"}
+                </Text>
+              </TouchableOpacity>
               <Text
                 style={{
                   fontFamily: "Manrope-Regular",
@@ -615,6 +735,14 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext }) => {
         onClose={() => setIsWhitelistSheetVisible(false)}
         onSelect={handleSelectFromWhitelist}
         selectedAddress={localAddress}
+      />
+
+      <SwapKeyboard
+        visible={isKeyboardVisible}
+        onKeyPress={handleKeyPress}
+        onPercentagePress={handlePercentagePress}
+        onMaxPress={() => handlePercentagePress(100)}
+        onClose={() => setIsKeyboardVisible(false)}
       />
     </View>
   );

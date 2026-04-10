@@ -254,7 +254,7 @@ export function useStakingPool(poolId?: number | string, decimals: number = 9) {
                     }),
                     value: params.value?.toString(),
                     chainId: STAKING_CHAIN_ID
-                }, walletStore.activeAddress);
+                }, walletStore.activeAddress, { skipAuthorize: true });
 
                 if (result.status === 'success' && result.hash) {
                     const hash = result.hash as `0x${string}`;

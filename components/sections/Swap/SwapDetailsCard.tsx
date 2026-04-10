@@ -161,13 +161,13 @@ export const SwapDetailsCard: React.FC<SwapDetailsCardProps> = ({
                         )}
                     </View>
 
-                    {/* Protocol Fee */}
+                    {/* Protocol Fee — shown as a flat percentage, not a USD value */}
                     <View style={styles.detailRow}>
                         <Text style={styles.detailLabel}>Protocol Fee</Text>
                         {isLoading ? (
                             <Animated.View style={[styles.skeletonSmall, skeletonStyle]} />
                         ) : (
-                            <Text style={[styles.detailValue, (isRefreshing || isStale) && { opacity: 0.6 }]}>{displayTwcFee}</Text>
+                            <Text style={[styles.detailValue, (isRefreshing || isStale) && { opacity: 0.6 }]}>0.25%</Text>
                         )}
                     </View>
                 </View>

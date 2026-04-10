@@ -14,7 +14,6 @@ const BiometricAccessIcon = require('@/assets/settings/biometric-access.svg');
 const FaceUnlockIcon = require('@/assets/settings/user-circle.svg');
 const Timer02Icon = require('@/assets/settings/timer-02.svg');
 const AlertSquareIcon = require('@/assets/settings/alert-square.svg');
-const AddressBookIcon = require('@/assets/settings/address-book.svg');
 
 import { useSecurityStore } from '@/store/securityStore';
 import * as Haptics from 'expo-haptics';
@@ -51,7 +50,6 @@ export default function SecuritySettingsScreen() {
         },
         { label: 'Auto-Lock Timer', icon: Timer02Icon, route: '/settings/security/auto-lock-timer' },
         { label: 'Fraud Alerts & Activity', icon: AlertSquareIcon, route: '/settings/security/fraud-alerts' },
-        { label: 'Whitelist Addresses', icon: AddressBookIcon, route: '/settings/security/whitelist-addresses' },
     ];
 
     return (

@@ -1,7 +1,7 @@
 import { colors } from '@/constants/colors';
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { Dimensions, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Dimensions, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 interface SwapKeyboardProps {
@@ -35,8 +35,6 @@ export const SwapKeyboard: React.FC<SwapKeyboardProps> = ({
         transform: [{ translateY: translateY.value }],
     }));
 
-    if (!visible && translateY.value === SCREEN_HEIGHT) return null;
-
     const renderKey = (val: string, label?: string) => (
         <TouchableOpacity
             style={styles.key}
@@ -48,13 +46,19 @@ export const SwapKeyboard: React.FC<SwapKeyboardProps> = ({
     );
 
     return (
-        <>
-            {/* Invisible overlay to close when tapping outside */}
-            {visible && (
-                <View style={styles.overlayWrapper} pointerEvents="auto">
-                    <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={onClose} />
-                </View>
-            )}
+        <Modal
+            visible={visible}
+            transparent
+            animationType="none"
+            onRequestClose={onClose}
+            statusBarTranslucent
+        >
+            {/* Tap-outside-to-close overlay */}
+            <TouchableOpacity
+                style={styles.overlay}
+                activeOpacity={1}
+                onPress={onClose}
+            />
 
             <Animated.View style={[styles.container, animatedStyle]}>
                 {/* Header Actions Row */}
@@ -108,17 +112,14 @@ export const SwapKeyboard: React.FC<SwapKeyboardProps> = ({
                     <Text style={styles.closeButtonText}>Done</Text>
                 </TouchableOpacity>
             </Animated.View>
-        </>
+        </Modal>
     );
 };
 
 const styles = StyleSheet.create({
-    overlayWrapper: {
-        ...StyleSheet.absoluteFillObject,
-        zIndex: 99,
-    },
     overlay: {
-        flex: 1,
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'transparent',
     },
     container: {
         position: 'absolute',

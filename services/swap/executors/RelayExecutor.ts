@@ -67,7 +67,7 @@ export class RelayExecutor {
 
             console.log(`[RelayExecutor] Preparing Relay execution for ${fromToken.symbol} on chain ${fromToken.chainId}`);
 
-            const walletClient = await signerController.getWalletClient(fromToken.chainId, fromAddress);
+            const walletClient = await signerController.getWalletClient(fromToken.chainId, fromAddress, { skipAuthorize: true });
             const publicClient = await this.getPublicClient(fromToken.chainId);
 
             // Re-sync chains to the SDK singleton right before execution
@@ -130,7 +130,7 @@ export class RelayExecutor {
                                 to: fromToken.address,
                                 data: approveData,
                                 chainId: fromToken.chainId,
-                            }, fromAddress);
+                            }, fromAddress, { skipAuthorize: true });
 
                             if (approveResult.status !== 'success') {
                                 return { success: false, error: "Token approval failed: " + approveResult.error };
@@ -233,7 +233,7 @@ export class RelayExecutor {
                             data: solTxData,
                             value: tx.value?.toString() || '0',
                             chainId: stepChainId,
-                        }, fromAddress);
+                        }, fromAddress, { skipAuthorize: true });
                         if (result.status === 'failed') {
                             throw new Error(result.error || 'Solana transaction failed');
                         }

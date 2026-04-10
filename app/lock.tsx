@@ -50,21 +50,31 @@ export default function LockScreen() {
     useEffect(() => {
         if (!biometricEnabled) return;
 
+        let cancelled = false;
         const init = async () => {
             try {
+                const hasHardware = await LocalAuthentication.hasHardwareAsync();
+                const isEnrolled = await LocalAuthentication.isEnrolledAsync();
                 const types = await LocalAuthentication.supportedAuthenticationTypesAsync();
                 const supportsFace = types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION);
+                if (cancelled) return;
                 // Only show face UI on iOS
                 setHasFaceID(isIOS && supportsFace);
+
+                // Auto-trigger only if the device actually has biometrics
+                // enrolled — otherwise we'd loop on the prompt forever.
+                if (hasHardware && isEnrolled) {
+                    setTimeout(() => {
+                        if (!cancelled) handleBiometric();
+                    }, 300);
+                }
             } catch {
                 // Ignore detection errors
             }
-
-            // Auto-trigger on mount
-            setTimeout(() => handleBiometric(), 300);
         };
 
         init();
+        return () => { cancelled = true; };
     }, []);
 
     const handlePress = (digit: string) => {
@@ -132,7 +142,10 @@ export default function LockScreen() {
             const result = await LocalAuthentication.authenticateAsync({
                 promptMessage,
                 fallbackLabel: 'Use Passcode',
-                disableDeviceFallback: false,
+                // Don't fall back to the iOS device passcode — we have our own
+                // in-app passcode UI right here on the lock screen.
+                disableDeviceFallback: true,
+                cancelLabel: 'Cancel',
             });
 
             scanAnim.stopAnimation();

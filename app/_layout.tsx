@@ -28,6 +28,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { WagmiProvider } from 'wagmi';
 
 import { BlurView } from 'expo-blur';
+import * as Notifications from 'expo-notifications';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 const AUTO_LOCK_TIMEOUT = 1000 * 60 * 5; // 5 Minutes
@@ -98,6 +99,26 @@ function SecurityOverlay() {
 function AppContent() {
   // Prefetch tokens on app load
   useTokenPrefetch();
+  const router = useRouter();
+
+  // Push-notification tap handler — deep-link based on the payload's `type`.
+  useEffect(() => {
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data as any;
+      try {
+        if (data?.type === 'announcement') {
+          router.push('/notifications' as any);
+        } else if (data?.type === 'price_alert' && data?.symbol) {
+          router.push(`/asset/${data.symbol}` as any);
+        } else if (data?.type === 'transaction') {
+          router.push('/(tabs)/wallet' as any);
+        }
+      } catch (e) {
+        console.warn('[Notifications] tap handler failed:', e);
+      }
+    });
+    return () => sub.remove();
+  }, [router]);
 
   return (
     <>
@@ -271,10 +292,10 @@ export default function RootLayout() {
     const inWalletFlow = firstSegment === 'wallet';
     const isRoot = segmentsArray.length === 0;
 
-    // Step 1: Handle Carousel Onboarding - Always show on fresh launch
-    if (!hasSeenOnboardingInSession) {
+    // Step 1: Onboarding — only on first ever launch
+    if (!hasCompletedOnboarding && !isOnboardingLoading) {
       if (!inOnboarding) {
-        console.log('[Guard] Redirecting to onboarding...');
+        console.log('[Guard] First launch — showing onboarding...');
         router.replace('/onboarding' as any);
       }
       return;

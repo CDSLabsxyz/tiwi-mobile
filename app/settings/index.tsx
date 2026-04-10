@@ -16,6 +16,7 @@ const imgDownload03 = require('@/assets/settings/download-03.svg');
 const imgCustomerSupport = require('@/assets/settings/customer-support.svg');
 const imgAddSquare = require('@/assets/settings/add-square.svg');
 const imgCloudDownload = require('@/assets/settings/cloud-download.svg');
+const imgAddressBook = require('@/assets/settings/address-book.svg');
 
 interface SettingsSection {
     id: string;
@@ -67,6 +68,12 @@ const settingsSections: SettingsSection[] = [
         title: 'Support',
         icon: imgCustomerSupport,
         route: '/settings/support',
+    },
+    {
+        id: 'whitelist-addresses',
+        title: 'Whitelist Addresses',
+        icon: imgAddressBook,
+        route: '/settings/security/whitelist-addresses',
     },
     {
         id: 'add-new-wallet',
@@ -129,6 +136,12 @@ export default function SettingsScreen() {
             title: t('settings.support'),
             icon: imgCustomerSupport,
             route: '/settings/support',
+        },
+        {
+            id: 'whitelist-addresses',
+            title: 'Whitelist Addresses',
+            icon: imgAddressBook,
+            route: '/settings/security/whitelist-addresses',
         },
         {
             id: 'add-new-wallet',

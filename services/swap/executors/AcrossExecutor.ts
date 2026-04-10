@@ -27,7 +27,7 @@ export class AcrossExecutor {
 
             console.log(`[AcrossExecutor] Preparing Across execution for ${fromToken.symbol} on chain ${fromToken.chainId}`);
 
-            const walletClient = await signerController.getWalletClient(fromToken.chainId, fromAddress);
+            const walletClient = await signerController.getWalletClient(fromToken.chainId, fromAddress, { skipAuthorize: true });
             const originClient = await this.getPublicClient(fromToken.chainId);
             const destinationClient = await this.getPublicClient(toToken.chainId);
 

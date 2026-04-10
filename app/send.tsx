@@ -14,6 +14,7 @@ import {
     SendTokenSelector,
     SendTokenSelectSheet
 } from '@/components/sections/Send';
+import { TransactionReceiptCard } from '@/components/sections/Send/TransactionReceiptCard';
 import { WalletHeader } from '@/components/sections/Wallet/WalletHeader';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { colors } from '@/constants/colors';
@@ -27,8 +28,9 @@ import { validateAddress, validateAddresses, validateAmount } from '@/utils/addr
 import { mapAssetToTokenOption } from '@/utils/assetMapping';
 import { isNativeToken } from '@/utils/wallet';
 import * as Haptics from 'expo-haptics';
+import { useRequireBackup } from '@/hooks/useRequireBackup';
 import { useLocalSearchParams, usePathname, useRouter } from 'expo-router';
-import { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -37,6 +39,35 @@ export default function SendScreen() {
     const { top, bottom } = useSafeAreaInsets();
     const router = useRouter();
     const pathname = usePathname();
+
+    // Backup gate — checked at action-time (button press), not on page mount.
+    const { requireBackup, BackupRequiredModal } = useRequireBackup();
+
+    // Custom numeric keyboard visibility (lifted from SendForm/MultiSendForm
+    // so we can pad + auto-scroll the parent ScrollView, matching swap.tsx).
+    const [isAmountKeyboardVisible, setIsAmountKeyboardVisible] = useState(false);
+    const sendScrollRef = React.useRef<ScrollView>(null);
+
+    // Receipt details captured at the moment a tx succeeds, so the success
+    // screen can show them and the user can download/share them.
+    const [receipt, setReceipt] = useState<{
+        txHash: string;
+        amount: string;
+        symbol: string;
+        network: string;
+        sender: string;
+        recipient: string;
+        recipientCount: number;
+        completedAt: string;
+        isMulti: boolean;
+    } | null>(null);
+    useEffect(() => {
+        if (isAmountKeyboardVisible) {
+            setTimeout(() => {
+                sendScrollRef.current?.scrollToEnd({ animated: true });
+            }, 50);
+        }
+    }, [isAmountKeyboardVisible]);
 
     // Animation for processing orbit
     const rotation = useSharedValue(0);
@@ -234,6 +265,8 @@ export default function SendScreen() {
     };
 
     const handleConfirmFromReview = async () => {
+        if (!requireBackup()) return;
+
         // Multi-send logic placeholder
         if (activeTab === 'multi-send') {
             setCurrentStep('passcode');
@@ -293,6 +326,23 @@ export default function SendScreen() {
 
             if (hash) {
                 Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                const isMulti = activeTab === 'multi-send';
+                const totalTokens = isMulti
+                    ? (parseFloat(sendStore.amountPerRecipient || '0') * sendStore.recipients.length)
+                    : parseFloat(sendStore.amount || '0');
+                setReceipt({
+                    txHash: hash,
+                    amount: totalTokens.toLocaleString(undefined, { maximumFractionDigits: 8 }),
+                    symbol: selectedToken.symbol,
+                    network: sendStore.selectedChain?.name || '',
+                    sender: walletAddress || '',
+                    recipient: isMulti
+                        ? sendStore.recipients.map(r => r.address).join(',\n')
+                        : sendStore.recipientAddress,
+                    recipientCount: isMulti ? sendStore.recipients.length : 1,
+                    completedAt: new Date().toISOString(),
+                    isMulti,
+                });
                 setCurrentStep('success');
             }
         } catch (e) {
@@ -308,6 +358,7 @@ export default function SendScreen() {
 
     const handleSuccessDone = () => {
         resetSendState();
+        setReceipt(null);
         router.replace('/(tabs)/wallet' as any);
     };
 
@@ -356,9 +407,9 @@ export default function SendScreen() {
             );
         } else if (currentStep === 'enter-details') {
             if (activeTab === 'send-to-one') {
-                return <SendForm onNext={handleNextFromForm} />;
+                return <SendForm onNext={handleNextFromForm} onKeyboardToggle={setIsAmountKeyboardVisible} />;
             } else {
-                return <MultiSendForm onNext={handleNextFromForm} />;
+                return <MultiSendForm onNext={handleNextFromForm} onKeyboardToggle={setIsAmountKeyboardVisible} />;
             }
         } else if (currentStep === 'review') {
             if (activeTab === 'send-to-one') {
@@ -369,37 +420,8 @@ export default function SendScreen() {
         } else if (currentStep === 'passcode') {
             return <PasscodeScreen onSuccess={handlePasscodeSuccess} />;
         } else if (currentStep === 'success') {
-            const CheckmarkIcon = require('@/assets/swap/checkmark-circle-01.svg');
-            const totalAmount = activeTab === 'send-to-one' ? sendStore.amount : (parseFloat(sendStore.amountPerRecipient) * sendStore.recipients.length).toString();
-
-            return (
-                <View style={styles.successContainer}>
-                    <View style={styles.successCard}>
-                        <View style={styles.iconCircle}>
-                            <Image source={CheckmarkIcon} style={{ width: 40, height: 40 }} contentFit="contain" />
-                        </View>
-                        <Text style={styles.successTitle}>Transaction Successful!</Text>
-                        <Text style={styles.successDescription}>
-                            Your transaction has been confirmed and the funds are on their way.
-                        </Text>
-
-                        <View style={styles.successDetails}>
-                            <View style={styles.successDetailItem}>
-                                <Text style={styles.successDetailLabel}>Amount</Text>
-                                <Text style={styles.successDetailValue}>{totalAmount} {selectedToken?.symbol}</Text>
-                            </View>
-                            <View style={styles.successDetailItem}>
-                                <Text style={styles.successDetailLabel}>Network</Text>
-                                <Text style={styles.successDetailValue}>{sendStore.selectedChain?.name}</Text>
-                            </View>
-                        </View>
-
-                        <TouchableOpacity activeOpacity={0.8} onPress={handleSuccessDone} style={styles.doneButton}>
-                            <Text style={styles.doneButtonText}>Done</Text>
-                        </TouchableOpacity>
-                    </View>
-                </View>
-            );
+            if (!receipt) return null;
+            return <TransactionReceiptCard receipt={receipt} onDone={handleSuccessDone} />;
         }
         return null;
     };
@@ -415,7 +437,8 @@ export default function SendScreen() {
                     parseFloat(sendStore.amount) > 0 &&
                     validateAmount(sendStore.amount).isValid &&
                     sendStore.selectedToken &&
-                    !sendStore.isInsufficientBalance
+                    !sendStore.isInsufficientBalance &&
+                    !sendStore.isContractRecipient
                 );
             } else {
                 return (
@@ -458,11 +481,14 @@ export default function SendScreen() {
             > */}
             <View style={styles.contentWrapper}>
                 <ScrollView
+                    ref={sendScrollRef}
                     style={styles.scrollView}
                     contentContainerStyle={[
                         styles.scrollContent,
                         {
-                            paddingBottom: currentStep === 'select-asset' || currentStep === 'review' ? 100 : 80,
+                            paddingBottom: isAmountKeyboardVisible
+                                ? 480
+                                : (currentStep === 'select-asset' || currentStep === 'review' ? 100 : 80),
                             flex: currentStep === 'passcode' ? 1 : 0, // Ensure it fills screen if passcode
                             paddingHorizontal: currentStep === 'passcode' ? 0 : 18,
                             paddingTop: currentStep === 'passcode' ? 0 : 20,
@@ -569,6 +595,7 @@ export default function SendScreen() {
                 onClose={closeTokenSheet}
                 onSelect={handleTokenSelect}
             />
+            {BackupRequiredModal}
         </View>
     );
 }

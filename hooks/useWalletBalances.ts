@@ -217,8 +217,14 @@ export function useWalletBalances() {
 
                 const sortedTokens = tokens.sort((a, b) => parseFloat(b.usdValue) - parseFloat(a.usdValue));
 
-                // Check for significant price movements and send alerts
+                // Check for significant price movements and send alerts (in-app)
                 notificationService.checkPriceAlerts(sortedTokens);
+
+                // Sync the held tokens to Supabase so the server-side price-alert
+                // cron can push when the app is closed.
+                if (activeAddress) {
+                    notificationService.syncWatchedTokens(activeAddress, sortedTokens);
+                }
 
                 return {
                     tokens: sortedTokens,
