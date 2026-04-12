@@ -1,0 +1,84 @@
+name: Build & Release APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      release_notes:
+        description: 'Release notes for this version'
+        required: false
+        default: 'Bug fixes and improvements'
+      force_update:
+        description: 'Force users to update (true/false)'
+        required: false
+        default: 'false'
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Setup EAS CLI
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Get app version from app.json
+        id: version
+        run: |
+          VERSION=$(node -e "console.log(require('./app.json').expo.version)")
+          BUILD_NUMBER=$(date +%s)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "build_number=$BUILD_NUMBER" >> $GITHUB_OUTPUT
+          echo "tag=v${VERSION}-${BUILD_NUMBER}" >> $GITHUB_OUTPUT
+
+      - name: Build Android APK
+        run: eas build --platform android --profile preview --non-interactive --local --output ./tiwi-${{ steps.version.outputs.version }}.apk
+        env:
+          NPM_CONFIG_LEGACY_PEER_DEPS: 'true'
+
+      - name: Create GitHub Release
+        id: release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: TIWI Protocol ${{ steps.version.outputs.version }}
+          body: ${{ github.event.inputs.release_notes || 'Bug fixes and improvements' }}
+          files: ./tiwi-${{ steps.version.outputs.version }}.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get APK download URL
+        id: apk_url
+        run: |
+          # The download URL follows this pattern for release assets
+          APK_URL="https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/tiwi-${{ steps.version.outputs.version }}.apk"
+          echo "url=$APK_URL" >> $GITHUB_OUTPUT
+
+      - name: Update Supabase app_versions table
+        run: |
+          curl -X POST "${{ secrets.SUPABASE_URL }}/rest/v1/app_versions" \
+            -H "apikey: ${{ secrets.SUPABASE_SERVICE_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_KEY }}" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: return=minimal" \
+            -d '{
+              "version": "${{ steps.version.outputs.version }}",
+              "build_number": ${{ steps.version.outputs.build_number }},
+              "apk_url": "${{ steps.apk_url.outputs.url }}",
+              "release_notes": "${{ github.event.inputs.release_notes || 'Bug fixes and improvements' }}",
+              "force_update": ${{ github.event.inputs.force_update || 'false' }}
+            }'
