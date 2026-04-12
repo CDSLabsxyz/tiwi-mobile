@@ -29,7 +29,7 @@ export default function ContactSupportScreen() {
         let url = '';
         switch (type) {
             case 'email':
-                url = 'mailto:support@tiwiprotocol.xyz';
+                url = 'mailto:info@tiwiprotocol.xyz';
                 break;
             case 'telegram':
                 url = 'https://t.me/TIWIEcosystemSupport';
