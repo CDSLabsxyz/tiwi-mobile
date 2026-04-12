@@ -7,7 +7,7 @@
 // 1. IMPORT POLYFILLS FIRST (CRITICAL)
 import '@/utils/polyfills';
 
-import { AnimatedSplashScreen } from '@/components/ui/AnimatedSplashScreen';
+// import { AnimatedSplashScreen } from '@/components/ui/AnimatedSplashScreen';
 import { TransactionToast } from '@/components/ui/TransactionToast';
 import { appKit, wagmiAdapter } from '@/config/AppKitConfig';
 import { useTokenPrefetch } from '@/hooks/useTokenPrefetch';
@@ -127,6 +127,24 @@ function AppContent() {
     notificationService.initNotifications();
   }, []);
 
+  // Ensure push token is registered — retry if wallet loads late
+  useEffect(() => {
+    const registerToken = async () => {
+      try {
+        const { address } = useWalletStore.getState();
+        if (!address) return;
+        await notificationService.registerForPushNotifications(address);
+      } catch (e) {
+        console.warn('[PushToken] Registration failed:', e);
+      }
+    };
+
+    // Try immediately and again after 10s in case wallet hydrates late
+    registerToken();
+    const timer = setTimeout(registerToken, 10000);
+    return () => clearTimeout(timer);
+  }, []);
+
   // Auto-update: check for new APK version on launch (Android only)
   useEffect(() => {
     if (Platform.OS !== 'android') return;
@@ -203,12 +221,13 @@ export default function RootLayout() {
 
   const [isNavigationReady, setIsNavigationReady] = useState(false);
   const [isAppInitialized, setIsAppInitialized] = useState(false);
-  const [isSplashComplete, setIsSplashComplete] = useState(false);
-  const [isMounted, setIsMounted] = useState(false);
+  // Lottie splash commented out for future use
+  const [isSplashComplete, setIsSplashComplete] = useState(true);
+  // const [isMounted, setIsMounted] = useState(false);
 
-  useEffect(() => {
-    setIsMounted(true);
-  }, []);
+  // useEffect(() => {
+  //   setIsMounted(true);
+  // }, []);
 
   const { hasCompletedOnboarding, hasSeenOnboardingInSession, isLoading: isOnboardingLoading, checkOnboardingStatus } = useOnboardingStore();
   const { isConnected, address, _hasHydrated: isWalletHydrated } = useWalletStore();
@@ -327,7 +346,8 @@ export default function RootLayout() {
 
   // 3. Navigation Guard Logic
   useEffect(() => {
-    if (!isMounted || isOnboardingLoading || !isNavigationReady || !isHydrated) return;
+    // if (!isMounted || isOnboardingLoading || !isNavigationReady || !isHydrated) return;
+    if (isOnboardingLoading || !isNavigationReady || !isHydrated) return;
 
     const segmentsArray = Array.from(segments);
     const firstSegment = segmentsArray[0];
@@ -436,6 +456,7 @@ export default function RootLayout() {
             <QueryClientProvider client={queryClient}>
               <AppContent />
               <TransactionToast />
+              {/* Lottie splash commented out for future use
               {!isSplashComplete && (
                 <AnimatedSplashScreen
                   isReady={isReadyForApp}
@@ -445,6 +466,7 @@ export default function RootLayout() {
                   }}
                 />
               )}
+              */}
             </QueryClientProvider>
           </AppKitProvider>
         </WagmiProvider>
