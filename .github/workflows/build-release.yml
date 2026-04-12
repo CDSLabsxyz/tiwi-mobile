@@ -111,3 +111,42 @@ jobs:
               "release_notes": "${{ github.event.inputs.release_notes || 'Bug fixes and improvements' }}",
               "force_update": ${{ github.event.inputs.force_update || 'false' }}
             }'
+
+      - name: Send update notification to all users
+        run: |
+          # Fetch all active push tokens from Supabase
+          TOKENS_JSON=$(curl -s "${{ secrets.SUPABASE_URL }}/rest/v1/user_push_tokens?is_active=eq.true&select=push_token" \
+            -H "apikey: ${{ secrets.SUPABASE_SERVICE_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_KEY }}")
+
+          # Build the Expo push messages array and send in batches of 100
+          node -e "
+            const tokens = JSON.parse(process.argv[1] || '[]');
+            if (!tokens.length) { console.log('No push tokens found, skipping.'); process.exit(0); }
+
+            const messages = tokens.map(t => ({
+              to: t.push_token,
+              sound: 'default',
+              title: 'Update Available',
+              body: 'TIWI Protocol v${{ steps.version.outputs.version }} is ready. Open the app to update.',
+              data: { type: 'app_update', version: '${{ steps.version.outputs.version }}' },
+            }));
+
+            // Expo push API accepts max 100 per request
+            const chunks = [];
+            for (let i = 0; i < messages.length; i += 100) {
+              chunks.push(messages.slice(i, i + 100));
+            }
+
+            (async () => {
+              for (const chunk of chunks) {
+                const res = await fetch('https://exp.host/--/api/v2/push/send', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(chunk),
+                });
+                const result = await res.json();
+                console.log('Sent', chunk.length, 'notifications:', result.data?.length || 0, 'accepted');
+              }
+            })();
+          " "\$TOKENS_JSON"
