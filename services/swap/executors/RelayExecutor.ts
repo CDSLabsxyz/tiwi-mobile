@@ -257,14 +257,21 @@ export class RelayExecutor {
                     txHashes.push(hash);
                     console.log(`[RelayExecutor] Tx broadcast: ${hash}`);
 
-                    // Wait for confirmation before next item (prevents TRANSFER_FROM_FAILED)
+                    // Wait for confirmation and verify success before next item
                     try {
-                        await publicClient.waitForTransactionReceipt({
+                        const receipt = await publicClient.waitForTransactionReceipt({
                             hash: hash as Hex,
                             timeout: 60000,
                         });
+                        if (receipt.status === 'reverted') {
+                            console.error(`[RelayExecutor] Tx reverted on-chain: ${hash}`);
+                            throw new Error('Transaction reverted on-chain. The swap was not completed.');
+                        }
                         console.log(`[RelayExecutor] Tx confirmed: ${hash}`);
                     } catch (waitError: any) {
+                        if (waitError.message?.includes('reverted')) {
+                            throw waitError;
+                        }
                         console.warn(`[RelayExecutor] Wait error for ${hash}:`, waitError.message);
                         // For intermediate steps, wait a bit extra as fallback
                         if (j < step.items.length - 1 || i < steps.length - 1) {

@@ -42,11 +42,20 @@ export default function WalletScreen() {
     const {
         data: balanceData,
         isLoading: isLoadingBalances,
-        isRefetching: isRefetchingBalances
+        isRefetching: isRefetchingBalances,
+        isFetching: isFetchingBalances,
+        isPlaceholderData: isBalancePlaceholder,
     } = useWalletBalances();
 
     const tokens = balanceData?.tokens || [];
     const totalNetWorthUsd = balanceData?.totalNetWorthUsd || '0.00';
+
+    // "Updating…" signal for the balance card: true only on fresh import
+    // (no data yet) or on wallet switch (showing previous wallet's data via
+    // keepPreviousData). Routine background refetches do NOT set this, so
+    // the UI doesn't flicker every minute.
+    const isWalletBalanceUpdating =
+        isFetchingBalances && (isBalancePlaceholder || !balanceData);
 
     // Subscribe to filter store values for reactivity
     const sortBy = useFilterStore((state) => state.sortBy);
@@ -184,6 +193,7 @@ export default function WalletScreen() {
                         isBalanceVisible={!isBalanceHidden}
                         onToggleVisibility={handleToggleVisibility}
                         onTodayPress={handleTodayPress}
+                        isUpdating={isWalletBalanceUpdating}
                     />
 
                     {/* Quick Actions */}
@@ -208,7 +218,10 @@ export default function WalletScreen() {
                     {activeTab === 'assets' ? (
                         <View style={styles.assetList}>
                             {filteredTokens.map((token: any) => {
-                                // Fallback mapping for common chains to ensure they NEVER show "Ether" or empty
+                                // Fallback mapping for every supported chain. Keep this in
+                                // sync with ALL_SUPPORTED_CHAIN_IDS in useWalletBalances.ts
+                                // so legit tokens on Solana/TON/TRON/Linea/etc. never fall
+                                // through to the literal string "Unknown".
                                 const FALLBACK_NAMES: Record<number, string> = {
                                     1: 'Ethereum',
                                     56: 'BNB Chain',
@@ -216,6 +229,14 @@ export default function WalletScreen() {
                                     42161: 'Arbitrum',
                                     8453: 'Base',
                                     10: 'Optimism',
+                                    43114: 'Avalanche',
+                                    59144: 'Linea',
+                                    250: 'Fantom',
+                                    42220: 'Celo',
+                                    100: 'Gnosis',
+                                    7565164: 'Solana',
+                                    1100: 'TON',
+                                    728126428: 'TRON',
                                 };
 
                                 const FALLBACK_LOGOS: Record<number, string> = {
@@ -225,6 +246,14 @@ export default function WalletScreen() {
                                     42161: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/arbitrum/info/logo.png',
                                     8453: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/base/info/logo.png',
                                     10: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/optimism/info/logo.png',
+                                    43114: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/avalanchec/info/logo.png',
+                                    59144: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/linea/info/logo.png',
+                                    250: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/fantom/info/logo.png',
+                                    42220: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/celo/info/logo.png',
+                                    100: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/xdai/info/logo.png',
+                                    7565164: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/info/logo.png',
+                                    1100: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ton/info/logo.png',
+                                    728126428: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/tron/info/logo.png',
                                 };
 
                                 // Find the chain logo and name from the chains data with fallback

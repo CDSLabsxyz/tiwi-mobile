@@ -11,10 +11,13 @@ import { AnimatedSplashScreen } from '@/components/ui/AnimatedSplashScreen';
 import { TransactionToast } from '@/components/ui/TransactionToast';
 import { appKit, wagmiAdapter } from '@/config/AppKitConfig';
 import { useTokenPrefetch } from '@/hooks/useTokenPrefetch';
+import { useWalletBalances } from '@/hooks/useWalletBalances';
 import { currencyService } from '@/services/currencyService';
 import { deviceService } from '@/services/deviceService';
 import { mobileSessionManager } from '@/services/mobileSessionManager';
+import { notificationService } from '@/services/notificationService';
 import { initializeLiFi } from '@/services/swap/lifiConfig';
+import { updateService } from '@/services/updateService';
 import { useOnboardingStore } from '@/store/onboardingStore';
 import { useSecurityStore } from '@/store/securityStore';
 import { useWalletStore } from '@/store/walletStore';
@@ -96,10 +99,54 @@ function SecurityOverlay() {
   );
 }
 
+/**
+ * Kicks the wallet-balances query off the very first moment the wallet
+ * store has hydrated and an active address is available — before the
+ * user navigates into the Wallet tab. The hook internally gates on
+ * `enabled: _hasHydrated && !!activeAddress`, and React Query dedupes
+ * by query key, so the Wallet tab / modal / Send screen just read from
+ * the warm cache when they mount.
+ *
+ * This lives in a sidecar component rather than directly inside
+ * `AppContent` so that data updates don't re-render the whole router.
+ */
+function BalancePrefetcher() {
+  useWalletBalances();
+  return null;
+}
+
 function AppContent() {
   // Prefetch tokens on app load
   useTokenPrefetch();
   const router = useRouter();
+
+  // Ensure the Android notification channel, foreground handler, and OS
+  // permission are set up before any notification (local or remote) fires.
+  // Safe to call without a wallet address.
+  useEffect(() => {
+    notificationService.initNotifications();
+  }, []);
+
+  // Auto-update: check for new APK version on launch (Android only)
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+
+    const checkAutoUpdate = async () => {
+      try {
+        const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+        const enabled = await AsyncStorage.getItem('@tiwi/auto-update-enabled');
+        if (enabled === 'false') return;
+
+        await updateService.autoUpdate();
+      } catch (e) {
+        console.warn('[AutoUpdate] Check failed:', e);
+      }
+    };
+
+    // Delay slightly so it doesn't compete with app init
+    const timer = setTimeout(checkAutoUpdate, 5000);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Push-notification tap handler — deep-link based on the payload's `type`.
   useEffect(() => {
@@ -123,6 +170,7 @@ function AppContent() {
   return (
     <>
       <WalletStateSync />
+      <BalancePrefetcher />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="onboarding" />
@@ -156,11 +204,11 @@ export default function RootLayout() {
   const [isNavigationReady, setIsNavigationReady] = useState(false);
   const [isAppInitialized, setIsAppInitialized] = useState(false);
   const [isSplashComplete, setIsSplashComplete] = useState(false);
-  // const [isMounted, setIsMounted] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
 
-  // useEffect(() => {
-  //   setIsMounted(true);
-  // }, []);
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   const { hasCompletedOnboarding, hasSeenOnboardingInSession, isLoading: isOnboardingLoading, checkOnboardingStatus } = useOnboardingStore();
   const { isConnected, address, _hasHydrated: isWalletHydrated } = useWalletStore();
@@ -279,8 +327,7 @@ export default function RootLayout() {
 
   // 3. Navigation Guard Logic
   useEffect(() => {
-    // if (!isMounted || isOnboardingLoading || !isNavigationReady || !isHydrated) return;
-    if (isOnboardingLoading || !isNavigationReady || !isHydrated) return;
+    if (!isMounted || isOnboardingLoading || !isNavigationReady || !isHydrated) return;
 
     const segmentsArray = Array.from(segments);
     const firstSegment = segmentsArray[0];
@@ -394,7 +441,6 @@ export default function RootLayout() {
                   isReady={isReadyForApp}
                   onAnimationComplete={() => setIsSplashComplete(true)}
                   onLoaded={() => {
-                    // Hide the static native splash screen as soon as the GIF is ready to play
                     SplashScreen.hideAsync().catch(() => { });
                   }}
                 />

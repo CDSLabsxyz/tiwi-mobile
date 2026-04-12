@@ -389,9 +389,8 @@ export interface AssetActivity {
  */
 export const getAllAssetActivities = async (assetId: string, symbolOverride?: string): Promise<AssetActivity[]> => {
   try {
-    // Get the asset detail to use the correct symbol
-    const assetDetail = await fetchAssetDetail(assetId);
-    const symbol = assetDetail.symbol.toUpperCase();
+    // Use the symbol override to avoid circular dependency with fetchAssetDetail
+    const symbol = symbolOverride?.toUpperCase() || assetId.toUpperCase();
 
     // Fetch real transaction history from API
     // We expect the address to be passed or derived somehow. 
@@ -560,12 +559,20 @@ const generateChartData = (points: number, trend: 'up' | 'down', basePrice: numb
   return data;
 };
 
+// Cache for fetchAssetDetail to prevent repeated API calls
+const assetDetailCache: Map<string, { data: AssetDetail; timestamp: number }> = new Map();
+const ASSET_DETAIL_CACHE_TTL = 30000; // 30 seconds
+
 /**
  * Fetches detailed asset information by ID
  * Returns asset-specific data based on the assetId
  */
 export const fetchAssetDetail = async (assetId: string): Promise<AssetDetail> => {
-  // await delay(400 + Math.random() * 600);
+  // Check cache first
+  const cached = assetDetailCache.get(assetId);
+  if (cached && Date.now() - cached.timestamp < ASSET_DETAIL_CACHE_TTL) {
+    return cached.data;
+  }
 
   // Get the portfolio to find the asset
   const portfolio = await getPortfolioData();
@@ -598,7 +605,7 @@ export const fetchAssetDetail = async (assetId: string): Promise<AssetDetail> =>
           const price = parseFloat(realAsset.priceUSD || '0') || 1;
           const variation = Math.abs(chg24h) / 100;
 
-          return {
+          const detail: AssetDetail = {
             id: assetId,
             symbol: realAsset.symbol,
             name: realAsset.name,
@@ -621,6 +628,8 @@ export const fetchAssetDetail = async (assetId: string): Promise<AssetDetail> =>
             },
             activities: activities,
           };
+          assetDetailCache.set(assetId, { data: detail, timestamp: Date.now() });
+          return detail;
         }
       }
     } catch (e) {

@@ -28,6 +28,7 @@ import { useWalletBalances } from '@/hooks/useWalletBalances';
 import { activityService } from '@/services/activityService';
 import { api } from '@/lib/mobile/api-client';
 import { signerController } from '@/services/signer/SignerController';
+import { getChainById } from '@/services/signer/SignerUtils';
 import { securityGuard } from '@/services/securityGuard';
 import { executeSwap, fetchSwapQuote } from '@/services/swap';
 import { isNativeToken } from '@/services/swap/constants';
@@ -38,6 +39,7 @@ import { useWalletStore } from '@/store/walletStore';
 import { formatCompactNumber, formatFiatValue, formatTokenAmount } from '@/utils/formatting';
 import { useRequireBackup } from '@/hooks/useRequireBackup';
 import { useLocalSearchParams, usePathname, useRouter } from 'expo-router';
+import { useQueryClient } from '@tanstack/react-query';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -102,6 +104,7 @@ export default function SwapScreen() {
     } = useSwapStore();
 
     const [fromFiatAmount, setFromFiatAmount] = useState('$0.00');
+    const queryClient = useQueryClient();
 
     const { currency, region } = useLocaleStore();
 
@@ -487,6 +490,28 @@ export default function SwapScreen() {
         );
     };
 
+    const cleanErrorMessage = (error: any): string => {
+        const msg = error?.message || 'Swap failed. Please try again.';
+        // Extract just the reason from viem's verbose errors
+        const reasonMatch = msg.match(/reverted with reason:\s*([^\n.]+)/i);
+        if (reasonMatch) return `Transaction failed: ${reasonMatch[1].trim()}`;
+        const detailsMatch = msg.match(/Details:\s*([^\n]+)/i);
+        if (detailsMatch) return detailsMatch[1].trim();
+        // Truncate overly long messages (viem dumps full tx data)
+        if (msg.length > 150) return msg.slice(0, 150) + '...';
+        return msg;
+    };
+
+    const isGasError = (error: any): boolean => {
+        const msg = (error?.message || '').toLowerCase();
+        return (
+            msg.includes('insufficient funds for transfer') ||
+            msg.includes('insufficient funds for gas') ||
+            msg.includes('total cost') ||
+            msg.includes('gas * gas fee + value')
+        );
+    };
+
     const handleConfirmSwap = async () => {
         if (!requireBackup()) return;
         if (!fromAmount || !fromToken || !toToken || !address) return;
@@ -522,6 +547,40 @@ export default function SwapScreen() {
         setIsLoadingSwap(true);
 
         try {
+            // PRE-FLIGHT: Simulate swap transaction before collecting tax
+            // This prevents tax loss when the swap would fail (e.g. amount too small, reverts)
+            if (!taxPaid && isEvmSwap && swapQuote) {
+                const txReq = swapQuote.transactionRequest;
+                if (txReq?.to && txReq?.data && txReq.data !== '0x') {
+                    try {
+                        console.log('[Swap] Pre-flight: simulating swap transaction...');
+                        const publicClient = await signerController.getPublicClient(fromChainId);
+                        const evmAddr = getAddressForChain(fromChainId);
+                        await publicClient.estimateGas({
+                            account: evmAddr as `0x${string}`,
+                            to: txReq.to as `0x${string}`,
+                            data: txReq.data as `0x${string}`,
+                            value: txReq.value ? BigInt(txReq.value) : 0n,
+                        });
+                        console.log('[Swap] Pre-flight: simulation passed');
+                    } catch (simError: any) {
+                        console.error('[Swap] Pre-flight: simulation failed:', simError.message);
+                        const msg = simError.message || '';
+                        if (msg.includes('TOO_SMALL')) {
+                            setSwapErrorMessage('Swap amount is too small for this route. Please increase the amount.');
+                        } else if (msg.includes('insufficient funds')) {
+                            const chain = getChainById(fromChainId);
+                            const gasToken = chain.nativeCurrency?.symbol || 'ETH';
+                            setSwapErrorMessage(`Not enough ${gasToken} on ${chain.name} to pay for gas fees.`);
+                        } else {
+                            setSwapErrorMessage(`Swap would fail: ${msg.slice(0, 150)}`);
+                        }
+                        setIsLoadingSwap(false);
+                        return;
+                    }
+                }
+            }
+
             // STEP 1: Pay 0.25% Initialization Fee (EVM only)
             if (!taxPaid && isEvmSwap) {
                 console.log("[Swap] Executing Step 1 (Initialization)...");
@@ -570,7 +629,19 @@ export default function SwapScreen() {
                     step1Hash = res.hash;
                 }
 
-                console.log("[Swap] Step 1 successful:", step1Hash);
+                // Wait for Step 1 confirmation before Step 2 to avoid nonce conflicts
+                if (step1Hash) {
+                    try {
+                        const publicClient = await signerController.getPublicClient(chainId);
+                        await publicClient.waitForTransactionReceipt({ hash: step1Hash as `0x${string}`, timeout: 60000 });
+                        console.log("[Swap] Step 1 confirmed on-chain:", step1Hash);
+                    } catch (waitErr: any) {
+                        console.warn("[Swap] Step 1 confirmation wait failed, proceeding:", waitErr.message);
+                        // Brief fallback wait to allow nonce propagation
+                        await new Promise(r => setTimeout(r, 3000));
+                    }
+                }
+
                 setTaxPaid(true); // Persist if the final swap fails so we don't double charge on retry
             }
 
@@ -613,12 +684,16 @@ export default function SwapScreen() {
             await performExecution(actualSwapAmount);
 
         } catch (error: any) {
-            console.warn("Swap sequence failed:", error.message);
+            console.error("Swap sequence failed:", error.message, error);
             setIsLoadingSwap(false);
-            if (isInsufficientBalanceError(error)) {
+            if (isGasError(error)) {
+                const chain = getChainById(Number(fromChain?.id) || 1);
+                const gasToken = chain.nativeCurrency?.symbol || 'ETH';
+                setSwapErrorMessage(`Not enough ${gasToken} on ${chain.name} to pay for gas fees. Please add ${gasToken} to cover transaction costs.`);
+            } else if (isInsufficientBalanceError(error)) {
                 setSwapErrorMessage(`Not enough ${fromToken.symbol} to complete this swap. Please try with a lower amount.`);
             } else {
-                setIsComingSoonVisible(true);
+                setSwapErrorMessage(cleanErrorMessage(error));
             }
         }
     };
@@ -756,8 +831,26 @@ export default function SwapScreen() {
             const toAddr = getAddressForChain(toToken.chainId);
             const result = await executeSwap(swapFromAmount, fromToken, toToken, fromAddr, toAddr, swapQuote);
 
-            const txHash = result?.txHash || `swap-${Date.now()}`;
+            const txHash = result?.txHash;
+            if (!txHash) {
+                throw new Error('Swap did not return a transaction hash.');
+            }
             const chainId = Number(fromChain?.id) || 56;
+
+            // Verify the swap tx was confirmed on-chain (not just broadcast)
+            try {
+                const publicClient = await signerController.getPublicClient(chainId);
+                const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash as `0x${string}`, timeout: 60000 });
+                if (receipt.status === 'reverted') {
+                    throw new Error('Swap transaction reverted on-chain. Your tokens were not swapped.');
+                }
+                console.log('[Swap] Step 2 confirmed on-chain:', txHash);
+            } catch (verifyErr: any) {
+                if (verifyErr.message?.includes('reverted')) {
+                    throw verifyErr;
+                }
+                console.warn('[Swap] Could not verify tx receipt, proceeding:', verifyErr.message);
+            }
 
             // 1. Log detailed transaction to backend for indexing
             try {
@@ -800,13 +893,21 @@ export default function SwapScreen() {
 
             setIsLoadingSwap(false);
             setIsSuccessModalVisible(true);
+
+            // Immediately refresh wallet balances so new amounts show up
+            queryClient.invalidateQueries({ queryKey: ['walletBalances'] });
+
         } catch (error: any) {
-            console.warn('Swap execution failed:', error.message);
+            console.error('Swap execution failed:', error.message, error);
             setIsLoadingSwap(false);
-            if (isInsufficientBalanceError(error)) {
+            if (isGasError(error)) {
+                const chain = getChainById(Number(fromChain?.id) || 1);
+                const gasToken = chain.nativeCurrency?.symbol || 'ETH';
+                setSwapErrorMessage(`Not enough ${gasToken} on ${chain.name} to pay for gas fees. Please add ${gasToken} to cover transaction costs.`);
+            } else if (isInsufficientBalanceError(error)) {
                 setSwapErrorMessage(`Not enough ${fromToken.symbol} to complete this swap. Please try with a lower amount.`);
             } else {
-                setIsComingSoonVisible(true);
+                setSwapErrorMessage(cleanErrorMessage(error));
             }
         }
     };
@@ -913,11 +1014,15 @@ export default function SwapScreen() {
                     animationType="fade"
                     onRequestClose={() => setSwapErrorMessage(null)}
                 >
-                    <View style={styles.comingSoonOverlay}>
+                    <TouchableOpacity
+                        style={styles.comingSoonOverlay}
+                        activeOpacity={1}
+                        onPress={() => setSwapErrorMessage(null)}
+                    >
                         <View style={styles.comingSoonModal}>
                             <Ionicons name="wallet-outline" size={48} color="#FF6B6B" />
-                            <Text style={styles.comingSoonTitle}>Insufficient Balance</Text>
-                            <Text style={styles.comingSoonText}>
+                            <Text style={styles.comingSoonTitle}>Swap Failed</Text>
+                            <Text style={styles.comingSoonText} numberOfLines={4}>
                                 {swapErrorMessage}
                             </Text>
                             <TouchableOpacity
@@ -928,7 +1033,7 @@ export default function SwapScreen() {
                                 <Text style={styles.comingSoonButtonText}>Got it</Text>
                             </TouchableOpacity>
                         </View>
-                    </View>
+                    </TouchableOpacity>
                 </Modal>
 
                 <ScrollView

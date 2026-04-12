@@ -12,10 +12,12 @@ import { SettingsHeader } from '@/components/ui/settings-header';
 import { ToggleSwitch } from '@/components/ui/toggle-switch';
 import { colors } from '@/constants/colors';
 import { supabase } from '@/lib/supabase';
+import { PRICE_ALERT_PREFS_KEY, sendTestPriceAlert } from '@/services/notificationService';
 import { useWalletStore } from '@/store/walletStore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const THRESHOLD_PRESETS = [1, 3, 5, 10] as const;
@@ -37,14 +39,26 @@ export default function PriceAlertsScreen() {
     const [threshold, setThreshold] = useState<number>(3);
     const [cooldown, setCooldown] = useState<number>(60);
 
-    // Load existing settings on mount
+    // Load existing settings on mount. Read the local AsyncStorage cache
+    // first for instant hydration, then reconcile against Supabase.
     useEffect(() => {
-        if (!wallet) {
-            setLoading(false);
-            return;
-        }
         let cancelled = false;
         (async () => {
+            try {
+                const cached = await AsyncStorage.getItem(PRICE_ALERT_PREFS_KEY);
+                if (cached && !cancelled) {
+                    const parsed = JSON.parse(cached);
+                    if (typeof parsed.enabled === 'boolean') setEnabled(parsed.enabled);
+                    if (parsed.threshold_percent) setThreshold(Number(parsed.threshold_percent));
+                    if (parsed.cooldown_minutes) setCooldown(Number(parsed.cooldown_minutes));
+                }
+            } catch { }
+
+            if (!wallet) {
+                if (!cancelled) setLoading(false);
+                return;
+            }
+
             try {
                 const { data, error } = await supabase
                     .from('price_alert_settings')
@@ -55,9 +69,21 @@ export default function PriceAlertsScreen() {
                 if (error) {
                     console.warn('[PriceAlerts] load error:', error.message);
                 } else if (data) {
-                    setEnabled(!!data.enabled);
-                    setThreshold(Number(data.threshold_percent) || 3);
-                    setCooldown(Number(data.cooldown_minutes) || 60);
+                    const nextEnabled = !!data.enabled;
+                    const nextThreshold = Number(data.threshold_percent) || 3;
+                    const nextCooldown = Number(data.cooldown_minutes) || 60;
+                    setEnabled(nextEnabled);
+                    setThreshold(nextThreshold);
+                    setCooldown(nextCooldown);
+                    // Keep the local cache aligned with the server of record.
+                    await AsyncStorage.setItem(
+                        PRICE_ALERT_PREFS_KEY,
+                        JSON.stringify({
+                            enabled: nextEnabled,
+                            threshold_percent: nextThreshold,
+                            cooldown_minutes: nextCooldown,
+                        }),
+                    );
                 }
             } catch (e) {
                 console.warn('[PriceAlerts] load exception:', e);
@@ -69,6 +95,18 @@ export default function PriceAlertsScreen() {
     }, [wallet]);
 
     const persist = async (patch: { enabled?: boolean; threshold_percent?: number; cooldown_minutes?: number }) => {
+        const next = {
+            enabled: patch.enabled ?? enabled,
+            threshold_percent: patch.threshold_percent ?? threshold,
+            cooldown_minutes: patch.cooldown_minutes ?? cooldown,
+        };
+
+        // Mirror to AsyncStorage first so notificationService picks the new
+        // values up immediately, even if Supabase is slow or unreachable.
+        try {
+            await AsyncStorage.setItem(PRICE_ALERT_PREFS_KEY, JSON.stringify(next));
+        } catch { }
+
         if (!wallet) return;
         setSaving(true);
         try {
@@ -77,9 +115,7 @@ export default function PriceAlertsScreen() {
                 .upsert(
                     {
                         user_wallet: wallet,
-                        enabled: patch.enabled ?? enabled,
-                        threshold_percent: patch.threshold_percent ?? threshold,
-                        cooldown_minutes: patch.cooldown_minutes ?? cooldown,
+                        ...next,
                         updated_at: new Date().toISOString(),
                     },
                     { onConflict: 'user_wallet' },
@@ -89,6 +125,15 @@ export default function PriceAlertsScreen() {
             console.warn('[PriceAlerts] save exception:', e);
         } finally {
             setSaving(false);
+        }
+    };
+
+    const handleTestAlert = async () => {
+        try {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            await sendTestPriceAlert();
+        } catch (e: any) {
+            Alert.alert('Test failed', e?.message ?? 'Could not send test notification.');
         }
     };
 
@@ -215,6 +260,14 @@ export default function PriceAlertsScreen() {
                                 Price alerts watch every token in your wallet. We compare against the last price you were notified about, so big swings will alert you before small wiggles.
                             </Text>
                         </View>
+
+                        <TouchableOpacity
+                            activeOpacity={0.8}
+                            onPress={handleTestAlert}
+                            style={styles.testButton}
+                        >
+                            <Text style={styles.testButtonText}>Send test alert</Text>
+                        </TouchableOpacity>
                     </>
                 )}
             </ScrollView>
@@ -273,4 +326,15 @@ const styles = StyleSheet.create({
         marginTop: 8,
     },
     infoText: { fontFamily: 'Manrope-Regular', fontSize: 12, color: colors.bodyText, lineHeight: 20 },
+    testButton: {
+        marginTop: 12,
+        height: 48,
+        borderRadius: 100,
+        backgroundColor: colors.bgCards,
+        borderWidth: 1,
+        borderColor: colors.primaryCTA,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    testButtonText: { fontFamily: 'Manrope-SemiBold', fontSize: 14, color: colors.primaryCTA },
 });

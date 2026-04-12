@@ -108,7 +108,18 @@ export const WalletModal: React.FC<WalletModalProps> = (props) => {
     const storeAddress = useWalletStore(s => s.address);
 
     // 2. Data and State hooks
-    const { data: balanceData, isLoading: isBalanceLoading } = useWalletBalances();
+    const {
+        data: balanceData,
+        isFetching: isBalanceFetching,
+        isPlaceholderData: isBalancePlaceholder,
+    } = useWalletBalances();
+
+    // True only on fresh import (no data yet) or wallet switch (showing
+    // previous wallet's data while the new one fetches). Background
+    // refetches of the same wallet are intentionally excluded so the
+    // balance doesn't flicker every minute.
+    const isBalanceUpdating =
+        isBalanceFetching && (isBalancePlaceholder || !balanceData);
     const [mode, setMode] = useState<ModalMode>('MAIN');
     const [copied, setCopied] = useState(false);
     const [isExpanded, setIsExpanded] = useState(false);
@@ -436,7 +447,7 @@ export const WalletModal: React.FC<WalletModalProps> = (props) => {
                                         />
                                     </TouchableOpacity>
                                 </View>
-                                {isBalanceLoading && (
+                                {isBalanceUpdating && (
                                     <View style={{ marginLeft: 8 }}>
                                         <ActivityIndicator size="small" color={colors.primaryCTA} />
                                     </View>
@@ -446,8 +457,10 @@ export const WalletModal: React.FC<WalletModalProps> = (props) => {
                                     <Text style={styles.miniAddText}>Add Wallet</Text>
                                 </TouchableOpacity>
                             </View>
-                            <Text style={[styles.balanceText, { color: isBalanceLoading ? '#6E7873' : colors.titleText }]}>
-                                {isBalanceHidden ? '****' : (isBalanceLoading && displayBalance === '$0.00' ? 'Updating...' : (displayBalance === '$0.00' && !isBalanceLoading ? '$0.00' : displayBalance))}
+                            <Text style={[styles.balanceText, { color: isBalanceUpdating ? '#6E7873' : colors.titleText }]}>
+                                {isBalanceHidden
+                                    ? '****'
+                                    : (isBalanceUpdating ? 'Updating…' : displayBalance)}
                             </Text>
                         </TouchableOpacity>
 

@@ -158,6 +158,38 @@ export async function fetchSwapQuote(
             throw new Error('No swap route found');
         }
 
+        // If the backend says "relay" but this is a same-chain swap, Relay won't work
+        // (it's a cross-chain protocol). Override to 'tiwi' and extract the transaction
+        // from the Relay steps format so TiwiExecutor can execute it directly.
+        let router = response.route.router;
+        let transactionRequest = response.transactionRequest;
+        const isSameChain = Number(fromToken.chainId) === Number(toToken.chainId);
+
+        if (router === 'relay' && isSameChain) {
+            console.log(`[SwapService] Same-chain swap — overriding router from 'relay' to 'tiwi'`);
+            router = 'tiwi';
+
+            // Extract transaction data from Relay steps if no transactionRequest exists
+            if (!transactionRequest) {
+                const steps = response.route.raw?.steps || [];
+                for (const step of steps) {
+                    for (const item of step.items || []) {
+                        if (item.data?.to && item.data?.data) {
+                            transactionRequest = {
+                                to: item.data.to,
+                                data: item.data.data,
+                                value: item.data.value || '0',
+                                chainId: item.data.chainId || fromToken.chainId,
+                            };
+                            console.log(`[SwapService] Extracted transactionRequest from Relay steps: to=${transactionRequest.to}`);
+                            break;
+                        }
+                    }
+                    if (transactionRequest) break;
+                }
+            }
+        }
+
         // Map RouteResponse to SwapQuote (UI Compatibility)
         return {
             toAmount: response.route.toToken?.amount || '0',
@@ -166,9 +198,9 @@ export async function fetchSwapQuote(
             gasEstimate: response.route.fees?.gasUSD || '0',
             gasFee: response.route.fees?.gasUSD ? `$${response.route.fees.gasUSD}` : '0',
             twcFee: '',
-            source: [response.route.router ? response.route.router.charAt(0).toUpperCase() + response.route.router.slice(1) : 'Tiwi Router'],
-            router: response.route.router,
-            transactionRequest: response.transactionRequest,
+            source: [router ? router.charAt(0).toUpperCase() + router.slice(1) : 'Tiwi Router'],
+            router: router,
+            transactionRequest: transactionRequest,
             raw: response.route.raw,
             quoteId: response.route.routeId,
         };

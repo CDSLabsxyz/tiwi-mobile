@@ -1,6 +1,7 @@
 import { getSecurePrivateKey } from '@/services/walletCreationService';
 import { useSecurityStore } from '@/store/securityStore';
 import { useWalletStore } from '@/store/walletStore';
+import { getRpcUrl } from '@/constants/rpc';
 import { createPublicClient, createWalletClient, http } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { ExecutionResult, SignerEngine, TransactionRequest } from './SignerTypes';
@@ -105,10 +106,11 @@ export class LocalSignerEngine implements SignerEngine {
 
         const isNative = !tx.data || tx.data === '0x' || tx.data === '';
 
+        const rpcUrl = getRpcUrl(Number(tx.chainId) || 1);
         const walletClient = createWalletClient({
             account,
             chain,
-            transport: http()
+            transport: http(rpcUrl, { timeout: 15000 })
         });
 
         const signArgs: any = {
@@ -132,10 +134,11 @@ export class LocalSignerEngine implements SignerEngine {
             const chain = getChainById(Number(tx.chainId) || 1);
             const isNative = !tx.data || tx.data === '0x' || tx.data === '';
 
+            const rpcUrl = getRpcUrl(Number(tx.chainId) || 1);
             const walletClient = createWalletClient({
                 account,
                 chain,
-                transport: http()
+                transport: http(rpcUrl, { timeout: 15000 })
             });
 
             // Standardize txArgs to match viem's SendTransactionParameters
@@ -173,8 +176,9 @@ export class LocalSignerEngine implements SignerEngine {
                     });
                     txArgs.gas = (estimate * 130n) / 100n;
                 }
-            } catch (estError) {
-                console.warn("[SmartSigner] Estimation failed, allowing provider to handle gas defaults.");
+            } catch (estError: any) {
+                console.warn("[SmartSigner] Estimation failed:", estError?.message || estError);
+                console.warn("[SmartSigner] TX args at failure:", JSON.stringify({ to: txArgs.to, data: txArgs.data?.slice(0, 20), value: String(txArgs.value), chainId: tx.chainId }));
             }
 
             const hash = await walletClient.sendTransaction(txArgs);
@@ -192,9 +196,10 @@ export class LocalSignerEngine implements SignerEngine {
 
     async getPublicClient(chainId: number) {
         const chain = getChainById(chainId);
+        const rpcUrl = getRpcUrl(chainId);
         return createPublicClient({
             chain,
-            transport: http()
+            transport: http(rpcUrl, { timeout: 15000 })
         });
     }
 
@@ -204,10 +209,11 @@ export class LocalSignerEngine implements SignerEngine {
             : await this.createSecureAccount(address);
 
         const chain = getChainById(chainId);
+        const rpcUrl = getRpcUrl(chainId);
         return createWalletClient({
             account,
             chain,
-            transport: http()
+            transport: http(rpcUrl, { timeout: 15000 })
         });
     }
 }

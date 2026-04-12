@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { useWalletStore } from '@/store/walletStore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
@@ -15,7 +16,89 @@ Notifications.setNotificationHandler({
     }),
 });
 
+// AsyncStorage keys used by the price-alert pipeline.
+// Kept together so the settings UI and the service stay in sync.
+export const PRICE_ALERT_PREFS_KEY = 'tiwi_price_alert_prefs';
+const PRICE_BASELINES_KEY = 'tiwi_price_baselines';
+
+interface PriceAlertPrefs {
+    enabled: boolean;
+    threshold_percent: number; // e.g. 3 = alert at ±3% from baseline
+    cooldown_minutes: number;  // min time between alerts for the same token
+}
+
+const DEFAULT_PREFS: PriceAlertPrefs = {
+    enabled: true,
+    threshold_percent: 3,
+    cooldown_minutes: 60,
+};
+
 class NotificationService {
+    private initialized = false;
+
+    /**
+     * One-shot startup: install the Android channel, request permissions, and
+     * make sure the foreground handler is live. Safe to call without a wallet
+     * address — registration of the push token still happens later in
+     * `registerForPushNotifications` once the user is signed in.
+     */
+    async initNotifications(): Promise<void> {
+        if (this.initialized) return;
+        this.initialized = true;
+        try {
+            // Android: the 'default' channel must exist *before* a notification
+            // is scheduled, otherwise it falls back to a low-priority channel
+            // that never shows as a heads-up.
+            if (Platform.OS === 'android') {
+                await Notifications.setNotificationChannelAsync('default', {
+                    name: 'default',
+                    importance: Notifications.AndroidImportance.MAX,
+                    vibrationPattern: [0, 250, 250, 250],
+                    lightColor: '#B1F128',
+                    sound: 'default',
+                });
+            }
+
+            // Request permission if not already granted so local notifications
+            // actually display on iOS. We do not block app startup on this.
+            const { status } = await Notifications.getPermissionsAsync();
+            if (status !== 'granted') {
+                await Notifications.requestPermissionsAsync();
+            }
+        } catch (e) {
+            console.warn('[NotificationService] initNotifications failed:', e);
+        }
+    }
+
+    /**
+     * Read user price-alert preferences from the local AsyncStorage cache.
+     * The settings UI mirrors its Supabase writes to this key so the service
+     * can make synchronous decisions without a network round-trip.
+     */
+    private async loadPriceAlertPrefs(): Promise<PriceAlertPrefs> {
+        try {
+            const raw = await AsyncStorage.getItem(PRICE_ALERT_PREFS_KEY);
+            if (!raw) return DEFAULT_PREFS;
+            const parsed = JSON.parse(raw);
+            return {
+                enabled: parsed.enabled !== false,
+                threshold_percent: Number(parsed.threshold_percent) || DEFAULT_PREFS.threshold_percent,
+                cooldown_minutes: Number(parsed.cooldown_minutes) || DEFAULT_PREFS.cooldown_minutes,
+            };
+        } catch {
+            return DEFAULT_PREFS;
+        }
+    }
+
+    /**
+     * Fire a test price-alert notification. Used by the settings UI so the
+     * user can verify the pipeline end-to-end without waiting for the market
+     * to move.
+     */
+    async sendTestPriceAlert(): Promise<void> {
+        await this.initNotifications();
+        await this.sendPriceAlert('TWC', 4.21, 0.3421);
+    }
     /**
      * Request permissions and get the Expo Push Token
      */
@@ -252,47 +335,64 @@ class NotificationService {
     }
 
     /**
-     * Check wallet tokens for significant price movements and send alerts
-     * Called periodically from the app
+     * Check wallet tokens for significant price movement and send alerts.
+     *
+     * Uses a per-token baseline snapshot (persisted in AsyncStorage) and
+     * compares the current unit price against it. When |delta| crosses the
+     * user-configured threshold AND the cooldown has elapsed, an alert is
+     * sent and the baseline is reset to the current price — so each alert
+     * represents a fresh move rather than a lingering 24h value.
+     *
+     * First-seen tokens simply have their baseline recorded silently.
      */
     async checkPriceAlerts(tokens: any[]) {
-        const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-        const ALERT_KEY = 'tiwi_last_price_alerts';
-        const THRESHOLD = 3; // Alert when change > 3%
-        const TWC_THRESHOLD = 1; // Alert TWC at 1% change (more sensitive)
-        const COOLDOWN_MS = 60 * 60 * 1000; // 1 hour cooldown per token
-
         try {
-            // Load last alert timestamps
-            const lastAlertsRaw = await AsyncStorage.getItem(ALERT_KEY);
-            const lastAlerts: Record<string, number> = lastAlertsRaw ? JSON.parse(lastAlertsRaw) : {};
+            const prefs = await this.loadPriceAlertPrefs();
+            if (!prefs.enabled) return;
+
+            const threshold = Math.max(0.01, prefs.threshold_percent);
+            const cooldownMs = Math.max(1, prefs.cooldown_minutes) * 60 * 1000;
+
+            const baselinesRaw = await AsyncStorage.getItem(PRICE_BASELINES_KEY);
+            const baselines: Record<string, { price: number; ts: number }> =
+                baselinesRaw ? JSON.parse(baselinesRaw) : {};
             const now = Date.now();
-            let updated = false;
+            let mutated = false;
 
             for (const token of tokens) {
                 const sym = (token.symbol || '').toUpperCase();
-                const change = Math.abs(parseFloat(token.priceChange24h || '0'));
-                const price = parseFloat(token.priceUSD || token.usdValue || '0');
-                const isTWC = sym === 'TWC';
-                const threshold = isTWC ? TWC_THRESHOLD : THRESHOLD;
+                if (!sym) continue;
 
-                // Skip if below threshold
-                if (change < threshold) continue;
-                // Skip if price is 0
-                if (price <= 0) continue;
+                // Prefer unit price; if missing, derive from usdValue / balance.
+                let price = parseFloat(token.priceUSD || '0');
+                if (!price || price <= 0) {
+                    const bal = parseFloat(token.balanceFormatted || token.balance || '0');
+                    const usd = parseFloat(token.usdValue || '0');
+                    if (bal > 0 && usd > 0) price = usd / bal;
+                }
+                if (!price || price <= 0) continue;
 
-                // Cooldown check
-                const lastAlert = lastAlerts[sym] || 0;
-                if (now - lastAlert < COOLDOWN_MS) continue;
+                const prev = baselines[sym];
+                if (!prev) {
+                    // First time we see this token — record baseline silently.
+                    baselines[sym] = { price, ts: now };
+                    mutated = true;
+                    continue;
+                }
 
-                // Send alert
-                await this.sendPriceAlert(sym, parseFloat(token.priceChange24h || '0'), price);
-                lastAlerts[sym] = now;
-                updated = true;
+                const deltaPct = ((price - prev.price) / prev.price) * 100;
+                const absDelta = Math.abs(deltaPct);
+
+                if (absDelta < threshold) continue;
+                if (now - prev.ts < cooldownMs) continue;
+
+                await this.sendPriceAlert(sym, deltaPct, price);
+                baselines[sym] = { price, ts: now };
+                mutated = true;
             }
 
-            if (updated) {
-                await AsyncStorage.setItem(ALERT_KEY, JSON.stringify(lastAlerts));
+            if (mutated) {
+                await AsyncStorage.setItem(PRICE_BASELINES_KEY, JSON.stringify(baselines));
             }
         } catch (e) {
             console.warn('[NotificationService] Price alert check failed:', e);
@@ -387,4 +487,12 @@ export async function sendTestNotification() {
 
 export async function sendWelcomeNotification() {
     return notificationService.sendWelcomeNotification();
+}
+
+export async function initNotifications() {
+    return notificationService.initNotifications();
+}
+
+export async function sendTestPriceAlert() {
+    return notificationService.sendTestPriceAlert();
 }

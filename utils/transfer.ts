@@ -1,3 +1,4 @@
+import { getRpcUrl } from "@/constants/rpc";
 import { createPublicClient, encodeFunctionData, http, type Address, type Chain } from "viem";
 import { arbitrum, base, bsc, mainnet, optimism, polygon } from "viem/chains";
 
@@ -21,7 +22,7 @@ export function getPublicClient(chainId: number) {
     }
     return createPublicClient({
         chain,
-        transport: http(),
+        transport: http(getRpcUrl(chainId), { timeout: 15000 }),
     });
 }
 

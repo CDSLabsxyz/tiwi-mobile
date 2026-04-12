@@ -1,4 +1,5 @@
 import { DISPERSE_CONTRACTS } from '@/constants/contracts';
+import { getRpcUrl } from '@/constants/rpc';
 import { useWalletStore } from '@/store/walletStore';
 import { toSmallestUnit } from '@/utils/formatting';
 import { createPublicClient, encodeFunctionData, http } from 'viem';
@@ -186,7 +187,7 @@ export const transactionService = {
             // for the total amount first or the call reverts with 0x.
             try {
                 const chain = getChainById(params.chainId);
-                const publicClient = createPublicClient({ chain, transport: http() });
+                const publicClient = createPublicClient({ chain, transport: http(getRpcUrl(params.chainId), { timeout: 15000 }) });
 
                 const ERC20_ALLOWANCE_ABI = [{
                     name: 'allowance',
@@ -286,7 +287,7 @@ export const transactionService = {
         const chain = getChainById(params.chainId);
         const client = createPublicClient({
             chain,
-            transport: http()
+            transport: http(getRpcUrl(params.chainId), { timeout: 15000 })
         });
 
         const amountBI = BigInt(toSmallestUnit(params.amount, params.decimals));

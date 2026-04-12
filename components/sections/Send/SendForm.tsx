@@ -5,6 +5,7 @@
  */
 
 import { colors } from "@/constants";
+import { getRpcUrl } from "@/constants/rpc";
 import { useWalletBalances } from "@/hooks/useWalletBalances";
 import { transactionService } from "@/services/transactionService";
 import { useSecurityStore } from "@/store/securityStore";
@@ -118,7 +119,7 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext, onKeyboardToggle }) 
     const timer = setTimeout(async () => {
       try {
         const chain = getChainById(chainIdNum);
-        const client = createPublicClient({ chain, transport: http() });
+        const client = createPublicClient({ chain, transport: http(getRpcUrl(chainIdNum), { timeout: 15000 }) });
         const code = await client.getCode({ address: addr as `0x${string}` });
         if (cancelled) return;
         // EOA returns undefined or '0x'. Anything else is bytecode = contract.

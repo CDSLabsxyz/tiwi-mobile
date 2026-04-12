@@ -81,13 +81,21 @@ export class TiwiExecutor {
             };
         }
 
+        if (!txReq.to || !txReq.data || txReq.data === '0x') {
+            console.error('[TiwiExecutor] Invalid transaction request:', JSON.stringify(txReq));
+            return {
+                success: false,
+                error: 'Backend returned incomplete swap transaction (missing to/data).',
+            };
+        }
+
         try {
             console.log('[TiwiExecutor] Executing EVM transaction request');
 
             const result = await signerController.executeTransaction({
                 chainFamily: 'evm',
                 to: txReq.to,
-                data: txReq.data || '0x',
+                data: txReq.data,
                 value: txReq.value?.toString() || '0',
                 chainId: chainId,
             }, fromAddress, { skipAuthorize: true });

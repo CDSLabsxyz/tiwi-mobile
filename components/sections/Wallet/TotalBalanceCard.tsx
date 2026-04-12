@@ -25,6 +25,9 @@ interface TotalBalanceCardProps {
     isBalanceVisible: boolean;
     onToggleVisibility: () => void;
     onTodayPress?: () => void;
+    /** True only when a fresh fetch is in flight for a newly-selected or
+     *  newly-imported wallet — not for routine background refetches. */
+    isUpdating?: boolean;
 }
 
 /**
@@ -36,6 +39,7 @@ export const TotalBalanceCard: React.FC<TotalBalanceCardProps> = ({
     isBalanceVisible,
     onToggleVisibility,
     onTodayPress,
+    isUpdating = false,
 }) => {
     const { t } = useTranslation();
     const formattedChangeAmount = usePrice(Math.abs(parseFloat(portfolioChange.amount)));
@@ -63,21 +67,29 @@ export const TotalBalanceCard: React.FC<TotalBalanceCardProps> = ({
 
                 {/* Balance Amount */}
                 <View style={styles.balanceRow}>
-                    {isBalanceVisible ? (
+                    {!isBalanceVisible ? (
+                        <Text style={styles.balanceText}>****</Text>
+                    ) : isUpdating ? (
+                        <Text style={[styles.balanceText, styles.updatingText]}>Updating…</Text>
+                    ) : (
                         <TokenPrice
                             amount={totalBalance}
                             style={styles.balanceText}
                         />
-                    ) : (
-                        <Text style={styles.balanceText}>****</Text>
                     )}
                 </View>
 
                 {/* Portfolio Change */}
                 <View style={styles.changeRow}>
-                    {isBalanceVisible ? (
+                    {!isBalanceVisible ? (
+                        <Text style={styles.changeText}>****</Text>
+                    ) : isUpdating ? (
+                        <Text style={[styles.changeText, styles.updatingSubText]}>
+                            Fetching latest balances…
+                        </Text>
+                    ) : (
                         <>
-                            <Text 
+                            <Text
                                 style={[
                                     styles.changeText,
                                     { color: parseFloat(portfolioChange.amount) < 0 ? '#FB406E' : '#B1F128' }
@@ -91,8 +103,6 @@ export const TotalBalanceCard: React.FC<TotalBalanceCardProps> = ({
                                 </Text>
                             </TouchableOpacity>
                         </>
-                    ) : (
-                        <Text style={styles.changeText}>****</Text>
                     )}
                 </View>
             </View>
@@ -161,5 +171,12 @@ const styles = StyleSheet.create({
     iconFull: {
         width: '100%',
         height: '100%',
+    },
+    updatingText: {
+        color: '#6E7873',
+    },
+    updatingSubText: {
+        color: '#6E7873',
+        fontFamily: 'Manrope-Regular',
     },
 });

@@ -9,7 +9,7 @@
 import { colors } from '@/constants/colors';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Haptics from 'expo-haptics';
 import { Image as ExpoImage } from 'expo-image';
 import * as Sharing from 'expo-sharing';
@@ -28,7 +28,7 @@ try {
 }
 const isPdfAvailable = !!Print;
 import React, { useRef, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import ViewShot, { captureRef } from 'react-native-view-shot';
 
 export interface TransactionReceipt {
@@ -269,8 +269,9 @@ export const TransactionReceiptCard: React.FC<Props> = ({ receipt, onDone }) => 
                     UTI: 'public.png',
                 });
             }
-        } catch (e) {
+        } catch (e: any) {
             console.warn('[Receipt] share PNG failed:', e);
+            Alert.alert('Could not share receipt', e?.message ?? 'Unknown error');
         } finally {
             setBusy(false);
         }
@@ -313,8 +314,9 @@ export const TransactionReceiptCard: React.FC<Props> = ({ receipt, onDone }) => 
                     UTI: 'com.adobe.pdf',
                 });
             }
-        } catch (e) {
+        } catch (e: any) {
             console.warn('[Receipt] share PDF failed:', e);
+            Alert.alert('Could not share receipt', e?.message ?? 'Unknown error');
         } finally {
             setBusy(false);
         }
