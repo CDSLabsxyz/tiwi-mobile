@@ -45,10 +45,40 @@ jobs:
           echo "build_number=$BUILD_NUMBER" >> $GITHUB_OUTPUT
           echo "tag=v${VERSION}-${BUILD_NUMBER}" >> $GITHUB_OUTPUT
 
-      - name: Build Android APK
-        run: eas build --platform android --profile preview --non-interactive --local --output ./tiwi-${{ steps.version.outputs.version }}.apk
-        env:
-          NPM_CONFIG_LEGACY_PEER_DEPS: 'true'
+      - name: Build Android APK on EAS
+        run: |
+          # Start the build on EAS servers and wait for it to finish
+          eas build --platform android --profile preview --non-interactive --json > build-result.json 2>&1 || true
+
+          # Extract the build URL from EAS output
+          BUILD_URL=$(cat build-result.json | node -e "
+            const fs = require('fs');
+            const data = fs.readFileSync('/dev/stdin', 'utf8');
+            try {
+              const builds = JSON.parse(data);
+              const build = Array.isArray(builds) ? builds[0] : builds;
+              console.log(build.artifacts?.buildUrl || build.artifacts?.url || '');
+            } catch(e) {
+              // Try to find URL in raw output
+              const match = data.match(/https:\/\/expo\.dev\/artifacts\/[^\s\"]+/);
+              console.log(match ? match[0] : '');
+            }
+          ")
+
+          if [ -z "$BUILD_URL" ]; then
+            echo "ERROR: Could not get build artifact URL"
+            cat build-result.json
+            exit 1
+          fi
+
+          echo "Build URL: $BUILD_URL"
+          echo "build_url=$BUILD_URL" >> $GITHUB_OUTPUT
+        id: build
+
+      - name: Download APK from EAS
+        run: |
+          curl -L -o ./tiwi-${{ steps.version.outputs.version }}.apk "${{ steps.build.outputs.build_url }}"
+          ls -lh ./tiwi-${{ steps.version.outputs.version }}.apk
 
       - name: Create GitHub Release
         id: release
@@ -64,7 +94,6 @@ jobs:
       - name: Get APK download URL
         id: apk_url
         run: |
-          # The download URL follows this pattern for release assets
           APK_URL="https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/tiwi-${{ steps.version.outputs.version }}.apk"
           echo "url=$APK_URL" >> $GITHUB_OUTPUT
 
