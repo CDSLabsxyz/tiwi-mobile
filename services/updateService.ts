@@ -123,6 +123,19 @@ class UpdateService {
         }
     }
 
+    /**
+     * Resolve redirects to get the final direct download URL.
+     * GitHub releases use 302 redirects to a signed CDN URL.
+     */
+    private async resolveRedirectUrl(url: string): Promise<string> {
+        try {
+            const response = await fetch(url, { method: 'HEAD', redirect: 'follow' });
+            return response.url || url;
+        } catch {
+            return url;
+        }
+    }
+
     async downloadUpdate(): Promise<string | null> {
         if (!this.latestVersion?.apkUrl) {
             this.error = 'No update URL available';
@@ -141,8 +154,11 @@ class UpdateService {
                 await FileSystem.deleteAsync(apkPath, { idempotent: true });
             }
 
+            // Resolve GitHub redirect to get direct CDN URL
+            const directUrl = await this.resolveRedirectUrl(this.latestVersion.apkUrl);
+
             const downloadResumable = FileSystem.createDownloadResumable(
-                this.latestVersion.apkUrl,
+                directUrl,
                 apkPath,
                 {},
                 (downloadProgress) => {
