@@ -2,27 +2,24 @@
  * App Update Service
  *
  * Handles automatic APK updates for sideloaded Android builds.
- * - Checks a Supabase `app_versions` table for the latest version
+ * - Checks GitHub Releases API for the latest version (public, no auth)
  * - Downloads the APK in the background
  * - Triggers the Android system install prompt (1 tap from the user)
- *
- * Supabase table: `app_versions`
- * Columns: version (text), build_number (int), apk_url (text),
- *          release_notes (text), force_update (bool), created_at (timestamptz)
  */
 
 import * as Application from 'expo-application';
 import * as FileSystem from 'expo-file-system';
 import * as IntentLauncher from 'expo-intent-launcher';
 import { Platform } from 'react-native';
-import { supabase } from '@/lib/supabase';
+
+const GITHUB_REPO = 'CDSLabsxyz/tiwi-mobile';
+const GITHUB_API = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;
 
 export interface VersionInfo {
     version: string;
-    buildNumber: number;
     apkUrl: string;
     releaseNotes: string;
-    forceUpdate: boolean;
+    tagName: string;
 }
 
 export type UpdateStatus =
@@ -45,10 +42,8 @@ class UpdateService {
     private downloadedApkUri: string | null = null;
     private error: string | null = null;
 
-    /** Subscribe to update status changes */
     subscribe(listener: UpdateListener) {
         this.listeners.add(listener);
-        // Immediately fire current state
         listener(this.status, this.progress, this.latestVersion, this.error ?? undefined);
         return () => this.listeners.delete(listener);
     }
@@ -65,21 +60,10 @@ class UpdateService {
         this.notify();
     }
 
-    /** Get the current installed app version */
     getCurrentVersion(): string {
         return Application.nativeApplicationVersion ?? '1.0.0';
     }
 
-    /** Get the current build number */
-    getCurrentBuildNumber(): number {
-        const buildNum = Application.nativeBuildVersion;
-        return buildNum ? parseInt(buildNum, 10) : 1;
-    }
-
-    /**
-     * Compare two semver version strings.
-     * Returns true if remote is newer than local.
-     */
     private isNewerVersion(local: string, remote: string): boolean {
         const localParts = local.split('.').map(Number);
         const remoteParts = remote.split('.').map(Number);
@@ -94,8 +78,17 @@ class UpdateService {
     }
 
     /**
-     * Check Supabase `app_versions` table for the latest version.
-     * Fetches the most recent row ordered by created_at desc.
+     * Extract version string from GitHub release tag.
+     * Tags look like "v1.0.1-1713000000" — we extract "1.0.1"
+     */
+    private extractVersion(tagName: string): string {
+        const match = tagName.match(/v?(\d+\.\d+\.\d+)/);
+        return match ? match[1] : tagName.replace(/^v/, '');
+    }
+
+    /**
+     * Check GitHub Releases for the latest version.
+     * Public API, no auth needed.
      */
     async checkForUpdate(): Promise<VersionInfo | null> {
         if (Platform.OS !== 'android') {
@@ -107,28 +100,38 @@ class UpdateService {
         this.error = null;
 
         try {
-            const { data, error } = await supabase
-                .from('app_versions')
-                .select('version, build_number, apk_url, release_notes, force_update')
-                .order('created_at', { ascending: false })
-                .limit(1)
-                .single();
+            const response = await fetch(GITHUB_API, {
+                headers: { 'Accept': 'application/vnd.github.v3+json' },
+            });
 
-            if (error) throw new Error(error.message);
-            if (!data) throw new Error('No version info found');
+            if (!response.ok) {
+                throw new Error(`GitHub API returned ${response.status}`);
+            }
+
+            const release = await response.json();
+
+            // Find the .apk asset in the release
+            const apkAsset = (release.assets || []).find(
+                (a: any) => a.name?.endsWith('.apk')
+            );
+
+            if (!apkAsset) {
+                throw new Error('No APK found in latest release');
+            }
+
+            const version = this.extractVersion(release.tag_name);
 
             const versionInfo: VersionInfo = {
-                version: data.version,
-                buildNumber: data.build_number,
-                apkUrl: data.apk_url,
-                releaseNotes: data.release_notes || '',
-                forceUpdate: data.force_update || false,
+                version,
+                apkUrl: apkAsset.browser_download_url,
+                releaseNotes: release.body || '',
+                tagName: release.tag_name,
             };
 
             this.latestVersion = versionInfo;
 
             const currentVersion = this.getCurrentVersion();
-            const hasUpdate = this.isNewerVersion(currentVersion, versionInfo.version);
+            const hasUpdate = this.isNewerVersion(currentVersion, version);
 
             if (hasUpdate) {
                 this.setStatus('update-available');
@@ -162,7 +165,6 @@ class UpdateService {
         const apkPath = `${FileSystem.cacheDirectory}${apkFileName}`;
 
         try {
-            // Remove old APK if it exists
             const existing = await FileSystem.getInfoAsync(apkPath);
             if (existing.exists) {
                 await FileSystem.deleteAsync(apkPath, { idempotent: true });
@@ -198,7 +200,6 @@ class UpdateService {
 
     /**
      * Trigger the Android system install dialog for the downloaded APK.
-     * This is the ONE tap the user needs — the OS install confirmation.
      */
     async installUpdate(): Promise<void> {
         if (!this.downloadedApkUri) {
@@ -210,19 +211,17 @@ class UpdateService {
         this.setStatus('installing');
 
         try {
-            // Get a content:// URI that Android can use
             const contentUri = await FileSystem.getContentUriAsync(this.downloadedApkUri);
 
             await IntentLauncher.startActivityAsync(
                 'android.intent.action.INSTALL_PACKAGE',
                 {
                     data: contentUri,
-                    flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
+                    flags: 1,
                     type: 'application/vnd.android.package-archive',
                 }
             );
 
-            // After the install dialog, reset state
             this.setStatus('idle');
         } catch (err: any) {
             console.error('[UpdateService] Install trigger failed:', err.message);
@@ -232,10 +231,7 @@ class UpdateService {
     }
 
     /**
-     * Full auto-update flow:
-     * 1. Check for update
-     * 2. Download if available
-     * 3. Trigger install
+     * Full auto-update flow: check → download → install
      */
     async autoUpdate(): Promise<void> {
         const update = await this.checkForUpdate();
@@ -247,7 +243,13 @@ class UpdateService {
         await this.installUpdate();
     }
 
-    /** Clean up any previously downloaded APKs */
+    /**
+     * Manual update: check → download → install (same as auto but can be called from UI)
+     */
+    async manualUpdate(): Promise<void> {
+        await this.autoUpdate();
+    }
+
     async cleanup(): Promise<void> {
         try {
             const cacheDir = FileSystem.cacheDirectory;
