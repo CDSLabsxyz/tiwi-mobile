@@ -24,6 +24,7 @@ import { QuickActionsSection } from '@/components/features/home/quick-actions-se
 import { SmartMarketsSection } from '@/components/features/home/smart-markets-section';
 import { SpotlightSection } from '@/components/features/home/spotlight-section';
 import { StakeBanner } from '@/components/features/home/stake-banner';
+import { UpdateBanner } from '@/components/features/home/update-banner';
 import { TradeStatsSection } from '@/components/features/home/trade-stats-section';
 import { usePrice, useTranslation } from '@/hooks/useLocalization';
 import { api } from '@/lib/mobile/api-client';
@@ -283,6 +284,7 @@ export default function HomeScreen() {
 
           <View style={styles.paddedContent}>
             <QuickActionsSection />
+            <UpdateBanner />
             <StakeBanner />
             {(homeData.spotlight.length > 0 || homeData.isLoading) && (
               <SpotlightSection
