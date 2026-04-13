@@ -8,7 +8,7 @@
  */
 
 import * as Application from 'expo-application';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as IntentLauncher from 'expo-intent-launcher';
 import { Platform } from 'react-native';
 import { supabase } from '@/lib/supabase';
@@ -30,6 +30,10 @@ export type UpdateStatus =
     | 'error';
 
 type UpdateListener = (status: UpdateStatus, progress?: number, versionInfo?: VersionInfo | null, error?: string) => void;
+
+// Set to true to test the update flow on any platform (iOS Simulator, Expo Go, etc.)
+// MUST be false for production builds.
+const DEBUG_UPDATE_FLOW = __DEV__;
 
 class UpdateService {
     private listeners: Set<UpdateListener> = new Set();
@@ -78,7 +82,7 @@ class UpdateService {
      * Check Supabase `app_versions` table for the latest version.
      */
     async checkForUpdate(): Promise<VersionInfo | null> {
-        if (Platform.OS !== 'android') {
+        if (Platform.OS !== 'android' && !DEBUG_UPDATE_FLOW) {
             this.setStatus('no-update');
             return null;
         }
@@ -89,7 +93,7 @@ class UpdateService {
         try {
             const { data, error } = await supabase
                 .from('app_versions')
-                .select('version, apk_url, release_notes')
+                .select('version, apk_url, release_notes, force_update')
                 .order('created_at', { ascending: false })
                 .limit(1)
                 .single();
@@ -107,6 +111,8 @@ class UpdateService {
 
             const currentVersion = this.getCurrentVersion();
             const hasUpdate = this.isNewerVersion(currentVersion, versionInfo.version);
+
+            console.log(`[UpdateService] Current: ${currentVersion} | Remote: ${versionInfo.version} | Has update: ${hasUpdate} | Force: ${data.force_update}`);
 
             if (hasUpdate) {
                 this.setStatus('update-available');
@@ -195,6 +201,13 @@ class UpdateService {
         this.setStatus('installing');
 
         try {
+            if (Platform.OS !== 'android') {
+                // Debug mode on non-Android — simulate install success
+                console.log('[UpdateService] DEBUG: Install simulated (non-Android). APK at:', this.downloadedApkUri);
+                this.setStatus('idle');
+                return;
+            }
+
             const contentUri = await FileSystem.getContentUriAsync(this.downloadedApkUri);
 
             await IntentLauncher.startActivityAsync(

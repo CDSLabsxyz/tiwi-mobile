@@ -1,10 +1,14 @@
 import { api } from '@/lib/mobile/api-client';
 import { moralisService } from '@/services/moralisService';
 import { notificationService } from '@/services/notificationService';
+import { ensureTokenLogos, getTokenLogo, prefetchTokenLogos } from '@/services/tokenLogoService';
 import { useFilterStore } from '@/store/filterStore';
 import { useWalletStore } from '@/store/walletStore';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
+
+// Kick off logo cache warming as early as possible (CoinGecko + Koin Gallery)
+prefetchTokenLogos();
 
 // Major chains supported by Tiwi
 const ALL_SUPPORTED_CHAIN_IDS = [1, 56, 137, 42161, 8453, 10, 43114, 59144, 250, 42220, 100, 7565164, 1100];
@@ -19,36 +23,6 @@ const KNOWN_CHAIN_IDS = new Set<number>([
 ]);
 
 const isEvmAddress = (addr: string) => /^0x[a-fA-F0-9]{40}$/.test(addr);
-
-// Nexxend logo fallback for tokens missing logoURI
-const NEXXEND_LOGO_MAP: Record<string, string> = {
-    ETH: 'https://nexxend.xyz/api/v1/tokens/1/0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/logo',
-    WETH: 'https://nexxend.xyz/api/v1/tokens/1/0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2/logo',
-    BNB: 'https://nexxend.xyz/api/v1/tokens/56/0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/logo',
-    WBNB: 'https://nexxend.xyz/api/v1/tokens/56/0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c/logo',
-    USDT: 'https://nexxend.xyz/api/v1/tokens/56/0x55d398326f99059ff775485246999027b3197955/logo',
-    USDC: 'https://nexxend.xyz/api/v1/tokens/1/0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48/logo',
-    DAI: 'https://nexxend.xyz/api/v1/tokens/1/0x6b175474e89094c44da98b954eedeac495271d0f/logo',
-    MATIC: 'https://nexxend.xyz/api/v1/tokens/137/0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/logo',
-    POL: 'https://nexxend.xyz/api/v1/tokens/137/0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/logo',
-    AVAX: 'https://nexxend.xyz/api/v1/tokens/43114/0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/logo',
-    ARB: 'https://nexxend.xyz/api/v1/tokens/42161/0x912ce59144191c1204e64559fe8253a0e49e6548/logo',
-    OP: 'https://nexxend.xyz/api/v1/tokens/10/0x4200000000000000000000000000000000000042/logo',
-    CAKE: 'https://nexxend.xyz/api/v1/tokens/56/0x0e09fabb73bd3ade0a17ecc321fd13a19e81ce82/logo',
-    SOL: 'https://nexxend.xyz/api/v1/tokens/7565164/So11111111111111111111111111111111111111112/logo',
-    WSOL: 'https://nexxend.xyz/api/v1/tokens/7565164/So11111111111111111111111111111111111111112/logo',
-    TWC: 'https://nexxend.xyz/api/v1/tokens/56/0xda1060158f7d593667cce0a15db346bb3ffb3596/logo',
-    TRX: 'https://nexxend.xyz/api/v1/tokens/728126428/native/logo',
-    TON: 'https://nexxend.xyz/api/v1/tokens/1360104473/native/logo',
-    ATOM: 'https://nexxend.xyz/api/v1/tokens/118/native/logo',
-    LINK: 'https://nexxend.xyz/api/v1/tokens/1/0x514910771af9ca656af840dff83e8264ecf986ca/logo',
-    UNI: 'https://nexxend.xyz/api/v1/tokens/1/0x1f9840a85d5af5bf1d1762f925bdaddc4201f984/logo',
-    AAVE: 'https://nexxend.xyz/api/v1/tokens/1/0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9/logo',
-};
-
-function getLogoFallback(symbol?: string): string | undefined {
-    return NEXXEND_LOGO_MAP[(symbol || '').toUpperCase()];
-}
 
 // Spam/quality filtering
 const BLACKLISTED_SYMBOLS = ['SN3', 'BSB'];
@@ -184,13 +158,25 @@ function filterToken(b: any): boolean {
     return false;
 }
 
+// URLs from sources known to be unreliable or dead — skip them so we
+// fall through to Koin Gallery / DexScreener instead.
+function isUnreliableLogo(url?: string): boolean {
+    if (!url) return true;
+    if (url.includes('/placeholder/')) return true;
+    if (url.includes('nexxend.xyz')) return true;
+    return false;
+}
+
 function normalizeToken(b: any) {
     const sym = (b.symbol || '').toUpperCase();
+    const apiLogo = !isUnreliableLogo(b.logoURI) ? b.logoURI
+        : !isUnreliableLogo(b.logo) ? b.logo
+        : undefined;
     return {
         ...b,
         symbol: sym === 'WSOL' ? 'SOL' : b.symbol,
         name: sym === 'WSOL' ? 'Solana' : (b.name || b.symbol || 'Unknown'),
-        logoURI: b.logoURI || b.logo || getLogoFallback(b.symbol),
+        logoURI: getTokenLogo(b.symbol, b.chainId, b.address) || apiLogo,
         balanceFormatted: b.balanceFormatted || b.balance || '0',
         usdValue: b.usdValue || '0',
         priceChange24h: parseFloat(b.priceChange24h || '0'),
@@ -305,6 +291,8 @@ export function useWalletBalances() {
                 });
 
                 // ── 5. Filter spam + normalize ──
+                // Ensure Koin Gallery logos are cached before normalizing
+                await ensureTokenLogos();
                 const tokens = Array.from(dedupedMap.values())
                     .filter(filterToken)
                     .map(normalizeToken);

@@ -12,7 +12,7 @@ import type { PortfolioItem } from '@/services/walletService';
 import { useWalletStore } from '@/store/walletStore';
 import { formatTokenQuantity, getColorFromSeed } from '@/utils/formatting';
 import { Image } from 'expo-image';
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 interface AssetListItemProps {
@@ -56,6 +56,8 @@ export const AssetListItem: React.FC<AssetListItemProps> = ({
 }) => {
     const isBalanceHidden = useWalletStore((state) => state.isBalanceHidden);
     const { t } = useTranslation();
+    const [logoError, setLogoError] = useState(false);
+    const handleLogoError = useCallback(() => setLogoError(true), []);
     const isPositive = asset.change24h >= 0;
     // Figma Colors: success #3FEA9B, primaryCTA #B1F128, negative #FB406E
     const chartColor = isPositive ? '#B1F128' : '#FB406E';
@@ -76,11 +78,13 @@ export const AssetListItem: React.FC<AssetListItemProps> = ({
                 {/* Asset Icon Wrapper */}
                 <View style={styles.iconWrapper}>
                     <View style={styles.iconContainer}>
-                        {asset.logo ? (
+                        {asset.logo && !logoError ? (
                             <Image
-                                source={asset.logo}
+                                source={{ uri: asset.logo }}
                                 style={styles.iconImage}
                                 contentFit="cover"
+                                onError={handleLogoError}
+                                recyclingKey={`${asset.symbol}-${asset.chainId}`}
                             />
                         ) : (
                             <View style={[styles.iconImage, styles.fallbackCircle, { backgroundColor: getColorFromSeed(asset.symbol) }]}>
@@ -93,7 +97,7 @@ export const AssetListItem: React.FC<AssetListItemProps> = ({
                     {chainBadge && (
                         <View style={styles.badgeContainer}>
                             <Image
-                                source={chainBadge}
+                                source={{ uri: chainBadge }}
                                 style={styles.badgeImage}
                                 contentFit="contain"
                             />

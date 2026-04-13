@@ -7,7 +7,7 @@
 // 1. IMPORT POLYFILLS FIRST (CRITICAL)
 import '@/utils/polyfills';
 
-// import { AnimatedSplashScreen } from '@/components/ui/AnimatedSplashScreen';
+import { AnimatedSplashScreen } from '@/components/ui/AnimatedSplashScreen';
 import { TransactionToast } from '@/components/ui/TransactionToast';
 import { appKit, wagmiAdapter } from '@/config/AppKitConfig';
 import { useTokenPrefetch } from '@/hooks/useTokenPrefetch';
@@ -221,13 +221,7 @@ export default function RootLayout() {
 
   const [isNavigationReady, setIsNavigationReady] = useState(false);
   const [isAppInitialized, setIsAppInitialized] = useState(false);
-  // Lottie splash commented out for future use
-  const [isSplashComplete, setIsSplashComplete] = useState(true);
-  // const [isMounted, setIsMounted] = useState(false);
-
-  // useEffect(() => {
-  //   setIsMounted(true);
-  // }, []);
+  const [isSplashComplete, setIsSplashComplete] = useState(false);
 
   const { hasCompletedOnboarding, hasSeenOnboardingInSession, isLoading: isOnboardingLoading, checkOnboardingStatus } = useOnboardingStore();
   const { isConnected, address, _hasHydrated: isWalletHydrated } = useWalletStore();
@@ -456,7 +450,6 @@ export default function RootLayout() {
             <QueryClientProvider client={queryClient}>
               <AppContent />
               <TransactionToast />
-              {/* Lottie splash commented out for future use
               {!isSplashComplete && (
                 <AnimatedSplashScreen
                   isReady={isReadyForApp}
@@ -466,7 +459,6 @@ export default function RootLayout() {
                   }}
                 />
               )}
-              */}
             </QueryClientProvider>
           </AppKitProvider>
         </WagmiProvider>

@@ -138,8 +138,15 @@ export function useUnifiedActivities(limit = 100) {
                     metadata: act.metadata
                 }));
 
-                // Interleave and sort
-                return [...mappedGlobal, ...mappedNFT, ...mappedLocal].sort((a, b) => b.timestamp - a.timestamp);
+                // Interleave, deduplicate by id, and sort
+                const all = [...mappedGlobal, ...mappedNFT, ...mappedLocal];
+                const seen = new Set<string>();
+                const deduped = all.filter(item => {
+                    if (seen.has(item.id)) return false;
+                    seen.add(item.id);
+                    return true;
+                });
+                return deduped.sort((a, b) => b.timestamp - a.timestamp);
             } catch (error) {
                 console.error('[useUnifiedActivities] Unification critical failure:', error);
                 return [];

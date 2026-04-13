@@ -59,7 +59,7 @@ export default function AppUpdatesCacheScreen() {
     };
 
     const handleCheckForUpdates = useCallback(async () => {
-        if (Platform.OS !== 'android') {
+        if (Platform.OS !== 'android' && !__DEV__) {
             Alert.alert('Info', 'Auto-updates are only available for Android APK builds.');
             return;
         }

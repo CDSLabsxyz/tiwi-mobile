@@ -15,13 +15,14 @@ import { truncateAddress, NATIVE_TOKEN_ADDRESS, MORALIS_NATIVE_ADDRESS } from '@
 import * as Clipboard from 'expo-clipboard';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, usePathname, useRouter } from 'expo-router';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { TIWILoader } from '@/components/ui/TIWILoader';
 import QRCode from 'react-native-qrcode-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { formatTokenQuantity, formatUSDPrice } from '@/utils/formatting';
+import { formatTokenQuantity, formatUSDPrice, getColorFromSeed } from '@/utils/formatting';
 import { useWalletBalances } from '@/hooks/useWalletBalances';
+import { getTokenLogo } from '@/services/tokenLogoService';
 
 const CopyIcon = require('../assets/wallet/copy-01.svg');
 const CheckmarkIcon = require('../assets/swap/checkmark-circle-01.svg');
@@ -146,7 +147,7 @@ export default function ReceiveScreen() {
                 id: `${t.chainId}-${t.address}`,
                 symbol: t.symbol,
                 name: t.name,
-                logoURI: t.logoURI || t.logo,
+                logoURI: getTokenLogo(t.symbol, t.chainId, t.address) || t.logoURI || (t as any).logo,
                 chainIcon: chainInfo?.logoURI,
                 address: t.address,
                 chainId: t.chainId,
@@ -180,7 +181,7 @@ export default function ReceiveScreen() {
                     id: `${wt.chainId}-${wt.address}`,
                     symbol: wt.symbol,
                     name: wt.name,
-                    logoURI: wt.logoURI,
+                    logoURI: getTokenLogo(wt.symbol, wt.chainId, wt.address) || wt.logoURI,
                     chainIcon: chainInfo?.logoURI,
                     address: wt.address,
                     chainId: wt.chainId,
@@ -290,32 +291,78 @@ export default function ReceiveScreen() {
         });
     };
 
+    const isSearching = searchQuery.trim().length > 0;
+
     const renderToken = (item: any, key: string) => {
         const chain = chains?.find(c => c.id === item.chainId);
         const address = getAddressForToken(item);
         return (
-            <TouchableOpacity
+            <TokenRow
                 key={key}
+                item={item}
+                chain={chain}
+                address={address}
+                onSelect={handleTokenSelect}
+                isSearching={isSearching}
+            />
+        );
+    };
+
+    // ── Extracted so each row can track its own logo error state ──
+    const TokenRow = React.memo(({ item, chain, address, onSelect, isSearching }: {
+        item: any; chain: any; address: string; onSelect: (t: any) => void; isSearching: boolean;
+    }) => {
+        const [logoError, setLogoError] = useState(false);
+        const handleLogoError = useCallback(() => setLogoError(true), []);
+
+        const isTiwicat = item.symbol.toUpperCase() === 'TIWICAT';
+        const logoSource = isTiwicat
+            ? require('../assets/home/tiwicat.svg')
+            : (item.logoURI && !logoError ? { uri: item.logoURI } : null);
+
+        // Hide non-owned tokens with failed logos unless user is searching
+        if (!logoSource && !item.isOwned && !isSearching) return null;
+
+        const chainLogoUri = chain?.logoURI || (chain as any)?.logo;
+
+        return (
+            <TouchableOpacity
                 activeOpacity={0.8}
-                onPress={() => handleTokenSelect(item)}
+                onPress={() => onSelect(item)}
                 style={styles.tokenItem}
             >
                 <View style={styles.tokenInfo}>
                     <View style={styles.tokenIconWrapper}>
                         <View style={styles.tokenIconContainer}>
-                            <Image
-                                source={item.symbol.toUpperCase() === 'TIWICAT' ? require('../assets/home/tiwicat.svg') : item.logoURI}
-                                style={styles.tokenIcon}
-                                contentFit="cover"
-                            />
+                            {logoSource ? (
+                                <Image
+                                    source={logoSource}
+                                    style={styles.tokenIcon}
+                                    contentFit="cover"
+                                    onError={isTiwicat ? undefined : handleLogoError}
+                                />
+                            ) : (
+                                <View style={[styles.tokenIcon, {
+                                    backgroundColor: getColorFromSeed(item.symbol),
+                                    justifyContent: 'center',
+                                    alignItems: 'center',
+                                    borderRadius: 16,
+                                }]}>
+                                    <Text style={{ fontFamily: 'Manrope-Bold', fontSize: 14, color: '#FFFFFF' }}>
+                                        {item.symbol.charAt(0).toUpperCase()}
+                                    </Text>
+                                </View>
+                            )}
                         </View>
-                        <View style={styles.chainBadge}>
-                            <Image
-                                source={chain?.logoURI || (chain as any)?.logo}
-                                style={styles.chainIcon}
-                                contentFit="contain"
-                            />
-                        </View>
+                        {chainLogoUri ? (
+                            <View style={styles.chainBadge}>
+                                <Image
+                                    source={{ uri: chainLogoUri }}
+                                    style={styles.chainIcon}
+                                    contentFit="contain"
+                                />
+                            </View>
+                        ) : null}
                     </View>
                     <View style={styles.tokenDetails}>
                         <Text style={styles.tokenSymbol}>{item.symbol}</Text>
@@ -333,7 +380,7 @@ export default function ReceiveScreen() {
                 </TouchableOpacity>
             </TouchableOpacity>
         );
-    };
+    });
 
     const handleCopy = async () => {
         if (!selectedToken) return;

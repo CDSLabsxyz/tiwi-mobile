@@ -1,31 +1,46 @@
 /**
  * Cloud Session Service
- * 
- * Handles industrial-grade session management using Supabase.
- * This service is designed to be portable to a Next.js backend.
+ *
+ * Handles session management using Supabase.
+ *
+ * NOTE: The 'sessions' table does not exist yet in Supabase.
+ * All methods gracefully no-op until the table is created.
+ * To enable, create the table with this SQL:
+ *
+ *   CREATE TABLE public.sessions (
+ *     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+ *     wallet_address TEXT NOT NULL,
+ *     device_id TEXT NOT NULL,
+ *     device_name TEXT,
+ *     platform TEXT,
+ *     ip_address TEXT,
+ *     location TEXT,
+ *     is_active BOOLEAN DEFAULT true,
+ *     last_active_at TIMESTAMPTZ DEFAULT now(),
+ *     created_at TIMESTAMPTZ DEFAULT now(),
+ *     updated_at TIMESTAMPTZ DEFAULT now(),
+ *     UNIQUE(wallet_address, device_id)
+ *   );
+ *
+ * Then set SESSIONS_TABLE_ENABLED = true below.
  */
 
 import { SupabaseClient } from '@supabase/supabase-js';
 import { CloudSession, SessionMetadata } from '../types/session';
 
+const SESSIONS_TABLE_ENABLED = true;
+
 class CloudSessionService {
     private tableName = 'sessions';
 
-    /**
-     * Registers a new session or updates an existing one in the cloud.
-     * @param supabase The Supabase client (injectable for portability)
-     * @param walletAddress The identifying wallet address
-     * @param metadata Device and location information
-     */
     async registerSession(
         supabase: SupabaseClient,
         walletAddress: string,
         metadata: SessionMetadata
     ): Promise<CloudSession | null> {
+        if (!SESSIONS_TABLE_ENABLED) return null;
         try {
             const now = new Date().toISOString();
-
-            // Upsert the session based on wallet_address and device_id
             const { data, error } = await supabase
                 .from(this.tableName)
                 .upsert({
@@ -47,25 +62,20 @@ class CloudSessionService {
             if (error) throw error;
             return data as CloudSession;
         } catch (error: any) {
-            // "Network request failed" usually means the Supabase host is unreachable
-            // (e.g. project paused, invalid URL, or no internet).
-            // We use console.warn to avoid the disruptive Expo red screen in development.
-            if (error?.message === 'TypeError: Network request failed' || error?.message?.includes('Network request failed')) {
-                console.warn('[CloudSessionService] Network unreachable. Cloud sessions will not sync.');
+            if (error?.message?.includes('Network request failed')) {
+                console.warn('[CloudSessionService] Network unreachable.');
             } else {
-                console.error('[CloudSessionService] Register Error:', error);
+                console.warn('[CloudSessionService] Register skipped:', error?.message);
             }
             return null;
         }
     }
 
-    /**
-     * Terminate a specific session remotely.
-     */
     async terminateSession(
         supabase: SupabaseClient,
         sessionId: string
     ): Promise<boolean> {
+        if (!SESSIONS_TABLE_ENABLED) return true;
         try {
             const { error } = await supabase
                 .from(this.tableName)
@@ -75,23 +85,17 @@ class CloudSessionService {
             if (error) throw error;
             return true;
         } catch (error: any) {
-            if (error?.message?.includes('Network request failed')) {
-                console.warn('[CloudSessionService] Terminate: Network unreachable.');
-            } else {
-                console.error('[CloudSessionService] Terminate Error:', error);
-            }
+            console.warn('[CloudSessionService] Terminate skipped:', error?.message);
             return false;
         }
     }
 
-    /**
-     * Terminate all other sessions for a specific wallet.
-     */
     async terminateAllOtherSessions(
         supabase: SupabaseClient,
         walletAddress: string,
         currentDeviceId: string
     ): Promise<boolean> {
+        if (!SESSIONS_TABLE_ENABLED) return true;
         try {
             const { error } = await supabase
                 .from(this.tableName)
@@ -102,22 +106,16 @@ class CloudSessionService {
             if (error) throw error;
             return true;
         } catch (error: any) {
-            if (error?.message?.includes('Network request failed')) {
-                console.warn('[CloudSessionService] Terminate All: Network unreachable.');
-            } else {
-                console.error('[CloudSessionService] Terminate All Error:', error);
-            }
+            console.warn('[CloudSessionService] Terminate All skipped:', error?.message);
             return false;
         }
     }
 
-    /**
-     * Fetches all sessions for a wallet, sorted by activity.
-     */
     async getSessions(
         supabase: SupabaseClient,
         walletAddress: string
     ): Promise<CloudSession[]> {
+        if (!SESSIONS_TABLE_ENABLED) return [];
         try {
             const { data, error } = await supabase
                 .from(this.tableName)
@@ -128,29 +126,23 @@ class CloudSessionService {
             if (error) throw error;
             return (data as CloudSession[]) || [];
         } catch (error: any) {
-            if (error?.message?.includes('Network request failed')) {
-                console.warn('[CloudSessionService] Fetch: Network unreachable.');
-            } else {
-                console.error('[CloudSessionService] Fetch Error:', error);
-            }
+            console.warn('[CloudSessionService] Fetch skipped:', error?.message);
             return [];
         }
     }
 
-    /**
-     * Checks if a specific session is still authorized (the "Kill Switch").
-     */
     async isSessionAuthorized(
-        supabase: SupabaseClient,
-        walletAddress: string,
-        deviceId: string
+        _supabase: SupabaseClient,
+        _walletAddress: string,
+        _deviceId: string
     ): Promise<boolean> {
+        if (!SESSIONS_TABLE_ENABLED) return true;
         try {
-            const { data, error } = await supabase
+            const { data, error } = await _supabase
                 .from(this.tableName)
                 .select('is_active')
-                .eq('wallet_address', walletAddress.toLowerCase())
-                .eq('device_id', deviceId)
+                .eq('wallet_address', _walletAddress.toLowerCase())
+                .eq('device_id', _deviceId)
                 .single();
 
             if (error || !data) return false;
