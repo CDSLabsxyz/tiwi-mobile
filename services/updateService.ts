@@ -209,12 +209,13 @@ class UpdateService {
             }
 
             const contentUri = await FileSystem.getContentUriAsync(this.downloadedApkUri);
+            console.log('[UpdateService] Installing APK from:', contentUri);
 
             await IntentLauncher.startActivityAsync(
-                'android.intent.action.INSTALL_PACKAGE',
+                'android.intent.action.VIEW',
                 {
                     data: contentUri,
-                    flags: 1,
+                    flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
                     type: 'application/vnd.android.package-archive',
                 }
             );
