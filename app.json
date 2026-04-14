@@ -85,6 +85,12 @@
         "projectId": "8548b9d9-c2bc-43ad-8f31-a7dedd0f6b58"
       }
     },
-    "owner": "gcodes"
+    "owner": "gcodes",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/8548b9d9-c2bc-43ad-8f31-a7dedd0f6b58"
+    }
   }
 }
