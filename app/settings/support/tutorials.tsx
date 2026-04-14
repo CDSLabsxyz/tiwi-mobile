@@ -1,4 +1,5 @@
-import { api, TutorialItem as SDKTutorial } from '@/lib/mobile/api-client';
+import { TutorialItem as SDKTutorial } from '@/lib/mobile/api-client';
+import { supabase } from '@/lib/supabase';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { SettingsHeader } from '@/components/ui/settings-header';
 import { colors } from '@/constants/colors';
@@ -8,12 +9,10 @@ import { useRouter } from 'expo-router';
 import React, { useMemo, useState } from 'react';
 import {
     FlatList,
-    Linking,
     StyleSheet,
     Text,
     TextInput,
     TouchableOpacity,
-    useWindowDimensions,
     View,
 } from 'react-native';
 import { TIWILoader } from '@/components/ui/TIWILoader';
@@ -88,22 +87,14 @@ const FALLBACK_TUTORIALS: Tutorial[] = [
 ];
 
 /**
- * Tutorial Card Component
- * 2-column grid item
+ * Tutorial Card Component — single column, full width
  */
-function TutorialCard({ item, cardWidth }: { item: Tutorial; cardWidth: number }) {
-    const handlePress = async () => {
-        const supported = await Linking.canOpenURL(item.link);
-        if (supported) {
-            await Linking.openURL(item.link);
-        }
-    };
-
+function TutorialCard({ item, onPress }: { item: Tutorial; onPress: () => void }) {
     return (
         <TouchableOpacity
             activeOpacity={0.8}
-            onPress={handlePress}
-            style={[styles.card, { width: cardWidth }]}
+            onPress={onPress}
+            style={styles.card}
         >
             <View style={styles.thumbnailContainer}>
                 <Image
@@ -112,10 +103,20 @@ function TutorialCard({ item, cardWidth }: { item: Tutorial; cardWidth: number }
                     contentFit="cover"
                     transition={300}
                 />
+                <View style={styles.playOverlay}>
+                    <View style={styles.playCircle}>
+                        <Text style={styles.playIcon}>▶</Text>
+                    </View>
+                </View>
             </View>
             <View style={styles.cardInfo}>
-                <Text style={styles.tutorialTitle} numberOfLines={1}>{item.title}</Text>
+                <Text style={styles.tutorialTitle} numberOfLines={2}>{item.title}</Text>
                 <Text style={styles.tutorialDesc} numberOfLines={2}>{item.description}</Text>
+                {item.category && (
+                    <View style={styles.categoryBadge}>
+                        <Text style={styles.categoryText}>{item.category}</Text>
+                    </View>
+                )}
             </View>
         </TouchableOpacity>
     );
@@ -128,30 +129,35 @@ function TutorialCard({ item, cardWidth }: { item: Tutorial; cardWidth: number }
 export default function TutorialsScreen() {
     const router = useRouter();
     const { bottom } = useSafeAreaInsets();
-    const { width: windowWidth } = useWindowDimensions();
     const [searchQuery, setSearchQuery] = useState('');
 
     const { data, isLoading } = useQuery({
         queryKey: ['tutorials'],
         queryFn: async () => {
-            const resp = await api.tutorials.list();
-            return {
-                tutorials: resp.tutorials.map(t => ({
-                    ...t,
-                    link: t.videoUrl || '',
-                    description: t.description || '',
-                    thumbnailUrl: t.thumbnailUrl || 'https://via.placeholder.com/300?text=Tiwi+Tutorial',
-                    category: (t as any).category || 'General'
-                })) as Tutorial[]
-            };
-        },
-    });
+            // Fetch tutorials directly from Supabase tutorials table
+            const { data: rows, error } = await supabase
+                .from('tutorials')
+                .select('id, title, description, link, thumbnail_url, category')
+                .order('category', { ascending: true });
 
-    // Calculate grid layout
-    const numColumns = 2;
-    const horizontalPadding = 20;
-    const gridGap = 8;
-    const cardWidth = (windowWidth - (horizontalPadding * 2) - gridGap) / numColumns;
+            if (error) {
+                console.warn('[Tutorials] Supabase fetch failed:', error.message);
+                return { tutorials: [] as Tutorial[] };
+            }
+
+            const mapped: Tutorial[] = (rows || []).map((t: any) => ({
+                id: String(t.id),
+                title: t.title || 'Tutorial',
+                description: t.description || '',
+                link: t.link || '',
+                thumbnailUrl: t.thumbnail_url || 'https://via.placeholder.com/300?text=Tiwi+Tutorial',
+                category: t.category || 'General',
+            }));
+
+            return { tutorials: mapped };
+        },
+        staleTime: 5 * 60 * 1000, // 5 min — tutorials don't change often
+    });
 
     const tutorialList = useMemo(() => {
         const sourceList = data?.tutorials?.length ? data.tutorials : FALLBACK_TUTORIALS;
@@ -195,10 +201,21 @@ export default function TutorialsScreen() {
                     <FlatList
                         data={tutorialList}
                         keyExtractor={item => item.id}
-                        numColumns={numColumns}
-                        columnWrapperStyle={{ gap: gridGap }}
                         renderItem={({ item }) => (
-                            <TutorialCard item={item} cardWidth={cardWidth} />
+                            <TutorialCard
+                                item={item}
+                                onPress={() => router.push({
+                                    pathname: '/settings/support/tutorial-player' as any,
+                                    params: {
+                                        id: item.id,
+                                        title: item.title,
+                                        description: item.description,
+                                        videoUrl: encodeURIComponent(item.link),
+                                        thumbnailUrl: encodeURIComponent(item.thumbnailUrl || ''),
+                                        category: item.category || '',
+                                    },
+                                })}
+                            />
                         )}
                         contentContainerStyle={[
                             styles.listContent,
@@ -253,40 +270,77 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     listContent: {
-        gap: 12, // Spacing between rows
+        gap: 14,
     },
     card: {
-        backgroundColor: '#0B0F0A', // Figma: Dark/bg semi
+        width: '100%',
+        backgroundColor: '#0B0F0A',
         borderRadius: 16,
         overflow: 'hidden',
-        padding: 5, // Figma px-[5px]
-        paddingBottom: 7, // Figma py-[7px]
+        borderWidth: 1,
+        borderColor: '#1F261E',
     },
     thumbnailContainer: {
         width: '100%',
+        position: 'relative',
     },
     thumbnail: {
-        height: 125, // Figma design height
+        height: 180,
         width: '100%',
-        borderRadius: 16,
         backgroundColor: '#121712',
     },
+    playOverlay: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    playCircle: {
+        width: 56,
+        height: 56,
+        borderRadius: 28,
+        backgroundColor: 'rgba(0, 0, 0, 0.6)',
+        borderWidth: 2,
+        borderColor: colors.primaryCTA,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    playIcon: {
+        fontSize: 20,
+        color: colors.primaryCTA,
+        marginLeft: 4,
+    },
     cardInfo: {
-        paddingHorizontal: 5,
-        paddingTop: 8,
+        padding: 14,
     },
     tutorialTitle: {
-        fontFamily: 'Manrope-Medium',
+        fontFamily: 'Manrope-Bold',
         fontSize: 16,
-        color: '#B5B5B5', // Figma text color
-        marginBottom: 2,
+        color: colors.titleText,
+        marginBottom: 6,
     },
     tutorialDesc: {
-        fontFamily: 'Manrope-Medium',
-        fontSize: 12,
-        color: '#B5B5B5',
-        lineHeight: 16,
-        opacity: 0.7,
+        fontFamily: 'Manrope-Regular',
+        fontSize: 13,
+        color: colors.bodyText,
+        lineHeight: 18,
+        opacity: 0.8,
+        marginBottom: 8,
+    },
+    categoryBadge: {
+        alignSelf: 'flex-start',
+        backgroundColor: 'rgba(177, 241, 40, 0.1)',
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 6,
+    },
+    categoryText: {
+        fontFamily: 'Manrope-SemiBold',
+        fontSize: 11,
+        color: colors.primaryCTA,
     },
     emptyContainer: {
         marginTop: 40,

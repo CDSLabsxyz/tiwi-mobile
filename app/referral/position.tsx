@@ -10,7 +10,7 @@ import * as Clipboard from 'expo-clipboard';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { Alert, ScrollView, Share, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Modal, ScrollView, Share, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // Assets from Figma
@@ -55,11 +55,20 @@ const faqs = [
 export default function ReferralPositionScreen() {
     const router = useRouter();
     const { bottom } = useSafeAreaInsets();
-    const { address } = useWalletStore();
+    const { walletGroups, activeGroupId } = useWalletStore();
+    // Always use EVM address for referrals
+    const activeGroup = walletGroups.find(g => g.id === activeGroupId);
+    const address = activeGroup?.addresses?.EVM || useWalletStore.getState().address;
 
     const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
-    const [activeTab, setActiveTab] = useState<'leaderboard' | 'rebate'>('leaderboard');
+    const [activeTab, setActiveTab] = useState<'leaderboard' | 'rebate' | 'myReferrals'>('leaderboard');
     const [qrModalVisible, setQrModalVisible] = useState(false);
+    const [alertModal, setAlertModal] = useState<{ visible: boolean; title: string; message: string; type: 'success' | 'error' | 'info' }>({
+        visible: false, title: '', message: '', type: 'info',
+    });
+    const showAlert = (title: string, message: string, type: 'success' | 'error' | 'info' = 'info') => {
+        setAlertModal({ visible: true, title, message, type });
+    };
 
     // Live Stats Fetching
     const { data: stats } = useQuery({
@@ -79,6 +88,13 @@ export default function ReferralPositionScreen() {
         queryFn: () => apiClient.getReferralLeaderboard(10)
     });
 
+    // My Referrals list
+    const { data: myReferrals = [], isLoading: isLoadingMyReferrals } = useQuery({
+        queryKey: ['myReferrals', address],
+        queryFn: () => address ? apiClient.getMyReferrals(address) : [],
+        enabled: !!address
+    });
+
     // Activity Fetching for Banner
     const { data: activity, isLoading: activityLoading } = useQuery({
         queryKey: ['recentReferralActivity', address],
@@ -93,13 +109,13 @@ export default function ReferralPositionScreen() {
     const handleCopyCode = async () => {
         if (!stats?.referralCode) return;
         await Clipboard.setStringAsync(stats.referralCode);
-        Alert.alert('Copied', 'Referral code copied to clipboard!');
+        showAlert('Copied', 'Referral code copied to clipboard!', 'success');
     };
 
     const handleCopyLink = async () => {
         if (!stats?.referralLink) return;
         await Clipboard.setStringAsync(stats.referralLink);
-        Alert.alert('Copied', 'Referral link copied to clipboard!');
+        showAlert('Copied', 'Referral link copied to clipboard!', 'success');
     };
 
     const handleShare = async () => {
@@ -208,7 +224,7 @@ export default function ReferralPositionScreen() {
                             style={[styles.claimButton, (!stats?.claimableRewards || stats.claimableRewards <= 0) && { opacity: 0.5 }]}
                             activeOpacity={0.8}
                             disabled={!stats?.claimableRewards || stats.claimableRewards <= 0}
-                            onPress={() => Alert.alert('Claims', 'Claims open every 28th of the month.')}
+                            onPress={() => showAlert('Claims', 'Claims open every 28th of the month.', 'info')}
                         >
                             <Text style={styles.claimButtonText}>Claim</Text>
                         </TouchableOpacity>
@@ -239,12 +255,12 @@ export default function ReferralPositionScreen() {
 
                 {/* Referral Leaderboard & Rebate Tabs */}
                 <View style={styles.leaderboardSection}>
-                    <View style={styles.tabContainer}>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabContainer}>
                         <TouchableOpacity
                             style={[styles.tabButton, activeTab === 'leaderboard' && styles.activeTabButton]}
                             onPress={() => setActiveTab('leaderboard')}
                         >
-                            <Text style={[styles.tabText, activeTab === 'leaderboard' && styles.activeTabText]}>Leaderboard</Text>
+                            <Text style={[styles.tabText, activeTab === 'leaderboard' && styles.activeTabText]}>Referral Leaderboard</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
                             style={[styles.tabButton, activeTab === 'rebate' && styles.activeTabButton]}
@@ -252,9 +268,56 @@ export default function ReferralPositionScreen() {
                         >
                             <Text style={[styles.tabText, activeTab === 'rebate' && styles.activeTabText]}>Rebate Level</Text>
                         </TouchableOpacity>
-                    </View>
+                        <TouchableOpacity
+                            style={[styles.tabButton, activeTab === 'myReferrals' && styles.activeTabButton]}
+                            onPress={() => setActiveTab('myReferrals')}
+                        >
+                            <Text style={[styles.tabText, activeTab === 'myReferrals' && styles.activeTabText]}>My Referrals</Text>
+                        </TouchableOpacity>
+                    </ScrollView>
 
-                    {activeTab === 'rebate' ? (
+                    {activeTab === 'myReferrals' ? (
+                        <View style={styles.myReferralsTab}>
+                            {isLoadingMyReferrals ? (
+                                <View style={styles.emptyReferrals}>
+                                    <Text style={styles.emptyReferralsText}>Loading...</Text>
+                                </View>
+                            ) : myReferrals.length === 0 ? (
+                                <View style={styles.emptyReferrals}>
+                                    <Text style={styles.emptyReferralsTitle}>No referrals yet</Text>
+                                    <Text style={styles.emptyReferralsText}>Share your referral code to invite frens</Text>
+                                </View>
+                            ) : (
+                                <>
+                                    <View style={styles.referralCountBadge}>
+                                        <Text style={styles.referralCountText}>{myReferrals.length} Referred {myReferrals.length === 1 ? 'Fren' : 'Frens'}</Text>
+                                    </View>
+                                    {myReferrals.map((ref, index) => (
+                                        <View key={ref.id} style={[styles.referralRow, index === 0 && { borderTopWidth: 0 }]}>
+                                            <View style={styles.referralRowLeft}>
+                                                <View style={styles.referralAvatar}>
+                                                    <Text style={styles.referralAvatarText}>{(index + 1).toString()}</Text>
+                                                </View>
+                                                <View>
+                                                    <Text style={styles.referralWallet}>
+                                                        {ref.refereeWallet.slice(0, 6)}...{ref.refereeWallet.slice(-4)}
+                                                    </Text>
+                                                    <Text style={styles.referralDate}>
+                                                        Joined {new Date(ref.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                                    </Text>
+                                                </View>
+                                            </View>
+                                            <View style={[styles.referralStatusBadge, ref.status === 'active' ? styles.statusActive : styles.statusInactive]}>
+                                                <Text style={[styles.referralStatusText, ref.status === 'active' ? styles.statusActiveText : styles.statusInactiveText]}>
+                                                    {ref.status === 'active' ? 'Active' : 'Inactive'}
+                                                </Text>
+                                            </View>
+                                        </View>
+                                    ))}
+                                </>
+                            )}
+                        </View>
+                    ) : activeTab === 'rebate' ? (
                         <>
                             <View style={styles.currentLevelCard}>
                                 <Text style={styles.currentLevelLabel}>My Rebate Level: {rebateStats?.rebateLevel || 1}</Text>
@@ -375,6 +438,43 @@ export default function ReferralPositionScreen() {
                 referralLink={referralLink}
                 referralCode={referralCode}
             />
+
+            {/* Themed Alert Modal */}
+            <Modal
+                visible={alertModal.visible}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setAlertModal(prev => ({ ...prev, visible: false }))}
+            >
+                <View style={styles.alertOverlay}>
+                    <View style={styles.alertContent}>
+                        <View style={[
+                            styles.alertIconCircle,
+                            alertModal.type === 'success' && { backgroundColor: 'rgba(177, 241, 40, 0.12)', borderColor: 'rgba(177, 241, 40, 0.3)' },
+                            alertModal.type === 'error' && { backgroundColor: 'rgba(255, 59, 48, 0.12)', borderColor: 'rgba(255, 59, 48, 0.3)' },
+                            alertModal.type === 'info' && { backgroundColor: 'rgba(177, 241, 40, 0.12)', borderColor: 'rgba(177, 241, 40, 0.3)' },
+                        ]}>
+                            <Text style={[
+                                styles.alertIconText,
+                                alertModal.type === 'success' && { color: colors.primaryCTA },
+                                alertModal.type === 'error' && { color: '#FF3B30' },
+                                alertModal.type === 'info' && { color: colors.primaryCTA },
+                            ]}>
+                                {alertModal.type === 'success' ? '✓' : alertModal.type === 'error' ? '!' : 'i'}
+                            </Text>
+                        </View>
+                        <Text style={styles.alertTitle}>{alertModal.title}</Text>
+                        <Text style={styles.alertMessage}>{alertModal.message}</Text>
+                        <TouchableOpacity
+                            style={[styles.alertButton, alertModal.type === 'error' && { backgroundColor: '#FF3B30' }]}
+                            onPress={() => setAlertModal(prev => ({ ...prev, visible: false }))}
+                            activeOpacity={0.8}
+                        >
+                            <Text style={styles.alertButtonText}>OK</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
         </View>
     );
 }
@@ -745,25 +845,26 @@ const styles = StyleSheet.create({
     },
     tabContainer: {
         flexDirection: 'row',
-        backgroundColor: colors.bgCards,
-        borderRadius: 12,
-        padding: 4,
+        gap: 8,
         marginBottom: 16,
+        paddingVertical: 4,
+    },
+    tabButton: {
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        alignItems: 'center',
+        borderRadius: 10,
+        backgroundColor: colors.bgCards,
         borderWidth: 1,
         borderColor: colors.bgStroke,
     },
-    tabButton: {
-        flex: 1,
-        paddingVertical: 10,
-        alignItems: 'center',
-        borderRadius: 8,
-    },
     activeTabButton: {
         backgroundColor: colors.primaryCTA,
+        borderColor: colors.primaryCTA,
     },
     tabText: {
-        fontFamily: 'Manrope-Bold',
-        fontSize: 14,
+        fontFamily: 'Manrope-SemiBold',
+        fontSize: 13,
         color: colors.mutedText,
     },
     activeTabText: {
@@ -775,5 +876,152 @@ const styles = StyleSheet.create({
         borderRadius: 4,
         backgroundColor: '#FF3B30',
         marginLeft: 4,
+    },
+    alertOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: 24,
+    },
+    alertContent: {
+        width: '100%',
+        backgroundColor: colors.bgCards,
+        borderRadius: 20,
+        padding: 28,
+        borderWidth: 1,
+        borderColor: colors.bgStroke,
+        alignItems: 'center',
+    },
+    alertIconCircle: {
+        width: 56,
+        height: 56,
+        borderRadius: 28,
+        borderWidth: 1.5,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 16,
+    },
+    alertIconText: {
+        fontSize: 24,
+        fontFamily: 'Manrope-Bold',
+    },
+    alertTitle: {
+        fontFamily: 'Manrope-Bold',
+        fontSize: 20,
+        color: colors.titleText,
+        marginBottom: 8,
+        textAlign: 'center',
+    },
+    alertMessage: {
+        fontFamily: 'Manrope-Regular',
+        fontSize: 14,
+        color: colors.bodyText,
+        lineHeight: 20,
+        textAlign: 'center',
+        marginBottom: 24,
+    },
+    alertButton: {
+        width: '100%',
+        height: 48,
+        borderRadius: 12,
+        backgroundColor: colors.primaryCTA,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    alertButtonText: {
+        fontFamily: 'Manrope-Bold',
+        fontSize: 16,
+        color: '#000000',
+    },
+    // My Referrals tab
+    myReferralsTab: {
+        marginTop: 8,
+    },
+    referralCountBadge: {
+        backgroundColor: 'rgba(177, 241, 40, 0.1)',
+        borderRadius: 8,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        marginBottom: 12,
+        alignSelf: 'flex-start',
+    },
+    referralCountText: {
+        fontFamily: 'Manrope-SemiBold',
+        fontSize: 13,
+        color: colors.primaryCTA,
+    },
+    referralRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingVertical: 14,
+        borderTopWidth: 1,
+        borderTopColor: colors.bgStroke,
+    },
+    referralRowLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+    },
+    referralAvatar: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        backgroundColor: colors.bgStroke,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    referralAvatarText: {
+        fontFamily: 'Manrope-Bold',
+        fontSize: 14,
+        color: colors.titleText,
+    },
+    referralWallet: {
+        fontFamily: 'Manrope-SemiBold',
+        fontSize: 14,
+        color: colors.titleText,
+    },
+    referralDate: {
+        fontFamily: 'Manrope-Regular',
+        fontSize: 12,
+        color: colors.mutedText,
+        marginTop: 2,
+    },
+    referralStatusBadge: {
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 6,
+    },
+    statusActive: {
+        backgroundColor: 'rgba(177, 241, 40, 0.12)',
+    },
+    statusInactive: {
+        backgroundColor: 'rgba(255, 59, 48, 0.12)',
+    },
+    referralStatusText: {
+        fontFamily: 'Manrope-SemiBold',
+        fontSize: 12,
+    },
+    statusActiveText: {
+        color: colors.primaryCTA,
+    },
+    statusInactiveText: {
+        color: '#FF3B30',
+    },
+    emptyReferrals: {
+        alignItems: 'center',
+        paddingVertical: 40,
+    },
+    emptyReferralsTitle: {
+        fontFamily: 'Manrope-Bold',
+        fontSize: 16,
+        color: colors.titleText,
+        marginBottom: 8,
+    },
+    emptyReferralsText: {
+        fontFamily: 'Manrope-Regular',
+        fontSize: 14,
+        color: colors.mutedText,
     },
 });

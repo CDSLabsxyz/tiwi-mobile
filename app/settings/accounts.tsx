@@ -51,6 +51,7 @@ export default function AccountSettingsScreen() {
     const [copiedAddr, setCopiedAddr] = useState<string | null>(null);
     const [showReceiveModal, setShowReceiveModal] = useState(false);
     const [networkDropdownOpen, setNetworkDropdownOpen] = useState(false);
+    const [selectedNetworkId, setSelectedNetworkId] = useState<string | null>(null);
 
     // Find current wallet group
     const currentWallet = (connectedWallets || []).find(w =>
@@ -108,10 +109,10 @@ export default function AccountSettingsScreen() {
         setShowReceiveModal(true);
     };
 
-    const handleSwitchNetwork = (chain: string) => {
+    const handleSwitchNetwork = (networkId: string, chain: string) => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        setActiveChain(chain as any);
-        setNetworkDropdownOpen(false);
+        setSelectedNetworkId(networkId);
+        setActiveChain(chain as any, networkId);
     };
 
     const handleProtectedExport = (route: string) => {
@@ -203,7 +204,7 @@ export default function AccountSettingsScreen() {
                                 {ALL_NETWORKS.map((network) => {
                                     const chainAddress = currentWallet.addresses?.[network.chain as keyof typeof currentWallet.addresses] || '';
                                     const hasAddress = !!chainAddress;
-                                    const isActive = activeChain === network.chain;
+                                    const isActive = selectedNetworkId === network.id;
                                     const isCopied = copiedAddr === chainAddress;
 
                                     return (
@@ -215,7 +216,7 @@ export default function AccountSettingsScreen() {
                                                 !hasAddress && styles.networkItemDisabled,
                                             ]}
                                             activeOpacity={0.7}
-                                            onPress={() => hasAddress && handleSwitchNetwork(network.chain)}
+                                            onPress={() => hasAddress && handleSwitchNetwork(network.id, network.chain)}
                                             disabled={!hasAddress}
                                         >
                                             <View style={styles.networkItemLeft}>

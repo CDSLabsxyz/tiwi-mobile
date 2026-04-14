@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { useWalletStore } from '@/store/walletStore';
+import { api } from '@/lib/mobile/api-client';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import * as Device from 'expo-device';
@@ -353,20 +354,50 @@ class NotificationService {
             const threshold = Math.max(0.01, prefs.threshold_percent);
             const cooldownMs = Math.max(1, prefs.cooldown_minutes) * 60 * 1000;
 
+            // Always track these majors even if the wallet doesn't hold them
+            const ALWAYS_TRACK = ['BTC', 'ETH', 'BNB', 'TWC'];
+            // Never alert on stablecoins — they barely move and spam notifications
+            const STABLECOINS = new Set(['USDT', 'USDC', 'DAI', 'BUSD', 'TUSD', 'FRAX', 'USDP', 'GUSD', 'LUSD', 'FDUSD', 'PYUSD']);
+
             const baselinesRaw = await AsyncStorage.getItem(PRICE_BASELINES_KEY);
             const baselines: Record<string, { price: number; ts: number }> =
                 baselinesRaw ? JSON.parse(baselinesRaw) : {};
             const now = Date.now();
             let mutated = false;
 
-            for (const token of tokens) {
+            // Build combined list: wallet tokens + always-tracked majors (deduped by symbol)
+            const seenSymbols = new Set<string>();
+            const tokenList: Array<{ symbol: string; priceUSD?: string; balanceFormatted?: string; usdValue?: string }> = [];
+
+            for (const t of tokens) {
+                const sym = (t.symbol || '').toUpperCase();
+                if (!sym || seenSymbols.has(sym)) continue;
+                seenSymbols.add(sym);
+                tokenList.push(t);
+            }
+
+            // Fetch live prices for always-tracked majors not already in the wallet list
+            for (const major of ALWAYS_TRACK) {
+                if (seenSymbols.has(major)) continue;
+                try {
+                    const resp = await api.market.list({ limit: 50 });
+                    const markets = resp?.markets || [];
+                    const match = markets.find((m: any) => m.symbol?.toUpperCase() === major);
+                    if (match?.price) {
+                        tokenList.push({ symbol: major, priceUSD: String(match.price) });
+                        seenSymbols.add(major);
+                    }
+                } catch {}
+            }
+
+            for (const token of tokenList) {
                 const sym = (token.symbol || '').toUpperCase();
                 if (!sym) continue;
+                if (STABLECOINS.has(sym)) continue; // Skip USDT, USDC, etc.
 
-                // Prefer unit price; if missing, derive from usdValue / balance.
                 let price = parseFloat(token.priceUSD || '0');
                 if (!price || price <= 0) {
-                    const bal = parseFloat(token.balanceFormatted || token.balance || '0');
+                    const bal = parseFloat(token.balanceFormatted || '0');
                     const usd = parseFloat(token.usdValue || '0');
                     if (bal > 0 && usd > 0) price = usd / bal;
                 }
@@ -374,7 +405,6 @@ class NotificationService {
 
                 const prev = baselines[sym];
                 if (!prev) {
-                    // First time we see this token — record baseline silently.
                     baselines[sym] = { price, ts: now };
                     mutated = true;
                     continue;

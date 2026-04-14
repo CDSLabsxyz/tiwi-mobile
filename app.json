@@ -2,7 +2,7 @@
   "expo": {
     "name": "TIWI Protocol",
     "slug": "tiwi-mobile-app",
-    "version": "1.0.3",
+    "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/logo/image.png",
     "scheme": "tiwiprotocol",
@@ -53,7 +53,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/logo/image.png",
+          "icon": "./assets/logo/notifications.png",
           "color": "#B1F128",
           "defaultChannel": "default",
           "sounds": []

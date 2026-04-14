@@ -160,18 +160,19 @@ export default function AssetDetailScreen() {
       try {
         const data = await fetchAssetDetail(id);
 
+        let mergedResult: any = null;
         setAsset(prev => {
           const merged = prev ? {
             ...prev,
             activities: data.activities && data.activities.length > 0 ? data.activities : prev.activities,
             chartData: data.chartData || prev.chartData
           } : data;
-
-          // Store the merged or new asset in the store
-          assetStore.setCurrentAsset(merged);
-
+          mergedResult = merged;
           return merged;
         });
+        // Update the store outside the setState updater to avoid
+        // "Cannot update a component while rendering another" warning
+        if (mergedResult) assetStore.setCurrentAsset(mergedResult);
       } catch (error) {
         console.error("Failed to fetch asset detail:", error);
       } finally {

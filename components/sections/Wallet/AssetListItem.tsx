@@ -145,10 +145,16 @@ export const AssetListItem: React.FC<AssetListItemProps> = ({
                     <Text style={styles.usdValue}>****</Text>
                 ) : (
                     <View style={styles.priceRow}>
-                        <TokenPrice
-                            amount={asset.usdValue}
-                            style={styles.usdValue}
-                        />
+                        {parseFloat(asset.usdValue || '0') === 0 && parseFloat(asset.priceUSD || '0') > 0 ? (
+                            <Text style={[styles.usdValue, { color: colors.mutedText }]}>
+                                @${parseFloat(asset.priceUSD).toFixed(6)}
+                            </Text>
+                        ) : (
+                            <TokenPrice
+                                amount={asset.usdValue}
+                                style={styles.usdValue}
+                            />
+                        )}
                         {/* Hide per-token percentage as per user request */}
                         {/* {asset.change24h !== undefined && asset.change24h !== 0 && (
                             <Text style={[styles.changeText, { color: asset.change24h >= 0 ? '#B1F128' : '#FB406E' }]}>

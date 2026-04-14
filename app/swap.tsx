@@ -564,10 +564,26 @@ export default function SwapScreen() {
                         });
                         console.log('[Swap] Pre-flight: simulation passed');
                     } catch (simError: any) {
-                        console.error('[Swap] Pre-flight: simulation failed:', simError.message);
                         const msg = simError.message || '';
+                        // Log as warn (not error) — this is expected when swap would revert.
+                        // console.error triggers the React Native LogBox red screen.
+                        console.warn('[Swap] Pre-flight simulation failed (expected for unsupported tokens):', msg.slice(0, 200));
+                        const isFeeOnTransferError =
+                            msg.includes('TRANSFER_FROM_FAILED') ||
+                            msg.includes('TransferHelper: TRANSFER_FROM_FAILED') ||
+                            msg.includes('SafeERC20: low-level call failed') ||
+                            msg.includes('SafeERC20');
+
                         if (msg.includes('TOO_SMALL')) {
                             setSwapErrorMessage('Swap amount is too small for this route. Please increase the amount.');
+                        } else if (isFeeOnTransferError) {
+                            setSwapErrorMessage(
+                                `${fromToken.symbol} has a transfer tax that isn't supported by the available routes. ` +
+                                `This token can't be swapped on-chain through our current DEX integration. ` +
+                                `Try sending ${fromToken.symbol} directly to an exchange to swap it there.`
+                            );
+                        } else if (msg.includes('INSUFFICIENT_OUTPUT_AMOUNT')) {
+                            setSwapErrorMessage('Price moved — increase slippage or try a smaller amount.');
                         } else if (msg.includes('insufficient funds')) {
                             const chain = getChainById(fromChainId);
                             const gasToken = chain.nativeCurrency?.symbol || 'ETH';

@@ -122,6 +122,7 @@ export const WalletModal: React.FC<WalletModalProps> = (props) => {
         isBalanceFetching && (isBalancePlaceholder || !balanceData);
     const [mode, setMode] = useState<ModalMode>('MAIN');
     const [copied, setCopied] = useState(false);
+    const [selectedNetworkId, setSelectedNetworkId] = useState<string | null>(null);
     const [isExpanded, setIsExpanded] = useState(false);
     const [isWalletListExpanded, setIsWalletListExpanded] = useState(false);
 
@@ -305,7 +306,7 @@ export const WalletModal: React.FC<WalletModalProps> = (props) => {
                             <Text style={styles.sectionLabel}>TRENDING NETWORKS</Text>
                             <ScrollView showsVerticalScrollIndicator={false} style={styles.chainListScroll} nestedScrollEnabled>
                                 {ALL_NETWORKS.map((network) => {
-                                    const isChainActive = activeChain === network.chain;
+                                    const isChainActive = selectedNetworkId === network.id;
                                     const hasAddress = activeGroup?.addresses?.[network.chain];
                                     const chainAddress = activeGroup?.addresses?.[network.chain] || '';
                                     const displayChainAddress = truncateAddress(chainAddress);
@@ -319,7 +320,11 @@ export const WalletModal: React.FC<WalletModalProps> = (props) => {
                                                 isChainActive && styles.activeChainListItem,
                                                 !hasAddress && styles.disabledChainListItem
                                             ]}
-                                            onPress={() => hasAddress && setActiveChain(network.chain as any)}
+                                            onPress={() => {
+                                                if (!hasAddress) return;
+                                                setSelectedNetworkId(network.id);
+                                                setActiveChain(network.chain as any, network.id);
+                                            }}
                                             disabled={!hasAddress}
                                         >
                                             <View style={styles.chainRowLeft}>
@@ -380,7 +385,10 @@ export const WalletModal: React.FC<WalletModalProps> = (props) => {
                         {safeGroups.map((group) => {
                              if (!group) return null;
                              const isActive = group.id === activeGroupId;
-                             const primaryAddr = group.addresses?.[activeChain] || group.addresses?.[group.primaryChain] || '';
+                             // Always show the wallet's own EVM address in the list (or its primary chain if no EVM),
+                             // regardless of the currently-selected chain. Otherwise switching to COSMOS/TON/SOL
+                             // would make every wallet display its address for that chain.
+                             const primaryAddr = group.addresses?.EVM || group.addresses?.[group.primaryChain] || '';
                              
                              return (
                                 <TouchableOpacity 

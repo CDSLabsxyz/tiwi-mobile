@@ -106,9 +106,14 @@ export async function fetchSwapQuote(
     const SOLANA_CHAIN_IDS = [7565164, 1399811149];
     const isSolanaSwap = SOLANA_CHAIN_IDS.includes(Number(fromToken.chainId)) || SOLANA_CHAIN_IDS.includes(Number(toToken.chainId));
 
-    if (!isSolanaSwap) {
+    // Relay is a CROSS-CHAIN protocol — it must NOT be used for same-chain swaps because
+    // it can't handle fee-on-transfer tokens (e.g., WKC on BSC) and ends up taking
+    // tokens without completing the swap. For same-chain, go straight to native DEX routing.
+    const isSameChain = Number(fromToken.chainId) === Number(toToken.chainId);
+
+    if (!isSolanaSwap && !isSameChain) {
         try {
-            console.log(`[SwapService] Checking Relay Protocol first...`);
+            console.log(`[SwapService] Cross-chain swap — checking Relay Protocol first...`);
             const relayQuote = await relayService.fetchRelayQuote(fromAmount, fromToken, toToken, fromAddress, recipient, slippage);
 
             if (relayQuote) {
@@ -118,6 +123,8 @@ export async function fetchSwapQuote(
         } catch (relayError) {
             console.warn(`[SwapService] Relay quote fetch failed or unavailable, falling back to Tiwi Routing Engine:`, relayError);
         }
+    } else if (!isSolanaSwap && isSameChain) {
+        console.log(`[SwapService] Same-chain swap (${fromToken.symbol} -> ${toToken.symbol} on chain ${fromToken.chainId}) — skipping Relay, using native DEX routing`);
     } else {
         console.log(`[SwapService] Solana swap detected — using Jupiter direct`);
 
@@ -159,35 +166,18 @@ export async function fetchSwapQuote(
         }
 
         // If the backend says "relay" but this is a same-chain swap, Relay won't work
-        // (it's a cross-chain protocol). Override to 'tiwi' and extract the transaction
-        // from the Relay steps format so TiwiExecutor can execute it directly.
+        // (it's a cross-chain protocol that doesn't handle fee-on-transfer tokens).
+        // Force routing through DexExecutor which uses the FoT-compatible PancakeSwap router.
         let router = response.route.router;
         let transactionRequest = response.transactionRequest;
         const isSameChain = Number(fromToken.chainId) === Number(toToken.chainId);
 
         if (router === 'relay' && isSameChain) {
-            console.log(`[SwapService] Same-chain swap — overriding router from 'relay' to 'tiwi'`);
-            router = 'tiwi';
-
-            // Extract transaction data from Relay steps if no transactionRequest exists
-            if (!transactionRequest) {
-                const steps = response.route.raw?.steps || [];
-                for (const step of steps) {
-                    for (const item of step.items || []) {
-                        if (item.data?.to && item.data?.data) {
-                            transactionRequest = {
-                                to: item.data.to,
-                                data: item.data.data,
-                                value: item.data.value || '0',
-                                chainId: item.data.chainId || fromToken.chainId,
-                            };
-                            console.log(`[SwapService] Extracted transactionRequest from Relay steps: to=${transactionRequest.to}`);
-                            break;
-                        }
-                    }
-                    if (transactionRequest) break;
-                }
-            }
+            console.log(`[SwapService] Same-chain swap — forcing DexExecutor (discarding Relay tx)`);
+            router = 'dex';
+            // Clear transactionRequest — DexExecutor will construct its own using
+            // swapExactTokensForTokensSupportingFeeOnTransferTokens which handles tax tokens.
+            transactionRequest = undefined;
         }
 
         // Map RouteResponse to SwapQuote (UI Compatibility)

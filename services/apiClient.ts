@@ -190,6 +190,15 @@ export interface ReferralRebateStats {
     myPerpRebate: number;
 }
 
+export interface Referral {
+    id: string;
+    referrerCode: string;
+    referrerWallet: string;
+    refereeWallet: string;
+    createdAt: string;
+    status: 'active' | 'inactive';
+}
+
 export interface ChartHistoryParams {
     symbol: string;
     resolution: string;
@@ -932,6 +941,14 @@ class TiwiApiClient {
     async getRebateStats(walletAddress: string): Promise<ReferralRebateStats> {
         const response = await this.fetcher<{ rebateStats: ReferralRebateStats }>(`/api/v1/referrals?walletAddress=${walletAddress}&action=rebate`);
         return response.rebateStats;
+    }
+
+    /**
+     * Get list of wallets referred by this user
+     */
+    async getMyReferrals(walletAddress: string): Promise<Referral[]> {
+        const response = await this.fetcher<{ referrals: Referral[] }>(`/api/v1/referrals?walletAddress=${walletAddress}&action=referrals`);
+        return response.referrals || [];
     }
 
     /**

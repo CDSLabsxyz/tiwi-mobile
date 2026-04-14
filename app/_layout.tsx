@@ -26,7 +26,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useState } from 'react';
-import { AppState, AppStateStatus, StyleSheet, View } from 'react-native';
+import { AppState, AppStateStatus, Platform, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { WagmiProvider } from 'wagmi';
 
@@ -119,6 +119,9 @@ function AppContent() {
   // Prefetch tokens on app load
   useTokenPrefetch();
   const router = useRouter();
+
+  // Eagerly prefetch wallet balances on app load
+  useWalletBalances();
 
   // Ensure the Android notification channel, foreground handler, and OS
   // permission are set up before any notification (local or remote) fires.
@@ -221,6 +224,7 @@ export default function RootLayout() {
 
   const [isNavigationReady, setIsNavigationReady] = useState(false);
   const [isAppInitialized, setIsAppInitialized] = useState(false);
+  // Lottie splash commented out for testing
   const [isSplashComplete, setIsSplashComplete] = useState(false);
 
   const { hasCompletedOnboarding, hasSeenOnboardingInSession, isLoading: isOnboardingLoading, checkOnboardingStatus } = useOnboardingStore();

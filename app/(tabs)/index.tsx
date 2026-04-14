@@ -2,7 +2,7 @@ import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useMemo, useState } from 'react';
 import { Dimensions, RefreshControl, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
-import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -45,23 +45,12 @@ export default function HomeScreen() {
   // Background Prefetching: Hydrate the market cache as soon as the user lands on Home
   // This ensures the Market tab is instant and layout-ready when clicked.
   React.useEffect(() => {
-    const prefetchMarkets = async () => {
-      // 1. Prefetch Spot Markets (Default View)
-      queryClient.prefetchQuery({
-        queryKey: ['enrichedMarkets', 'spot', 250],
-        queryFn: () => api.market.list({ marketType: 'spot', limit: 250 }),
-        staleTime: 60 * 1000,
-      });
-
-      // 2. Prefetch Perp Markets (Background View)
-      queryClient.prefetchQuery({
-        queryKey: ['enrichedMarkets', 'perp', 250],
-        queryFn: () => api.market.list({ marketType: 'perp', limit: 250 }),
-        staleTime: 60 * 1000,
-      });
-    };
-
-    prefetchMarkets();
+    // Prefetch the default market view ('all') so Market tab is instant
+    queryClient.prefetchQuery({
+      queryKey: ['enrichedMarkets', 'all', 250],
+      queryFn: () => api.market.list({ marketType: 'all', limit: 250 }).then(r => r.markets || []),
+      staleTime: 60 * 1000,
+    });
   }, [queryClient]);
 
   const { isConnected, disconnect, setWalletModalVisible } = useWalletStore();
@@ -253,7 +242,6 @@ export default function HomeScreen() {
   }));
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemedView style={styles.container}>
         <CustomStatusBar />
         <Header
@@ -329,7 +317,6 @@ export default function HomeScreen() {
 
         {/* WalletModal moved to Layout */}
       </ThemedView>
-    </GestureHandlerRootView>
   );
 }
 

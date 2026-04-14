@@ -11,6 +11,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Dimensions, FlatList, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useWalletStore, ChainType } from '@/store/walletStore';
+import { useCustomTokenStore } from '@/store/customTokenStore';
 import { SelectionBottomSheet } from './SelectionBottomSheet';
 
 // Reuse types from existing sheets
@@ -54,7 +55,12 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
     const { data: chains, isLoading: isLoadingChains } = useChains();
     // console.log("🚀 ~ UnifiedAssetSelectSheet ~ chains:", chains)
     const { data: balanceData } = useWalletBalances();
-    const { walletGroups, activeGroupId } = useWalletStore();
+    const { walletGroups, activeGroupId, address: walletAddress } = useWalletStore();
+    const tokensByWallet = useCustomTokenStore(s => s.tokensByWallet);
+    const customTokens = useMemo(() => {
+        const key = activeGroupId || walletAddress || 'default';
+        return tokensByWallet[key] || [];
+    }, [tokensByWallet, activeGroupId, walletAddress]);
     const [debouncedQuery, setDebouncedQuery] = useState('');
 
     useEffect(() => {
@@ -260,7 +266,37 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
                 };
             });
 
-        const allTokens = [...mappedApiTokens, ...ownedTokensOnChain];
+        // Add custom tokens (from wallet's added token list) that aren't already in API/owned results
+        const customMapped = customTokens
+            .filter(ct =>
+                !mappedApiTokens.some(at => at.address.toLowerCase() === ct.address.toLowerCase() && at.chainId === ct.chainId) &&
+                !ownedTokensOnChain.some(at => at.address.toLowerCase() === ct.address.toLowerCase() && at.chainId === ct.chainId)
+            )
+            .map(ct => {
+                const chainInfo = chains?.find(c => c.id === ct.chainId);
+                const bal = parseFloat(ct.balanceFormatted || '0');
+                const usdVal = parseFloat(ct.usdValue || '0');
+                return {
+                    id: `${ct.chainId}-${ct.address}`,
+                    symbol: ct.symbol,
+                    name: ct.name,
+                    icon: ct.logoURI,
+                    chainIcon: chainInfo?.logoURI,
+                    address: ct.address,
+                    chainId: ct.chainId,
+                    decimals: ct.decimals,
+                    balanceToken: `${formatTokenQuantity(ct.balanceFormatted || '0')} ${ct.symbol}`,
+                    balanceFiat: usdVal > 0 ? formatUSDPrice(usdVal) : '$0.00',
+                    isOwned: bal > 0,
+                    usdValueNum: usdVal,
+                    priceUSD: ct.priceUSD,
+                    _liquidity: 0,
+                    _verified: false,
+                    isNative: false,
+                };
+            });
+
+        const allTokens = [...mappedApiTokens, ...ownedTokensOnChain, ...customMapped];
 
         // 4. Filtering and Spam Detection
         const filtered = allTokens.filter(t => {
@@ -353,14 +389,18 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
             return b._liquidity - a._liquidity;
         });
 
-        // 7. Limit curated "Other Tokens" to exactly 8, while showing all owned tokens
+        // 7. Limit curated "Other Tokens" to 8 (but always include custom-added tokens even without balance)
         if (isSearching) return sorted;
 
+        const customAddresses = new Set(customTokens.map(c => `${c.chainId}-${c.address.toLowerCase()}`));
+        const isCustomAdded = (t: any) => customAddresses.has(`${t.chainId}-${t.address.toLowerCase()}`);
+
         const owned = sorted.filter(t => t.isOwned);
-        const othersCurated = sorted.filter(t => !t.isOwned).slice(0, 8);
-        
-        return [...owned, ...othersCurated];
-    }, [response, defaultResponse, balanceData, selectedChain, chains, debouncedQuery, isSearching]);
+        const customUnowned = sorted.filter(t => !t.isOwned && isCustomAdded(t));
+        const othersCurated = sorted.filter(t => !t.isOwned && !isCustomAdded(t)).slice(0, 8);
+
+        return [...owned, ...customUnowned, ...othersCurated];
+    }, [response, defaultResponse, balanceData, selectedChain, chains, debouncedQuery, isSearching, customTokens]);
 
 
     const handleChainSelect = (chain: any) => {
@@ -441,8 +481,18 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
         );
     }, [selectedChain]);
 
-    const TokenItem = React.memo(({ token, onSelect, selectedTokenId, isFetching }: { token: TokenOption, onSelect: any, selectedTokenId: any, isFetching: boolean }) => {
+    const TokenItem = React.memo(({ token, onSelect, selectedTokenId, isFetching, isSearching }: { token: TokenOption, onSelect: any, selectedTokenId: any, isFetching: boolean, isSearching: boolean }) => {
         const isActive = token.id === selectedTokenId;
+        const [logoError, setLogoError] = useState(false);
+        const handleLogoError = useCallback(() => setLogoError(true), []);
+
+        const logoSource = token.icon && !logoError ? token.icon : null;
+
+        // Hide non-owned tokens with failed logos unless searching
+        const isOwned = parseFloat((token as any).balanceFiat?.replace(/[^0-9.-]/g, '') || '0') > 0 ||
+            !(token as any).balanceToken?.startsWith('0 ');
+        if (!logoSource && !isOwned && !isSearching) return null;
+
         return (
             <TouchableOpacity
                 activeOpacity={0.9}
@@ -457,8 +507,8 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
                     <View style={styles.leftInfo}>
                         <View style={styles.tokenIconContainer}>
                             <View style={styles.tokenIconWrapper}>
-                                {token.icon ? (
-                                    <ExpoImage source={token.icon} style={styles.fullSize} contentFit="cover" />
+                                {logoSource ? (
+                                    <ExpoImage source={logoSource} style={styles.fullSize} contentFit="cover" onError={handleLogoError} />
                                 ) : (
                                     <View style={[styles.fallbackCircle, { backgroundColor: getColorFromSeed(token.symbol) }]}>
                                         <Text style={styles.fallbackText}>{token.symbol.charAt(0).toUpperCase()}</Text>
@@ -486,14 +536,17 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
         );
     });
 
+    const isTokenSearching = tokenSearchQuery.trim().length > 0;
+
     const renderTokenItem = useCallback(({ item: token }: { item: TokenOption }) => (
         <TokenItem
             token={token}
             onSelect={handleTokenSelect}
             selectedTokenId={selectedTokenId}
             isFetching={isFetchingTokens}
+            isSearching={isTokenSearching}
         />
-    ), [handleTokenSelect, selectedTokenId, isFetchingTokens]);
+    ), [handleTokenSelect, selectedTokenId, isFetchingTokens, isTokenSearching]);
 
     const renderTokenList = () => {
         if (isLoadingTokens || (isPlaceholderData && tokenOptions.length === 0)) {

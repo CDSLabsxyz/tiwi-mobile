@@ -113,6 +113,26 @@ const OFFICIAL_STABLE_ADDRESSES: Record<number, Record<string, string>> = {
     },
 };
 
+// Native symbols can ONLY exist on their home chain.
+// A token claiming to be "BNB" on chain 1100 (TON) is scam/corrupt data.
+const NATIVE_SYMBOL_CHAINS: Record<string, number[]> = {
+    'ETH': [1, 10, 42161, 8453, 59144], // Ethereum + L2s
+    'BNB': [56], // BSC only
+    'WBNB': [56],
+    'MATIC': [137],
+    'POL': [137],
+    'AVAX': [43114],
+    'SOL': [7565164],
+    'WSOL': [7565164],
+    'TRX': [728126428],
+    'TON': [1100, 136105027],
+    'ATOM': [118],
+    'OSMO': [10000004],
+    'FTM': [250],
+    'CELO': [42220],
+    'XDAI': [100],
+};
+
 function filterToken(b: any): boolean {
     const usdValue = parseFloat(b.usdValue || '0');
     const balance = parseFloat(b.balanceFormatted || b.balance || '0');
@@ -127,6 +147,14 @@ function filterToken(b: any): boolean {
     // an "Unknown" chain label and are almost always airdrop spam.
     const chainIdNum = Number(b.chainId);
     if (!chainIdNum || !KNOWN_CHAIN_IDS.has(chainIdNum)) return false;
+
+    // Native symbol-to-chain enforcement — reject tokens where the symbol
+    // is a native asset but the chainId doesn't match. Prevents "TON" appearing
+    // on BSC or "BNB" appearing on TON.
+    const allowedChainsForNative = NATIVE_SYMBOL_CHAINS[symbol];
+    if (allowedChainsForNative && !allowedChainsForNative.includes(chainIdNum)) {
+        return false;
+    }
 
     // Airdrop impersonation guard — a token claiming to be USDC/USDT/
     // DAI/etc. MUST be at the real contract address for its chain.
@@ -167,24 +195,43 @@ function isUnreliableLogo(url?: string): boolean {
     return false;
 }
 
+// Stablecoins always peg to $1 — override any wrong backend price
+const STABLECOIN_SYMBOLS = new Set(['USDT', 'USDC', 'DAI', 'BUSD', 'TUSD', 'FRAX', 'USDP', 'GUSD', 'LUSD', 'FDUSD']);
+
 function normalizeToken(b: any) {
     const sym = (b.symbol || '').toUpperCase();
     const apiLogo = !isUnreliableLogo(b.logoURI) ? b.logoURI
         : !isUnreliableLogo(b.logo) ? b.logo
         : undefined;
+
+    const balance = parseFloat(b.balanceFormatted || b.balance || '0');
+    let usdValue = b.usdValue || '0';
+    let priceUSD = b.priceUSD || '0';
+
+    // Fix stablecoin pricing — they should always be ~$1.00
+    // If the backend returns a price <$0.50 or >$2 for a verified stablecoin, override to $1.
+    if (STABLECOIN_SYMBOLS.has(sym) && balance > 0) {
+        const reportedPrice = parseFloat(priceUSD);
+        if (!reportedPrice || reportedPrice < 0.5 || reportedPrice > 2) {
+            priceUSD = '1';
+            usdValue = balance.toFixed(4);
+        }
+    }
+
     return {
         ...b,
         symbol: sym === 'WSOL' ? 'SOL' : b.symbol,
         name: sym === 'WSOL' ? 'Solana' : (b.name || b.symbol || 'Unknown'),
         logoURI: getTokenLogo(b.symbol, b.chainId, b.address) || apiLogo,
         balanceFormatted: b.balanceFormatted || b.balance || '0',
-        usdValue: b.usdValue || '0',
+        usdValue,
+        priceUSD,
         priceChange24h: parseFloat(b.priceChange24h || '0'),
     };
 }
 
 export function useWalletBalances() {
-    const { activeAddress, activeGroupId, walletGroups, _hasHydrated } = useWalletStore();
+    const { activeAddress, activeGroupId, walletGroups, _hasHydrated, cachedBalances, setCachedBalances } = useWalletStore();
     const selectedChains = useFilterStore((state) => state.chains);
 
     const chainIdsForFetch = useMemo(() => {
@@ -195,6 +242,10 @@ export function useWalletBalances() {
     }, [selectedChains]);
 
     const group = useMemo(() => walletGroups.find(g => g.id === activeGroupId), [walletGroups, activeGroupId]);
+
+    // Cache key for this wallet
+    const cacheKey = `${activeAddress}-${activeGroupId}`;
+    const cached = cachedBalances[cacheKey];
 
     return useQuery({
         queryKey: ['walletBalances', activeAddress, activeGroupId, chainIdsForFetch],
@@ -214,9 +265,7 @@ export function useWalletBalances() {
                 // blocks the others.
                 const [evmResult, solResult, tronResult] = await Promise.all([
                     (async () => {
-                        if (!evmAddr || !isEvmAddress(evmAddr)) {
-                            return { balances: [] as any[] };
-                        }
+                        if (!evmAddr || !isEvmAddress(evmAddr)) return { balances: [] as any[] };
                         try {
                             const resp = await api.wallet.balances({
                                 address: evmAddr,
@@ -228,7 +277,6 @@ export function useWalletBalances() {
                                     : (Array.isArray(resp) ? resp : []),
                             };
                         } catch {
-                            // ── Moralis FALLBACK for EVM ──
                             try {
                                 console.warn('[useWalletBalances] TIWI backend failed, falling back to Moralis');
                                 const moralisTokens = await moralisService.getWalletBalances(evmAddr, chainIdsForFetch);
@@ -291,8 +339,8 @@ export function useWalletBalances() {
                 });
 
                 // ── 5. Filter spam + normalize ──
-                // Ensure Koin Gallery logos are cached before normalizing
-                await ensureTokenLogos();
+                // Fire logo cache warming in background — don't block balance render
+                ensureTokenLogos().catch(() => {});
                 const tokens = Array.from(dedupedMap.values())
                     .filter(filterToken)
                     .map(normalizeToken);
@@ -346,7 +394,7 @@ export function useWalletBalances() {
                     }
                 });
 
-                return {
+                const result = {
                     tokens: sortedTokens,
                     totalNetWorthUsd,
                     portfolioChange: {
@@ -354,23 +402,31 @@ export function useWalletBalances() {
                         percent: portfolioChangePercent,
                     },
                 };
+
+                // Persist to disk for instant load on next app open
+                setCachedBalances(cacheKey, result);
+
+                return result;
             } catch (error) {
                 console.error('[useWalletBalances] Error:', error);
                 return { tokens: [], totalNetWorthUsd: '0.00', portfolioChange: { amount: '0.00', percent: '0.00' } };
             }
         },
         enabled: _hasHydrated && !!activeAddress,
-        // 3-minute freshness: navigating between tabs or re-opening the
-        // app shortly after close reads straight from cache — no refetch,
-        // no "Updating…" flash, no spinner. Pull-to-refresh still works
-        // for manual updates, and the 1-min window on the old value was
-        // aggressive enough to cause a visible lag on every tab switch.
         staleTime: 1000 * 60 * 3,
-        // Keep the cache around for 15 minutes even after all consumers
-        // unmount, so background-to-foreground transitions reuse it.
         gcTime: 1000 * 60 * 15,
-        // Show the last-seen balances instantly while a refresh happens in
-        // the background, so the screen never flashes empty on revisit.
+        refetchOnMount: false,
+        refetchOnWindowFocus: false,
+        refetchOnReconnect: false,
+        // Show persisted balance instantly, then refresh in background
+        initialData: cached ? {
+            tokens: cached.tokens,
+            totalNetWorthUsd: cached.totalNetWorthUsd,
+            portfolioChange: cached.portfolioChange,
+        } : undefined,
+        // Mark persisted data as stale so it triggers a background refresh
+        initialDataUpdatedAt: cached?.updatedAt,
         placeholderData: keepPreviousData,
+        structuralSharing: true,
     });
 }

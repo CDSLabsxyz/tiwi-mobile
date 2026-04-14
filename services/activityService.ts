@@ -48,11 +48,36 @@ class ActivityService {
     async logActivity(activity: UserActivity): Promise<boolean> {
         try {
             const meta = activity.metadata || {};
+
+            // Normalize transaction_type to match DB check constraint (capitalized: Swap, Sent, Received, etc.)
+            const rawType = (activity.category || activity.type || 'Transaction').toLowerCase();
+            const typeMap: Record<string, string> = {
+                'swap': 'Swap',
+                'sent': 'Sent',
+                'send': 'Sent',
+                'received': 'Received',
+                'receive': 'Received',
+                'stake': 'Stake',
+                'unstake': 'Unstake',
+                'approve': 'Approve',
+                'transfer': 'Transfer',
+                'mint': 'Mint',
+                'burn': 'Burn',
+                'transaction': 'Swap',
+            };
+            const transactionType = typeMap[rawType] || 'Swap';
+
+            // Skip insert if no transaction_hash (the table requires it)
+            const txHash = meta.txHash || meta.transaction_hash;
+            if (!txHash) {
+                return false;
+            }
+
             const payload: TransactionRow = {
                 wallet_address: activity.user_wallet.toLowerCase(),
-                transaction_hash: meta.txHash || meta.transaction_hash || '',
+                transaction_hash: txHash,
                 chain_id: meta.chainId || meta.chain_id || 1,
-                transaction_type: activity.category || activity.type,
+                transaction_type: transactionType,
                 from_token_address: meta.fromTokenAddress || meta.from_token_address,
                 from_token_symbol: meta.fromSymbol || meta.symbol,
                 to_token_address: meta.toTokenAddress || meta.to_token_address,
@@ -66,11 +91,15 @@ class ActivityService {
 
             const { error } = await supabase
                 .from(this.TABLE_NAME)
-                .insert([payload]);
+                .upsert([payload], { onConflict: 'transaction_hash,chain_id', ignoreDuplicates: true });
 
             if (error) throw error;
             return true;
         } catch (error: any) {
+            // Duplicate key — transaction already logged, not an error
+            if (error?.code === '23505' || error?.message?.includes('duplicate key')) {
+                return true;
+            }
             if (error?.message?.includes('Network request failed')) {
                 console.warn('[ActivityService] Log: Network unreachable.');
             } else {

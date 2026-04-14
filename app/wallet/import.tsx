@@ -12,6 +12,7 @@ import {
 } from '@/services/walletCreationService';
 import { useSecurityStore } from '@/store/securityStore';
 import { ChainType, useWalletStore } from '@/store/walletStore';
+import { api } from '@/lib/mobile/api-client';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -84,9 +85,10 @@ export default function ImportWalletScreen() {
     };
 
     const handleNetworkSelect = async (selected: ChainType | 'MULTI') => {
-        setIsLoading(true);
-
-        const timer = new Promise(resolve => setTimeout(resolve, 3000));
+        // Close network modal immediately so the loader shows instantly
+        setShowNetworkModal(false);
+        // Defer setIsLoading to next tick so the modal close animation doesn't block
+        requestAnimationFrame(() => setIsLoading(true));
 
         try {
             let importedWallet;
@@ -96,9 +98,6 @@ export default function ImportWalletScreen() {
                 const chain = selected === 'MULTI' ? 'EVM' : selected;
                 importedWallet = await importWalletByPrivateKey(inputText.trim(), chain);
             }
-
-            // Artificial delay for high-fidelity feel
-            await timer;
 
             addWalletGroup({
                 id: importedWallet.address.toLowerCase(),
@@ -111,7 +110,25 @@ export default function ImportWalletScreen() {
                 isBackupComplete: true,
             });
 
-            // If we're adding a wallet from settings OR setup is already complete, skip onboarding
+            // Kick off balance prefetch immediately (non-blocking) so by the time
+            // the user lands on the wallet tab, balances are already cached.
+            const evmAddr = importedWallet.addresses?.EVM;
+            if (evmAddr) {
+                api.wallet.balances({
+                    address: evmAddr,
+                    chains: [1, 56, 137, 42161, 8453, 10, 43114]
+                }).catch(() => null);
+            }
+            const solAddr = importedWallet.addresses?.SOLANA;
+            if (solAddr) {
+                api.wallet.balances({ address: solAddr, chains: [7565164] }).catch(() => null);
+            }
+            const tronAddr = importedWallet.addresses?.TRON;
+            if (tronAddr) {
+                api.wallet.balances({ address: tronAddr, chains: [728126428] }).catch(() => null);
+            }
+
+            // Navigate immediately — don't wait for balance fetch
             if (mode === 'additional' || setupPhase === 'COMPLETED') {
                 router.replace('/(tabs)' as any);
             } else {

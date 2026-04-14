@@ -116,19 +116,23 @@ export default function MarketScreen() {
                 .filter((t: any) => (!t.startDate || t.startDate <= today) && (!t.endDate || t.endDate >= today))
                 .sort((a: any, b: any) => (a.rank || 0) - (b.rank || 0));
 
-            // Enrich each token with price data from token-info API (like web app)
+            // Enrich tokens: match from cached market pairs first, then batch-fetch remaining
+            const marketLookup = new Map<string, any>();
+            (marketPairs || []).forEach((et: any) => {
+                marketLookup.set(et.symbol?.toUpperCase(), et);
+                if (et.address) marketLookup.set(et.address.toLowerCase(), et);
+            });
+
             const enriched = await Promise.all(active.map(async (st: any) => {
-                // Try match from market pairs first
-                const market = (marketPairs || []).find(
-                    (et: any) =>
-                        et.symbol?.toUpperCase() === st.symbol?.toUpperCase() ||
-                        (st.address && et.address?.toLowerCase() === st.address?.toLowerCase())
-                );
+                // Fast lookup from cached market pairs
+                const market = marketLookup.get(st.symbol?.toUpperCase()) ||
+                    (st.address ? marketLookup.get(st.address.toLowerCase()) : null);
+
                 if (market && market.price && parseFloat(String(market.price)) > 0) {
                     return { ...market, logoURI: market.logoURI || market.logo || st.logo || '' };
                 }
 
-                // Fetch from token-info API (exactly like web app)
+                // Fetch from token-info API only for unmatched tokens
                 const chainId = st.chainId || 56;
                 if (st.address) {
                     try {
@@ -178,7 +182,8 @@ export default function MarketScreen() {
             return { tokens: enriched };
         },
         enabled: activeSubTab === 'spotlight' || activeSubTab === 'listing',
-        staleTime: 30 * 1000,
+        staleTime: 60 * 1000,
+        gcTime: 10 * 60 * 1000,
     });
 
     // Staggered Prefetching (Phase 4: Optimization)
@@ -226,7 +231,7 @@ export default function MarketScreen() {
             try {
                 const response = await api.tokens.list({
                     query: searchQuery,
-                    limit: 20
+                    limit: 30
                 });
 
                 const mappedResults: MarketAsset[] = response.tokens.map(t => {
@@ -258,7 +263,7 @@ export default function MarketScreen() {
             } finally {
                 setIsSearching(false);
             }
-        }, 500);
+        }, 300);
 
         return () => clearTimeout(delayDebounceFn);
     }, [searchQuery]);
@@ -371,6 +376,14 @@ export default function MarketScreen() {
         setTimeout(() => setIsNavigating(false), 200);
     }, [marketType, router]);
 
+    const ITEM_HEIGHT = 52; // Fixed row height for getItemLayout
+    const keyExtractor = useCallback((item: MarketAsset) => item.id || `${item.chainId}-${item.address}`, []);
+    const getItemLayout = useCallback((_: any, index: number) => ({
+        length: ITEM_HEIGHT,
+        offset: ITEM_HEIGHT * index,
+        index,
+    }), []);
+
     const renderItem = useCallback(({ item }: { item: MarketAsset }) => (
         <TokenListItem
             key={item.id || `${item.chainId}-${item.address}`}
@@ -443,15 +456,17 @@ export default function MarketScreen() {
                 <FlatList
                     data={displayData}
                     renderItem={renderItem}
-                    keyExtractor={(item) => item.id || `${item.chainId}-${item.address}`}
+                    keyExtractor={keyExtractor}
+                    getItemLayout={getItemLayout}
                     contentContainerStyle={[
                         styles.scrollContent,
                         { paddingBottom: bottom + 100 }
                     ]}
-                    initialNumToRender={10}
-                    maxToRenderPerBatch={10}
+                    initialNumToRender={15}
+                    maxToRenderPerBatch={15}
                     windowSize={5}
-                    removeClippedSubviews={Platform.OS === 'android'}
+                    updateCellsBatchingPeriod={30}
+                    removeClippedSubviews={true}
                     showsVerticalScrollIndicator={false}
                     ListHeaderComponent={
                         isSearching && searchQuery.length > 0 && displayData.length === 0 ? (
@@ -716,15 +731,17 @@ export default function MarketScreen() {
                 <FlatList
                     data={displayData}
                     renderItem={renderItem}
-                    keyExtractor={(item) => item.id || `${item.chainId}-${item.address}`}
+                    keyExtractor={keyExtractor}
+                    getItemLayout={getItemLayout}
                     contentContainerStyle={[
                         styles.scrollContent,
                         { paddingBottom: bottom + 100 }
                     ]}
-                    initialNumToRender={12}
-                    maxToRenderPerBatch={10}
-                    windowSize={10}
-                    removeClippedSubviews={Platform.OS === 'android'}
+                    initialNumToRender={15}
+                    maxToRenderPerBatch={15}
+                    windowSize={5}
+                    updateCellsBatchingPeriod={30}
+                    removeClippedSubviews={true}
                     showsVerticalScrollIndicator={false}
                     ListHeaderComponent={
                         isLoading ? (

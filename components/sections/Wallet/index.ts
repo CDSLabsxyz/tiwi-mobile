@@ -3,6 +3,7 @@
  * Central export point for all wallet-related components
  */
 
+export { AddTokenModal } from './AddTokenModal';
 export { AssetListItem } from './AssetListItem';
 export { AssetsTabSwitcher, type WalletTabKey } from './AssetsTabSwitcher';
 export { ClaimableRewardsCard } from './ClaimableRewardsCard';

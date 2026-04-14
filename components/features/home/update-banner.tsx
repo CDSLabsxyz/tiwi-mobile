@@ -1,5 +1,5 @@
 import { colors } from '@/constants/colors';
-import { updateService, UpdateStatus } from '@/services/updateService';
+import { updateService } from '@/services/updateService';
 import { useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -37,7 +37,7 @@ export const UpdateBanner: React.FC = () => {
             style={styles.container}
         >
             <LinearGradient
-                colors={['rgba(59, 130, 246, 0)', 'rgba(59, 130, 246, 0.6)', 'rgba(59, 130, 246, 0)']}
+                colors={['rgba(177, 241, 40, 0)', 'rgba(177, 241, 40, 0.6)', 'rgba(177, 241, 40, 0)']}
                 start={{ x: 0, y: 0.5 }}
                 end={{ x: 1, y: 0.5 }}
                 style={styles.gradientLine}
@@ -50,7 +50,7 @@ export const UpdateBanner: React.FC = () => {
                         source={DownloadIcon}
                         style={styles.icon}
                         contentFit="contain"
-                        tintColor="#3B82F6"
+                        tintColor="#B1F128"
                     />
                 </View>
                 <View style={styles.textWrapper}>
@@ -77,10 +77,10 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        backgroundColor: 'rgba(59, 130, 246, 0.08)',
+        backgroundColor: 'rgba(177, 241, 40, 0.08)',
         borderRadius: 12,
         borderWidth: 1,
-        borderColor: 'rgba(59, 130, 246, 0.15)',
+        borderColor: 'rgba(177, 241, 40, 0.15)',
         paddingHorizontal: 14,
         paddingVertical: 12,
         marginBottom: 12,
@@ -122,7 +122,7 @@ const styles = StyleSheet.create({
     },
     labelHighlight: {
         fontFamily: 'Manrope-SemiBold',
-        color: '#3B82F6',
+        color: '#B1F128',
     },
     arrow: {
         width: 20,

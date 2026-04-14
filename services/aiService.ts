@@ -1,26 +1,236 @@
 /**
  * AI Service for Tiwi Mobile App
- * Uses Gemini API directly for reliable AI responses
- * Falls back to Tiwi backend if needed
+ * Primary: OpenAI GPT-4o-mini with live market data enrichment
+ * Fallback: Gemini API → Tiwi backend
  */
 
+import { api } from '@/lib/mobile/api-client';
+
+const OPENAI_API_KEY = process.env.EXPO_PUBLIC_OPENAI_API_KEY || '';
 const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
 const BACKEND_URL = process.env.EXPO_PUBLIC_AI_BACKEND_URL || 'https://tiwiprotocol-ai.vercel.app/api/chat';
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
+const OPENAI_STREAM_URL = 'https://api.openai.com/v1/chat/completions';
 const GEMINI_STREAM_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse&key=${GEMINI_API_KEY}`;
 
-const SYSTEM_PROMPT = `You are TIWI AI, the intelligent assistant for TIWI Protocol — a multichain DeFi super-app. You help users with:
+const SYSTEM_PROMPT = `You are TIWI AI, the intelligent assistant for TIWI Protocol — a multichain DeFi super-app.
+
+You have access to LIVE real-time market data that is injected into the conversation. When market data is provided in a [LIVE MARKET DATA] block, use it to answer the user's question with specific numbers. Present prices, market caps, volumes, and changes clearly.
+
+Format prices nicely:
+- Under $1: show up to 6 decimal places as needed (e.g. $0.000234)
+- $1-$1000: show 2 decimal places (e.g. $45.67)
+- Over $1000: use commas (e.g. $67,890.12)
+- Market cap/volume: use abbreviations (e.g. $1.2B, $450M, $12.3K)
+
+You help users with:
+- Real-time crypto prices, market data, and token analysis
 - Crypto trading, swaps, and bridging across EVM chains, Solana, TRON, TON, and Cosmos
 - Understanding DeFi concepts (staking, liquidity, yield farming)
-- Token analysis and market insights
 - Wallet management and security best practices
 - Troubleshooting transaction issues
 
-Be concise, helpful, and crypto-native. Use simple language. When discussing prices or tokens, remind users to DYOR (Do Your Own Research). Never give financial advice — provide education and information only.`;
+Be concise, helpful, and crypto-native. Always remind users to DYOR. Never give financial advice.`;
+
+// ─── Market Data Enrichment ──────────────────────────────────────────────────
 
 /**
- * Helper: Convert URI to Base64
+ * Detect if user is asking about token prices/market data
+ * Returns extracted token symbols/names
  */
+function detectMarketQuery(prompt: string): string[] {
+  const lower = prompt.toLowerCase();
+
+  // Check if it's a price/market question
+  const marketKeywords = [
+    'price', 'worth', 'cost', 'value', 'how much',
+    'market cap', 'mcap', 'volume', 'vol',
+    'ath', 'all time high', 'change', '24h',
+    'trending', 'top', 'hot', 'gainers', 'losers',
+    'what is', "what's", 'tell me about', 'info on',
+    'current', 'today', 'now', 'live',
+  ];
+
+  const isMarketQuestion = marketKeywords.some(kw => lower.includes(kw));
+  if (!isMarketQuestion) return [];
+
+  // Extract potential token symbols/names
+  // Common tokens to recognize
+  const knownTokens: Record<string, string> = {
+    'bitcoin': 'BTC', 'btc': 'BTC',
+    'ethereum': 'ETH', 'eth': 'ETH',
+    'solana': 'SOL', 'sol': 'SOL',
+    'bnb': 'BNB', 'binance': 'BNB',
+    'xrp': 'XRP', 'ripple': 'XRP',
+    'cardano': 'ADA', 'ada': 'ADA',
+    'dogecoin': 'DOGE', 'doge': 'DOGE',
+    'polygon': 'POL', 'matic': 'POL', 'pol': 'POL',
+    'avalanche': 'AVAX', 'avax': 'AVAX',
+    'chainlink': 'LINK', 'link': 'LINK',
+    'toncoin': 'TON', 'ton': 'TON',
+    'tron': 'TRX', 'trx': 'TRX',
+    'shiba': 'SHIB', 'shib': 'SHIB',
+    'pepe': 'PEPE',
+    'sui': 'SUI',
+    'near': 'NEAR',
+    'aptos': 'APT', 'apt': 'APT',
+    'arbitrum': 'ARB', 'arb': 'ARB',
+    'optimism': 'OP', 'op': 'OP',
+    'cosmos': 'ATOM', 'atom': 'ATOM',
+    'uniswap': 'UNI', 'uni': 'UNI',
+    'aave': 'AAVE',
+    'usdt': 'USDT', 'tether': 'USDT',
+    'usdc': 'USDC',
+    'twc': 'TWC', 'tiwicat': 'TWC', 'tiwi': 'TWC', 'tiwicat token': 'TWC',
+    'litecoin': 'LTC', 'ltc': 'LTC',
+    'polkadot': 'DOT', 'dot': 'DOT',
+  };
+
+  const found: string[] = [];
+
+  // Check known tokens
+  for (const [keyword, symbol] of Object.entries(knownTokens)) {
+    // Word boundary match
+    const regex = new RegExp(`\\b${keyword}\\b`, 'i');
+    if (regex.test(lower)) {
+      if (!found.includes(symbol)) found.push(symbol);
+    }
+  }
+
+  // Also try to extract unknown tokens (words in ALL CAPS that look like tickers)
+  const capsMatches = prompt.match(/\b[A-Z]{2,10}\b/g);
+  if (capsMatches) {
+    for (const match of capsMatches) {
+      // Skip common English words
+      const skipWords = ['THE', 'AND', 'FOR', 'ARE', 'BUT', 'NOT', 'YOU', 'ALL', 'CAN', 'HER', 'WAS', 'ONE', 'OUR', 'OUT', 'WHAT', 'HOW', 'MUCH', 'DYOR', 'AI', 'DeFi'];
+      if (!skipWords.includes(match) && !found.includes(match)) {
+        found.push(match);
+      }
+    }
+  }
+
+  // If it's a general market question with no specific token
+  if (found.length === 0 && (lower.includes('trending') || lower.includes('top') || lower.includes('hot') || lower.includes('gainers') || lower.includes('losers'))) {
+    found.push('__TRENDING__');
+  }
+
+  return found;
+}
+
+/**
+ * Fetch live market data for detected tokens
+ */
+async function fetchMarketContext(tokens: string[]): Promise<string> {
+  try {
+    // Fetch trending/top tokens
+    if (tokens.includes('__TRENDING__')) {
+      const response = await api.market.list({ marketType: 'all', limit: 15 });
+      const markets = response.markets || [];
+      if (markets.length === 0) return '';
+
+      let context = '[LIVE MARKET DATA — Top Trending Tokens]\n';
+      markets.forEach((m: any, i: number) => {
+        context += `${i + 1}. ${m.symbol}: Price $${m.price || m.priceUSD || '?'} | 24h Change: ${(m.priceChange24h || 0).toFixed(2)}% | Vol: $${formatCompact(m.volume24h || 0)} | MCap: $${formatCompact(m.marketCap || 0)}\n`;
+      });
+      context += '[END MARKET DATA]\n';
+      return context;
+    }
+
+    // Fetch specific tokens
+    const response = await api.market.list({ marketType: 'all', limit: 250 });
+    const markets = response.markets || [];
+
+    // Override display names for tokens we know
+    const displayNames: Record<string, string> = {
+      'TWC': 'TIWICAT',
+      'BTC': 'Bitcoin',
+      'ETH': 'Ethereum',
+      'SOL': 'Solana',
+      'BNB': 'BNB',
+      'XRP': 'XRP',
+      'DOGE': 'Dogecoin',
+      'ADA': 'Cardano',
+      'SHIB': 'Shiba Inu',
+      'PEPE': 'Pepe',
+      'AVAX': 'Avalanche',
+      'LINK': 'Chainlink',
+      'TON': 'Toncoin',
+      'TRX': 'TRON',
+      'POL': 'Polygon',
+      'SUI': 'Sui',
+      'NEAR': 'NEAR Protocol',
+      'APT': 'Aptos',
+      'ARB': 'Arbitrum',
+      'OP': 'Optimism',
+      'ATOM': 'Cosmos',
+      'DOT': 'Polkadot',
+      'LTC': 'Litecoin',
+      'UNI': 'Uniswap',
+    };
+
+    const results: string[] = [];
+
+    for (const symbol of tokens) {
+      // Match from market list
+      const match = markets.find((m: any) =>
+        m.symbol?.toUpperCase() === symbol ||
+        m.symbol?.toUpperCase().startsWith(symbol + '/') ||
+        m.symbol?.toUpperCase().startsWith(symbol + '-')
+      );
+
+      if (match) {
+        const name = displayNames[symbol] || match.name || symbol;
+        results.push(
+          `${symbol}:\n` +
+          `  Name: ${name}\n` +
+          `  Price: $${match.price || match.priceUSD || '?'}\n` +
+          `  24h Change: ${(match.priceChange24h || 0).toFixed(2)}%\n` +
+          `  24h Volume: $${formatCompact(match.volume24h || 0)}\n` +
+          `  Market Cap: $${formatCompact(match.marketCap || 0)}\n` +
+          (match.rank ? `  Rank: #${match.rank}\n` : '')
+        );
+      } else {
+        // Try search API for lesser-known tokens
+        try {
+          const searchRes = await api.tokens.list({ query: symbol, limit: 1 });
+          const token = searchRes.tokens?.[0];
+          if (token) {
+            const name = displayNames[symbol] || token.name;
+            results.push(
+              `${symbol}:\n` +
+              `  Name: ${name}\n` +
+              `  Price: $${token.priceUSD || '?'}\n` +
+              `  24h Change: ${(token.priceChange24h || 0).toFixed(2)}%\n` +
+              `  Chain: ${token.chainName || `Chain ${token.chainId}`}\n` +
+              `  Address: ${token.address}\n`
+            );
+          } else {
+            results.push(`${symbol}: No data found. This token may not be listed yet.\n`);
+          }
+        } catch {
+          results.push(`${symbol}: Unable to fetch data.\n`);
+        }
+      }
+    }
+
+    if (results.length === 0) return '';
+
+    return `[LIVE MARKET DATA — fetched just now]\n${results.join('\n')}[END MARKET DATA]\n`;
+  } catch (err) {
+    console.warn('[AIService] Market data fetch failed:', err);
+    return '';
+  }
+}
+
+function formatCompact(num: number): string {
+  if (num >= 1e12) return (num / 1e12).toFixed(2) + 'T';
+  if (num >= 1e9) return (num / 1e9).toFixed(2) + 'B';
+  if (num >= 1e6) return (num / 1e6).toFixed(2) + 'M';
+  if (num >= 1e3) return (num / 1e3).toFixed(2) + 'K';
+  return num.toFixed(2);
+}
+
+// ─── Image helpers ───────────────────────────────────────────────────────────
+
 const imageUriToBase64 = async (uri: string): Promise<string> => {
   try {
     const response = await fetch(uri);
@@ -41,8 +251,10 @@ const imageUriToBase64 = async (uri: string): Promise<string> => {
   }
 };
 
+// ─── Main streaming API ──────────────────────────────────────────────────────
+
 /**
- * Stream AI response using Gemini API directly with SSE streaming
+ * Stream AI response with live market data enrichment
  */
 export const streamAIResponse = async (
   prompt: string,
@@ -53,23 +265,136 @@ export const streamAIResponse = async (
   onError?: (error: Error) => void,
   abortSignal?: AbortSignal
 ): Promise<void> => {
-  // Try Gemini direct first, fall back to backend
-  try {
-    await streamFromGemini(prompt, imageUri, imageMimeType, onChunk, onComplete, onError, abortSignal);
-  } catch (primaryError: any) {
-    console.warn('[AIService] Gemini direct failed, trying backend:', primaryError.message);
-    try {
-      await streamFromBackend(prompt, imageUri, imageMimeType, onChunk, onComplete, onError, abortSignal);
-    } catch (fallbackError: any) {
-      console.error('[AIService] Both AI sources failed');
-      onError?.(new Error('AI service is temporarily unavailable. Please try again.'));
+  // Enrich prompt with live market data if applicable
+  let enrichedPrompt = prompt;
+  const detectedTokens = detectMarketQuery(prompt);
+  if (detectedTokens.length > 0) {
+    const marketContext = await fetchMarketContext(detectedTokens);
+    if (marketContext) {
+      enrichedPrompt = `${marketContext}\nUser question: ${prompt}`;
     }
+  }
+
+  // Try OpenAI first
+  if (OPENAI_API_KEY) {
+    try {
+      await streamFromOpenAI(enrichedPrompt, imageUri, imageMimeType, onChunk, onComplete, onError, abortSignal);
+      return;
+    } catch (e: any) {
+      console.warn('[AIService] OpenAI failed, trying Gemini:', e.message);
+    }
+  }
+
+  // Try Gemini
+  if (GEMINI_API_KEY) {
+    try {
+      await streamFromGemini(enrichedPrompt, imageUri, imageMimeType, onChunk, onComplete, onError, abortSignal);
+      return;
+    } catch (e: any) {
+      console.warn('[AIService] Gemini failed, trying backend:', e.message);
+    }
+  }
+
+  // Try backend
+  try {
+    await streamFromBackend(prompt, imageUri, imageMimeType, onChunk, onComplete, onError, abortSignal);
+  } catch {
+    onError?.(new Error('AI service is temporarily unavailable. Please try again.'));
   }
 };
 
-/**
- * Stream from Gemini API directly
- */
+// ─── OpenAI streaming ────────────────────────────────────────────────────────
+
+async function streamFromOpenAI(
+  prompt: string,
+  imageUri?: string,
+  imageMimeType?: string,
+  onChunk?: (chunk: string) => void,
+  onComplete?: (fullText: string) => void,
+  onError?: (error: Error) => void,
+  abortSignal?: AbortSignal
+): Promise<void> {
+  if (!OPENAI_API_KEY) throw new Error('No OpenAI API key');
+
+  const messages: any[] = [
+    { role: 'system', content: SYSTEM_PROMPT },
+  ];
+
+  if (imageUri) {
+    const imageBase64 = await imageUriToBase64(imageUri);
+    messages.push({
+      role: 'user',
+      content: [
+        { type: 'text', text: prompt },
+        {
+          type: 'image_url',
+          image_url: {
+            url: `data:${imageMimeType || 'image/jpeg'};base64,${imageBase64}`,
+          },
+        },
+      ],
+    });
+  } else {
+    messages.push({ role: 'user', content: prompt });
+  }
+
+  const body = JSON.stringify({
+    model: 'gpt-4o-mini',
+    messages,
+    stream: true,
+    temperature: 0.7,
+    max_tokens: 2048,
+  });
+
+  return new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', OPENAI_STREAM_URL);
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.setRequestHeader('Authorization', `Bearer ${OPENAI_API_KEY}`);
+
+    let lastIndex = 0;
+    let fullText = '';
+
+    xhr.onreadystatechange = () => {
+      if (xhr.readyState === 3 || xhr.readyState === 4) {
+        const responseText = xhr.responseText;
+        const newText = responseText.substring(lastIndex);
+        lastIndex = responseText.length;
+
+        const lines = newText.split('\n');
+        for (const line of lines) {
+          if (!line.trim() || !line.startsWith('data: ')) continue;
+          const jsonStr = line.replace('data: ', '').trim();
+          if (jsonStr === '[DONE]') continue;
+          try {
+            const data = JSON.parse(jsonStr);
+            const text = data?.choices?.[0]?.delta?.content;
+            if (text) {
+              fullText += text;
+              onChunk?.(text);
+            }
+          } catch {}
+        }
+      }
+
+      if (xhr.readyState === 4) {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          onComplete?.(fullText);
+          resolve();
+        } else {
+          reject(new Error(`OpenAI returned status ${xhr.status}`));
+        }
+      }
+    };
+
+    xhr.onerror = () => reject(new Error('Network request failed'));
+    if (abortSignal) abortSignal.addEventListener('abort', () => xhr.abort());
+    xhr.send(body);
+  });
+}
+
+// ─── Gemini streaming ────────────────────────────────────────────────────────
+
 async function streamFromGemini(
   prompt: string,
   imageUri?: string,
@@ -86,24 +411,17 @@ async function streamFromGemini(
     imageBase64 = await imageUriToBase64(imageUri);
   }
 
-  // Build request parts
   const parts: any[] = [{ text: prompt }];
   if (imageBase64) {
     parts.unshift({
-      inlineData: {
-        mimeType: imageMimeType || 'image/jpeg',
-        data: imageBase64,
-      }
+      inlineData: { mimeType: imageMimeType || 'image/jpeg', data: imageBase64 },
     });
   }
 
   const body = JSON.stringify({
     systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
     contents: [{ role: 'user', parts }],
-    generationConfig: {
-      temperature: 0.7,
-      maxOutputTokens: 2048,
-    },
+    generationConfig: { temperature: 0.7, maxOutputTokens: 2048 },
   });
 
   return new Promise<void>((resolve, reject) => {
@@ -120,14 +438,11 @@ async function streamFromGemini(
         const newText = responseText.substring(lastIndex);
         lastIndex = responseText.length;
 
-        // Parse SSE lines from Gemini
         const lines = newText.split('\n');
         for (const line of lines) {
           if (!line.trim() || !line.startsWith('data: ')) continue;
-
           const jsonStr = line.replace('data: ', '').trim();
           if (jsonStr === '[DONE]') continue;
-
           try {
             const data = JSON.parse(jsonStr);
             const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -135,9 +450,7 @@ async function streamFromGemini(
               fullText += text;
               onChunk?.(text);
             }
-          } catch {
-            // Incomplete JSON chunk, skip
-          }
+          } catch {}
         }
       }
 
@@ -146,33 +459,23 @@ async function streamFromGemini(
           onComplete?.(fullText);
           resolve();
         } else {
-          const error = new Error(`Gemini returned status ${xhr.status}`);
-          onError?.(error);
-          reject(error);
+          reject(new Error(`Gemini returned status ${xhr.status}`));
         }
       }
     };
 
-    xhr.onerror = () => {
-      const error = new Error('Network request failed');
-      reject(error);
-    };
-
-    if (abortSignal) {
-      abortSignal.addEventListener('abort', () => xhr.abort());
-    }
-
+    xhr.onerror = () => reject(new Error('Network request failed'));
+    if (abortSignal) abortSignal.addEventListener('abort', () => xhr.abort());
     xhr.send(body);
   });
 }
 
-/**
- * Fallback: Stream from Tiwi backend
- */
+// ─── Backend fallback ────────────────────────────────────────────────────────
+
 async function streamFromBackend(
   prompt: string,
   imageUri?: string,
-  imageMimeType?: string,
+  _imageMimeType?: string,
   onChunk?: (chunk: string) => void,
   onComplete?: (fullText: string) => void,
   onError?: (error: Error) => void,
@@ -206,7 +509,6 @@ async function streamFromBackend(
         const lines = newText.split('\n\n');
         for (const line of lines) {
           if (!line.trim() || !line.startsWith('data: ')) continue;
-
           const jsonStr = line.replace('data: ', '').trim();
           try {
             const data = JSON.parse(jsonStr);
@@ -214,9 +516,7 @@ async function streamFromBackend(
               fullText += data.token;
               onChunk?.(data.token);
             }
-          } catch {
-            // Incomplete JSON
-          }
+          } catch {}
         }
       }
 
@@ -225,25 +525,16 @@ async function streamFromBackend(
           onComplete?.(fullText);
           resolve();
         } else {
-          const error = new Error(`Backend returned status ${xhr.status}`);
-          onError?.(error);
-          reject(error);
+          reject(new Error(`Backend returned status ${xhr.status}`));
         }
       }
     };
 
-    xhr.onerror = () => {
-      const error = new Error('Network request failed');
-      reject(error);
-    };
-
-    if (abortSignal) {
-      abortSignal.addEventListener('abort', () => xhr.abort());
-    }
-
+    xhr.onerror = () => reject(new Error('Network request failed'));
+    if (abortSignal) abortSignal.addEventListener('abort', () => xhr.abort());
     xhr.send(body);
   });
 }
 
-export const initializeAIClient = (apiKey: string) => {};
+export const initializeAIClient = (_apiKey: string) => {};
 export const isAIClientInitialized = (): boolean => true;

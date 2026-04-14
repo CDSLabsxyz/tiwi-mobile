@@ -35,6 +35,29 @@ import { useNotifications } from '@/hooks/useNotifications';
 import { useWalletStore } from '@/store/walletStore';
 import { useRouter } from 'expo-router';
 
+const NETWORK_LABELS: Record<string, string> = {
+    ETH: 'ETH',
+    BSC: 'BNB',
+    POLYGON: 'MATIC',
+    BASE: 'BASE',
+    OPTIMISM: 'OP',
+    AVALANCHE: 'AVAX',
+    SOLANA: 'SOL',
+    TRON: 'TRX',
+    TON: 'TON',
+    COSMOS: 'ATOM',
+    OSMOSIS: 'OSMO',
+};
+
+function getNetworkLabel(chain: string, networkId: string | null): string {
+    if (networkId && NETWORK_LABELS[networkId]) return NETWORK_LABELS[networkId];
+    if (chain === 'SOLANA') return 'SOL';
+    if (chain === 'TRON') return 'TRX';
+    if (chain === 'TON') return 'TON';
+    if (chain === 'COSMOS') return 'ATOM';
+    return chain;
+}
+
 /**
  * Header Component
  * Matches Figma design exactly
@@ -49,7 +72,7 @@ export const Header: React.FC<HeaderProps> = ({
     onBackPress,
 }) => {
     const router = useRouter();
-    const { address, activeChain } = useWalletStore();
+    const { address, activeChain, activeNetworkId } = useWalletStore();
     const { unreadCount } = useNotifications();
     const fullAddress = walletAddress || address || '';
     const displayAddress = truncateAddress(fullAddress);
@@ -92,7 +115,7 @@ export const Header: React.FC<HeaderProps> = ({
                     </Text>
                     {fullAddress && (
                         <View style={styles.chainBadge}>
-                            <Text style={styles.chainBadgeText}>{activeChain === 'SOLANA' ? 'SOL' : activeChain}</Text>
+                            <Text style={styles.chainBadgeText}>{getNetworkLabel(activeChain, activeNetworkId)}</Text>
                         </View>
                     )}
                     {!disableWalletModal && (

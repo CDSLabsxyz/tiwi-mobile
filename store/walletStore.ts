@@ -24,6 +24,7 @@ interface WalletState {
   activeGroupId: string | null;
   activeAddress: string | null; // Primary address (usually EVM)
   activeChain: ChainType;
+  activeNetworkId: string | null; // Specific network (ETH, BSC, BASE, etc.)
 
   // Storage for all wallet groups
   walletGroups: WalletGroup[];
@@ -47,7 +48,7 @@ interface WalletState {
 
   addWalletGroup: (group: WalletGroup) => void;
   setActiveGroup: (groupId: string) => void;
-  setActiveChain: (chain: ChainType) => void;
+  setActiveChain: (chain: ChainType, networkId?: string) => void;
   updateGroupName: (groupId: string, name: string) => void;
   markBackupComplete: (groupId: string) => void;
   removeWalletGroup: (groupId: string) => void;
@@ -56,6 +57,10 @@ interface WalletState {
   disconnect: () => void;
   _hasHydrated: boolean;
   setHasHydrated: (state: boolean) => void;
+
+  // Persisted balance cache — shows instantly on app open
+  cachedBalances: Record<string, { tokens: any[]; totalNetWorthUsd: string; portfolioChange: { amount: string; percent: string }; updatedAt: number }>;
+  setCachedBalances: (key: string, data: { tokens: any[]; totalNetWorthUsd: string; portfolioChange: { amount: string; percent: string } }) => void;
 
   // Global Modal & UI Control
   isWalletModalVisible: boolean;
@@ -70,7 +75,19 @@ export const useWalletStore = create<WalletState>()(
       activeGroupId: null,
       activeAddress: null,
       activeChain: 'EVM',
+      activeNetworkId: null,
       walletGroups: [],
+
+      // Persisted balance cache
+      cachedBalances: {},
+      setCachedBalances: (key, data) => {
+        set(state => ({
+          cachedBalances: {
+            ...state.cachedBalances,
+            [key]: { ...data, updatedAt: Date.now() },
+          },
+        }));
+      },
 
       // Keep legacy fields populated for UI compatibility
       address: null,
@@ -175,6 +192,7 @@ export const useWalletStore = create<WalletState>()(
             activeGroupId: groupId,
             activeAddress: mainAddr,
             activeChain: group.primaryChain,
+            activeNetworkId: 'ETH', // Reset to Ethereum on wallet switch
             // Legacy sync
             address: mainAddr,
             name: group.name,
@@ -183,19 +201,20 @@ export const useWalletStore = create<WalletState>()(
         }
       },
 
-      setActiveChain: (chain) => {
+      setActiveChain: (chain, networkId) => {
         const state = get();
         const activeGroup = state.walletGroups.find(g => g.id === state.activeGroupId);
         if (activeGroup) {
           const chainAddr = activeGroup.addresses[chain] || null;
           set({
             activeChain: chain,
+            activeNetworkId: networkId || null,
             activeAddress: chainAddr,
             // Sync legacy address selectively
-            address: chainAddr || state.address 
+            address: chainAddr || state.address
           });
         } else {
-          set({ activeChain: chain });
+          set({ activeChain: chain, activeNetworkId: networkId || null });
         }
       },
 

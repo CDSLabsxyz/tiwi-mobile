@@ -16,6 +16,7 @@ interface AssetsTabSwitcherProps {
     activeTab: WalletTabKey;
     onTabChange: (tab: WalletTabKey) => void;
     onFilterPress?: () => void;
+    onAddTokenPress?: () => void;
 }
 
 /**
@@ -25,6 +26,7 @@ export const AssetsTabSwitcher: React.FC<AssetsTabSwitcherProps> = ({
     activeTab,
     onTabChange,
     onFilterPress,
+    onAddTokenPress,
 }) => {
     return (
         <View style={styles.container}>
@@ -71,20 +73,33 @@ export const AssetsTabSwitcher: React.FC<AssetsTabSwitcherProps> = ({
                 </TouchableOpacity>
             </View>
 
-            {/* Filter Button */}
-            <TouchableOpacity
-                activeOpacity={0.8}
-                onPress={onFilterPress}
-                style={styles.filterButton}
-            >
-                <View style={styles.filterIconWrapper}>
-                    <Image
-                        source={FilterIcon}
-                        style={styles.fullSize}
-                        contentFit="contain"
-                    />
-                </View>
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+                {/* Add Token Button */}
+                {onAddTokenPress && (
+                    <TouchableOpacity
+                        activeOpacity={0.8}
+                        onPress={onAddTokenPress}
+                        style={styles.filterButton}
+                    >
+                        <Text style={{ fontSize: 20, color: colors.primaryCTA, fontFamily: 'Manrope-Bold' }}>+</Text>
+                    </TouchableOpacity>
+                )}
+
+                {/* Filter Button */}
+                <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={onFilterPress}
+                    style={styles.filterButton}
+                >
+                    <View style={styles.filterIconWrapper}>
+                        <Image
+                            source={FilterIcon}
+                            style={styles.fullSize}
+                            contentFit="contain"
+                        />
+                    </View>
+                </TouchableOpacity>
+            </View>
         </View>
     );
 };

@@ -23,6 +23,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { formatTokenQuantity, formatUSDPrice, getColorFromSeed } from '@/utils/formatting';
 import { useWalletBalances } from '@/hooks/useWalletBalances';
 import { getTokenLogo } from '@/services/tokenLogoService';
+import { useCustomTokenStore } from '@/store/customTokenStore';
 
 const CopyIcon = require('../assets/wallet/copy-01.svg');
 const CheckmarkIcon = require('../assets/swap/checkmark-circle-01.svg');
@@ -52,7 +53,12 @@ export default function ReceiveScreen() {
         address?: string;
         isAutoSelected?: string;
     }>();
-    const { walletGroups, activeAddress, activeChain } = useWalletStore();
+    const { walletGroups, activeAddress, activeChain, activeGroupId } = useWalletStore();
+    const tokensByWallet = useCustomTokenStore(s => s.tokensByWallet);
+    const customTokens = useMemo(() => {
+        const key = activeGroupId || activeAddress || 'default';
+        return tokensByWallet[key] || [];
+    }, [tokensByWallet, activeGroupId, activeAddress]);
     const { data: balanceData } = useWalletBalances();
 
     const { showToast } = useToastStore();
@@ -127,18 +133,48 @@ export default function ReceiveScreen() {
         const TWC_ADDRESS = '0xda1060158f7d593667cce0a15db346bb3ffb3596'.toLowerCase();
         const NATIVE_ADDRS = [NATIVE_TOKEN_ADDRESS, MORALIS_NATIVE_ADDRESS];
 
+        // Chains the user actually has an address for — used to gate what shows as "owned"
+        const availableChainIds = new Set(
+            WALLET_CHAINS
+                .filter(wc => !!activeGroup?.addresses?.[wc.chain])
+                .map(wc => wc.id)
+        );
+
+        // Native symbol-to-chain mapping — blocks fake natives like "TON" on BSC
+        const NATIVE_SYMBOL_CHAINS: Record<string, number[]> = {
+            'ETH': [1, 10, 42161, 8453, 59144],
+            'BNB': [56], 'WBNB': [56],
+            'MATIC': [137], 'POL': [137],
+            'AVAX': [43114],
+            'SOL': [7565164], 'WSOL': [7565164],
+            'TRX': [728126428],
+            'TON': [1100, 136105027],
+            'ATOM': [118],
+            'FTM': [250],
+        };
+
+        const isValidNativeOnChain = (symbol: string, chainId: number): boolean => {
+            const sym = (symbol || '').toUpperCase();
+            const allowed = NATIVE_SYMBOL_CHAINS[sym];
+            if (!allowed) return true; // not a native symbol — no restriction
+            return allowed.includes(Number(chainId));
+        };
+
         // 1. Get tokens from API
         const rawTokens = searchQuery.trim()
             ? (searchResponse?.tokens || [])
             : (defaultResponse?.tokens || []);
 
         // 2. Map to unified objects
-        const mappedApiTokens = rawTokens.map(t => {
+        const mappedApiTokens = rawTokens
+            .filter(t => isValidNativeOnChain(t.symbol, t.chainId)) // drop fake natives
+            .map(t => {
             const walletToken = balanceData?.tokens.find(
                 wt => wt.address.toLowerCase() === t.address.toLowerCase() && wt.chainId === t.chainId
             );
             const chainInfo = chains?.find(c => c.id === t.chainId);
-            const hasBalance = !!walletToken;
+            // Only count as owned if user actually has an address for this chain
+            const hasBalance = !!walletToken && availableChainIds.has(t.chainId);
             const balanceNum = parseFloat(walletToken?.balanceFormatted || '0');
             const priceNum = parseFloat(t.priceUSD || '0');
             const totalUSD = balanceNum * priceNum;
@@ -167,6 +203,10 @@ export default function ReceiveScreen() {
         // 3. Add wallet tokens that might not be in API results
         const ownedTokensOnChain = (balanceData?.tokens || [])
             .filter(wt => {
+                // Only show tokens on chains the user has an address for
+                if (!availableChainIds.has(wt.chainId)) return false;
+                // Enforce native symbol-to-chain (blocks fake "TON" on BSC, etc.)
+                if (!isValidNativeOnChain(wt.symbol, wt.chainId)) return false;
                 if (selectedChainFilter) return wt.chainId === selectedChainFilter;
                 return true;
             })
@@ -196,7 +236,37 @@ export default function ReceiveScreen() {
                 };
             });
 
-        const allTokens = [...mappedApiTokens, ...ownedTokensOnChain];
+        // 3b. Add custom (user-added) tokens as owned, scoped to this wallet
+        const customMapped = customTokens
+            .filter(ct =>
+                !mappedApiTokens.some(at => at.address.toLowerCase() === ct.address.toLowerCase() && at.chainId === ct.chainId) &&
+                !(balanceData?.tokens || []).some(wt => wt.address.toLowerCase() === ct.address.toLowerCase() && wt.chainId === ct.chainId)
+            )
+            .filter(ct => availableChainIds.has(ct.chainId) && isValidNativeOnChain(ct.symbol, ct.chainId))
+            .map(ct => {
+                const chainInfo = chains?.find(c => c.id === ct.chainId);
+                const bal = parseFloat(ct.balanceFormatted || '0');
+                const usdVal = parseFloat(ct.usdValue || '0');
+                return {
+                    id: `${ct.chainId}-${ct.address}`,
+                    symbol: ct.symbol,
+                    name: ct.name,
+                    logoURI: ct.logoURI || getTokenLogo(ct.symbol, ct.chainId, ct.address),
+                    chainIcon: chainInfo?.logoURI,
+                    address: ct.address,
+                    chainId: ct.chainId,
+                    decimals: ct.decimals,
+                    balanceToken: `${formatTokenQuantity(ct.balanceFormatted || '0')} ${ct.symbol}`,
+                    balanceFiat: usdVal > 0 ? formatUSDPrice(usdVal) : '$0.00',
+                    isOwned: true, // Always shown as owned in receive (user explicitly added)
+                    usdValueNum: usdVal,
+                    _liquidity: 0,
+                    _verified: true,
+                    chainType: WALLET_CHAINS.find(wc => wc.id === ct.chainId)?.chain || 'EVM',
+                };
+            });
+
+        const allTokens = [...mappedApiTokens, ...ownedTokensOnChain, ...customMapped];
 
         // 4. Strict chain filter and search filter
         const filtered = allTokens.filter(t => {
@@ -267,7 +337,7 @@ export default function ReceiveScreen() {
             if (!a._verified && b._verified) return 1;
             return b._liquidity - a._liquidity;
         });
-    }, [searchResponse, defaultResponse, balanceData, selectedChainFilter, chains, searchQuery]);
+    }, [searchResponse, defaultResponse, balanceData, selectedChainFilter, chains, searchQuery, customTokens, activeGroup]);
 
     // Get actual wallet address based on chain type
     const getAddressForToken = (token: any) => {

@@ -9,7 +9,7 @@ import * as Clipboard from 'expo-clipboard';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // Assets from Figma
@@ -25,10 +25,23 @@ export default function ReferralScreen() {
     const { t } = useTranslation();
     const router = useRouter();
     const { bottom } = useSafeAreaInsets();
-    const { address } = useWalletStore();
+    const { walletGroups, activeGroupId } = useWalletStore();
+    // Always use EVM address for referrals — ties all chains to one referral identity
+    const activeGroup = walletGroups.find(g => g.id === activeGroupId);
+    const address = activeGroup?.addresses?.EVM || useWalletStore.getState().address;
 
     const [referralCodeInput, setReferralCodeInput] = useState('');
     const [isProcessing, setIsProcessing] = useState(false);
+    const [showGenerateModal, setShowGenerateModal] = useState(false);
+    const [generateMode, setGenerateMode] = useState<'auto' | 'custom'>('auto');
+    const [customCodeInput, setCustomCodeInput] = useState('');
+    const [alertModal, setAlertModal] = useState<{ visible: boolean; title: string; message: string; type: 'success' | 'error' | 'info' }>({
+        visible: false, title: '', message: '', type: 'info',
+    });
+
+    const showAlert = (title: string, message: string, type: 'success' | 'error' | 'info' = 'info') => {
+        setAlertModal({ visible: true, title, message, type });
+    };
 
     // Fetch Stats (Includes personal referral code)
     const { data: stats, isLoading: statsLoading, refetch: refetchStats } = useQuery({
@@ -55,7 +68,7 @@ export default function ReferralScreen() {
 
     const handleConfirm = async () => {
         if (!referralCodeInput.trim() || !address) {
-            Alert.alert('Error', 'Please enter a referral code');
+            showAlert('Error', 'Please enter a referral code', 'error');
             return;
         }
 
@@ -63,32 +76,71 @@ export default function ReferralScreen() {
         try {
             const res = await apiClient.applyReferralCode(address, referralCodeInput.trim());
             if (res.success) {
-                Alert.alert('Success', 'Referral code applied successfully!');
+                showAlert('Success', 'Referral code applied successfully!', 'success');
                 setReferralCodeInput('');
                 refetchStats();
             } else {
-                Alert.alert('Error', res.message || 'Failed to apply code');
+                showAlert('Error', res.message || 'Failed to apply code', 'error');
             }
         } catch (error: any) {
-            Alert.alert('Error', error.message || 'An unexpected error occurred');
+            showAlert('Error', error.message || 'An unexpected error occurred', 'error');
         } finally {
             setIsProcessing(false);
         }
     };
 
+    const handleGeneratePress = async () => {
+        if (!address) return;
+
+        // If wallet already has a code, go straight to position page
+        if (hasCode) {
+            router.push('/referral/position' as any);
+            return;
+        }
+
+        // Check with backend — maybe code was created on another device
+        setIsProcessing(true);
+        try {
+            const freshStats = await apiClient.getReferralStats(address);
+            if (freshStats?.referralCode) {
+                refetchStats();
+                router.push('/referral/position' as any);
+                return;
+            }
+        } catch {}
+        setIsProcessing(false);
+
+        // No existing code — show the generate modal
+        setShowGenerateModal(true);
+    };
+
     const handleGenerateCode = async () => {
         if (!address) return;
 
+        const customCode = generateMode === 'custom' ? customCodeInput.trim() : undefined;
+
+        if (generateMode === 'custom') {
+            if (!customCode || customCode.length < 3 || customCode.length > 30) {
+                showAlert('Invalid Code', 'Custom code must be 3-30 characters.', 'error');
+                return;
+            }
+            if (!/^[a-zA-Z0-9_]+$/.test(customCode)) {
+                showAlert('Invalid Code', 'Only letters, numbers, and underscores are allowed.', 'error');
+                return;
+            }
+        }
+
         setIsProcessing(true);
         try {
-            // By default we auto-generate, but we could allow a custom code later if requested
-            const res = await apiClient.createReferralCode(address);
+            const res = await apiClient.createReferralCode(address, customCode);
             if (res.success) {
-                Alert.alert('Code Generated', `Your referral code: ${res.code}`);
+                setShowGenerateModal(false);
+                setCustomCodeInput('');
                 refetchStats();
+                router.push('/referral/position' as any);
             }
         } catch (error: any) {
-            Alert.alert('Error', error.message || 'Failed to generate code');
+            showAlert('Error', error.message || 'Failed to generate code', 'error');
         } finally {
             setIsProcessing(false);
         }
@@ -96,7 +148,7 @@ export default function ReferralScreen() {
 
     const handleCopy = async (text: string, label: string) => {
         await Clipboard.setStringAsync(text);
-        Alert.alert('Copied', `${label} copied to clipboard!`);
+        showAlert('Copied', `${label} copied to clipboard!`, 'success');
     };
 
     return (
@@ -214,14 +266,87 @@ export default function ReferralScreen() {
                         {/* Generate Referral Code Button */}
                         <TouchableOpacity
                             style={[styles.generateButton, isProcessing && { opacity: 0.5 }]}
-                            onPress={handleGenerateCode}
+                            onPress={handleGeneratePress}
                             activeOpacity={0.8}
                             disabled={isProcessing}
                         >
-                            <Text style={styles.generateText}>{isProcessing ? 'Generating...' : 'Generate Referral Code'}</Text>
+                            <Text style={styles.generateText}>{isProcessing ? 'Checking...' : 'Generate Referral Code'}</Text>
                         </TouchableOpacity>
                     </>
                 )}
+
+                {/* Generate Referral Code Modal */}
+                <Modal
+                    visible={showGenerateModal}
+                    transparent
+                    animationType="fade"
+                    onRequestClose={() => setShowGenerateModal(false)}
+                >
+                    <View style={styles.modalOverlay}>
+                        <View style={styles.modalContent}>
+                            {/* Close button */}
+                            <TouchableOpacity
+                                style={styles.modalClose}
+                                onPress={() => { setShowGenerateModal(false); setCustomCodeInput(''); }}
+                            >
+                                <Text style={{ fontSize: 20, color: colors.titleText }}>✕</Text>
+                            </TouchableOpacity>
+
+                            <Text style={styles.modalTitle}>Generate Referral Code</Text>
+                            <Text style={styles.modalSubtitle}>
+                                Create a unique referral code to invite friends and earn rewards
+                            </Text>
+
+                            {/* Auto / Custom toggle */}
+                            <View style={styles.modeToggle}>
+                                <TouchableOpacity
+                                    style={[styles.modeButton, generateMode === 'auto' && styles.modeButtonActive]}
+                                    onPress={() => setGenerateMode('auto')}
+                                >
+                                    <Text style={[styles.modeButtonText, generateMode === 'auto' && styles.modeButtonTextActive]}>Auto Generate</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={[styles.modeButton, generateMode === 'custom' && styles.modeButtonActive]}
+                                    onPress={() => setGenerateMode('custom')}
+                                >
+                                    <Text style={[styles.modeButtonText, generateMode === 'custom' && styles.modeButtonTextActive]}>Custom Code</Text>
+                                </TouchableOpacity>
+                            </View>
+
+                            {/* Custom code input */}
+                            {generateMode === 'custom' && (
+                                <View style={styles.customInputSection}>
+                                    <Text style={styles.customInputLabel}>Enter Custom Code</Text>
+                                    <TextInput
+                                        value={customCodeInput}
+                                        onChangeText={setCustomCodeInput}
+                                        placeholder="YourName, YourName123, or Your_Name"
+                                        placeholderTextColor={colors.mutedText}
+                                        style={styles.customInput}
+                                        maxLength={30}
+                                        autoCapitalize="none"
+                                        autoCorrect={false}
+                                    />
+                                    <Text style={styles.customInputHint}>
+                                        Use your name, name with numbers, or name with symbols (3-30 characters).{'\n'}Auto-generated codes follow TIWI#### format.
+                                    </Text>
+                                </View>
+                            )}
+
+                            {/* Generate button */}
+                            <TouchableOpacity
+                                style={[styles.modalGenerateButton, isProcessing && { opacity: 0.5 }]}
+                                onPress={handleGenerateCode}
+                                activeOpacity={0.8}
+                                disabled={isProcessing}
+                            >
+                                <Text style={styles.modalGenerateText}>
+                                    {isProcessing ? 'Generating...' : 'Generate Referral Code'}
+                                </Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </Modal>
 
                 {/* Referral Rules */}
                 <View style={styles.rulesSection}>
@@ -301,6 +426,46 @@ export default function ReferralScreen() {
                 </View>
 
             </ScrollView>
+
+            {/* Themed Alert Modal */}
+            <Modal
+                visible={alertModal.visible}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setAlertModal(prev => ({ ...prev, visible: false }))}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.alertModalContent}>
+                        <View style={[
+                            styles.alertIconCircle,
+                            alertModal.type === 'success' && { backgroundColor: 'rgba(177, 241, 40, 0.12)', borderColor: 'rgba(177, 241, 40, 0.3)' },
+                            alertModal.type === 'error' && { backgroundColor: 'rgba(255, 59, 48, 0.12)', borderColor: 'rgba(255, 59, 48, 0.3)' },
+                            alertModal.type === 'info' && { backgroundColor: 'rgba(177, 241, 40, 0.12)', borderColor: 'rgba(177, 241, 40, 0.3)' },
+                        ]}>
+                            <Text style={[
+                                styles.alertIconText,
+                                alertModal.type === 'success' && { color: colors.primaryCTA },
+                                alertModal.type === 'error' && { color: '#FF3B30' },
+                                alertModal.type === 'info' && { color: colors.primaryCTA },
+                            ]}>
+                                {alertModal.type === 'success' ? '✓' : alertModal.type === 'error' ? '!' : 'i'}
+                            </Text>
+                        </View>
+                        <Text style={styles.alertTitle}>{alertModal.title}</Text>
+                        <Text style={styles.alertMessage}>{alertModal.message}</Text>
+                        <TouchableOpacity
+                            style={[
+                                styles.alertButton,
+                                alertModal.type === 'error' && { backgroundColor: '#FF3B30' },
+                            ]}
+                            onPress={() => setAlertModal(prev => ({ ...prev, visible: false }))}
+                            activeOpacity={0.8}
+                        >
+                            <Text style={styles.alertButtonText}>OK</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
         </View>
     );
 }
@@ -508,5 +673,162 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: colors.bodyText,
         lineHeight: 21,
+    },
+    // Modal styles
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: 24,
+    },
+    modalContent: {
+        width: '100%',
+        backgroundColor: colors.bgCards,
+        borderRadius: 20,
+        padding: 24,
+        borderWidth: 1,
+        borderColor: colors.bgStroke,
+    },
+    modalClose: {
+        position: 'absolute',
+        top: 16,
+        right: 16,
+        width: 32,
+        height: 32,
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 1,
+    },
+    modalTitle: {
+        fontFamily: 'Manrope-Bold',
+        fontSize: 20,
+        color: colors.titleText,
+        marginBottom: 8,
+    },
+    modalSubtitle: {
+        fontFamily: 'Manrope-Regular',
+        fontSize: 14,
+        color: colors.bodyText,
+        marginBottom: 24,
+        lineHeight: 20,
+    },
+    modeToggle: {
+        flexDirection: 'row',
+        gap: 12,
+        marginBottom: 20,
+    },
+    modeButton: {
+        flex: 1,
+        height: 48,
+        borderRadius: 12,
+        borderWidth: 1.5,
+        borderColor: colors.bgStroke,
+        backgroundColor: 'transparent',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    modeButtonActive: {
+        backgroundColor: colors.primaryCTA,
+        borderColor: colors.primaryCTA,
+    },
+    modeButtonText: {
+        fontFamily: 'Manrope-SemiBold',
+        fontSize: 14,
+        color: colors.bodyText,
+    },
+    modeButtonTextActive: {
+        color: '#000000',
+    },
+    customInputSection: {
+        marginBottom: 20,
+    },
+    customInputLabel: {
+        fontFamily: 'Manrope-Medium',
+        fontSize: 14,
+        color: colors.bodyText,
+        marginBottom: 10,
+    },
+    customInput: {
+        height: 52,
+        backgroundColor: colors.bg,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: colors.bgStroke,
+        paddingHorizontal: 16,
+        fontFamily: 'Manrope-Medium',
+        fontSize: 14,
+        color: colors.titleText,
+        marginBottom: 8,
+    },
+    customInputHint: {
+        fontFamily: 'Manrope-Regular',
+        fontSize: 12,
+        color: colors.mutedText,
+        lineHeight: 18,
+    },
+    modalGenerateButton: {
+        width: '100%',
+        height: 52,
+        borderRadius: 12,
+        backgroundColor: colors.primaryCTA,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    modalGenerateText: {
+        fontFamily: 'Manrope-Bold',
+        fontSize: 16,
+        color: '#000000',
+    },
+    // Themed alert modal
+    alertModalContent: {
+        width: '100%',
+        backgroundColor: colors.bgCards,
+        borderRadius: 20,
+        padding: 28,
+        borderWidth: 1,
+        borderColor: colors.bgStroke,
+        alignItems: 'center',
+    },
+    alertIconCircle: {
+        width: 56,
+        height: 56,
+        borderRadius: 28,
+        borderWidth: 1.5,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 16,
+    },
+    alertIconText: {
+        fontSize: 24,
+        fontFamily: 'Manrope-Bold',
+    },
+    alertTitle: {
+        fontFamily: 'Manrope-Bold',
+        fontSize: 20,
+        color: colors.titleText,
+        marginBottom: 8,
+        textAlign: 'center',
+    },
+    alertMessage: {
+        fontFamily: 'Manrope-Regular',
+        fontSize: 14,
+        color: colors.bodyText,
+        lineHeight: 20,
+        textAlign: 'center',
+        marginBottom: 24,
+    },
+    alertButton: {
+        width: '100%',
+        height: 48,
+        borderRadius: 12,
+        backgroundColor: colors.primaryCTA,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    alertButtonText: {
+        fontFamily: 'Manrope-Bold',
+        fontSize: 16,
+        color: '#000000',
     },
 });
