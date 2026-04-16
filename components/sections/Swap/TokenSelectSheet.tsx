@@ -3,6 +3,8 @@ import { colors } from '@/constants/colors';
 import { useChains } from '@/hooks/useChains';
 import { useTokens } from '@/hooks/useTokens';
 import { useWalletBalances } from '@/hooks/useWalletBalances';
+import { useCustomTokenStore } from '@/store/customTokenStore';
+import { useWalletStore } from '@/store/walletStore';
 import { formatTokenQuantity, formatUSDPrice, getColorFromSeed } from '@/utils/formatting';
 import { MORALIS_NATIVE_ADDRESS, NATIVE_TOKEN_ADDRESS, truncateAddress } from '@/utils/wallet';
 import { Ionicons } from '@expo/vector-icons';
@@ -57,6 +59,23 @@ export const TokenSelectSheet: React.FC<TokenSelectSheetProps> = ({
     });
     const tokens = response?.tokens;
 
+    // Per-wallet hidden-token sets — anything the user toggled off in
+    // Manage Tokens must also disappear from the swap selector until re-enabled.
+    const { activeGroupId, address } = useWalletStore();
+    const walletKey = activeGroupId || address || 'default';
+    const hiddenWalletTokens = useCustomTokenStore(s => s.hiddenWalletTokens);
+    const customTokens = useCustomTokenStore(s => s.tokensByWallet);
+    const hiddenKeySet = React.useMemo(() => {
+        const set = new Set<string>();
+        (hiddenWalletTokens[walletKey] || []).forEach(r => {
+            set.add(`${r.chainId}-${r.address.toLowerCase()}`);
+        });
+        (customTokens[walletKey] || []).forEach(ct => {
+            if (ct.hidden) set.add(`${ct.chainId}-${ct.address.toLowerCase()}`);
+        });
+        return set;
+    }, [hiddenWalletTokens, customTokens, walletKey]);
+
     const options: TokenOption[] = React.useMemo(() => {
         if (!tokens) return [];
 
@@ -67,6 +86,9 @@ export const TokenSelectSheet: React.FC<TokenSelectSheetProps> = ({
         const filteredTokens = tokens.filter(t => {
             const isOnChain = (typeof chainId === 'number') ? t.chainId === chainId : true;
             if (!isOnChain) return false;
+
+            // Respect the Manage Tokens hidden list
+            if (hiddenKeySet.has(`${t.chainId}-${(t.address || '').toLowerCase()}`)) return false;
 
             const name = t.name?.toLowerCase() || '';
             const symbol = t.symbol?.toLowerCase() || '';
@@ -164,7 +186,7 @@ export const TokenSelectSheet: React.FC<TokenSelectSheetProps> = ({
 
             return 0;
         });
-    }, [tokens, balanceData, chains]);
+    }, [tokens, balanceData, chains, hiddenKeySet, chainId]);
 
     return (
         <SelectionBottomSheet

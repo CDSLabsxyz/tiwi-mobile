@@ -1,7 +1,7 @@
 /**
  * AI Service for Tiwi Mobile App
- * Primary: OpenAI GPT-4o-mini with live market data enrichment
- * Fallback: Gemini API → Tiwi backend
+ * Primary: TIWI super-app backend (knowledge base + live data + brand scrubbing)
+ * Fallback chain: OpenAI direct → Gemini → legacy backend
  */
 
 import { api } from '@/lib/mobile/api-client';
@@ -9,8 +9,18 @@ import { api } from '@/lib/mobile/api-client';
 const OPENAI_API_KEY = process.env.EXPO_PUBLIC_OPENAI_API_KEY || '';
 const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
 const BACKEND_URL = process.env.EXPO_PUBLIC_AI_BACKEND_URL || 'https://tiwiprotocol-ai.vercel.app/api/chat';
+const SUPERAPP_AI_URL = process.env.EXPO_PUBLIC_SUPERAPP_AI_URL || 'https://app.tiwiprotocol.xyz/api/v1/ai/chat';
 const OPENAI_STREAM_URL = 'https://api.openai.com/v1/chat/completions';
 const GEMINI_STREAM_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse&key=${GEMINI_API_KEY}`;
+
+export interface AIChatContext {
+  walletAddress?: string | null;
+  portfolio?: {
+    totalUsd: string;
+    tokens: Array<{ symbol: string; balance: string; usdValue: string }>;
+  };
+  history?: Array<{ role: 'user' | 'assistant'; content: string }>;
+}
 
 const SYSTEM_PROMPT = `You are TIWI AI, the intelligent assistant for TIWI Protocol — a multichain DeFi super-app.
 
@@ -254,7 +264,14 @@ const imageUriToBase64 = async (uri: string): Promise<string> => {
 // ─── Main streaming API ──────────────────────────────────────────────────────
 
 /**
- * Stream AI response with live market data enrichment
+ * Stream AI response.
+ *
+ * Strategy order:
+ *  1. TIWI super-app backend — has the knowledge base, live market data,
+ *     site scraping, portfolio injection, and brand scrubbing
+ *  2. OpenAI direct — client-side fallback if backend unreachable
+ *  3. Gemini — secondary fallback
+ *  4. Legacy backend — last resort
  */
 export const streamAIResponse = async (
   prompt: string,
@@ -263,9 +280,19 @@ export const streamAIResponse = async (
   onChunk?: (chunk: string) => void,
   onComplete?: (fullText: string) => void,
   onError?: (error: Error) => void,
-  abortSignal?: AbortSignal
+  abortSignal?: AbortSignal,
+  context?: AIChatContext,
 ): Promise<void> => {
-  // Enrich prompt with live market data if applicable
+  // 1. Super-app backend (primary) — handles enrichment server-side
+  try {
+    await streamFromSuperApp(prompt, imageUri, imageMimeType, onChunk, onComplete, abortSignal, context);
+    return;
+  } catch (e: any) {
+    if (abortSignal?.aborted) return;
+    console.warn('[AIService] Super-app backend failed, falling back to OpenAI:', e?.message);
+  }
+
+  // Fallbacks need client-side market enrichment since they hit raw model APIs
   let enrichedPrompt = prompt;
   const detectedTokens = detectMarketQuery(prompt);
   if (detectedTokens.length > 0) {
@@ -275,7 +302,7 @@ export const streamAIResponse = async (
     }
   }
 
-  // Try OpenAI first
+  // 2. OpenAI direct
   if (OPENAI_API_KEY) {
     try {
       await streamFromOpenAI(enrichedPrompt, imageUri, imageMimeType, onChunk, onComplete, onError, abortSignal);
@@ -285,23 +312,93 @@ export const streamAIResponse = async (
     }
   }
 
-  // Try Gemini
+  // 3. Gemini
   if (GEMINI_API_KEY) {
     try {
       await streamFromGemini(enrichedPrompt, imageUri, imageMimeType, onChunk, onComplete, onError, abortSignal);
       return;
     } catch (e: any) {
-      console.warn('[AIService] Gemini failed, trying backend:', e.message);
+      console.warn('[AIService] Gemini failed, trying legacy backend:', e.message);
     }
   }
 
-  // Try backend
+  // 4. Legacy backend
   try {
     await streamFromBackend(prompt, imageUri, imageMimeType, onChunk, onComplete, onError, abortSignal);
   } catch {
     onError?.(new Error('AI service is temporarily unavailable. Please try again.'));
   }
 };
+
+// ─── Super-app backend (primary) ─────────────────────────────────────────────
+
+/**
+ * Convert image URI to a `data:` URL the super-app endpoint expects.
+ */
+async function imageUriToDataUrl(uri: string, mimeType?: string): Promise<string> {
+  const base64 = await imageUriToBase64(uri);
+  return `data:${mimeType || 'image/jpeg'};base64,${base64}`;
+}
+
+/**
+ * Drip the full reply into onChunk so the UI's streaming animation still
+ * works even though the backend returns a single JSON response.
+ */
+async function fakeStream(
+  text: string,
+  onChunk: ((chunk: string) => void) | undefined,
+  abortSignal?: AbortSignal,
+): Promise<void> {
+  if (!onChunk || !text) return;
+  const chunkSize = 6;
+  const intervalMs = 12;
+  for (let i = 0; i < text.length; i += chunkSize) {
+    if (abortSignal?.aborted) return;
+    onChunk(text.slice(i, i + chunkSize));
+    if (i + chunkSize < text.length) {
+      await new Promise((r) => setTimeout(r, intervalMs));
+    }
+  }
+}
+
+async function streamFromSuperApp(
+  prompt: string,
+  imageUri: string | undefined,
+  imageMimeType: string | undefined,
+  onChunk: ((chunk: string) => void) | undefined,
+  onComplete: ((fullText: string) => void) | undefined,
+  abortSignal: AbortSignal | undefined,
+  context: AIChatContext | undefined,
+): Promise<void> {
+  const images: string[] = [];
+  if (imageUri) {
+    images.push(await imageUriToDataUrl(imageUri, imageMimeType));
+  }
+
+  const body: Record<string, unknown> = { message: prompt };
+  if (context?.walletAddress) body.walletAddress = context.walletAddress;
+  if (context?.portfolio) body.portfolio = context.portfolio;
+  if (context?.history?.length) body.history = context.history.slice(-8);
+  if (images.length) body.images = images;
+
+  const response = await fetch(SUPERAPP_AI_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal: abortSignal,
+  });
+
+  if (!response.ok) {
+    throw new Error(`Super-app AI returned ${response.status}`);
+  }
+
+  const json = await response.json();
+  const reply: string = json?.reply || '';
+  if (!reply) throw new Error('Empty reply from super-app AI');
+
+  await fakeStream(reply, onChunk, abortSignal);
+  onComplete?.(reply);
+}
 
 // ─── OpenAI streaming ────────────────────────────────────────────────────────
 

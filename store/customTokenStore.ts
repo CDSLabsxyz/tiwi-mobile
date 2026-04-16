@@ -13,22 +13,38 @@ export interface CustomToken {
     balanceFormatted?: string;
     usdValue?: string;
     addedAt: number;
+    // When true, the token is kept in the user's manage-tokens list but
+    // hidden from the wallet asset view. Lets the user toggle individual
+    // tokens off without losing the entry.
+    hidden?: boolean;
+}
+
+interface HiddenRef {
+    address: string;
+    chainId: number;
 }
 
 interface CustomTokenState {
     // Tokens scoped per wallet group ID
     tokensByWallet: Record<string, CustomToken[]>;
+    // Wallet-fetched tokens the user has toggled off in manage-tokens.
+    // Keyed per wallet group ID, matched by (address, chainId).
+    hiddenWalletTokens: Record<string, HiddenRef[]>;
     addToken: (walletId: string, token: CustomToken) => void;
     removeToken: (walletId: string, address: string, chainId: number) => void;
     hasToken: (walletId: string, address: string, chainId: number) => boolean;
     getTokens: (walletId: string) => CustomToken[];
     updateTokenBalance: (walletId: string, address: string, chainId: number, updates: { balanceFormatted?: string; usdValue?: string; priceUSD?: string }) => void;
+    toggleTokenHidden: (walletId: string, address: string, chainId: number) => void;
+    toggleWalletTokenHidden: (walletId: string, address: string, chainId: number) => void;
+    isWalletTokenHidden: (walletId: string, address: string, chainId: number) => boolean;
 }
 
 export const useCustomTokenStore = create<CustomTokenState>()(
     persist(
         (set, get) => ({
             tokensByWallet: {},
+            hiddenWalletTokens: {},
 
             addToken: (walletId, token) => {
                 const current = get().tokensByWallet[walletId] || [];
@@ -68,6 +84,48 @@ export const useCustomTokenStore = create<CustomTokenState>()(
 
             getTokens: (walletId) => {
                 return get().tokensByWallet[walletId] || [];
+            },
+
+            toggleTokenHidden: (walletId, address, chainId) => {
+                set(state => {
+                    const current = state.tokensByWallet[walletId] || [];
+                    const updated = current.map(t => {
+                        if (t.address.toLowerCase() === address.toLowerCase() && t.chainId === chainId) {
+                            return { ...t, hidden: !t.hidden };
+                        }
+                        return t;
+                    });
+                    return {
+                        tokensByWallet: {
+                            ...state.tokensByWallet,
+                            [walletId]: updated,
+                        },
+                    };
+                });
+            },
+
+            toggleWalletTokenHidden: (walletId, address, chainId) => {
+                set(state => {
+                    const current = state.hiddenWalletTokens[walletId] || [];
+                    const key = address.toLowerCase();
+                    const exists = current.some(r => r.address.toLowerCase() === key && r.chainId === chainId);
+                    const next = exists
+                        ? current.filter(r => !(r.address.toLowerCase() === key && r.chainId === chainId))
+                        : [...current, { address, chainId }];
+                    return {
+                        hiddenWalletTokens: {
+                            ...state.hiddenWalletTokens,
+                            [walletId]: next,
+                        },
+                    };
+                });
+            },
+
+            isWalletTokenHidden: (walletId, address, chainId) => {
+                const current = get().hiddenWalletTokens[walletId] || [];
+                return current.some(
+                    r => r.address.toLowerCase() === address.toLowerCase() && r.chainId === chainId
+                );
             },
 
             updateTokenBalance: (walletId, address, chainId, updates) => {

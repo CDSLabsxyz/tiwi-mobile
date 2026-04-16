@@ -1,5 +1,4 @@
 import {
-    AddTokenModal,
     AssetListItem,
     AssetsTabSwitcher,
     ClaimableRewardsCard,
@@ -80,7 +79,7 @@ export default function WalletScreen() {
     } = useWalletBalances();
 
     const tokens = balanceData?.tokens || [];
-    const totalNetWorthUsd = balanceData?.totalNetWorthUsd || '0.00';
+    const apiTotalNetWorthUsd = balanceData?.totalNetWorthUsd || '0.00';
 
     // "Updating…" signal for the balance card: true only on fresh import
     // (no data yet) or on wallet switch (showing previous wallet's data via
@@ -100,7 +99,7 @@ export default function WalletScreen() {
     const toggleBalanceVisibility = useWalletStore((state) => state.toggleBalanceVisibility);
 
     const [isFilterVisible, setIsFilterVisible] = useState(false);
-    const [isAddTokenVisible, setIsAddTokenVisible] = useState(false);
+    const openManageTokens = () => router.push('/wallet/manage-tokens' as any);
     const [nfts, setNfts] = useState<NFTItem[]>([]);
     const [isLoadingNFTs, setIsLoadingNFTs] = useState(false);
 
@@ -190,14 +189,40 @@ export default function WalletScreen() {
         }
     };
 
+    // Per-wallet hidden wallet-tokens (toggled off from manage-tokens page)
+    const hiddenWalletTokens = useCustomTokenStore(s => s.hiddenWalletTokens);
+    const hiddenWalletSet = useMemo(() => {
+        const list = hiddenWalletTokens[walletKey] || [];
+        return new Set(list.map(r => `${r.chainId}-${r.address.toLowerCase()}`));
+    }, [hiddenWalletTokens, walletKey]);
+
     // Filtered items
     const filteredTokens = useMemo(() => {
-        return applyFilters(tokens, { sortBy, tokenCategories, chains });
-    }, [tokens, sortBy, tokenCategories, chains]);
+        const visible = tokens.filter((t: any) =>
+            !hiddenWalletSet.has(`${Number(t.chainId)}-${(t.address || '').toLowerCase()}`)
+        );
+        return applyFilters(visible, { sortBy, tokenCategories, chains });
+    }, [tokens, hiddenWalletSet, sortBy, tokenCategories, chains]);
 
-    // Custom tokens that are NOT already in the balance list (zero balance / not fetched)
+    // Total reflects only tokens currently shown (hidden ones excluded).
+    // Falls back to the API-reported total when nothing is hidden, so we
+    // don't lose precision on the headline figure in the common case.
+    const totalNetWorthUsd = useMemo(() => {
+        if (hiddenWalletSet.size === 0) return apiTotalNetWorthUsd;
+        const sum = tokens.reduce((acc: number, t: any) => {
+            const k = `${Number(t.chainId)}-${(t.address || '').toLowerCase()}`;
+            if (hiddenWalletSet.has(k)) return acc;
+            const v = parseFloat(t.usdValue || '0');
+            return acc + (isFinite(v) ? v : 0);
+        }, 0);
+        return sum.toFixed(2);
+    }, [apiTotalNetWorthUsd, tokens, hiddenWalletSet]);
+
+    // Custom tokens that are NOT already in the balance list (zero balance
+    // / not fetched) and have NOT been hidden via the manage-tokens toggle.
     const customTokensWithoutBalance = useMemo(() => {
         return customTokens.filter(ct =>
+            !ct.hidden &&
             !tokens.some(t =>
                 t.address?.toLowerCase() === ct.address.toLowerCase() && Number(t.chainId) === ct.chainId
             )
@@ -340,7 +365,7 @@ export default function WalletScreen() {
                         activeTab={activeTab}
                         onTabChange={setActiveTab}
                         onFilterPress={() => setIsFilterVisible(true)}
-                        onAddTokenPress={() => setIsAddTokenVisible(true)}
+                        onAddTokenPress={() => openManageTokens()}
                     />
 
                     {/* Asset / NFT List */}
@@ -379,18 +404,11 @@ export default function WalletScreen() {
                                         <Text style={styles.addedTokensLabel}>Added Tokens</Text>
                                         <View style={styles.dividerLine} />
                                     </View>
-                                    <TouchableOpacity
-                                        style={styles.manageTokensBtn}
-                                        onPress={() => setIsAddTokenVisible(true)}
-                                        activeOpacity={0.7}
-                                    >
-                                        <Text style={styles.manageTokensText}>+ Manage Tokens</Text>
-                                    </TouchableOpacity>
                                     {customTokensWithoutBalance.map(ct => {
                                         const chainName = FALLBACK_NAMES[ct.chainId] || 'Unknown';
                                         const chainLogo = FALLBACK_LOGOS[ct.chainId];
                                         return (
-                                            <View key={`custom-${ct.chainId}-${ct.address}`} style={{ position: 'relative', paddingTop: 14 }}>
+                                            <View key={`custom-${ct.chainId}-${ct.address}`} style={{ paddingTop: 14 }}>
                                                 <AssetListItem
                                                     asset={{
                                                         symbol: ct.symbol,
@@ -421,18 +439,21 @@ export default function WalletScreen() {
                                                         decimals: ct.decimals,
                                                     })}
                                                 />
-                                                <TouchableOpacity
-                                                    onPress={() => handleRemoveCustomToken(ct)}
-                                                    style={styles.removeTokenBtn}
-                                                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                                                >
-                                                    <ExpoImage source={DeleteIcon} style={styles.removeTokenIcon} contentFit="contain" tintColor="#FF3B30" />
-                                                </TouchableOpacity>
                                             </View>
                                         );
                                     })}
                                 </>
                             )}
+
+                            {/* Always-visible Manage Tokens entry point so users
+                                can add tokens before they have any balances. */}
+                            <TouchableOpacity
+                                style={styles.manageTokensBtn}
+                                onPress={() => openManageTokens()}
+                                activeOpacity={0.7}
+                            >
+                                <Text style={styles.manageTokensText}>+ Manage Tokens</Text>
+                            </TouchableOpacity>
                         </View>
                     ) : (
                         <NFTList nfts={filteredNFTs} isLoading={isLoadingNFTs} onNFTPress={handleNFTPress} />
@@ -440,11 +461,6 @@ export default function WalletScreen() {
                 </View>
             </ScrollView>
 
-            {/* Add Token Modal */}
-            <AddTokenModal
-                visible={isAddTokenVisible}
-                onClose={() => setIsAddTokenVisible(false)}
-            />
 
             {/* Remove Token Confirmation Modal */}
             <Modal

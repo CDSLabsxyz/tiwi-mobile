@@ -7,7 +7,8 @@
 // 1. IMPORT POLYFILLS FIRST (CRITICAL)
 import '@/utils/polyfills';
 
-// import { AnimatedSplashScreen } from '@/components/ui/AnimatedSplashScreen';
+import { AnimatedSplashScreen } from '@/components/ui/AnimatedSplashScreen';
+import { DAppApprovalSheet } from '@/components/dapp/DAppApprovalSheet';
 import { TransactionToast } from '@/components/ui/TransactionToast';
 import { appKit, wagmiAdapter } from '@/config/AppKitConfig';
 import { useTokenPrefetch } from '@/hooks/useTokenPrefetch';
@@ -16,6 +17,7 @@ import { currencyService } from '@/services/currencyService';
 import { deviceService } from '@/services/deviceService';
 import { mobileSessionManager } from '@/services/mobileSessionManager';
 import { notificationService } from '@/services/notificationService';
+import { registerBackgroundTxTask } from '@/services/backgroundTaskService';
 import { initializeLiFi } from '@/services/swap/lifiConfig';
 import { updateService } from '@/services/updateService';
 import { useOnboardingStore } from '@/store/onboardingStore';
@@ -128,6 +130,9 @@ function AppContent() {
   // Safe to call without a wallet address.
   useEffect(() => {
     notificationService.initNotifications();
+    // Opportunistic background tx polling — runs every ~15 min when the OS
+    // permits. Supplement to server push, not a replacement.
+    registerBackgroundTxTask();
   }, []);
 
   // Ensure push token is registered — retry if wallet loads late
@@ -208,6 +213,7 @@ function AppContent() {
         <Stack.Screen name="wallet/index" />
         <Stack.Screen name="wallet/create" />
         <Stack.Screen name="wallet/import" />
+        <Stack.Screen name="wallet/manage-tokens" />
       </Stack>
       <SecurityOverlay />
       <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 9999, pointerEvents: 'box-none' }}>
@@ -224,9 +230,7 @@ export default function RootLayout() {
 
   const [isNavigationReady, setIsNavigationReady] = useState(false);
   const [isAppInitialized, setIsAppInitialized] = useState(false);
-  // Lottie splash commented out for testing
-  // Lottie splash commented out for local testing
-  const [isSplashComplete, setIsSplashComplete] = useState(true);
+  const [isSplashComplete, setIsSplashComplete] = useState(false);
 
   const { hasCompletedOnboarding, hasSeenOnboardingInSession, isLoading: isOnboardingLoading, checkOnboardingStatus } = useOnboardingStore();
   const { isConnected, address, _hasHydrated: isWalletHydrated } = useWalletStore();
@@ -455,7 +459,7 @@ export default function RootLayout() {
             <QueryClientProvider client={queryClient}>
               <AppContent />
               <TransactionToast />
-              {/* Lottie splash commented out for local testing
+              <DAppApprovalSheet />
               {!isSplashComplete && (
                 <AnimatedSplashScreen
                   isReady={isReadyForApp}
@@ -465,7 +469,6 @@ export default function RootLayout() {
                   }}
                 />
               )}
-              */}
             </QueryClientProvider>
           </AppKitProvider>
         </WagmiProvider>

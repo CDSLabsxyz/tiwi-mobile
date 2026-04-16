@@ -1,5 +1,6 @@
 import { colors } from '@/constants/colors';
 import { truncateAddress } from '@/utils/wallet';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -17,7 +18,6 @@ interface HeaderProps {
 const TiwiCat = require('../../assets/images/tiwi-logo.svg');
 const ArrowDown01 = require('../../assets/home/arrow-down-01.svg');
 const Scan = require('../../assets/home/iris-scan.svg');
-const Settings = require('../../assets/home/settings-03.svg');
 const ChevronLeftIcon = require('../../assets/swap/arrow-left-02.svg');
 const NotificationIconLocal = require('../../assets/settings/notification-02.svg');
 const ReferralIconLocal = require('../../assets/settings/user-group-02.svg');
@@ -75,7 +75,7 @@ export const Header: React.FC<HeaderProps> = ({
     const { address, activeChain, activeNetworkId } = useWalletStore();
     const { unreadCount } = useNotifications();
     const fullAddress = walletAddress || address || '';
-    const displayAddress = truncateAddress(fullAddress);
+    const displayAddress = truncateAddress(fullAddress, 4, 3);
 
     // Use provider icon if available, otherwise fallback to TiwiCat 0xa61c5bdf3cddb4cfcec2daa090ff0ad3563ad6q1
     const displayIcon = TiwiCat;
@@ -89,7 +89,12 @@ export const Header: React.FC<HeaderProps> = ({
                         <Image source={ChevronLeftIcon} style={styles.icon} contentFit="contain" />
                     </TouchableOpacity>
                 ) : (
-                    <View style={styles.logoWrapper}>
+                    <TouchableOpacity
+                        onPress={disableWalletModal ? undefined : onWalletPress}
+                        activeOpacity={disableWalletModal ? 1 : 0.7}
+                        style={styles.logoWrapper}
+                        hitSlop={6}
+                    >
                         <View style={styles.logoContainer}>
                             <Image
                                 source={displayIcon}
@@ -102,7 +107,7 @@ export const Header: React.FC<HeaderProps> = ({
                                 <Image source={(ChainIcons as any)[activeChain]} style={styles.iconFull} contentFit="contain" />
                             </View>
                         )}
-                    </View>
+                    </TouchableOpacity>
                 )}
 
                 <TouchableOpacity
@@ -149,12 +154,8 @@ export const Header: React.FC<HeaderProps> = ({
                         contentFit="contain"
                     />
                 </TouchableOpacity>
-                <TouchableOpacity onPress={onSettingsPress} style={styles.iconButton} activeOpacity={0.7}>
-                    <Image
-                        source={Settings}
-                        style={styles.icon}
-                        contentFit="contain"
-                    />
+                <TouchableOpacity onPress={() => router.push('/browser' as any)} style={styles.iconButton} activeOpacity={0.7}>
+                    <Ionicons name="compass-outline" size={24} color={colors.titleText} />
                 </TouchableOpacity>
                 {/* <TouchableOpacity onPress={onScanPress} style={styles.iconButton} activeOpacity={0.7}>
                     <Image source={Scan} style={styles.icon} contentFit="contain" />

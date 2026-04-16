@@ -32,7 +32,9 @@ import { getChainById } from '@/services/signer/SignerUtils';
 import { securityGuard } from '@/services/securityGuard';
 import { executeSwap, fetchSwapQuote } from '@/services/swap';
 import { isNativeToken } from '@/services/swap/constants';
+import { MORALIS_NATIVE_ADDRESS, NATIVE_TOKEN_ADDRESS } from '@/utils/wallet';
 import { useLocaleStore } from '@/store/localeStore';
+import { useCustomTokenStore } from '@/store/customTokenStore';
 import { useSecurityStore } from '@/store/securityStore';
 import { useSwapStore } from '@/store/swapStore';
 import { useWalletStore } from '@/store/walletStore';
@@ -171,15 +173,57 @@ export default function SwapScreen() {
     const { isTransactionRiskEnabled } = useSecurityStore();
     const { data: balanceData } = useWalletBalances();
 
+    // Tokens the user toggled off in Manage Tokens must read as zero-balance
+    // on the swap card — surfacing the real balance would let them Max-in a
+    // position they're intentionally treating as unavailable.
+    const hiddenWalletTokens = useCustomTokenStore(s => s.hiddenWalletTokens);
+    const customTokensByWallet = useCustomTokenStore(s => s.tokensByWallet);
+    const swapWalletKey = activeGroupId || address || 'default';
+    // Native tokens come back from the balance API under a chain-specific
+    // sentinel (e.g. 0xeeee... for Moralis) while swap defaults use 0x0000...
+    // Add both variants whenever either is hidden so native-address mismatches
+    // don't leak past the hidden check.
+    const addKeysFor = (set: Set<string>, chainId: number, address: string) => {
+        const lower = address.toLowerCase();
+        set.add(`${chainId}-${lower}`);
+        if (lower === NATIVE_TOKEN_ADDRESS || lower === MORALIS_NATIVE_ADDRESS) {
+            set.add(`${chainId}-${NATIVE_TOKEN_ADDRESS}`);
+            set.add(`${chainId}-${MORALIS_NATIVE_ADDRESS}`);
+        }
+    };
+
+    const hiddenKeySet = useMemo(() => {
+        const set = new Set<string>();
+        (hiddenWalletTokens[swapWalletKey] || []).forEach(r => {
+            addKeysFor(set, r.chainId, r.address);
+        });
+        (customTokensByWallet[swapWalletKey] || []).forEach(ct => {
+            if (ct.hidden) addKeysFor(set, ct.chainId, ct.address);
+        });
+        return set;
+    }, [hiddenWalletTokens, customTokensByWallet, swapWalletKey]);
+
+    const isTokenHidden = useCallback((addr?: string, cid?: number) => {
+        if (!addr || cid == null) return false;
+        return hiddenKeySet.has(`${cid}-${addr.toLowerCase()}`);
+    }, [hiddenKeySet]);
+
     // 1. Sync Balances for selected tokens
     useEffect(() => {
         if (!balanceData) return;
 
         if (fromToken) {
+            const hidden = isTokenHidden(fromToken.address, fromToken.chainId);
             const walletToken = balanceData.tokens.find(
                 t => t.address.toLowerCase() === fromToken.address?.toLowerCase() && t.chainId === fromToken.chainId
             );
-            if (walletToken) {
+            if (hidden) {
+                setFromToken({
+                    ...fromToken,
+                    balanceToken: `0 ${fromToken.symbol}`,
+                    balanceFiat: '$0.00',
+                });
+            } else if (walletToken) {
                 setFromToken({
                     ...fromToken,
                     balanceToken: `${parseFloat(walletToken.balanceFormatted || '0').toFixed(6)} ${fromToken.symbol}`,
@@ -189,10 +233,17 @@ export default function SwapScreen() {
         }
 
         if (toToken) {
+            const hidden = isTokenHidden(toToken.address, toToken.chainId);
             const walletToken = balanceData.tokens.find(
                 t => t.address.toLowerCase() === toToken.address?.toLowerCase() && t.chainId === toToken.chainId
             );
-            if (walletToken) {
+            if (hidden) {
+                setToToken({
+                    ...toToken,
+                    balanceToken: `0 ${toToken.symbol}`,
+                    balanceFiat: '$0.00',
+                });
+            } else if (walletToken) {
                 setToToken({
                     ...toToken,
                     balanceToken: `${parseFloat(walletToken.balanceFormatted || '0').toFixed(6)} ${toToken.symbol}`,
@@ -200,7 +251,7 @@ export default function SwapScreen() {
                 });
             }
         }
-    }, [balanceData, fromToken?.address, fromToken?.chainId, toToken?.address, toToken?.chainId]);
+    }, [balanceData, fromToken?.address, fromToken?.chainId, toToken?.address, toToken?.chainId, isTokenHidden]);
 
     // 2. Fetch Prices Updates (BNB & TWC) silently in background
     useEffect(() => {

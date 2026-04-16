@@ -10,6 +10,8 @@ import { TokenPrice } from "@/components/ui/TokenPrice";
 import { colors } from "@/constants/colors";
 import { useChains } from "@/hooks/useChains";
 import { useWalletBalances } from "@/hooks/useWalletBalances";
+import { useCustomTokenStore } from "@/store/customTokenStore";
+import { useWalletStore } from "@/store/walletStore";
 import { formatTokenQuantity, getColorFromSeed } from "@/utils/formatting";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
@@ -31,12 +33,22 @@ export const SendTokenSelectSheet: React.FC<SendTokenSelectSheetProps> = ({
   const { data: balanceData, isLoading: isLoadingBalances } = useWalletBalances();
   const { data: chains, isLoading: isLoadingChains } = useChains();
 
+  const { activeGroupId, address } = useWalletStore();
+  const walletKey = activeGroupId || address || 'default';
+  const hiddenWalletTokens = useCustomTokenStore(s => s.hiddenWalletTokens);
+  const hiddenWalletSet = useMemo(() => {
+    const list = hiddenWalletTokens[walletKey] || [];
+    return new Set(list.map(r => `${r.chainId}-${r.address.toLowerCase()}`));
+  }, [hiddenWalletTokens, walletKey]);
+
   const isLoading = isLoadingBalances || isLoadingChains;
 
   const tokensWithChains = useMemo(() => {
     if (!balanceData) return [];
 
-    return balanceData.tokens.map(token => ({
+    return balanceData.tokens
+      .filter(token => !hiddenWalletSet.has(`${Number(token.chainId)}-${(token.address || '').toLowerCase()}`))
+      .map(token => ({
       token: {
         id: `${token.chainId}-${token.address}`,
         symbol: token.symbol,
@@ -52,7 +64,7 @@ export const SendTokenSelectSheet: React.FC<SendTokenSelectSheetProps> = ({
       } as TokenOption,
       chainId: token.chainId,
     }));
-  }, [balanceData]);
+  }, [balanceData, hiddenWalletSet]);
 
   const filteredTokens = useMemo(() => {
     return tokensWithChains.filter(

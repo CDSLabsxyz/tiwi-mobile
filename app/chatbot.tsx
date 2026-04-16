@@ -1,14 +1,20 @@
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { TypingIndicator } from '@/components/ui/TypingIndicator';
 import { colors } from '@/constants/colors';
-import { initializeAIClient, isAIClientInitialized, streamAIResponse } from '@/services/aiService';
+import { useWalletBalances } from '@/hooks/useWalletBalances';
+import { AIChatContext, initializeAIClient, isAIClientInitialized, streamAIResponse } from '@/services/aiService';
 import { transcribeAudio } from '@/services/speechService';
+import { useWalletStore } from '@/store/walletStore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { RecordingPresets, requestRecordingPermissionsAsync, useAudioRecorder } from 'expo-audio';
+import * as Clipboard from 'expo-clipboard';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useRef, useState } from 'react';
-import { Alert, BackHandler, Dimensions, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, BackHandler, Dimensions, Keyboard, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -21,11 +27,290 @@ interface ChatMessage {
   isStreaming?: boolean;
 }
 
+// ─── Message tree (branching for edit-and-resend) ──────────────────────────
+//
+// Each message is a node in a tree. Editing a user message creates a NEW
+// SIBLING under the same parent rather than overwriting the original — so
+// the previous prompt + AI reply stay reachable. The visible conversation
+// is just the active path from root to leaf, picking each parent's
+// activeChild at every step. Switching versions is a one-line state
+// update on activeChildByParent.
+
+const ROOT_KEY = '__root__';
+
+interface MessageNode extends ChatMessage {
+  parentId: string | null;
+}
+
+interface MessageTree {
+  nodes: Record<string, MessageNode>;
+  childrenByParent: Record<string, string[]>;
+  activeChildByParent: Record<string, number>;
+}
+
+const emptyTree: MessageTree = { nodes: {}, childrenByParent: {}, activeChildByParent: {} };
+
+function getActivePath(tree: MessageTree): MessageNode[] {
+  const path: MessageNode[] = [];
+  let parentKey: string = ROOT_KEY;
+  // Hard cap to avoid pathological loops; real conversations stay well below this.
+  for (let i = 0; i < 1000; i++) {
+    const kids = tree.childrenByParent[parentKey];
+    if (!kids?.length) break;
+    let idx = tree.activeChildByParent[parentKey];
+    if (idx === undefined || idx < 0 || idx >= kids.length) idx = kids.length - 1;
+    const childId = kids[idx];
+    const node = tree.nodes[childId];
+    if (!node) break;
+    path.push(node);
+    parentKey = childId;
+  }
+  return path;
+}
+
+function appendChild(tree: MessageTree, parentId: string | null, node: MessageNode): MessageTree {
+  const parentKey = parentId ?? ROOT_KEY;
+  const kids = tree.childrenByParent[parentKey] || [];
+  const next = [...kids, node.id];
+  return {
+    nodes: { ...tree.nodes, [node.id]: node },
+    childrenByParent: { ...tree.childrenByParent, [parentKey]: next },
+    activeChildByParent: { ...tree.activeChildByParent, [parentKey]: next.length - 1 },
+  };
+}
+
+function patchNode(tree: MessageTree, id: string, patch: Partial<MessageNode>): MessageTree {
+  const existing = tree.nodes[id];
+  if (!existing) return tree;
+  return { ...tree, nodes: { ...tree.nodes, [id]: { ...existing, ...patch } } };
+}
+
+function setActiveChild(tree: MessageTree, parentKey: string, idx: number): MessageTree {
+  return { ...tree, activeChildByParent: { ...tree.activeChildByParent, [parentKey]: idx } };
+}
+
+// Migrate legacy flat-array storage into a single linear branch.
+function buildTreeFromArray(messages: ChatMessage[]): MessageTree {
+  let tree = emptyTree;
+  let parentId: string | null = null;
+  for (const m of messages) {
+    const node: MessageNode = { ...m, isStreaming: false, parentId };
+    tree = appendChild(tree, parentId, node);
+    parentId = m.id;
+  }
+  return tree;
+}
+
 // Image size limit: 10MB (industry standard for mobile apps)
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB in bytes
 
 // Audio recording limits: 60 seconds max (industry standard)
 const MAX_AUDIO_DURATION = 60000; // 60 seconds in milliseconds
+
+const SUGGESTIONS = [
+  'What is the TWC contract address?',
+  'How do I swap tokens?',
+  'What are my current holdings?',
+  'What is TIWI Protocol?',
+];
+
+// Storage key for per-wallet chat persistence. Falls back to a "guest"
+// bucket when no wallet is connected so anonymous chats survive restarts
+// but never leak into another wallet's history.
+const chatStorageKey = (address?: string | null) => `@tiwi/ai_chat_${address || 'guest'}`;
+
+// Inline markdown tokens we recognise: **bold**, __bold__, `code`,
+// *italic*, _italic_. Multiline tokens are intentionally excluded so a
+// stray asterisk doesn't swallow paragraphs.
+const MD_TOKEN_RE = /(\*\*[^*\n]+\*\*|__[^_\n]+__|`[^`\n]+`|\*[^*\n]+\*|_[^_\n]+_)/g;
+
+const renderMarkdown = (text: string): React.ReactNode[] => {
+  const out: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let key = 0;
+  MD_TOKEN_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = MD_TOKEN_RE.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      out.push(<Text key={`t${key++}`}>{text.slice(lastIndex, match.index)}</Text>);
+    }
+    const token = match[0];
+    if (token.startsWith('**') || token.startsWith('__')) {
+      out.push(<Text key={`b${key++}`} style={mdStyles.bold}>{token.slice(2, -2)}</Text>);
+    } else if (token.startsWith('`')) {
+      out.push(<Text key={`c${key++}`} style={mdStyles.code}>{token.slice(1, -1)}</Text>);
+    } else {
+      out.push(<Text key={`i${key++}`} style={mdStyles.italic}>{token.slice(1, -1)}</Text>);
+    }
+    lastIndex = match.index + token.length;
+  }
+  if (lastIndex < text.length) out.push(<Text key={`t${key++}`}>{text.slice(lastIndex)}</Text>);
+  return out;
+};
+
+const mdStyles = StyleSheet.create({
+  bold: { fontFamily: 'Manrope-SemiBold' },
+  italic: { fontStyle: 'italic' },
+  code: {
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    backgroundColor: '#1F261E',
+    color: '#B1F128',
+  },
+});
+
+// ─── Image zoom viewer ───────────────────────────────────────────────────
+//
+// Full-screen modal that lets the user pinch to zoom and pan the image.
+// Double-tap toggles between fit-to-screen and 2x. Closing resets state.
+
+const AnimatedExpoImage = Animated.createAnimatedComponent(Image);
+
+function ImageZoomViewer({ uri, onClose }: { uri: string | null; onClose: () => void }) {
+  const { top } = useSafeAreaInsets();
+  const scale = useSharedValue(1);
+  const savedScale = useSharedValue(1);
+  const translateX = useSharedValue(0);
+  const translateY = useSharedValue(0);
+  const savedTranslateX = useSharedValue(0);
+  const savedTranslateY = useSharedValue(0);
+
+  const reset = () => {
+    scale.value = withSpring(1);
+    savedScale.value = 1;
+    translateX.value = withSpring(0);
+    savedTranslateX.value = 0;
+    translateY.value = withSpring(0);
+    savedTranslateY.value = 0;
+  };
+
+  const pinch = Gesture.Pinch()
+    .onUpdate((e) => {
+      scale.value = Math.max(0.5, Math.min(savedScale.value * e.scale, 5));
+    })
+    .onEnd(() => {
+      if (scale.value < 1) {
+        scale.value = withSpring(1);
+        savedScale.value = 1;
+        translateX.value = withSpring(0);
+        savedTranslateX.value = 0;
+        translateY.value = withSpring(0);
+        savedTranslateY.value = 0;
+      } else {
+        savedScale.value = scale.value;
+      }
+    });
+
+  const pan = Gesture.Pan()
+    .onUpdate((e) => {
+      translateX.value = savedTranslateX.value + e.translationX;
+      translateY.value = savedTranslateY.value + e.translationY;
+    })
+    .onEnd(() => {
+      savedTranslateX.value = translateX.value;
+      savedTranslateY.value = translateY.value;
+    });
+
+  const doubleTap = Gesture.Tap()
+    .numberOfTaps(2)
+    .onEnd(() => {
+      if (scale.value > 1) {
+        scale.value = withSpring(1);
+        savedScale.value = 1;
+        translateX.value = withSpring(0);
+        savedTranslateX.value = 0;
+        translateY.value = withSpring(0);
+        savedTranslateY.value = 0;
+      } else {
+        scale.value = withSpring(2);
+        savedScale.value = 2;
+      }
+    });
+
+  const composed = Gesture.Race(doubleTap, Gesture.Simultaneous(pinch, pan));
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: translateX.value },
+      { translateY: translateY.value },
+      { scale: scale.value },
+    ],
+  }));
+
+  // Reset transforms whenever a new image is opened.
+  useEffect(() => {
+    if (uri) reset();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uri]);
+
+  return (
+    <Modal visible={!!uri} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={zoomStyles.backdrop}>
+        <TouchableOpacity
+          onPress={onClose}
+          style={[zoomStyles.closeButton, { top: (top || 16) + 8 }]}
+          hitSlop={12}
+        >
+          <Image
+            source={require('../assets/home/bot/cancel-01.svg')}
+            style={zoomStyles.closeIcon}
+            contentFit="contain"
+          />
+        </TouchableOpacity>
+        {uri && (
+          <GestureDetector gesture={composed}>
+            <Animated.View style={zoomStyles.canvas}>
+              <AnimatedExpoImage
+                source={{ uri }}
+                style={[zoomStyles.image, animatedStyle]}
+                contentFit="contain"
+              />
+            </Animated.View>
+          </GestureDetector>
+        )}
+        <Text style={zoomStyles.hint}>Pinch to zoom · double-tap to toggle</Text>
+      </View>
+    </Modal>
+  );
+}
+
+const zoomStyles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.97)',
+  },
+  closeButton: {
+    position: 'absolute',
+    right: 16,
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+  },
+  closeIcon: {
+    width: 24,
+    height: 24,
+  },
+  canvas: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  image: {
+    width: '100%',
+    height: '100%',
+  },
+  hint: {
+    position: 'absolute',
+    bottom: 32,
+    left: 0,
+    right: 0,
+    textAlign: 'center',
+    color: '#7C7C7C',
+    fontFamily: 'Manrope-Medium',
+    fontSize: 12,
+  },
+});
 
 /**
  * Chatbot Screen Component
@@ -34,8 +319,15 @@ const MAX_AUDIO_DURATION = 60000; // 60 seconds in milliseconds
 export default function ChatbotScreen() {
   const router = useRouter();
   const { top, bottom } = useSafeAreaInsets();
+  const { activeAddress } = useWalletStore();
+  const { data: balancesData } = useWalletBalances();
 
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [tree, setTree] = useState<MessageTree>(emptyTree);
+  const messages = useMemo(() => getActivePath(tree), [tree]);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const [viewerImageUri, setViewerImageUri] = useState<string | null>(null);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [inputText, setInputText] = useState('');
   const [selectedImages, setSelectedImages] = useState<{ uri: string; mimeType: string }[]>([]);
   const [isRecording, setIsRecording] = useState(false);
@@ -45,6 +337,7 @@ export default function ChatbotScreen() {
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [isNearBottom, setIsNearBottom] = useState(true);
   const [isFullScreenInput, setIsFullScreenInput] = useState(false);
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const [inputHeight, setInputHeight] = useState(20);
   const [isCalculatingHeight, setIsCalculatingHeight] = useState(false);
   const inputContentHeightRef = useRef(0);
@@ -77,6 +370,66 @@ export default function ChatbotScreen() {
     });
 
     return () => backHandler.remove();
+  }, []);
+
+  // ─── Per-wallet chat persistence ────────────────────────────────────────
+  const storageKey = useMemo(() => chatStorageKey(activeAddress), [activeAddress]);
+
+  // Load saved tree whenever the active wallet (and therefore the storage
+  // key) changes. Each wallet keeps its own thread, including all edit
+  // branches. Legacy flat-array payloads are migrated transparently.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(storageKey);
+        if (cancelled) return;
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            setTree(buildTreeFromArray(parsed));
+            return;
+          }
+          if (parsed && typeof parsed === 'object' && parsed.nodes) {
+            setTree(parsed as MessageTree);
+            return;
+          }
+        }
+        setTree(emptyTree);
+      } catch {
+        if (!cancelled) setTree(emptyTree);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [storageKey]);
+
+  // Persist the tree whenever it settles (no in-flight stream). We skip
+  // writes while a node is mid-stream so reloads never resurrect a
+  // half-typed reply.
+  useEffect(() => {
+    if (isStreaming) return;
+    const nodeIds = Object.keys(tree.nodes);
+    if (nodeIds.length === 0) {
+      AsyncStorage.removeItem(storageKey).catch(() => {});
+      return;
+    }
+    if (nodeIds.some((id) => tree.nodes[id].isStreaming)) return;
+    AsyncStorage.setItem(storageKey, JSON.stringify(tree)).catch(() => {});
+  }, [tree, isStreaming, storageKey]);
+
+  // Track keyboard visibility so we can collapse the bottom safe-area
+  // inset and let the input bar sit flush against the keyboard.
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, () => setIsKeyboardVisible(true));
+    const hideSub = Keyboard.addListener(hideEvent, () => setIsKeyboardVisible(false));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
   }, []);
 
   // Auto-scroll to bottom when new messages arrive
@@ -123,9 +476,56 @@ export default function ChatbotScreen() {
     // if (isRecording) {
     //   stopRecording();
     // }
-    setMessages([]);
+    setTree(emptyTree);
+    setEditingMessageId(null);
     setSelectedImages([]);
     setInputText('');
+    AsyncStorage.removeItem(storageKey).catch(() => {});
+  };
+
+  const handleCopyMessage = async (messageId: string, text: string) => {
+    try {
+      await Clipboard.setStringAsync(text);
+      setCopiedMessageId(messageId);
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => setCopiedMessageId(null), 1500);
+    } catch (e) {
+      console.warn('[Chatbot] Copy failed:', e);
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    };
+  }, []);
+
+  // Begin editing a previously-sent user message. We DON'T mutate the
+  // tree here — the original branch stays intact. On the next send we
+  // add a new sibling under the same parent, which preserves the
+  // history so the user can flip between versions later.
+  const handleEditMessage = (messageId: string) => {
+    const target = tree.nodes[messageId];
+    if (!target || target.type !== 'user') return;
+    setInputText(target.text);
+    setEditingMessageId(messageId);
+    setTimeout(() => inputTextRef.current?.focus(), 50);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingMessageId(null);
+    setInputText('');
+  };
+
+  // Switch to a different version of a user message. parentKey is the
+  // ROOT_KEY or the parent node's id; idx is the sibling index under it.
+  const handleSwitchSibling = (parentKey: string, idx: number) => {
+    if (isStreaming && abortController) abortController.abort();
+    setTree((prev) => {
+      const kids = prev.childrenByParent[parentKey] || [];
+      if (idx < 0 || idx >= kids.length) return prev;
+      return setActiveChild(prev, parentKey, idx);
+    });
   };
 
   // Image Upload Handler
@@ -353,29 +753,44 @@ export default function ChatbotScreen() {
 
     // Create user message with all images
     const imagesToSend = [...selectedImages];
-    const userMessage: ChatMessage = {
-      id: Date.now().toString(),
+    const userMessageId = Date.now().toString();
+    const aiMessageId = (Date.now() + 1).toString();
+    const userText = text || (selectedImages.length > 0 ? '[Image]' : '');
+
+    // If we're editing, the new user message is a SIBLING of the
+    // original under the same parent. Otherwise it's a new leaf
+    // appended after the current active path.
+    const editingTarget = editingMessageId ? tree.nodes[editingMessageId] : null;
+    const userParentId: string | null = editingTarget
+      ? editingTarget.parentId
+      : (messages.length > 0 ? messages[messages.length - 1].id : null);
+
+    const userNode: MessageNode = {
+      id: userMessageId,
       type: 'user',
-      text: text || (selectedImages.length > 0 ? '[Image]' : ''),
-      imageUris: imagesToSend.map(img => img.uri),
+      text: userText,
+      imageUris: imagesToSend.map((img) => img.uri),
+      parentId: userParentId,
+    };
+    const aiNode: MessageNode = {
+      id: aiMessageId,
+      type: 'ai',
+      text: '',
+      isStreaming: true,
+      parentId: userMessageId,
     };
 
-    setMessages((prev) => [...prev, userMessage]);
+    setTree((prev) => {
+      let next = appendChild(prev, userParentId, userNode);
+      next = appendChild(next, userMessageId, aiNode);
+      return next;
+    });
+    setEditingMessageId(null);
     setInputText('');
     setSelectedImages([]);
     inputTextRef.current?.clear();
     fullScreenInputRef.current?.clear();
 
-    // Create streaming AI message
-    const aiMessageId = (Date.now() + 1).toString();
-    const aiMessage: ChatMessage = {
-      id: aiMessageId,
-      type: 'ai',
-      text: '',
-      isStreaming: true,
-    };
-
-    setMessages((prev) => [...prev, aiMessage]);
     setStreamingMessageId(aiMessageId);
     setIsStreaming(true);
 
@@ -383,8 +798,37 @@ export default function ChatbotScreen() {
     const controller = new AbortController();
     setAbortController(controller);
 
+    // Build AI context: portfolio snapshot + recent chat history.
+    // The super-app backend uses these to answer "my holdings" questions
+    // and to maintain conversational continuity.
+    const aiContext: AIChatContext = {};
+    if (activeAddress) aiContext.walletAddress = activeAddress;
+    if (balancesData?.tokens?.length) {
+      const tokens = balancesData.tokens
+        .filter((t: any) => parseFloat(t.usdValue || '0') > 0 || parseFloat(t.balanceFormatted || '0') > 0)
+        .slice(0, 30)
+        .map((t: any) => ({
+          symbol: String(t.symbol || ''),
+          balance: String(t.balanceFormatted || t.balance || '0'),
+          usdValue: String(t.usdValue || '0'),
+        }));
+      if (tokens.length) {
+        aiContext.portfolio = {
+          totalUsd: String(balancesData.totalNetWorthUsd || '0'),
+          tokens,
+        };
+      }
+    }
+    const history = messages
+      .filter((m) => m.text && !m.isStreaming)
+      .slice(-8)
+      .map((m) => ({
+        role: m.type === 'ai' ? ('assistant' as const) : ('user' as const),
+        content: m.text,
+      }));
+    if (history.length) aiContext.history = history;
+
     // Stream AI response
-    // For now, send first image (Gemini API supports multiple images but we'll use first for simplicity)
     let accumulatedText = '';
 
     await streamAIResponse(
@@ -393,46 +837,33 @@ export default function ChatbotScreen() {
       imagesToSend.length > 0 ? imagesToSend[0].mimeType : undefined,
       (chunk) => {
         accumulatedText += chunk;
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === aiMessageId
-              ? { ...msg, text: accumulatedText, isStreaming: true }
-              : msg
-          )
-        );
+        setTree((prev) => patchNode(prev, aiMessageId, { text: accumulatedText, isStreaming: true }));
         // Auto-scroll during streaming
         setTimeout(() => {
           scrollViewRef.current?.scrollToEnd({ animated: true });
         }, 50);
       },
       (fullText) => {
-        // Streaming complete
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === aiMessageId
-              ? { ...msg, text: fullText, isStreaming: false }
-              : msg
-          )
-        );
+        setTree((prev) => patchNode(prev, aiMessageId, { text: fullText, isStreaming: false }));
         setIsStreaming(false);
         setStreamingMessageId(null);
         setAbortController(null);
       },
       (error) => {
         console.error('AI Error:', error);
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === aiMessageId
-              ? { ...msg, text: 'Sorry, I encountered an error. Please try again.', isStreaming: false }
-              : msg
-          )
+        setTree((prev) =>
+          patchNode(prev, aiMessageId, {
+            text: 'Sorry, I encountered an error. Please try again.',
+            isStreaming: false,
+          }),
         );
         setIsStreaming(false);
         setStreamingMessageId(null);
         setAbortController(null);
         Alert.alert('Error', error.message || 'Failed to get AI response. Please try again.');
       },
-      controller.signal
+      controller.signal,
+      aiContext,
     );
   };
 
@@ -446,13 +877,7 @@ export default function ChatbotScreen() {
 
       // Update the streaming message to show it was stopped
       if (streamingMessageId) {
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === streamingMessageId
-              ? { ...msg, isStreaming: false }
-              : msg
-          )
-        );
+        setTree((prev) => patchNode(prev, streamingMessageId, { isStreaming: false }));
       }
     }
   };
@@ -460,8 +885,8 @@ export default function ChatbotScreen() {
   return (
     <KeyboardAvoidingView
       style={[styles.container, { backgroundColor: colors.bg }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={0}
     >
       <CustomStatusBar />
 
@@ -477,14 +902,23 @@ export default function ChatbotScreen() {
         ]}
       >
         <View style={styles.headerContent}>
-          <Text
-            style={[
-              styles.headerTitle,
-              { color: colors.titleText },
-            ]}
-          >
-            Ask Tiwi AI
-          </Text>
+          <View style={styles.headerLeft}>
+            <View style={styles.headerLogo}>
+              <Image
+                source={require('../assets/home/bot/Layer_1.svg')}
+                style={styles.headerLogoImage}
+                contentFit="contain"
+              />
+            </View>
+            <View style={styles.headerTextBlock}>
+              <Text style={[styles.headerTitle, { color: colors.primaryCTA }]}>
+                TIWI AI
+              </Text>
+              <Text style={[styles.headerSubtitle, { color: colors.mutedText }]}>
+                Ask me anything about TIWI Protocol
+              </Text>
+            </View>
+          </View>
           <View style={styles.headerActions}>
             <TouchableOpacity onPress={handleClear} style={styles.clearButton}>
               <View style={styles.icon20}>
@@ -545,14 +979,40 @@ export default function ChatbotScreen() {
       >
         {messages.length === 0 && (
           <View style={styles.emptyState}>
-            <Text
-              style={[
-                styles.emptyStateText,
-                { color: colors.bodyText },
-              ]}
-            >
-              Start a conversation with Tiwi AI
+            <View style={styles.welcomeLogoOuterGlow}>
+              <View style={styles.welcomeLogoInnerGlow}>
+                <View style={styles.welcomeLogoCore}>
+                  <Image
+                    source={require('../assets/home/bot/Layer_1.svg')}
+                    style={styles.welcomeLogoImage}
+                    contentFit="contain"
+                  />
+                </View>
+              </View>
+            </View>
+            <Text style={[styles.welcomeTitle, { color: colors.titleText }]}>
+              Hi, I&apos;m TIWI AI
             </Text>
+            <Text style={[styles.welcomeSubtitle, { color: colors.mutedText }]}>
+              Ask me anything about the platform
+            </Text>
+            <View style={styles.suggestionList}>
+              {SUGGESTIONS.map((suggestion) => (
+                <TouchableOpacity
+                  key={suggestion}
+                  activeOpacity={0.7}
+                  onPress={() => setInputText(suggestion)}
+                  style={[
+                    styles.suggestionChip,
+                    { backgroundColor: colors.bgCards, borderColor: colors.bgStroke },
+                  ]}
+                >
+                  <Text style={[styles.suggestionText, { color: colors.bodyText }]}>
+                    {suggestion}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
           </View>
         )}
         {messages.map((message) => (
@@ -583,14 +1043,41 @@ export default function ChatbotScreen() {
                   {message.isStreaming && message.text !== '' && (
                     <View style={styles.streamingIndicator} />
                   )}
-                  <Text
-                    style={[
-                      styles.aiMessageText,
-                      { color: colors.bodyText },
-                    ]}
-                  >
-                    {message.text}
-                  </Text>
+                  <View style={styles.aiTextColumn}>
+                    <Text
+                      style={[
+                        styles.aiMessageText,
+                        { color: colors.bodyText },
+                      ]}
+                    >
+                      {renderMarkdown(message.text)}
+                    </Text>
+                    {!message.isStreaming && message.text.length > 0 && (
+                      <TouchableOpacity
+                        onPress={() => handleCopyMessage(message.id, message.text)}
+                        style={styles.messageActionButton}
+                        hitSlop={8}
+                      >
+                        <Image
+                          source={
+                            copiedMessageId === message.id
+                              ? require('../assets/swap/checkmark-circle-01.svg')
+                              : require('../assets/wallet/copy-01.svg')
+                          }
+                          style={styles.icon14}
+                          contentFit="contain"
+                        />
+                        <Text
+                          style={[
+                            styles.messageActionLabel,
+                            { color: copiedMessageId === message.id ? colors.primaryCTA : colors.mutedText },
+                          ]}
+                        >
+                          {copiedMessageId === message.id ? 'Copied' : 'Copy'}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
                 </View>
               </View>
             ) : (
@@ -598,13 +1085,18 @@ export default function ChatbotScreen() {
                 {message.imageUris && message.imageUris.length > 0 && (
                   <View style={styles.userImageContainer}>
                     {message.imageUris.map((uri, index) => (
-                      <View key={index} style={styles.userImageWrapper}>
+                      <TouchableOpacity
+                        key={index}
+                        activeOpacity={0.85}
+                        onPress={() => setViewerImageUri(uri)}
+                        style={styles.userImageWrapper}
+                      >
                         <Image
                           source={{ uri }}
                           style={styles.fullSize}
                           contentFit="cover"
                         />
-                      </View>
+                      </TouchableOpacity>
                     ))}
                   </View>
                 )}
@@ -625,18 +1117,93 @@ export default function ChatbotScreen() {
                     </Text>
                   </View>
                 )}
+                {message.text.length > 0 && (() => {
+                  const node = tree.nodes[message.id];
+                  const parentKey = node?.parentId ?? ROOT_KEY;
+                  const siblings = tree.childrenByParent[parentKey] || [];
+                  const myIdx = siblings.indexOf(message.id);
+                  const hasVersions = siblings.length > 1 && myIdx >= 0;
+                  return (
+                    <View style={styles.userActionsRow}>
+                      {hasVersions && (
+                        <View style={styles.versionPager}>
+                          <TouchableOpacity
+                            onPress={() => handleSwitchSibling(parentKey, myIdx - 1)}
+                            disabled={myIdx <= 0}
+                            hitSlop={6}
+                            style={[styles.versionArrow, { opacity: myIdx <= 0 ? 0.3 : 1 }]}
+                          >
+                            <Image
+                              source={require('../assets/home/arrow-right-01.svg')}
+                              style={[styles.icon12, styles.flipX]}
+                              contentFit="contain"
+                            />
+                          </TouchableOpacity>
+                          <Text style={[styles.versionText, { color: colors.mutedText }]}>
+                            {myIdx + 1} / {siblings.length}
+                          </Text>
+                          <TouchableOpacity
+                            onPress={() => handleSwitchSibling(parentKey, myIdx + 1)}
+                            disabled={myIdx >= siblings.length - 1}
+                            hitSlop={6}
+                            style={[styles.versionArrow, { opacity: myIdx >= siblings.length - 1 ? 0.3 : 1 }]}
+                          >
+                            <Image
+                              source={require('../assets/home/arrow-right-01.svg')}
+                              style={styles.icon12}
+                              contentFit="contain"
+                            />
+                          </TouchableOpacity>
+                        </View>
+                      )}
+                      <TouchableOpacity
+                        onPress={() => handleEditMessage(message.id)}
+                        style={styles.messageActionButton}
+                        hitSlop={8}
+                      >
+                        <Image
+                          source={require('../assets/settings/pencil-edit-01.svg')}
+                          style={styles.icon14}
+                          contentFit="contain"
+                        />
+                        <Text style={[styles.messageActionLabel, { color: colors.mutedText }]}>
+                          Edit
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  );
+                })()}
               </View>
             )}
           </View>
         ))}
       </ScrollView>
 
+      {/* Editing banner */}
+      {editingMessageId && (
+        <View style={[styles.editingBanner, { backgroundColor: colors.bgCards, borderColor: colors.bgStroke }]}>
+          <View style={styles.editingBannerLeft}>
+            <Image
+              source={require('../assets/settings/pencil-edit-01.svg')}
+              style={styles.icon14}
+              contentFit="contain"
+            />
+            <Text style={[styles.editingBannerText, { color: colors.bodyText }]}>
+              Editing message — send to create a new version
+            </Text>
+          </View>
+          <TouchableOpacity onPress={handleCancelEdit} hitSlop={8}>
+            <Text style={[styles.editingBannerCancel, { color: colors.primaryCTA }]}>Cancel</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Input Bar */}
       <View
         style={[
           styles.inputBar,
           {
-            paddingBottom: (bottom || 16),
+            paddingBottom: isKeyboardVisible ? 8 : (bottom || 16),
             backgroundColor: colors.bg,
           },
         ]}
@@ -664,8 +1231,8 @@ export default function ChatbotScreen() {
             styles.inputContainer,
             {
               backgroundColor: colors.bgCards,
-              borderColor: colors.bgStroke,
-              borderRadius: 16,
+              borderColor: colors.primaryCTA,
+              borderRadius: 28,
               paddingHorizontal: selectedImages.length > 0 ? 12 : 8,
               paddingVertical: selectedImages.length > 0 ? 10 : 6,
               minHeight: selectedImages.length > 0 ? 56 : 48,
@@ -686,11 +1253,17 @@ export default function ChatbotScreen() {
                     key={index}
                     style={[styles.previewWrapper, { backgroundColor: colors.bgStroke }]}
                   >
-                    <Image
-                      source={{ uri: image.uri }}
+                    <TouchableOpacity
+                      activeOpacity={0.85}
+                      onPress={() => setViewerImageUri(image.uri)}
                       style={styles.fullSize}
-                      contentFit="cover"
-                    />
+                    >
+                      <Image
+                        source={{ uri: image.uri }}
+                        style={styles.fullSize}
+                        contentFit="cover"
+                      />
+                    </TouchableOpacity>
                     <TouchableOpacity
                       onPress={() => handleRemoveImage(index)}
                       style={[
@@ -732,8 +1305,8 @@ export default function ChatbotScreen() {
               value={inputText}
               onChangeText={setInputText}
               onContentSizeChange={handleContentSizeChange}
-              placeholder="Ask anything"
-              placeholderTextColor={colors.bodyText}
+              placeholder="Ask TIWI AI Anything"
+              placeholderTextColor={colors.mutedText}
               style={[
                 styles.textInput,
                 {
@@ -810,6 +1383,9 @@ export default function ChatbotScreen() {
             )}
           </View>
         </View>
+        <Text style={[styles.disclaimer, { color: colors.mutedText }]}>
+          TIWI AI can make mistakes. Verify important info.
+        </Text>
       </View>
 
       {/* Full-Screen Input Modal */}
@@ -862,11 +1438,17 @@ export default function ChatbotScreen() {
                       key={index}
                       style={[styles.modalPreviewWrapper, { backgroundColor: colors.bgStroke }]}
                     >
-                      <Image
-                        source={{ uri: image.uri }}
+                      <TouchableOpacity
+                        activeOpacity={0.85}
+                        onPress={() => setViewerImageUri(image.uri)}
                         style={styles.fullSize}
-                        contentFit="cover"
-                      />
+                      >
+                        <Image
+                          source={{ uri: image.uri }}
+                          style={styles.fullSize}
+                          contentFit="cover"
+                        />
+                      </TouchableOpacity>
                       <TouchableOpacity
                         onPress={() => handleRemoveImage(index)}
                         style={[
@@ -965,6 +1547,8 @@ export default function ChatbotScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      <ImageZoomViewer uri={viewerImageUri} onClose={() => setViewerImageUri(null)} />
     </KeyboardAvoidingView>
   );
 }
@@ -989,7 +1573,32 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontFamily: 'Manrope-SemiBold',
     fontSize: 16,
-    textTransform: 'capitalize',
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  headerLogo: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#081f02',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerLogoImage: {
+    width: 16,
+    height: 18,
+  },
+  headerTextBlock: {
+    flexShrink: 1,
+  },
+  headerSubtitle: {
+    fontFamily: 'Manrope-Medium',
+    fontSize: 11,
+    marginTop: 1,
   },
   headerActions: {
     flexDirection: 'row',
@@ -1047,16 +1656,75 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
     paddingHorizontal: 20,
     gap: 16,
+    flexGrow: 1,
   },
   emptyState: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingTop: 40,
+    paddingHorizontal: 4,
+    paddingVertical: 24,
   },
-  emptyStateText: {
+  welcomeLogoOuterGlow: {
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    backgroundColor: 'rgba(177, 241, 40, 0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  welcomeLogoInnerGlow: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: 'rgba(177, 241, 40, 0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  welcomeLogoCore: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#081f02',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  welcomeLogoImage: {
+    width: 32,
+    height: 36,
+  },
+  welcomeTitle: {
+    fontFamily: 'Manrope-SemiBold',
+    fontSize: 22,
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  welcomeSubtitle: {
     fontFamily: 'Manrope-Medium',
     fontSize: 14,
+    marginTop: 6,
     textAlign: 'center',
+  },
+  suggestionList: {
+    width: '100%',
+    marginTop: 28,
+    gap: 10,
+  },
+  suggestionChip: {
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  suggestionText: {
+    fontFamily: 'Manrope-Medium',
+    fontSize: 14,
+  },
+  disclaimer: {
+    fontFamily: 'Manrope-Medium',
+    fontSize: 11,
+    textAlign: 'center',
+    marginTop: 8,
   },
   messageWrapper: {
     width: '100%',
@@ -1089,6 +1757,84 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 8,
+  },
+  aiTextColumn: {
+    flex: 1,
+    flexDirection: 'column',
+    gap: 6,
+  },
+  messageActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 4,
+    alignSelf: 'flex-start',
+  },
+  messageActionButtonRight: {
+    alignSelf: 'flex-end',
+    marginTop: 4,
+  },
+  messageActionLabel: {
+    fontFamily: 'Manrope-Medium',
+    fontSize: 12,
+  },
+  icon12: {
+    width: 12,
+    height: 12,
+  },
+  flipX: {
+    transform: [{ scaleX: -1 }],
+  },
+  userActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-end',
+    gap: 12,
+    marginTop: 4,
+  },
+  versionPager: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  versionArrow: {
+    width: 18,
+    height: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  versionText: {
+    fontFamily: 'Manrope-Medium',
+    fontSize: 12,
+    minWidth: 28,
+    textAlign: 'center',
+  },
+  editingBanner: {
+    marginHorizontal: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+    gap: 12,
+  },
+  editingBannerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  editingBannerText: {
+    fontFamily: 'Manrope-Medium',
+    fontSize: 12,
+    flex: 1,
+  },
+  editingBannerCancel: {
+    fontFamily: 'Manrope-SemiBold',
+    fontSize: 13,
   },
   aiMessageText: {
     flex: 1,
@@ -1129,14 +1875,15 @@ const styles = StyleSheet.create({
     height: 150,
   },
   userBubble: {
-    borderRadius: 100,
-    paddingHorizontal: 10.5,
-    paddingVertical: 10.5,
-    maxWidth: '80%',
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    maxWidth: '85%',
   },
   userMessageText: {
     fontFamily: 'Manrope-Medium',
     fontSize: 14,
+    lineHeight: 20,
   },
   inputBar: {
     borderTopWidth: 0.5,

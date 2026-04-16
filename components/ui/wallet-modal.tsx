@@ -19,6 +19,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 import { useWalletBalances } from '@/hooks/useWalletBalances';
+import { useCustomTokenStore } from '@/store/customTokenStore';
 import { useWalletStore } from '@/store/walletStore';
 
 interface WalletModalProps {
@@ -192,6 +193,39 @@ export const WalletModal: React.FC<WalletModalProps> = (props) => {
         ),
     }));
 
+    // Recompute the headline total from only the non-hidden tokens so the
+    // value stays in sync with whatever the user toggled on/off in Manage
+    // Tokens. Falls back to the API total when nothing is hidden. These
+    // hooks must run on every render (before any early return) to satisfy
+    // the rules of hooks.
+    const walletKey = activeGroupId || storeAddress || 'default';
+    const hiddenWalletTokens = useCustomTokenStore(s => s.hiddenWalletTokens);
+    const customTokensByWallet = useCustomTokenStore(s => s.tokensByWallet);
+    const hiddenKeySet = React.useMemo(() => {
+        const set = new Set<string>();
+        (hiddenWalletTokens[walletKey] || []).forEach(r => {
+            set.add(`${r.chainId}-${r.address.toLowerCase()}`);
+        });
+        (customTokensByWallet[walletKey] || []).forEach(ct => {
+            if (ct.hidden) set.add(`${ct.chainId}-${ct.address.toLowerCase()}`);
+        });
+        return set;
+    }, [hiddenWalletTokens, customTokensByWallet, walletKey]);
+
+    const liveTotalBalance = React.useMemo(() => {
+        if (!balanceData) return '$0.00';
+        if (hiddenKeySet.size === 0) {
+            return balanceData.totalNetWorthUsd ? `$${balanceData.totalNetWorthUsd}` : '$0.00';
+        }
+        const sum = (balanceData.tokens || []).reduce((acc: number, t: any) => {
+            const k = `${Number(t.chainId)}-${(t.address || '').toLowerCase()}`;
+            if (hiddenKeySet.has(k)) return acc;
+            const v = parseFloat(t.usdValue || '0');
+            return acc + (isFinite(v) ? v : 0);
+        }, 0);
+        return `$${sum.toFixed(2)}`;
+    }, [balanceData, hiddenKeySet]);
+
     // EARLY RENDERING CHECK
     if (!_hasHydrated || (!renderModal && !visible)) return null;
 
@@ -199,8 +233,6 @@ export const WalletModal: React.FC<WalletModalProps> = (props) => {
     const safeGroups = Array.isArray(walletGroups) ? walletGroups : [];
     const activeGroup = safeGroups.find(g => g && g.id === activeGroupId);
     const walletIcon = activeGroup?.walletIcon;
-
-    const liveTotalBalance = balanceData?.totalNetWorthUsd ? `$${balanceData.totalNetWorthUsd}` : '$0.00';
 
     const activeAddress = walletAddress || storeAddress;
 

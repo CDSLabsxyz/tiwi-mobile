@@ -57,6 +57,13 @@ const allActions: MoreAction[] = [
         route: '/activities',
         category: 'recommended',
     },
+    {
+        id: 'settings',
+        label: 'Settings',
+        icon: 'settings-outline',
+        route: '/settings',
+        category: 'recommended',
+    },
     // Popular
     {
         id: 'market',

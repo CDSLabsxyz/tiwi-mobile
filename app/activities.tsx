@@ -5,7 +5,6 @@ import { UnifiedActivity, useUnifiedActivities } from '@/hooks/useUnifiedActivit
 import { useWalletStore } from '@/store/walletStore';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import * as WebBrowser from 'expo-web-browser';
 import React, { useMemo, useState } from 'react';
 import { FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -97,7 +96,7 @@ export default function ActivitiesScreen() {
                 onPress={() => {
                     if (item.hash) {
                         const url = getExplorerUrl(item.hash, item.chainId);
-                        WebBrowser.openBrowserAsync(url);
+                        router.push({ pathname: '/browser', params: { url } });
                     }
                 }}
             >

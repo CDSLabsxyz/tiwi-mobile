@@ -55,10 +55,15 @@ export default function ReceiveScreen() {
     }>();
     const { walletGroups, activeAddress, activeChain, activeGroupId } = useWalletStore();
     const tokensByWallet = useCustomTokenStore(s => s.tokensByWallet);
+    const hiddenWalletTokens = useCustomTokenStore(s => s.hiddenWalletTokens);
+    const walletKey = activeGroupId || activeAddress || 'default';
     const customTokens = useMemo(() => {
-        const key = activeGroupId || activeAddress || 'default';
-        return tokensByWallet[key] || [];
-    }, [tokensByWallet, activeGroupId, activeAddress]);
+        return tokensByWallet[walletKey] || [];
+    }, [tokensByWallet, walletKey]);
+    const hiddenWalletSet = useMemo(() => {
+        const list = hiddenWalletTokens[walletKey] || [];
+        return new Set(list.map(r => `${r.chainId}-${r.address.toLowerCase()}`));
+    }, [hiddenWalletTokens, walletKey]);
     const { data: balanceData } = useWalletBalances();
 
     const { showToast } = useToastStore();
@@ -168,6 +173,7 @@ export default function ReceiveScreen() {
         // 2. Map to unified objects
         const mappedApiTokens = rawTokens
             .filter(t => isValidNativeOnChain(t.symbol, t.chainId)) // drop fake natives
+            .filter(t => !hiddenWalletSet.has(`${Number(t.chainId)}-${(t.address || '').toLowerCase()}`))
             .map(t => {
             const walletToken = balanceData?.tokens.find(
                 wt => wt.address.toLowerCase() === t.address.toLowerCase() && wt.chainId === t.chainId
@@ -207,6 +213,8 @@ export default function ReceiveScreen() {
                 if (!availableChainIds.has(wt.chainId)) return false;
                 // Enforce native symbol-to-chain (blocks fake "TON" on BSC, etc.)
                 if (!isValidNativeOnChain(wt.symbol, wt.chainId)) return false;
+                // Respect manage-tokens visibility toggle
+                if (hiddenWalletSet.has(`${Number(wt.chainId)}-${(wt.address || '').toLowerCase()}`)) return false;
                 if (selectedChainFilter) return wt.chainId === selectedChainFilter;
                 return true;
             })
@@ -238,6 +246,7 @@ export default function ReceiveScreen() {
 
         // 3b. Add custom (user-added) tokens as owned, scoped to this wallet
         const customMapped = customTokens
+            .filter(ct => !ct.hidden) // Respect manage-tokens visibility toggle
             .filter(ct =>
                 !mappedApiTokens.some(at => at.address.toLowerCase() === ct.address.toLowerCase() && at.chainId === ct.chainId) &&
                 !(balanceData?.tokens || []).some(wt => wt.address.toLowerCase() === ct.address.toLowerCase() && wt.chainId === ct.chainId)
@@ -337,7 +346,7 @@ export default function ReceiveScreen() {
             if (!a._verified && b._verified) return 1;
             return b._liquidity - a._liquidity;
         });
-    }, [searchResponse, defaultResponse, balanceData, selectedChainFilter, chains, searchQuery, customTokens, activeGroup]);
+    }, [searchResponse, defaultResponse, balanceData, selectedChainFilter, chains, searchQuery, customTokens, activeGroup, hiddenWalletSet]);
 
     // Get actual wallet address based on chain type
     const getAddressForToken = (token: any) => {

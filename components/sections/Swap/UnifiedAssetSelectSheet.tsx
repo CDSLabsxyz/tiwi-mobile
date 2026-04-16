@@ -57,10 +57,32 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
     const { data: balanceData } = useWalletBalances();
     const { walletGroups, activeGroupId, address: walletAddress } = useWalletStore();
     const tokensByWallet = useCustomTokenStore(s => s.tokensByWallet);
+    const hiddenWalletTokens = useCustomTokenStore(s => s.hiddenWalletTokens);
+    const walletKey = activeGroupId || walletAddress || 'default';
     const customTokens = useMemo(() => {
-        const key = activeGroupId || walletAddress || 'default';
-        return tokensByWallet[key] || [];
-    }, [tokensByWallet, activeGroupId, walletAddress]);
+        return tokensByWallet[walletKey] || [];
+    }, [tokensByWallet, walletKey]);
+
+    // Tokens toggled off in Manage Tokens — suppress them entirely from the
+    // swap selector (both "Your Assets" and "Other Tokens") until re-enabled.
+    const hiddenKeySet = useMemo(() => {
+        const set = new Set<string>();
+        const add = (chainId: number, address: string) => {
+            const lower = address.toLowerCase();
+            set.add(`${chainId}-${lower}`);
+            // Cover native-address aliases so a hidden native token also
+            // matches entries stored under the alternate sentinel.
+            if (lower === NATIVE_TOKEN_ADDRESS || lower === MORALIS_NATIVE_ADDRESS) {
+                set.add(`${chainId}-${NATIVE_TOKEN_ADDRESS}`);
+                set.add(`${chainId}-${MORALIS_NATIVE_ADDRESS}`);
+            }
+        };
+        (hiddenWalletTokens[walletKey] || []).forEach(r => add(r.chainId, r.address));
+        (tokensByWallet[walletKey] || []).forEach(ct => {
+            if (ct.hidden) add(ct.chainId, ct.address);
+        });
+        return set;
+    }, [hiddenWalletTokens, tokensByWallet, walletKey]);
     const [debouncedQuery, setDebouncedQuery] = useState('');
 
     useEffect(() => {
@@ -302,6 +324,9 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
         const filtered = allTokens.filter(t => {
             if (selectedChain && selectedChain.id !== 'all' && t.chainId !== selectedChain.id) return false;
 
+            // Respect the Manage Tokens hidden list (wallet tokens + custom)
+            if (hiddenKeySet.has(`${t.chainId}-${(t.address || '').toLowerCase()}`)) return false;
+
             if (isSearching) {
                 const q = debouncedQuery.toLowerCase();
                 return t.symbol.toLowerCase().includes(q) || t.name.toLowerCase().includes(q) || t.address.toLowerCase().includes(q);
@@ -400,7 +425,7 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
         const othersCurated = sorted.filter(t => !t.isOwned && !isCustomAdded(t)).slice(0, 8);
 
         return [...owned, ...customUnowned, ...othersCurated];
-    }, [response, defaultResponse, balanceData, selectedChain, chains, debouncedQuery, isSearching, customTokens]);
+    }, [response, defaultResponse, balanceData, selectedChain, chains, debouncedQuery, isSearching, customTokens, hiddenKeySet]);
 
 
     const handleChainSelect = (chain: any) => {

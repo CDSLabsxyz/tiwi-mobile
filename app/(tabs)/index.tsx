@@ -15,6 +15,7 @@ import { colors } from '@/constants/colors';
 import { useChains } from '@/hooks/useChains';
 import { useSmartMarkets } from '@/hooks/useSmartMarkets';
 import { useSpotlightTokens } from '@/hooks/useSpotlightTokens';
+import { useTWCSupply } from '@/hooks/useTWCSupply';
 import { useTWCToken } from '@/hooks/useTWCToken';
 import { formatCompactNumber, formatNumber } from '@/utils/formatting';
 
@@ -77,6 +78,18 @@ export default function HomeScreen() {
     isLoading: isLoadingSmartMarkets,
   } = useSmartMarkets();
 
+  // Live TWC supply from the TIWI ecosystem API. Falls back to the
+  // static genesis supply if the endpoint is unreachable, so the home
+  // tile never renders N/A.
+  const { data: twcSupply, isLoading: isLoadingTWCSupply } = useTWCSupply();
+  const formattedTWCTotalSupply = useMemo(() => {
+    const fromSupplyApi = twcSupply?.totalSupply;
+    const fromTokenApi = twcToken?.totalSupply;
+    const value = fromSupplyApi || fromTokenApi;
+    if (!value || value <= 0) return 'N/A';
+    return formatCompactNumber(value, { decimals: 2 });
+  }, [twcSupply?.totalSupply, twcToken?.totalSupply]);
+
   // Formatting Hook
   const formattedTWCPrice = usePrice(twcToken?.priceUSD || 0);
   const formattedTWCMcap = usePrice(twcToken?.marketCap || 0);
@@ -129,6 +142,7 @@ export default function HomeScreen() {
       queryClient.invalidateQueries({ queryKey: ['walletBalances'] }),
       queryClient.invalidateQueries({ queryKey: ['chains'] }),
       queryClient.invalidateQueries({ queryKey: ['twcToken'] }),
+      queryClient.invalidateQueries({ queryKey: ['twcSupply'] }),
       queryClient.invalidateQueries({ queryKey: ['smartMarkets'] }),
       queryClient.invalidateQueries({ queryKey: ['market-pairs'] }),
       queryClient.invalidateQueries({ queryKey: ['tokens'] }),
@@ -178,10 +192,10 @@ export default function HomeScreen() {
           iconType: 'icon' as const,
         },
         {
-          id: 'twc-holders',
+          id: 'twc-total-supply',
           icon: 'coins',
-          value: twcToken?.holders && twcToken?.holders === twcToken?.transactionCount ? formatCompactNumber(15034) : twcToken?.holders ? formatNumber(twcToken.holders, 0) : 'N/A',
-          label: t('home.holders'),
+          value: formattedTWCTotalSupply,
+          label: t('home.total_supply'),
           iconType: 'icon' as const,
         },
       ],
@@ -190,9 +204,9 @@ export default function HomeScreen() {
         name: m.name,
         logo: m.logo
       })),
-      isLoading: isLoadingSpotlight || isLoadingChains || isLoadingTWCToken || isLoadingSmartMarkets,
+      isLoading: isLoadingSpotlight || isLoadingChains || isLoadingTWCToken || isLoadingSmartMarkets || isLoadingTWCSupply,
     };
-  }, [spotlightTokens, isLoadingSpotlight, chains, twcToken, isLoadingChains, isLoadingTWCToken, smartMarkets, isLoadingSmartMarkets, formattedTWCPrice, formattedTWCMcap, formattedTWCVol, t]);
+  }, [spotlightTokens, isLoadingSpotlight, chains, twcToken, isLoadingChains, isLoadingTWCToken, smartMarkets, isLoadingSmartMarkets, isLoadingTWCSupply, formattedTWCPrice, formattedTWCMcap, formattedTWCVol, formattedTWCTotalSupply, t]);
 
   const handleOpenWallet = useCallback(() => {
     console.log('[HomeScreen] Opening Global Wallet Modal...');
