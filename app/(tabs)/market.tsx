@@ -6,6 +6,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { colors } from '@/constants/colors';
 import { useEnrichedMarkets } from '@/hooks/useEnrichedMarkets';
 import { useTranslation } from '@/hooks/useLocalization';
+import { useTWCToken } from '@/hooks/useTWCToken';
 import { MarketCategory } from '@/hooks/useMarketPairs';
 import { api, MarketAsset, TokenItem } from '@/lib/mobile/api-client';
 import { useMarketStore } from '@/store/marketStore';
@@ -38,6 +39,29 @@ const subTabs: { id: string; label: string }[] = [
     { id: 'spotlight', label: 'Spotlight' },
     { id: 'listing', label: 'Listing' },
 ];
+
+// Canonical TWC token. Used to guarantee TWC is always at #1 in Explore even
+// when the upstream market list hasn't returned it yet (cold start, paginated
+// list, network hiccup). Real price/volume merge in if present in the API
+// response — this is just a fallback skeleton.
+const TWC_ADDRESS = '0xDA1060158F7D593667cCE0a15DB346BB3FfB3596';
+const TWC_FALLBACK = {
+    id: `56-${TWC_ADDRESS.toLowerCase()}`,
+    chainId: 56,
+    address: TWC_ADDRESS,
+    symbol: 'TWC',
+    displaySymbol: 'TWC',
+    name: 'TIWI Coin',
+    logoURI: require('../../assets/home/tiwicat-token.svg'),
+    price: '0',
+    priceUSD: '0',
+    priceChange24h: 0,
+    volume24h: 0,
+    marketCap: 0,
+    marketType: 'spot' as const,
+    provider: 'onchain' as const,
+    rank: 1,
+};
 
 const MarketListItemSkeleton = () => (
     <View style={skeletonStyles.container}>
@@ -75,6 +99,9 @@ export default function MarketScreen() {
     const [isNavigating, setIsNavigating] = useState(false);
 
     const { favorites, toggleFavorite, isFavorite, getFavoriteTokens } = useMarketStore();
+    // Live TWC data — used to enrich the fallback row with real price/24h change
+    // when TWC isn't in the upstream market list.
+    const { data: twcLive } = useTWCToken();
 
     const subTabs: { id: string; label: string }[] = useMemo(() => [
         { id: 'favourite', label: t('home.favourite') },
@@ -98,7 +125,10 @@ export default function MarketScreen() {
     } = useEnrichedMarkets({
         marketType: marketType,
         limit: 250,
-        enabled: activeSubTab !== 'favourite'
+        // Enabled on Favourite too — needed to enrich saved favorites with live
+        // volume / market cap / current price (the persisted favorite shape
+        // doesn't carry those fields).
+        enabled: true,
     });
 
     // Fetch Spotlight/Listing tokens with price enrichment (matching web app)
@@ -116,24 +146,66 @@ export default function MarketScreen() {
                 .filter((t: any) => (!t.startDate || t.startDate <= today) && (!t.endDate || t.endDate >= today))
                 .sort((a: any, b: any) => (a.rank || 0) - (b.rank || 0));
 
-            // Enrich tokens: match from cached market pairs first, then batch-fetch remaining
+            // Match against the same enriched list Explore uses so the
+            // Spotlight/Listing tabs show identical price/24h/volume for a
+            // shared token. Index by address, raw symbol, and stripped ticker
+            // (`BTCUSDT` → `BTC`) so CEX pairs resolve to the base symbol.
             const marketLookup = new Map<string, any>();
             (marketPairs || []).forEach((et: any) => {
-                marketLookup.set(et.symbol?.toUpperCase(), et);
+                const raw = (et.symbol || '').toUpperCase();
+                const stripped = raw.split('-')[0].split('/')[0];
+                const register = (key: string) => {
+                    if (!key) return;
+                    if (!marketLookup.has(key)) marketLookup.set(key, et);
+                };
+                register(raw);
+                if (stripped !== raw) register(stripped);
+                register(((et as any).displaySymbol || '').toUpperCase());
                 if (et.address) marketLookup.set(et.address.toLowerCase(), et);
             });
 
             const enriched = await Promise.all(active.map(async (st: any) => {
-                // Fast lookup from cached market pairs
-                const market = marketLookup.get(st.symbol?.toUpperCase()) ||
+                const chainId = st.chainId || 56;
+                const market = marketLookup.get((st.symbol || '').toUpperCase()) ||
                     (st.address ? marketLookup.get(st.address.toLowerCase()) : null);
 
-                if (market && market.price && parseFloat(String(market.price)) > 0) {
+                if (market && (parseFloat(String(market.price || market.priceUSD || 0)) > 0 || market.priceChange24h !== undefined)) {
                     return { ...market, logoURI: market.logoURI || market.logo || st.logo || '' };
                 }
 
+                // Server-side enrichment (enrichAdminTokenRow) populates price/volume/24h
+                // on the spotlight/listing response. Trust those fields when present so
+                // newly-listed tokens don't render as $0.00 just because they're absent
+                // from the top-250 market list.
+                const serverPrice = st.price ?? st.priceUSD;
+                const serverHasData =
+                    (serverPrice !== undefined && serverPrice !== null && parseFloat(String(serverPrice)) > 0) ||
+                    (st.volume24h ?? 0) > 0 ||
+                    (st.marketCap ?? 0) > 0;
+
+                if (serverHasData) {
+                    return {
+                        id: st.id || `${chainId}-${st.address || st.symbol}`,
+                        symbol: st.symbol,
+                        displaySymbol: st.symbol,
+                        name: st.name || st.symbol,
+                        address: st.address || '',
+                        chainId,
+                        logoURI: st.logo || '',
+                        logo: st.logo || '',
+                        price: serverPrice ? String(serverPrice) : '0',
+                        priceUSD: serverPrice ? String(serverPrice) : '0',
+                        priceChange24h: st.priceChange24h || 0,
+                        volume24h: st.volume24h || 0,
+                        marketCap: st.marketCap || 0,
+                        liquidity: st.liquidity || 0,
+                        fdv: st.fdv || 0,
+                        marketCapRank: st.marketCapRank || st.rank,
+                        marketType: 'spot',
+                    };
+                }
+
                 // Fetch from token-info API only for unmatched tokens
-                const chainId = st.chainId || 56;
                 if (st.address) {
                     try {
                         const info = await api.tokenInfo.get(chainId, st.address);
@@ -201,22 +273,93 @@ export default function MarketScreen() {
         return () => clearTimeout(timer);
     }, [queryClient, marketType]);
 
-    // Load favorites from store (no API call needed)
+    // Build favourites by resolving each saved favourite to its exact entry in
+    // the Explore list so price / 24h / volume match Explore 1:1. CEX tokens
+    // (BTC/USDT/SOL) often have a different `id` format in the market list
+    // than what's persisted on favourite, so match also by chainId-address
+    // and, as a last resort, by uppercase symbol. Falls back to the persisted
+    // snapshot only if no Explore entry is found.
     const favoriteTokens = useMemo<MarketAsset[]>(() => {
         const saved = getFavoriteTokens();
-        return saved.map(t => ({
-            ...t,
-            displaySymbol: t.symbol.toUpperCase(),
-            price: t.priceUSD || '0',
-            logoURI: t.logoURI || '',
-            priceChange24h: t.priceChange24h || 0,
-            volume24h: 0,
-            marketCap: 0,
-            marketType: 'spot',
-            provider: 'onchain',
-            rank: 999,
-        } as any));
-    }, [favorites]);
+        const byId = new Map<string, any>();
+        const byAddrKey = new Map<string, any>();
+        const bySymbol = new Map<string, any>();
+        ((marketPairs as any[]) || []).forEach((m: any) => {
+            if (m.id) byId.set(m.id.toLowerCase(), m);
+            if (m.address) byAddrKey.set(`${m.chainId}-${m.address.toLowerCase()}`, m);
+            // Index by both raw symbol and displaySymbol — CEX pairs come back
+            // as `BTCUSDT`/`TWC-USDT` while favourites persist the base ticker
+            // (`BTC`/`TWC`). Prefer entries with a real address over synthetic
+            // CEX rows so we pick the on-chain row first when both exist.
+            const register = (key: string) => {
+                if (!key) return;
+                const K = key.toUpperCase();
+                const existing = bySymbol.get(K);
+                if (!existing) bySymbol.set(K, m);
+                else if (!existing.address && m.address) bySymbol.set(K, m);
+            };
+            register(m.symbol);
+            register(m.displaySymbol);
+        });
+
+        const twcAddrLower = TWC_ADDRESS.toLowerCase();
+        const seenKeys = new Set<string>();
+        const out: MarketAsset[] = [];
+
+        for (const t of saved) {
+            const idKey = (t.id || '').toLowerCase();
+            const addrKey = `${t.chainId}-${(t.address || '').toLowerCase()}`;
+            let live =
+                byId.get(idKey) ||
+                (t.address ? byAddrKey.get(addrKey) : null) ||
+                (t.symbol ? bySymbol.get(t.symbol.toUpperCase()) : null);
+
+            // TWC is pinned to Explore via a live-enriched fallback when the
+            // upstream list misses it. Mirror that here so Favourite shows the
+            // same live price / 24h / volume instead of a $0 snapshot.
+            const isTWC =
+                (t.address && t.address.toLowerCase() === twcAddrLower) ||
+                t.symbol?.toUpperCase() === 'TWC';
+            if (!live && isTWC) {
+                live = {
+                    ...TWC_FALLBACK,
+                    price: twcLive?.priceUSD || TWC_FALLBACK.price,
+                    priceUSD: twcLive?.priceUSD || TWC_FALLBACK.priceUSD,
+                    priceChange24h: twcLive?.priceChange24h ?? TWC_FALLBACK.priceChange24h,
+                    volume24h: twcLive?.volume24h ?? TWC_FALLBACK.volume24h,
+                    marketCap: twcLive?.marketCap ?? TWC_FALLBACK.marketCap,
+                    logoURI: twcLive?.logoURI || TWC_FALLBACK.logoURI,
+                };
+            }
+
+            const entry: MarketAsset = live
+                ? (live as MarketAsset)
+                : ({
+                    ...t,
+                    displaySymbol: t.symbol.toUpperCase(),
+                    price: t.priceUSD ?? '0',
+                    priceUSD: t.priceUSD ?? '0',
+                    logoURI: t.logoURI || '',
+                    priceChange24h: t.priceChange24h ?? 0,
+                    volume24h: 0,
+                    marketCap: 0,
+                    marketType: 'spot',
+                    provider: 'onchain',
+                    rank: 999,
+                } as any);
+
+            // Dedupe — users can accumulate multiple saved ids for the same
+            // token (e.g. BTC saved once via /market detail, once via a CEX
+            // row). Collapse them to a single row.
+            const dedupeKey = entry.address
+                ? `${entry.chainId}-${entry.address.toLowerCase()}`
+                : ((entry as any).displaySymbol || entry.symbol || '').toUpperCase();
+            if (seenKeys.has(dedupeKey)) continue;
+            seenKeys.add(dedupeKey);
+            out.push(entry);
+        }
+        return out;
+    }, [favorites, marketPairs, twcLive]);
     const isFavLoading = false;
 
     // Backend Search Logic
@@ -327,23 +470,34 @@ export default function MarketScreen() {
             return merged;
         }
 
-        // 3. TWC Priority Logic (Pin to 1st position)
+        // 3. TWC Priority Logic (Pin to 1st position; inject fallback on Explore
+        // so TWC is always visible even if the upstream list is empty/missing it)
         const isCoreDiscovery = activeSubTab === 'explore' || activeSubTab === 'favourite' || activeSubTab === 'gainers';
         if (isCoreDiscovery && searchQuery.trim() === '') {
-            const TWC_ADDRESS = '0xDA1060158F7D593667cCE0a15DB346BB3FfB3596'.toLowerCase();
+            const twcAddrLower = TWC_ADDRESS.toLowerCase();
             const twcIndex = tokens.findIndex(t =>
-                (t.address && t.address.toLowerCase() === TWC_ADDRESS) ||
+                (t.address && t.address.toLowerCase() === twcAddrLower) ||
                 t.symbol.toUpperCase() === 'TWC'
             );
 
             if (twcIndex > -1) {
                 const [twcToken] = tokens.splice(twcIndex, 1);
                 tokens.unshift(twcToken as any);
+            } else if (activeSubTab === 'explore') {
+                tokens.unshift({
+                    ...TWC_FALLBACK,
+                    price: twcLive?.priceUSD || TWC_FALLBACK.price,
+                    priceUSD: twcLive?.priceUSD || TWC_FALLBACK.priceUSD,
+                    priceChange24h: twcLive?.priceChange24h ?? TWC_FALLBACK.priceChange24h,
+                    volume24h: twcLive?.volume24h ?? TWC_FALLBACK.volume24h,
+                    marketCap: twcLive?.marketCap ?? TWC_FALLBACK.marketCap,
+                    logoURI: twcLive?.logoURI || TWC_FALLBACK.logoURI,
+                } as any);
             }
         }
 
         return tokens;
-    }, [activeSubTab, favoriteTokens, marketPairs, adminTokens, searchQuery, searchResults, sortBy, sortDirection, queryClient]);
+    }, [activeSubTab, favoriteTokens, marketPairs, adminTokens, searchQuery, searchResults, sortBy, sortDirection, queryClient, twcLive]);
 
     const isLoading = activeSubTab === 'favourite' 
         ? isFavLoading 

@@ -377,6 +377,10 @@ export default function SwapScreen() {
     };
 
     const handleKeyboardPress = (key: string) => {
+        if (key === 'CLEAR') {
+            setFromAmount('');
+            return;
+        }
         if (key === 'DELETE') {
             setFromAmount(fromAmount.slice(0, -1));
             return;
@@ -996,7 +1000,7 @@ export default function SwapScreen() {
                 <WalletModal
                     visible={isGlobalWalletModalVisible}
                     onClose={() => setGlobalWalletModalVisible(false)}
-                    onHistoryPress={() => { setGlobalWalletModalVisible(false); router.push('/activities' as any); }}
+                    onReferralPress={() => { setGlobalWalletModalVisible(false); router.push('/referral' as any); }}
                     onSettingsPress={() => { setGlobalWalletModalVisible(false); router.push('/settings' as any); }}
                     onDisconnectPress={() => { setGlobalWalletModalVisible(false); }}
                 />

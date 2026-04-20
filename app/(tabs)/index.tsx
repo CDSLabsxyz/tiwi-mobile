@@ -1,9 +1,6 @@
-import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useMemo, useState } from 'react';
-import { Dimensions, RefreshControl, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedView } from '@/components/themed-view';
@@ -32,10 +29,6 @@ import { api } from '@/lib/mobile/api-client';
 import { useMarketStore } from '@/store/marketStore';
 import { useWalletStore } from '@/store/walletStore';
 import { useQueryClient } from '@tanstack/react-query';
-
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-const BUTTON_SIZE = 48;
-const SNAP_PADDING = 20;
 
 export default function HomeScreen() {
   const { top, bottom } = useSafeAreaInsets();
@@ -216,45 +209,6 @@ export default function HomeScreen() {
   // Modal logic is now handled in TabLayout
   // But we keep handleOpenWallet as a legacy delegate for the Header
 
-
-  const translateX = useSharedValue(0);
-  const translateY = useSharedValue(0);
-  const context = useSharedValue({ x: 0, y: 0 });
-
-  const gesture = Gesture.Pan()
-    .onStart(() => {
-      context.value = { x: translateX.value, y: translateY.value };
-    })
-    .onUpdate((event) => {
-      translateX.value = event.translationX + context.value.x;
-
-      const initialY = SCREEN_HEIGHT / 2 + 16.5;
-      const nextY = event.translationY + context.value.y;
-
-      const tabAreaHeight = (bottom || 16) + 76;
-      const topBoundary = -initialY + 100;
-      const bottomBoundary = (SCREEN_HEIGHT - initialY) - tabAreaHeight - BUTTON_SIZE - 20;
-
-      translateY.value = Math.min(Math.max(nextY, topBoundary), bottomBoundary);
-    })
-    .onEnd(() => {
-      const centerX = SCREEN_WIDTH / 2;
-      const currentAbsoluteX = SCREEN_WIDTH - BUTTON_SIZE - SNAP_PADDING + translateX.value;
-
-      if (currentAbsoluteX < centerX) {
-        translateX.value = withSpring(-(SCREEN_WIDTH - BUTTON_SIZE - SNAP_PADDING * 2));
-      } else {
-        translateX.value = withSpring(0);
-      }
-    });
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: translateX.value },
-      { translateY: translateY.value },
-    ],
-  }));
-
   return (
       <ThemedView style={styles.container}>
         <CustomStatusBar />
@@ -312,22 +266,7 @@ export default function HomeScreen() {
           </View>
         </ScrollView>
 
-        {/* Floating AI Bot Button */}
-        <GestureDetector gesture={gesture}>
-          <Animated.View style={[styles.aiButton, animatedStyle]}>
-            <TouchableOpacity
-              onPress={() => router.push('/chatbot' as any)}
-              activeOpacity={0.8}
-              style={styles.aiButtonTouch}
-            >
-              <Image
-                source={require('../../assets/home/connect wallet.svg')}
-                style={styles.aiIcon}
-                contentFit="contain"
-              />
-            </TouchableOpacity>
-          </Animated.View>
-        </GestureDetector>
+        {/* Floating AI bubble is mounted globally in app/_layout.tsx */}
 
         {/* WalletModal moved to Layout */}
       </ThemedView>
@@ -352,23 +291,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     gap: 24,
     alignItems: 'center',
-  },
-  aiButton: {
-    position: 'absolute',
-    right: SNAP_PADDING,
-    top: '50%',
-    marginTop: 16.5,
-    zIndex: 1000,
-    elevation: 10,
-    width: BUTTON_SIZE,
-    height: BUTTON_SIZE,
-  },
-  aiButtonTouch: {
-    width: '100%',
-    height: '100%',
-  },
-  aiIcon: {
-    width: '100%',
-    height: '100%',
   }
 });

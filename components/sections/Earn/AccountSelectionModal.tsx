@@ -207,13 +207,6 @@ export const AccountSelectionModal: React.FC<AccountSelectionModalProps> = ({
                                     </TouchableOpacity>
                                 );
                             })}
-
-                            <View style={styles.alertBox}>
-                                <Image source={require('../../../assets/earn/alert-diamond.svg')} style={styles.alertIcon} contentFit="contain" />
-                                <Text style={styles.alertText}>
-                                    Insufficient funds in one account will be automatically deducted from other available balances
-                                </Text>
-                            </View>
                         </ScrollView>
                     </View>
 
@@ -357,24 +350,6 @@ const styles = StyleSheet.create({
         width: 20,
         height: 20,
         opacity: 0.5,
-    },
-    alertBox: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-        marginTop: 8,
-        paddingHorizontal: 4,
-    },
-    alertIcon: {
-        width: 16,
-        height: 16,
-        tintColor: colors.mutedText,
-    },
-    alertText: {
-        fontFamily: 'Manrope-Regular',
-        fontSize: 12,
-        color: colors.mutedText,
-        flex: 1,
     },
     confirmButton: {
         marginTop: 20,

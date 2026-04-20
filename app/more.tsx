@@ -51,10 +51,10 @@ const allActions: MoreAction[] = [
         category: 'recommended',
     },
     {
-        id: 'history',
-        label: 'History',
-        icon: require('../assets/home/transaction-history.svg'),
-        route: '/activities',
+        id: 'browser',
+        label: 'Browser',
+        icon: 'compass-outline',
+        route: '/browser',
         category: 'recommended',
     },
     {
@@ -84,6 +84,13 @@ const allActions: MoreAction[] = [
         label: 'Wallet',
         icon: require('../assets/home/wallet-03.svg'),
         route: '/(tabs)/wallet',
+        category: 'popular',
+    },
+    {
+        id: 'history',
+        label: 'History',
+        icon: require('../assets/home/transaction-history.svg'),
+        route: '/activities',
         category: 'popular',
     },
     // Coming soon

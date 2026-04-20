@@ -9,6 +9,7 @@ import {
     EarnEmptyState,
     EarnTabSwitcher,
     MyStakeCard,
+    StakeDetailsCard,
     StakingPoolAccordion,
     StakingTokenCard,
     TotalStakedCard,
@@ -38,6 +39,9 @@ export default function EarnScreen() {
     const { tab } = useLocalSearchParams<{ tab: string }>();
     const [activeTab, setActiveTab] = useState<EarnTabKey>('staking');
     const [stakingSubTab, setStakingSubTab] = useState<StakingSubTab>('stake');
+    // Tracks which StakeDetailsCard is expanded on the Active Positions / My Stakes tabs.
+    // Matches the super-app which auto-expands the first card in the list.
+    const [expandedStakeId, setExpandedStakeId] = useState<string | null>(null);
 
     // Handle deep-link tab switching (e.g., from staking success)
     useEffect(() => {
@@ -65,15 +69,24 @@ export default function EarnScreen() {
     const { address: walletAddress } = useWalletStore();
     const {
         activePositions,
+        historicalStakes,
         activePools,
         globalStats,
         isLoading: isStoreLoading,
         isGlobalStatsLoading,
         fetchInitialData,
         fetchGlobalStats,
-        discoverPositions,
+        fetchHistoricalStakes,
+        resetUserStakes,
         liveRewards
     } = useStakingStore();
+
+    // Wipe cached active/historical stakes the moment the active wallet
+    // changes so the UI never shows the previous wallet's positions while
+    // the refetch for the new wallet is in flight.
+    useEffect(() => {
+        resetUserStakes();
+    }, [walletAddress, resetUserStakes]);
 
     const [isLoading, setIsLoading] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
@@ -85,10 +98,15 @@ export default function EarnScreen() {
             if (walletAddress) {
                 await Promise.all([
                     fetchInitialData(walletAddress),
-                    fetchGlobalStats()
+                    fetchGlobalStats(),
+                    fetchHistoricalStakes(walletAddress),
                 ]);
-                // Background harvesting crawler
-                discoverPositions(walletAddress);
+                // NOTE: the on-chain discoverPositions() crawler is intentionally
+                // not called here. The DB is the source of truth for Active
+                // Positions — mirrors the super-app which never merges phantom
+                // on-chain rows into the list. If the user wants to inspect
+                // on-chain state for a specific pool, the manage screen reads
+                // from the contract directly.
             } else {
                 await fetchGlobalStats();
             }
@@ -119,6 +137,18 @@ export default function EarnScreen() {
 
         return () => clearInterval(intervalId);
     }, [stakingSubTab, walletAddress, activeTab]);
+
+    // Auto-expand the first stake whenever the relevant list changes, so users
+    // land on a useful view instead of a pile of collapsed rows.
+    useEffect(() => {
+        if (stakingSubTab === 'active' && activePositions.length > 0) {
+            setExpandedStakeId(activePositions[0].id);
+        } else if (stakingSubTab === 'my-stakes' && historicalStakes.length > 0) {
+            setExpandedStakeId(historicalStakes[0].id);
+        } else {
+            setExpandedStakeId(null);
+        }
+    }, [stakingSubTab, activePositions, historicalStakes]);
 
     // Helper for contextual empty states
     const getEmptyStateMessages = (tab: StakingSubTab) => {
@@ -191,8 +221,10 @@ export default function EarnScreen() {
                                 overallTvl={globalStats.overallTvl}
                                 maxTvl={globalStats.maxTvl}
                                 activePoolsCount={globalStats.activePoolsCount}
+                                inactivePoolsCount={globalStats.inactivePoolsCount}
                                 totalTwcStaked={globalStats.totalTwcStaked}
                                 activeStakersCount={globalStats.activeStakersCount}
+                                allTimeStakersCount={globalStats.allTimeStakersCount}
                                 isLoading={isGlobalStatsLoading}
                                 tokenSymbol="TWC"
                             />
@@ -241,15 +273,22 @@ export default function EarnScreen() {
                             <View style={styles.cardsList}>
                                 {stakingSubTab === 'stake' ? (
                                     activePools.length > 0 ? (
-                                        activePools.map((pool) => (
-                                            <StakingPoolAccordion
-                                                key={pool.id}
-                                                poolId={pool.poolId ?? pool.id}
-                                                tokenSymbol={pool.tokenSymbol}
-                                                tokenName={pool.tokenName}
-                                                onStakePress={() => router.push(`/earn/stake/${pool.tokenSymbol}`)}
-                                            />
-                                        ))
+                                        activePools
+                                            // Show the pool if it has either a V2 per-pool contract
+                                            // address OR a legacy on-chain numeric poolId. Rows that
+                                            // have neither can't be staked into yet.
+                                            .filter((pool) => !!pool.poolContractAddress || (pool.poolId !== undefined && pool.poolId !== null))
+                                            .map((pool) => (
+                                                <StakingPoolAccordion
+                                                    key={pool.id}
+                                                    poolId={(pool.poolContractAddress ? pool.id : pool.poolId) as string | number}
+                                                    poolContractAddress={pool.poolContractAddress}
+                                                    decimals={pool.decimals}
+                                                    tokenSymbol={pool.tokenSymbol}
+                                                    tokenName={pool.tokenName}
+                                                    onStakePress={() => router.push(`/earn/stake/${pool.tokenSymbol}` as any)}
+                                                />
+                                            ))
                                     ) : (
                                         <Text style={{ color: colors.mutedText, textAlign: 'center', marginTop: 20 }}>
                                             No available pools
@@ -258,15 +297,12 @@ export default function EarnScreen() {
                                 ) : stakingSubTab === 'active' ? (
                                     activePositions.length > 0 ? (
                                         activePositions.map((pos) => (
-                                            <MyStakeCard
+                                            <StakeDetailsCard
                                                 key={pos.id}
-                                                symbol={pos.pool?.tokenSymbol || 'TWC'}
-                                                stakedAmount={pos.stakedAmount}
-                                                apy={pos.pool?.displayApy || 'N/A'}
-                                                rewardsEarned={`${pos.displayRewardsEarned} ${pos.pool?.tokenSymbol || ''}`}
-                                                lockPeriod={pos.pool?.minStakingPeriod || 'N/A'}
-                                                icon={pos.pool?.tokenLogo ? { uri: pos.pool.tokenLogo } : TWCIcon}
-                                                onPress={() => router.push(`/earn/manage/${pos.pool?.tokenSymbol || 'TWC'}`)}
+                                                stake={pos}
+                                                variant="active"
+                                                isExpanded={expandedStakeId === pos.id}
+                                                onToggle={() => setExpandedStakeId(expandedStakeId === pos.id ? null : pos.id)}
                                             />
                                         ))
                                     ) : (
@@ -275,9 +311,21 @@ export default function EarnScreen() {
                                         </Text>
                                     )
                                 ) : (
-                                    <Text style={{ color: colors.mutedText, textAlign: 'center', marginTop: 20 }}>
-                                        My Stakes tab content
-                                    </Text>
+                                    historicalStakes.length > 0 ? (
+                                        historicalStakes.map((pos) => (
+                                            <StakeDetailsCard
+                                                key={pos.id}
+                                                stake={pos}
+                                                variant="history"
+                                                isExpanded={expandedStakeId === pos.id}
+                                                onToggle={() => setExpandedStakeId(expandedStakeId === pos.id ? null : pos.id)}
+                                            />
+                                        ))
+                                    ) : (
+                                        <Text style={{ color: colors.mutedText, textAlign: 'center', marginTop: 20 }}>
+                                            You don't have any completed or withdrawn stakes yet.
+                                        </Text>
+                                    )
                                 )}
                             </View>
                         </View>

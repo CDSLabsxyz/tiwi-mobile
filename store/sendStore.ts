@@ -42,6 +42,7 @@ interface SendState {
   isInsufficientBalance: boolean;
   isInsufficientGas: boolean;
   isContractRecipient: boolean;
+  acknowledgedContractRecipient: boolean;
 
   // Actions
   setActiveTab: (tab: SendTab) => void;
@@ -59,6 +60,7 @@ interface SendState {
   setInsufficientBalance: (isInsufficient: boolean) => void;
   setInsufficientGas: (isInsufficient: boolean) => void;
   setContractRecipient: (isContract: boolean) => void;
+  setAcknowledgedContractRecipient: (acknowledged: boolean) => void;
   resetSendState: () => void;
   prePopulateFromAsset: (token: TokenOption, chain: ChainOption, balance: string, usdValue: string) => void;
 }
@@ -80,6 +82,7 @@ const initialState = {
   isInsufficientBalance: false,
   isInsufficientGas: false,
   isContractRecipient: false,
+  acknowledgedContractRecipient: false,
 };
 
 /**
@@ -92,7 +95,12 @@ export const useSendStore = create<SendState>((set, get) => ({
   setActiveTab: (tab) => set({ activeTab: tab }),
   setSelectedToken: (token) => set({ selectedToken: token }),
   setSelectedChain: (chain) => set({ selectedChain: chain }),
-  setRecipientAddress: (address) => set({ recipientAddress: address }),
+  setRecipientAddress: (address) =>
+    set({
+      recipientAddress: address,
+      // A new recipient invalidates any prior contract acknowledgement.
+      acknowledgedContractRecipient: false,
+    }),
   setAmount: (amount) => {
     const { selectedToken } = get();
     set({ amount });
@@ -123,7 +131,16 @@ export const useSendStore = create<SendState>((set, get) => ({
   setCurrentStep: (step) => set({ currentStep: step }),
   setInsufficientBalance: (isInsufficient) => set({ isInsufficientBalance: isInsufficient }),
   setInsufficientGas: (isInsufficient) => set({ isInsufficientGas: isInsufficient }),
-  setContractRecipient: (isContract) => set({ isContractRecipient: isContract }),
+  setContractRecipient: (isContract) =>
+    set((state) => ({
+      isContractRecipient: isContract,
+      // Drop any stale acknowledgement once a fresh check decides this address
+      // is no longer a contract — keeps the override scoped to the address that
+      // actually triggered it.
+      acknowledgedContractRecipient: isContract ? state.acknowledgedContractRecipient : false,
+    })),
+  setAcknowledgedContractRecipient: (acknowledged) =>
+    set({ acknowledgedContractRecipient: acknowledged }),
   resetSendState: () => set(initialState),
   prePopulateFromAsset: (token, chain, balance, usdValue) => {
     set({

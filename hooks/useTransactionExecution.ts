@@ -1,6 +1,7 @@
 import { DISPERSE_CONTRACTS } from '@/constants/contracts';
 import { SendTokenParams, transactionService } from '@/services/transactionService';
 import { useWalletStore } from '@/store/walletStore';
+import { waitForReceiptSuccess } from '@/utils/txReceipt';
 import { useCallback, useState } from 'react';
 import { parseUnits } from 'viem';
 import { useSendTransaction, useWriteContract } from 'wagmi';
@@ -94,21 +95,30 @@ export const useTransactionExecution = () => {
                     });
                 }
                 if (hash && params) {
-                    try {
-                        const { apiClient } = require('@/services/apiClient');
-                        await apiClient.logTransaction({
-                            walletAddress: activeAddress!,
-                            transactionHash: hash,
-                            chainId: params.chainId,
-                            type: 'Transfer',
-                            fromTokenAddress: params.tokenAddress,
-                            fromTokenSymbol: params.symbol,
-                            amount: params.amount,
-                            amountFormatted: `${params.amount} ${params.symbol}`,
-                            routerName: 'Tiwi Transfer',
-                        });
-                    } catch (e) {
-                        console.error('[useTransactionExecution] Failed to log transfer:', e);
+                    // Broadcast ≠ success — wait for the receipt before logging.
+                    // A reverted tx would otherwise be recorded as a Transfer
+                    // that never happened.
+                    const mined = await waitForReceiptSuccess({ hash, chainId: params.chainId });
+                    if (mined === false) {
+                        throw new Error('Transaction reverted on-chain');
+                    }
+                    if (mined === true) {
+                        try {
+                            const { apiClient } = require('@/services/apiClient');
+                            await apiClient.logTransaction({
+                                walletAddress: activeAddress!,
+                                transactionHash: hash,
+                                chainId: params.chainId,
+                                type: 'Transfer',
+                                fromTokenAddress: params.tokenAddress,
+                                fromTokenSymbol: params.symbol,
+                                amount: params.amount,
+                                amountFormatted: `${params.amount} ${params.symbol}`,
+                                routerName: 'Tiwi Transfer',
+                            });
+                        } catch (e) {
+                            console.error('[useTransactionExecution] Failed to log transfer:', e);
+                        }
                     }
                 }
                 setLastHash(hash);
@@ -142,23 +152,32 @@ export const useTransactionExecution = () => {
             if (isLocal) {
                 const result = await transactionService.multiSend(params);
                 if (result.status === 'success') {
-                    // Log to backend
-                    try {
-                        const { apiClient } = require('@/services/apiClient');
-                        await apiClient.logTransaction({
-                            walletAddress: activeAddress!,
-                            transactionHash: result.hash,
-                            chainId: params.chainId,
-                            type: 'Transfer',
-                            fromTokenAddress: params.tokenAddress,
-                            fromTokenSymbol: params.symbol,
-                            // For multi-send we could sum the amounts or just log the intent
-                            amount: params.amounts.reduce((a, b) => (parseFloat(a) + parseFloat(b)).toString(), '0'),
-                            amountFormatted: `Multi-send ${params.symbol}`,
-                            routerName: 'Tiwi Multi-Send',
-                        });
-                    } catch (e) {
-                        console.error('[useTransactionExecution] Failed to log multi-send:', e);
+                    // Confirm the disperse actually mined successfully before
+                    // logging. Approve can land fine but the disperse call
+                    // revert (allowance race, OOG, bad recipient) — we don't
+                    // want that to show up as "Sent Successfully".
+                    const mined = await waitForReceiptSuccess({ hash: result.hash, chainId: params.chainId });
+                    if (mined === false) {
+                        throw new Error('Multi-send reverted on-chain');
+                    }
+                    if (mined === true) {
+                        try {
+                            const { apiClient } = require('@/services/apiClient');
+                            await apiClient.logTransaction({
+                                walletAddress: activeAddress!,
+                                transactionHash: result.hash,
+                                chainId: params.chainId,
+                                type: 'Transfer',
+                                fromTokenAddress: params.tokenAddress,
+                                fromTokenSymbol: params.symbol,
+                                // For multi-send we could sum the amounts or just log the intent
+                                amount: params.amounts.reduce((a, b) => (parseFloat(a) + parseFloat(b)).toString(), '0'),
+                                amountFormatted: `Multi-send ${params.symbol}`,
+                                routerName: 'Tiwi Multi-Send',
+                            });
+                        } catch (e) {
+                            console.error('[useTransactionExecution] Failed to log multi-send:', e);
+                        }
                     }
                     setLastHash(result.hash);
                     return result.hash;
@@ -192,8 +211,18 @@ export const useTransactionExecution = () => {
                     });
                 }
 
-                // Log to backend
+                // Log to backend — only after we know the tx actually landed.
                 if (hash) {
+                    const mined = await waitForReceiptSuccess({ hash, chainId: params.chainId });
+                    if (mined === false) {
+                        throw new Error('Multi-send reverted on-chain');
+                    }
+                    if (mined !== true) {
+                        // Unknown — skip logging. Tx hash is still returned
+                        // so the caller can show a pending state if desired.
+                        setLastHash(hash);
+                        return hash;
+                    }
                     try {
                         const { apiClient } = require('@/services/apiClient');
                         await apiClient.logTransaction({

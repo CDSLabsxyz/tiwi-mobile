@@ -60,6 +60,12 @@ class ActivityService {
                 'stake': 'Stake',
                 'unstake': 'Unstake',
                 'approve': 'Approve',
+                // Claim / Harvest = user receiving reward tokens. Mapped to
+                // 'Received' so the DB check constraint + UI filters treat
+                // them as incoming TWC instead of silently falling through
+                // to 'Swap' (the default below), which mislabels the row.
+                'claim': 'Received',
+                'harvest': 'Received',
                 'transfer': 'Transfer',
                 'mint': 'Mint',
                 'burn': 'Burn',

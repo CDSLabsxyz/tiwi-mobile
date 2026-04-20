@@ -20,15 +20,30 @@ const ArrowDown01 = require('../../assets/home/arrow-down-01.svg');
 const Scan = require('../../assets/home/iris-scan.svg');
 const ChevronLeftIcon = require('../../assets/swap/arrow-left-02.svg');
 const NotificationIconLocal = require('../../assets/settings/notification-02.svg');
-const ReferralIconLocal = require('../../assets/settings/user-group-02.svg');
 
 const ChainIcons = {
     EVM: require('../../assets/home/chains/ethereum.svg'),
     SOLANA: require('../../assets/home/chains/solana.svg'),
     TRON: require('../../assets/home/chains/tron.png'),
     TON: require('../../assets/home/chains/ton.jpg'),
-    COSMOS: require('../../assets/home/chains/bsc.svg'), // placeholder
-    OSMOSIS: require('../../assets/home/chains/polygon.svg'), // placeholder
+    COSMOS: require('../../assets/home/chains/cosmos.svg'),
+    OSMOSIS: require('../../assets/home/chains/osmosis.svg'),
+};
+
+// Network-specific icons — keyed by activeNetworkId so EVM networks (ETH vs BNB vs
+// BASE, etc.) each show their own badge instead of a shared EVM/Ethereum icon.
+const NetworkIcons: Record<string, any> = {
+    ETH: require('../../assets/home/chains/ethereum.svg'),
+    BSC: require('../../assets/home/chains/bsc.svg'),
+    POLYGON: require('../../assets/home/chains/polygon.svg'),
+    BASE: require('../../assets/home/chains/base.png'),
+    OPTIMISM: require('../../assets/home/chains/optimism.png'),
+    AVALANCHE: require('../../assets/home/chains/avalanche.svg'),
+    SOLANA: require('../../assets/home/chains/solana.svg'),
+    TRON: require('../../assets/home/chains/tron.png'),
+    TON: require('../../assets/home/chains/ton.jpg'),
+    COSMOS: require('../../assets/home/chains/cosmos.svg'),
+    OSMOSIS: require('../../assets/home/chains/osmosis.svg'),
 };
 
 import { useNotifications } from '@/hooks/useNotifications';
@@ -104,7 +119,14 @@ export const Header: React.FC<HeaderProps> = ({
                         </View>
                         {activeChain && (
                             <View style={styles.logoChainBadge}>
-                                <Image source={(ChainIcons as any)[activeChain]} style={styles.iconFull} contentFit="contain" />
+                                <Image
+                                    source={
+                                        (activeNetworkId && NetworkIcons[activeNetworkId]) ||
+                                        (ChainIcons as any)[activeChain]
+                                    }
+                                    style={styles.iconFull}
+                                    contentFit="contain"
+                                />
                             </View>
                         )}
                     </TouchableOpacity>
@@ -147,12 +169,8 @@ export const Header: React.FC<HeaderProps> = ({
                         </View>
                     )}
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => router.push('/referral' as any)} style={styles.iconButton} activeOpacity={0.7}>
-                    <Image
-                        source={ReferralIconLocal}
-                        style={styles.icon}
-                        contentFit="contain"
-                    />
+                <TouchableOpacity onPress={() => router.push('/scanner' as any)} style={styles.iconButton} activeOpacity={0.7}>
+                    <Ionicons name="scan-outline" size={24} color={colors.titleText} />
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => router.push('/browser' as any)} style={styles.iconButton} activeOpacity={0.7}>
                     <Ionicons name="compass-outline" size={24} color={colors.titleText} />

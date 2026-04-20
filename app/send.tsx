@@ -438,7 +438,7 @@ export default function SendScreen() {
                     validateAmount(sendStore.amount).isValid &&
                     sendStore.selectedToken &&
                     !sendStore.isInsufficientBalance &&
-                    !sendStore.isContractRecipient
+                    (!sendStore.isContractRecipient || sendStore.acknowledgedContractRecipient)
                 );
             } else {
                 return (

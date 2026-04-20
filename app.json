@@ -13,7 +13,8 @@
       "supportsTablet": true,
       "bundleIdentifier": "app.tiwiprotocol.xyz",
       "infoPlist": {
-        "UIBackgroundModes": ["remote-notification", "fetch", "processing"]
+        "UIBackgroundModes": ["remote-notification", "fetch", "processing"],
+        "NSCameraUsageDescription": "Used to scan QR codes and barcodes."
       }
     },
     "android": {
@@ -28,7 +29,8 @@
       "permissions": [
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
-        "android.permission.REQUEST_INSTALL_PACKAGES"
+        "android.permission.REQUEST_INSTALL_PACKAGES",
+        "android.permission.CAMERA"
       ]
     },
     "web": {
@@ -62,6 +64,14 @@
       "expo-audio",
       "expo-video",
       "expo-asset",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow $(PRODUCT_NAME) to access your camera to scan QR codes and barcodes.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ],
       [
         "expo-build-properties",
         {

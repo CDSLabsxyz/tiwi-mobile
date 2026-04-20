@@ -1,6 +1,9 @@
 /**
- * Total Staked Card Component
- * 5-stat grid matching web app design
+ * Total Staked Card
+ * 6-stat grid — ports super-app's total-staked-card.tsx:
+ *   OVERALL TVL | NO. OF ACTIVE POOLS | NO. OF INACTIVE POOLS
+ *   TOTAL TWC STAKED | TOTAL NO. OF ACTIVE STAKERS | ALL TIME STAKERS
+ * On mobile we collapse the single-row desktop layout to a 2x3 grid.
  */
 
 import { colors } from '@/constants/colors';
@@ -15,67 +18,61 @@ interface TotalStakedCardProps {
     inactivePoolsCount?: number | string;
     totalTwcStaked?: string;
     activeStakersCount?: string;
+    allTimeStakersCount?: string;
     tokenSymbol?: string;
     isLoading?: boolean;
 }
 
 export const TotalStakedCard: React.FC<TotalStakedCardProps> = ({
-    overallTvl = "0",
-    maxTvl = "0",
-    activePoolsCount = "0",
-    inactivePoolsCount = "0",
-    totalTwcStaked = "0",
-    activeStakersCount = "0",
-    tokenSymbol = "TWC",
-    isLoading = false
+    overallTvl = '0',
+    maxTvl,
+    activePoolsCount = '0',
+    inactivePoolsCount = '0',
+    totalTwcStaked = '0',
+    activeStakersCount = '0',
+    allTimeStakersCount = '0',
+    tokenSymbol = 'TWC',
+    isLoading = false,
 }) => {
+    // The super-app displays Overall TVL via the `maxTvl` field (the cap across
+    // every pool). Keep back-compat if the caller only passes `maxTvl`.
+    const tvlValue = maxTvl ?? overallTvl;
+
+    const renderStat = (
+        label: string,
+        value: string | number,
+        suffix: string,
+        opts?: { valueColor?: string; skeletonWidth?: number },
+    ) => (
+        <View style={styles.cell}>
+            <Text style={styles.label} numberOfLines={2}>{label}</Text>
+            {isLoading ? (
+                <Skeleton width={opts?.skeletonWidth ?? 60} height={18} />
+            ) : (
+                <Text style={[styles.value, opts?.valueColor ? { color: opts.valueColor } : null]} numberOfLines={1}>
+                    {value}
+                </Text>
+            )}
+            <Text style={styles.suffix}>{suffix}</Text>
+        </View>
+    );
+
     return (
         <View style={styles.container}>
-            {/* Row 1: 2 columns */}
             <View style={styles.row}>
-                <View style={[styles.statItem, styles.borderRight, styles.borderBottom]}>
-                    <Text style={styles.statLabel}>OVERALL TVL</Text>
-                    {isLoading ? <Skeleton width={80} height={20} /> : (
-                        <Text style={styles.statValue}>{maxTvl}</Text>
-                    )}
-                    <Text style={styles.tokenLabel}>{tokenSymbol}</Text>
-                </View>
-                <View style={[styles.statItem, styles.borderBottom]}>
-                    <Text style={styles.statLabel}>NO. OF ACTIVE POOLS</Text>
-                    {isLoading ? <Skeleton width={40} height={20} /> : (
-                        <Text style={[styles.statValue, { color: colors.primaryCTA }]}>{activePoolsCount}</Text>
-                    )}
-                    <Text style={styles.tokenLabel}>POOLS</Text>
-                </View>
+                {renderStat('OVERALL TVL', tvlValue, tokenSymbol, { skeletonWidth: 80 })}
+                <View style={styles.divider} />
+                {renderStat('NO. OF ACTIVE POOLS', activePoolsCount, 'POOLS', { valueColor: colors.primaryCTA, skeletonWidth: 40 })}
+                <View style={styles.divider} />
+                {renderStat('NO. OF INACTIVE POOLS', inactivePoolsCount, 'POOLS', { valueColor: '#E8A838', skeletonWidth: 40 })}
             </View>
-
-            {/* Row 2: 2 columns */}
+            <View style={styles.rowDivider} />
             <View style={styles.row}>
-                <View style={[styles.statItem, styles.borderRight, styles.borderBottom]}>
-                    <Text style={styles.statLabel}>NO. OF INACTIVE POOLS</Text>
-                    {isLoading ? <Skeleton width={40} height={20} /> : (
-                        <Text style={[styles.statValue, { color: '#E8A838' }]}>{inactivePoolsCount}</Text>
-                    )}
-                    <Text style={styles.tokenLabel}>POOLS</Text>
-                </View>
-                <View style={[styles.statItem, styles.borderBottom]}>
-                    <Text style={styles.statLabel}>TOTAL TWC STAKED</Text>
-                    {isLoading ? <Skeleton width={80} height={20} /> : (
-                        <Text style={styles.statValue}>{totalTwcStaked}</Text>
-                    )}
-                    <Text style={styles.tokenLabel}>{tokenSymbol}</Text>
-                </View>
-            </View>
-
-            {/* Row 3: 1 column centered */}
-            <View style={styles.row}>
-                <View style={styles.statItemFull}>
-                    <Text style={styles.statLabel}>TOTAL NO. OF ACTIVE STAKERS</Text>
-                    {isLoading ? <Skeleton width={60} height={20} /> : (
-                        <Text style={styles.statValue}>{activeStakersCount}</Text>
-                    )}
-                    <Text style={styles.tokenLabel}>USERS</Text>
-                </View>
+                {renderStat('TOTAL TWC STAKED', totalTwcStaked, tokenSymbol, { skeletonWidth: 80 })}
+                <View style={styles.divider} />
+                {renderStat('ACTIVE STAKERS', activeStakersCount, 'USERS', { skeletonWidth: 50 })}
+                <View style={styles.divider} />
+                {renderStat('ALL TIME STAKERS', allTimeStakersCount, 'USERS', { skeletonWidth: 50 })}
             </View>
         </View>
     );
@@ -89,47 +86,50 @@ const styles = StyleSheet.create({
         borderColor: '#273024',
         borderRadius: 16,
         overflow: 'hidden',
+        paddingVertical: 14,
+        paddingHorizontal: 4,
     },
     row: {
         flexDirection: 'row',
+        alignItems: 'center',
     },
-    statItem: {
+    rowDivider: {
+        height: 0.5,
+        backgroundColor: '#1f261e',
+        marginVertical: 10,
+        marginHorizontal: 8,
+    },
+    divider: {
+        width: 0.5,
+        alignSelf: 'stretch',
+        backgroundColor: '#1f261e',
+    },
+    cell: {
         flex: 1,
-        paddingVertical: 14,
+        paddingVertical: 4,
+        paddingHorizontal: 6,
         alignItems: 'center',
         justifyContent: 'center',
+        gap: 4,
     },
-    statItemFull: {
-        flex: 1,
-        paddingVertical: 14,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    borderRight: {
-        borderRightWidth: 0.5,
-        borderRightColor: '#1f261e',
-    },
-    borderBottom: {
-        borderBottomWidth: 0.5,
-        borderBottomColor: '#1f261e',
-    },
-    statLabel: {
+    label: {
         color: '#7c7c7c',
         fontSize: 9,
         fontFamily: 'Manrope-Medium',
-        marginBottom: 4,
+        letterSpacing: 0.3,
         textAlign: 'center',
     },
-    statValue: {
-        color: 'white',
-        fontSize: 16,
+    value: {
+        color: '#FFF',
+        fontSize: 15,
         fontFamily: 'Manrope-Bold',
         textAlign: 'center',
     },
-    tokenLabel: {
+    suffix: {
         color: '#7c7c7c',
         fontSize: 8,
         fontFamily: 'Manrope-Regular',
-        marginTop: 2,
+        letterSpacing: 0.2,
+        textAlign: 'center',
     },
 });

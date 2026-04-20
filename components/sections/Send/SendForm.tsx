@@ -15,8 +15,8 @@ import { validateAddress, validateAmount } from "@/utils/addressValidation";
 import { isNativeToken } from "@/utils/wallet";
 import * as Clipboard from "expo-clipboard";
 import { Image } from "expo-image";
-import React, { useEffect, useState } from "react";
-import { Text, TextInput, TouchableOpacity, View } from "react-native";
+import React, { useEffect, useRef, useState } from "react";
+import { Keyboard, Pressable, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { createPublicClient, http, parseUnits } from "viem";
 import { Ionicons } from "@expo/vector-icons";
@@ -42,6 +42,7 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext, onKeyboardToggle }) 
 
   const [localAddress, setLocalAddress] = useState(recipientAddress);
   const [localAmount, setLocalAmount] = useState(amount);
+  const addressInputRef = useRef<TextInput>(null);
   const [pasted, setPasted] = useState(false);
   const [addressError, setAddressError] = useState<string | null>(null);
   const [amountError, setAmountError] = useState<string | null>(null);
@@ -122,8 +123,12 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext, onKeyboardToggle }) 
         const client = createPublicClient({ chain, transport: http(getRpcUrl(chainIdNum), { timeout: 15000 }) });
         const code = await client.getCode({ address: addr as `0x${string}` });
         if (cancelled) return;
-        // EOA returns undefined or '0x'. Anything else is bytecode = contract.
-        const isContract = !!code && code !== '0x';
+        // EOA returns undefined or '0x'. Anything else is bytecode = contract,
+        // EXCEPT for EIP-7702 delegations (`0xef0100…`), which are still
+        // user-controlled EOAs and safe to receive tokens.
+        const normalized = (code || '0x').toLowerCase();
+        const isEip7702 = normalized.startsWith('0xef0100');
+        const isContract = !!code && normalized !== '0x' && !isEip7702;
         setIsContractRecipient(isContract);
         sendStore.setContractRecipient(isContract);
       } catch (e) {
@@ -266,6 +271,10 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext, onKeyboardToggle }) 
   // Custom-keyboard key handler — mirrors swap.tsx behaviour.
   const handleKeyPress = (key: string) => {
     const current = parseRawValue(localAmount);
+    if (key === "CLEAR") {
+      handleAmountChange("");
+      return;
+    }
     if (key === "DELETE") {
       handleAmountChange(current.slice(0, -1));
       return;
@@ -340,7 +349,14 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext, onKeyboardToggle }) 
           gap: 4,
         }}
       >
-        <View
+        <Pressable
+          onPress={() => {
+            // Tapping anywhere on the card focuses the address field. Without
+            // this, taps that miss the narrow text-rendering area do nothing,
+            // and users report "the input isn't clickable".
+            setIsKeyboardVisible(false);
+            addressInputRef.current?.focus();
+          }}
           style={{
             backgroundColor: colors.bgSemi,
             borderRadius: 16,
@@ -377,10 +393,18 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext, onKeyboardToggle }) 
                 To
               </Text>
               <TextInput
+                ref={addressInputRef}
                 placeholder="0x061974h639u9j5803T432"
                 placeholderTextColor={colors.bodyText}
                 value={localAddress}
                 onChangeText={handleAddressChange}
+                onFocus={() => setIsKeyboardVisible(false)}
+                autoCapitalize="none"
+                autoCorrect={false}
+                spellCheck={false}
+                keyboardType="default"
+                returnKeyType="done"
+                onSubmitEditing={Keyboard.dismiss}
                 style={{
                   fontFamily: "Manrope-Medium",
                   fontSize: 16,
@@ -440,7 +464,7 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext, onKeyboardToggle }) 
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </Pressable>
 
         {/* Save Suggestion UI */}
         {showSaveSuggestion && !isSavingToWhitelist && (
@@ -548,29 +572,79 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext, onKeyboardToggle }) 
         {!addressError && !isCheckingContract && isContractRecipient && (
           <View
             style={{
-              flexDirection: "row",
-              alignItems: "flex-start",
-              gap: 6,
               backgroundColor: "rgba(239, 68, 68, 0.08)",
               borderWidth: 1,
               borderColor: "rgba(239, 68, 68, 0.4)",
               borderRadius: 12,
               padding: 10,
               marginTop: 6,
+              gap: 8,
             }}
           >
-            <Ionicons name="warning" size={14} color="#EF4444" style={{ marginTop: 1 }} />
-            <Text
+            <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 6 }}>
+              <Ionicons name="warning" size={14} color="#EF4444" style={{ marginTop: 1 }} />
+              <Text
+                style={{
+                  flex: 1,
+                  fontFamily: "Manrope-Medium",
+                  fontSize: 11,
+                  lineHeight: 16,
+                  color: "#EF4444",
+                }}
+              >
+                This address has contract code. Sending tokens to a contract that
+                isn&apos;t built to receive them can lose your funds. If you know
+                this is your smart-wallet (e.g. Safe) or a contract that accepts
+                this token, you can continue.
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={() =>
+                sendStore.setAcknowledgedContractRecipient(
+                  !sendStore.acknowledgedContractRecipient
+                )
+              }
+              activeOpacity={0.7}
               style={{
-                flex: 1,
-                fontFamily: "Manrope-Medium",
-                fontSize: 11,
-                lineHeight: 16,
-                color: "#EF4444",
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 8,
+                paddingVertical: 4,
               }}
             >
-              This address is a smart contract. Sending tokens here will likely lose them. Use a personal wallet address instead.
-            </Text>
+              <View
+                style={{
+                  width: 18,
+                  height: 18,
+                  borderRadius: 4,
+                  borderWidth: 1.5,
+                  borderColor: sendStore.acknowledgedContractRecipient
+                    ? colors.primaryCTA
+                    : "#EF4444",
+                  backgroundColor: sendStore.acknowledgedContractRecipient
+                    ? colors.primaryCTA
+                    : "transparent",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                {sendStore.acknowledgedContractRecipient && (
+                  <Ionicons name="checkmark" size={14} color="#010501" />
+                )}
+              </View>
+              <Text
+                style={{
+                  flex: 1,
+                  fontFamily: "Manrope-SemiBold",
+                  fontSize: 12,
+                  color: sendStore.acknowledgedContractRecipient
+                    ? colors.primaryCTA
+                    : "#FFFFFF",
+                }}
+              >
+                I understand the risk — send anyway
+              </Text>
+            </TouchableOpacity>
           </View>
         )}
       </View>
@@ -677,41 +751,6 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext, onKeyboardToggle }) 
                 {usdValue}
               </Text>
             </View>
-          </View>
-
-          {/* Percentage Presets Row */}
-          <View style={{
-            flexDirection: 'row',
-            justifyContent: 'space-between',
-            marginTop: 4,
-            width: '100%',
-            gap: 12
-          }}>
-            {[25, 50, 75, 100].map((pct) => (
-              <TouchableOpacity
-                key={pct}
-                onPress={() => handlePercentagePress(pct)}
-                activeOpacity={0.7}
-                style={{
-                  flex: 1,
-                  height: 38,
-                  backgroundColor: colors.bgSemi,
-                  borderRadius: 10,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  borderWidth: 1,
-                  borderColor: 'rgba(255, 255, 255, 0.05)'
-                }}
-              >
-                <Text style={{
-                  fontFamily: 'Manrope-SemiBold',
-                  fontSize: 13,
-                  color: colors.titleText
-                }}>
-                  {pct === 100 ? 'Max' : `${pct}%`}
-                </Text>
-              </TouchableOpacity>
-            ))}
           </View>
 
           {(amountError || isInsufficientBalance) && (

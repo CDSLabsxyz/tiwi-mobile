@@ -7,8 +7,15 @@
 // 1. IMPORT POLYFILLS FIRST (CRITICAL)
 import '@/utils/polyfills';
 
+// 2. Install the global auto-translator on <Text> before any screen imports
+//    the component. The bootstrap module has side effects at import time, so
+//    by the time any other module evaluates its own imports, the Text export
+//    on `react-native` has been swapped for the translating wrapper.
+import '@/lib/i18n/bootstrap';
+
 import { AnimatedSplashScreen } from '@/components/ui/AnimatedSplashScreen';
 import { DAppApprovalSheet } from '@/components/dapp/DAppApprovalSheet';
+import { FloatingAIBubble } from '@/components/ui/FloatingAIBubble';
 import { TransactionToast } from '@/components/ui/TransactionToast';
 import { appKit, wagmiAdapter } from '@/config/AppKitConfig';
 import { useTokenPrefetch } from '@/hooks/useTokenPrefetch';
@@ -117,6 +124,28 @@ function BalancePrefetcher() {
   return null;
 }
 
+/**
+ * Global AI bubble — mounted once, visible on every authenticated screen.
+ * Hidden pre-setup (onboarding/welcome/security/lock), while the app is
+ * locked, and on the chatbot screen itself (would overlap its header).
+ */
+function GlobalAIBubble() {
+  const segments = useSegments();
+  const { setupPhase, isLocked } = useSecurityStore();
+  const firstSegment = segments[0];
+
+  const preAuth = firstSegment === 'onboarding'
+    || firstSegment === 'welcome'
+    || firstSegment === 'security'
+    || firstSegment === 'lock'
+    || firstSegment === 'wallet';
+  const onChatbot = firstSegment === 'chatbot';
+
+  if (setupPhase !== 'COMPLETED' || isLocked || preAuth || onChatbot) return null;
+
+  return <FloatingAIBubble />;
+}
+
 function AppContent() {
   // Prefetch tokens on app load
   useTokenPrefetch();
@@ -215,6 +244,7 @@ function AppContent() {
         <Stack.Screen name="wallet/import" />
         <Stack.Screen name="wallet/manage-tokens" />
       </Stack>
+      <GlobalAIBubble />
       <SecurityOverlay />
       <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, zIndex: 9999, pointerEvents: 'box-none' }}>
         <AppKit />

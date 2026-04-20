@@ -1,12 +1,15 @@
 import { colors } from '@/constants/colors';
 import { MarketAsset } from '@/lib/mobile/api-client';
 import { formatNumber, formatPercentageChange } from '@/utils/formatting';
+import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { TokenPrice } from '@/components/ui/TokenPrice';
 import { useTranslation } from '@/hooks/useLocalization';
+
+const TWC_ADDRESS_LOWER = '0xda1060158f7d593667cce0a15db346bb3ffb3596';
 
 interface TokenListItemProps {
     token: MarketAsset & { displaySymbol?: string; priceUSD?: string; marketCapRank?: number };
@@ -17,6 +20,9 @@ export const TokenListItem = React.memo(({ token, onPress }: TokenListItemProps)
     const { t } = useTranslation();
     const change = formatPercentageChange(token.priceChange24h || 0);
     const priceChangeColor = change.isPositive ? colors.success : colors.error;
+    const isTwc =
+        token.symbol?.toUpperCase() === 'TWC' ||
+        token.address?.toLowerCase() === TWC_ADDRESS_LOWER;
 
     return (
         <TouchableOpacity
@@ -41,6 +47,15 @@ export const TokenListItem = React.memo(({ token, onPress }: TokenListItemProps)
                         >
                             {token.displaySymbol || token.symbol}
                         </Text>
+                        {isTwc && (
+                            <View style={styles.announceBadge}>
+                                <Ionicons
+                                    name="megaphone"
+                                    size={11}
+                                    color={colors.primaryCTA}
+                                />
+                            </View>
+                        )}
                         {/* Rank Badge */}
                         {token.marketCapRank && (
                             <View style={styles.leverageBadge}>
@@ -105,6 +120,14 @@ const styles = StyleSheet.create({
         paddingHorizontal: 6,
         paddingVertical: 2,
         borderRadius: 6,
+    },
+    announceBadge: {
+        width: 18,
+        height: 18,
+        borderRadius: 9,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'rgba(177, 241, 40, 0.12)',
     },
     leverageText: {
         fontFamily: 'Manrope-Medium',

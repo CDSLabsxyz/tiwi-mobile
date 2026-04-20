@@ -248,6 +248,10 @@ export interface StakingPool {
     status: 'active' | 'inactive' | 'archived';
     contractAddress?: string;
     poolId?: number;
+    /** Per-pool contract address (V2 pool-per-contract architecture). */
+    poolContractAddress?: string;
+    factoryAddress?: string;
+    minStakingPeriod?: string;
     createdAt: string;
     updatedAt: string;
 }
@@ -256,6 +260,98 @@ export interface StakingPoolsResponse {
     pools: StakingPool[];
     total: number;
 }
+
+// ─── /api/v1/mobile/staking/* shapes ─────────────────────────────────────────
+// These mirror `MobilePool`, `MobilePosition`, `MobileTxStep` in the backend
+// service module. Every on-chain value is a human-units string (not wei) so
+// the mobile client doesn't need any BigInt handling for rendering.
+
+export interface MobilePoolOnChain {
+    poolReward: string;
+    rewardDurationSeconds: number;
+    maxTvl: string;
+    rewardPerSecond: string;
+    totalStaked: string;
+    rewardBalance: string;
+    startTime: number;   // unix seconds
+    endTime: number;     // unix seconds
+    active: boolean;
+    funded: boolean;
+}
+
+export interface MobilePool {
+    id: string;
+    chainId: number;
+    chainName: string;
+    tokenAddress: string;
+    tokenSymbol: string;
+    tokenName: string;
+    tokenLogo?: string;
+    decimals: number;
+    apy?: number;
+    minStakeAmount: number;
+    maxStakeAmount?: number;
+    minStakingPeriod?: string;
+    poolContractAddress?: string;
+    factoryAddress?: string;
+    status: 'active' | 'inactive' | 'archived';
+    createdAt: string;
+    rewardDurationSeconds?: number;
+    onChain: MobilePoolOnChain | null;
+    isExpired: boolean;
+}
+
+export interface MobilePositionOnChain {
+    stakedAmount: string;         // human units
+    pendingReward: string;        // human units
+    stakeTime: number;            // unix seconds
+    userRewardPerSecond: string;  // human units / sec
+    poolEndTime: number;          // unix seconds
+}
+
+export interface MobilePosition {
+    id: string;           // user_stakes row id — use as `stakeId` for /record
+    poolDbId: string;     // staking_pools row id — use as `poolId` for /tx
+    userWallet: string;
+    stakedAmount: string;
+    rewardsEarned: string;
+    totalClaimed: string;
+    status: 'active' | 'completed' | 'withdrawn';
+    /** 'stopped' = pool expired but user still holds principal (prompt claim + unstake). */
+    effectiveStatus: 'active' | 'stopped' | 'completed' | 'withdrawn';
+    isPoolExpired: boolean;
+    createdAt: string;
+    updatedAt: string;
+    pool: {
+        tokenSymbol: string;
+        tokenName: string;
+        tokenLogo?: string;
+        tokenAddress: string;
+        decimals: number;
+        chainId: number;
+        poolContractAddress?: string;
+        apy?: number;
+        rewardDurationSeconds?: number;
+    };
+    onChain: MobilePositionOnChain | null;
+}
+
+export interface MobileTxStep {
+    label: string;
+    to: `0x${string}`;
+    data: `0x${string}`;
+    value: string;   // wei as decimal string
+    chainId: number;
+}
+
+export interface MobileTxResponse {
+    steps: MobileTxStep[];
+    meta: Record<string, unknown>;
+}
+
+export interface MobilePoolsResponse { pools: MobilePool[]; total: number }
+export interface MobilePoolResponse  { pool: MobilePool }
+export interface MobilePositionsResponse { positions: MobilePosition[]; total: number }
 
 export interface Notification {
     id: string;
@@ -582,6 +678,96 @@ class StakingModule {
             walletAddress: params.walletAddress,
             chainId: params.chainId,
             poolId: params.poolId,
+        });
+    }
+
+    // ─── Mobile-first staking API (/api/v1/mobile/staking/*) ────────────────
+    //
+    // Prefer these over `.list()` / `.userStakes()` — they return pre-enriched
+    // DB + on-chain data and build unsigned transaction calldata so the mobile
+    // client doesn't need to hold contract ABIs.
+    //
+    // Typical flow:
+    //   1. poolsMobile({ status: 'active' })         → render pool cards
+    //   2. positionsMobile({ userWallet, filter })    → render user stakes
+    //   3. buildTx({ action: 'stake', ... })          → returns [approve?, deposit]
+    //      send each step via wagmi `sendTransaction` (external wallet) or
+    //      `signerController.executeTransaction` (local wallet), waiting for
+    //      each receipt before the next.
+    //   4. record({ action: 'stake', ..., txHash })   → persist in DB
+    //   5. positionsMobile(...) again                 → refresh UI
+
+    /** GET /api/v1/mobile/staking/pools */
+    poolsMobile(params?: {
+        status?: 'active' | 'inactive' | 'archived';
+        chainId?: number;
+        /** Set to false to skip live on-chain enrichment (faster). */
+        enrich?: boolean;
+    }): Promise<MobilePoolsResponse> {
+        return apiFetch(this.base, '/api/v1/mobile/staking/pools', undefined, {
+            status: params?.status,
+            chainId: params?.chainId,
+            enrich: params?.enrich === false ? 'false' : undefined,
+        });
+    }
+
+    /** GET /api/v1/mobile/staking/pools/:id */
+    poolMobile(id: string, enrich = true): Promise<MobilePoolResponse> {
+        return apiFetch(
+            this.base,
+            `/api/v1/mobile/staking/pools/${encodeURIComponent(id)}`,
+            undefined,
+            { enrich: enrich ? undefined : 'false' },
+        );
+    }
+
+    /** GET /api/v1/mobile/staking/positions */
+    positionsMobile(params: {
+        userWallet: string;
+        filter?: 'active' | 'history' | 'all';
+        enrich?: boolean;
+    }): Promise<MobilePositionsResponse> {
+        return apiFetch(this.base, '/api/v1/mobile/staking/positions', undefined, {
+            userWallet: params.userWallet,
+            filter: params.filter,
+            enrich: params.enrich === false ? 'false' : undefined,
+        });
+    }
+
+    /**
+     * POST /api/v1/mobile/staking/tx
+     *
+     * Returns 1–2 unsigned transaction steps. Execute in order, waiting for
+     * each receipt before the next. Every step has a `chainId` — switch the
+     * active wallet chain before submitting if needed.
+     */
+    buildTx(
+        body:
+            | { action: 'stake'; poolId: string; userWallet: string; amount: string | number }
+            | { action: 'claim'; poolId: string; userWallet: string; percentage?: number }
+            | { action: 'unstake'; poolId: string; userWallet: string; amount: string | number; harvestFirst?: boolean },
+    ): Promise<MobileTxResponse> {
+        return apiFetch(this.base, '/api/v1/mobile/staking/tx', {
+            method: 'POST',
+            body: JSON.stringify(body),
+        });
+    }
+
+    /**
+     * POST /api/v1/mobile/staking/record
+     *
+     * Persist a confirmed transaction in Supabase. Call after the receipt
+     * returns `status: success`.
+     */
+    record(
+        body:
+            | { action: 'stake'; userWallet: string; poolId: string; amount: number; txHash: string; lockPeriodDays?: number }
+            | { action: 'claim'; stakeId: string; amount: number; txHash: string }
+            | { action: 'unstake'; stakeId: string; txHash: string; isFullExit: boolean; harvestedRewards?: number },
+    ): Promise<any> {
+        return apiFetch(this.base, '/api/v1/mobile/staking/record', {
+            method: 'POST',
+            body: JSON.stringify(body),
         });
     }
 }

@@ -382,6 +382,7 @@ export interface AssetActivity {
   usdAmount?: number; // Numeric USD value for regional conversion
   timestamp: number;
   date: string; // Formatted date, e.g., "Jan 4, 2024"
+  hash?: string; // On-chain tx hash — used to dedupe duplicates across sources
 }
 
 /**
@@ -428,6 +429,9 @@ export const getAllAssetActivities = async (assetId: string, symbolOverride?: st
         usdAmount: parseFloat((tx.usdValue || '0').replace(/[$,]/g, '')),
         timestamp: tx.timestamp,
         date: formatDate(tx.timestamp),
+        // Mirror useUnifiedActivities' fallback chain so the SAME tx from
+        // this source and the unified source produces the same dedup key.
+        hash: tx.hash || tx.transactionHash || tx.transaction_hash || tx.id,
       }));
 
     return filteredActivities;
@@ -458,6 +462,7 @@ export const getAllAssetActivities = async (assetId: string, symbolOverride?: st
           usdValue: tx.usdValue,
           timestamp: tx.timestamp,
           date: new Date(tx.timestamp).toLocaleDateString(),
+          hash: tx.hash || tx.transactionHash || tx.transaction_hash,
         }));
     } catch (fallbackError) {
       console.error("Moralis history fallback also failed:", fallbackError);

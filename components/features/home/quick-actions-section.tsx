@@ -25,6 +25,7 @@ export const QuickActionsSection: React.FC = () => {
         { id: 'stake', label: t('home.stake'), icon: require('../../../assets/home/stake-1.svg'), route: '/earn' },
         // { id: 'pool', label: 'Pool', icon: require('../../../assets/home/coins-02-1.svg'), route: '/pool' },
         { id: 'history', label: 'History', icon: require('../../../assets/home/transaction-history.svg'), route: '/activities' },
+        { id: 'settings', label: 'Settings', icon: require('../../../assets/home/settings-03.svg'), route: '/settings' },
         { id: 'more', label: 'More', icon: require('../../../assets/home/dashboard-square-edit.svg'), route: '/more' },
     ];
 

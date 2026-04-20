@@ -396,6 +396,8 @@ export interface APIStakingPool {
     decimals?: number;
     poolId?: number;
     factoryAddress?: string;
+    /** Per-pool contract address (V2 pool-per-contract architecture). */
+    poolContractAddress?: string;
     status: 'active' | 'completed' | 'withdrawn';
     minStakingPeriod?: string;
     tvl?: string;
@@ -407,7 +409,9 @@ export interface APIUserStake {
     userWallet: string;
     stakedAmount: string;
     rewardsEarned: string;
+    totalClaimed?: string;
     lockPeriodDays?: number;
+    lockEndDate?: string;
     status: 'active' | 'completed' | 'withdrawn';
     pool: APIStakingPool;
     transactionHash?: string;
@@ -1002,7 +1006,10 @@ class TiwiApiClient {
     }
 
     /**
-     * Log a user stake to the backend
+     * Log a user stake to the backend.
+     *
+     * poolId here is the DB UUID from staking_pools.id. Callers that only know
+     * the on-chain numeric id should go through {@link resolvePoolUuid} first.
      */
     async logUserStake(stakeData: {
         userWallet: string;
@@ -1023,6 +1030,76 @@ class TiwiApiClient {
         } catch (e) {
             console.error('[TiwiAPI] logUserStake failed:', e);
             return false;
+        }
+    }
+
+    /**
+     * Mutate an existing user stake row. Mirrors the super-app's PATCH shape:
+     *   - addToClaimed: explicit Claim amount, cumulative
+     *   - addToRewardsEarned: auto-harvested rewards (Max unstake leg), cumulative
+     *   - stakedAmount: new remaining balance after an unstake
+     *   - status: 'active' | 'completed' | 'withdrawn'
+     *   - transactionHash: confirmation hash of the action
+     */
+    async patchUserStake(params: {
+        id: string;
+        stakedAmount?: number | string;
+        addToClaimed?: number | string;
+        addToRewardsEarned?: number | string;
+        status?: 'active' | 'completed' | 'withdrawn';
+        transactionHash?: string;
+    }): Promise<boolean> {
+        try {
+            await this.fetcher('/api/v1/user-stakes', {
+                method: 'PATCH',
+                body: JSON.stringify(params),
+            });
+            return true;
+        } catch (e) {
+            console.error('[TiwiAPI] patchUserStake failed:', e);
+            return false;
+        }
+    }
+
+    /**
+     * Resolve a DB pool UUID.
+     * Accepts either an on-chain numeric poolId (legacy factory architecture)
+     * or a DB UUID itself (V2 pool-per-contract architecture — there's no
+     * numeric on-chain id to resolve, so the caller passes the UUID through).
+     */
+    async resolvePoolUuid(identifier: number | string): Promise<string | null> {
+        if (typeof identifier === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identifier)) {
+            return identifier;
+        }
+        try {
+            const pools = await this.getStakingPools('active');
+            const idNum = Number(identifier);
+            const match = pools.find((p) => Number(p.poolId) === idNum);
+            return match?.id || null;
+        } catch (e) {
+            console.error('[TiwiAPI] resolvePoolUuid failed:', e);
+            return null;
+        }
+    }
+
+    /**
+     * Find a user's active stake row (DB UUID) for a given pool identifier.
+     * Accepts either an on-chain numeric poolId or a DB pool UUID.
+     * Returns null if the user has no active row for that pool.
+     */
+    async findActiveStakeId(userWallet: string, identifier: number | string): Promise<string | null> {
+        try {
+            const stakes = await this.getUserStakes(userWallet, 'active');
+            if (typeof identifier === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identifier)) {
+                const match = stakes.find((s) => s.pool?.id === identifier);
+                return match?.id || null;
+            }
+            const idNum = Number(identifier);
+            const match = stakes.find((s) => Number(s.pool?.poolId) === idNum);
+            return match?.id || null;
+        } catch (e) {
+            console.error('[TiwiAPI] findActiveStakeId failed:', e);
+            return null;
         }
     }
 

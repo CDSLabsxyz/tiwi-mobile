@@ -15,7 +15,7 @@ export const DAppApprovalSheet: React.FC = () => {
     const title = useMemo(() => {
         if (!current) return '';
         switch (current.kind) {
-            case 'connect': return 'Connect Tiwi Wallet';
+            case 'connect': return 'Connect TIWI Protocol Wallet';
             case 'personal_sign':
             case 'eth_sign': return 'Sign Message';
             case 'signTypedData': return 'Sign Typed Data';

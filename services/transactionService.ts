@@ -2,6 +2,7 @@ import { DISPERSE_CONTRACTS } from '@/constants/contracts';
 import { getRpcUrl } from '@/constants/rpc';
 import { useWalletStore } from '@/store/walletStore';
 import { toSmallestUnit } from '@/utils/formatting';
+import { waitForReceiptSuccess } from '@/utils/txReceipt';
 import { createPublicClient, encodeFunctionData, http } from 'viem';
 import { activityService } from './activityService';
 import { apiClient } from './apiClient';
@@ -121,7 +122,19 @@ export const transactionService = {
         const result = await signerController.executeTransaction(txRequest, fromAddress, { skipAuthorize: true });
 
         if (result.status === 'success' && result.hash) {
-            // Log to backend
+            // A broadcasted tx is NOT the same as a successful tx. Wait for
+            // the receipt before logging — reverts/OOG would otherwise get
+            // recorded as "Sent Successfully". If the receipt confirms a
+            // revert, roll the returned status to 'failed' so the UI toast
+            // surfaces the real outcome.
+            const mined = await waitForReceiptSuccess({ hash: result.hash, chainId: params.chainId });
+            if (mined === false) {
+                return { hash: result.hash, status: 'failed', error: 'Transaction reverted on-chain' };
+            }
+            if (mined === null) {
+                // Receipt unavailable — don't log a claim we can't verify.
+                return result;
+            }
             try {
                 await apiClient.logTransaction({
                     walletAddress: fromAddress,
@@ -135,13 +148,21 @@ export const transactionService = {
                     toTokenAddress: params.recipientAddress,
                 });
 
-                // Log to local activity
+                // Log to local activity. The `txType` is used as the row's
+                // category + feeds the activityService typeMap — passing
+                // 'transaction' would fall through to the 'Swap' default
+                // and mis-label every send as a swap in the list.
                 await activityService.logTransaction(
                     fromAddress,
-                    'transaction',
+                    'sent',
                     'Sent Successfully',
                     `You sent ${params.amount} ${params.symbol} to ${params.recipientAddress}`,
-                    result.hash
+                    result.hash,
+                    {
+                        symbol: params.symbol,
+                        amount: params.amount,
+                        chainId: params.chainId,
+                    },
                 );
             } catch (logError) {
                 console.error('Failed to log transaction metadata:', logError);

@@ -6,6 +6,8 @@
 
 import { AccountSelectionModal } from '@/components/sections/Earn/AccountSelectionModal';
 import { DepositSelectionModal } from '@/components/sections/Earn/DepositSelectionModal';
+import { PercentageActionModal } from '@/components/sections/Earn/PercentageActionModal';
+import { RewardsSummaryPanel } from '@/components/sections/Earn/RewardsSummaryPanel';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { NumericKeypad } from '@/components/ui/NumericKeypad';
 import { colors } from '@/constants/colors';
@@ -55,6 +57,8 @@ export default function ManageStakeScreen() {
     const [selection, setSelection] = useState({ start: 0, end: 0 });
     const [isAccountModalVisible, setIsAccountModalVisible] = useState(false);
     const [isDepositModalVisible, setIsDepositModalVisible] = useState(false);
+    const [isClaimModalVisible, setIsClaimModalVisible] = useState(false);
+    const [isUnstakeModalVisible, setIsUnstakeModalVisible] = useState(false);
 
     const { walletGroups, address: activeAddress } = useWalletStore();
     const { data: balanceData } = useWalletBalances();
@@ -109,7 +113,10 @@ export default function ManageStakeScreen() {
         loadStake();
     }, [activeAddress, symbol]);
 
-    const stakingData = useStakingPool(userStake?.pool.poolId);
+    const manageIdentifier = userStake?.pool?.poolContractAddress ? userStake?.pool?.id : userStake?.pool?.poolId;
+    const stakingData = useStakingPool(manageIdentifier, userStake?.pool?.decimals ?? 9, {
+        poolContractAddress: userStake?.pool?.poolContractAddress,
+    });
     const {
         allowance: initialAllowance,
         isTransactionPending,
@@ -117,6 +124,7 @@ export default function ManageStakeScreen() {
         stake,
         unstake,
         claimRewards,
+        maxUnstakeWithHarvest,
         refetch: refetchStaking,
         earningRate,
         stakeTime,
@@ -226,7 +234,7 @@ export default function ManageStakeScreen() {
         allowance: polledAllowance,
         startPolling,
         stopPolling
-    } = useStakingAllowance(userStake?.pool.tokenAddress);
+    } = useStakingAllowance(userStake?.pool.tokenAddress, userStake?.pool.poolContractAddress || undefined);
 
     const currentAllowance = polledAllowance > 0n ? polledAllowance : initialAllowance;
     const { isConnected: isWagmiConnected } = useAccount();
@@ -297,8 +305,49 @@ export default function ManageStakeScreen() {
         }
     };
 
-    const handleClaim = async () => {
-        try { await claimRewards(); refetchStaking(); } catch (error: any) { }
+    const handleClaim = async (percentage: number = 100) => {
+        try {
+            await claimRewards(percentage);
+            refetchStaking();
+        } catch (error: any) {
+            if (!error?.message?.includes('User rejected')) {
+                showToast(`Claim failed: ${error?.message || 'Unknown error'}`, 'error');
+            }
+        }
+    };
+
+    const onClaimModalConfirm = async (percentage: number) => {
+        setIsClaimModalVisible(false);
+        await handleClaim(percentage);
+    };
+
+    const onUnstakeModalConfirm = async (percentage: number) => {
+        setIsUnstakeModalVisible(false);
+        const staked = parseFloat(stakingData.userStakedFormatted || '0');
+        if (staked <= 0) return;
+        const amt = (staked * (percentage / 100)).toString();
+        try {
+            await unstake(amt);
+            setAmount('');
+            refetchStaking();
+        } catch (error: any) {
+            if (!error?.message?.includes('User rejected')) {
+                showToast(`Unstake failed: ${error?.message || 'Unknown error'}`, 'error');
+            }
+        }
+    };
+
+    const onUnstakeMaxWithHarvest = async () => {
+        setIsUnstakeModalVisible(false);
+        try {
+            await maxUnstakeWithHarvest();
+            setAmount('');
+            refetchStaking();
+        } catch (error: any) {
+            if (!error?.message?.includes('User rejected')) {
+                showToast(`Max unstake failed: ${error?.message || 'Unknown error'}`, 'error');
+            }
+        }
     };
 
     const renderCountdownBox = (value: number, label: string) => (
@@ -408,6 +457,12 @@ export default function ManageStakeScreen() {
                         </View>
                     </View>
 
+                    {/* Rewards Summary (Accumulated / Claimed / Pending) */}
+                    <RewardsSummaryPanel
+                        pending={liveRewards}
+                        totalClaimed={parseFloat(userStake?.totalClaimed || '0')}
+                    />
+
                     {/* Earning Rate Banner */}
                     <View style={styles.earningRateBanner}>
                         <Text style={styles.earningRateLabel}>Earning Rate</Text>
@@ -415,13 +470,18 @@ export default function ManageStakeScreen() {
                     </View>
 
                     <View style={styles.actionButtonsRow}>
-                        <TouchableOpacity onPress={handleClaim} style={styles.claimButtonLarge}>
+                        <TouchableOpacity
+                            onPress={() => setIsClaimModalVisible(true)}
+                            disabled={isTransactionPending || liveRewards <= 0}
+                            style={[styles.claimButtonLarge, (isTransactionPending || liveRewards <= 0) && { opacity: 0.5 }]}
+                        >
                             <Text style={styles.claimButtonTextLarge}>Claim</Text>
                             <Text style={styles.claimSubtext}>≈ {formatCompactNumber(liveRewards)} {symbol}</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
-                            onPress={() => setActiveTab('Unstake')}
-                            style={[styles.unstakeButtonOutline, activeTab === 'Unstake' && { borderColor: '#C4F440' }]}
+                            onPress={() => setIsUnstakeModalVisible(true)}
+                            disabled={isTransactionPending || parseFloat(stakingData.userStakedFormatted || '0') <= 0}
+                            style={[styles.unstakeButtonOutline, { borderColor: '#C4F440' }, (isTransactionPending || parseFloat(stakingData.userStakedFormatted || '0') <= 0) && { opacity: 0.5 }]}
                         >
                             <Text style={styles.unstakeButtonTextHeadline}>Unstake</Text>
                         </TouchableOpacity>
@@ -490,6 +550,27 @@ export default function ManageStakeScreen() {
                 accounts={availableAccounts}
                 selectedAccountId={selectedAccountId}
                 totalBalance={`${userTokenBalance} ${symbol}`}
+            />
+
+            <PercentageActionModal
+                visible={isClaimModalVisible}
+                onClose={() => setIsClaimModalVisible(false)}
+                kind="claim"
+                maxAmount={liveRewards}
+                tokenSymbol={symbol || 'TWC'}
+                isProcessing={isTransactionPending}
+                onConfirm={onClaimModalConfirm}
+            />
+
+            <PercentageActionModal
+                visible={isUnstakeModalVisible}
+                onClose={() => setIsUnstakeModalVisible(false)}
+                kind="unstake"
+                maxAmount={parseFloat(stakingData.userStakedFormatted || '0')}
+                tokenSymbol={symbol || 'TWC'}
+                isProcessing={isTransactionPending}
+                onConfirm={onUnstakeModalConfirm}
+                onConfirmMaxWithHarvest={liveRewards > 0 ? onUnstakeMaxWithHarvest : undefined}
             />
         </View>
     );

@@ -36,11 +36,17 @@ interface Shortcut {
 }
 
 const TIWI_LOGO = require('../assets/images/tiwi-logo.svg');
+const TIWI_ECOSYSTEM_LOGO = require('../assets/dapp-icons/tiwi-ecosystem.png');
+const TIWIFLIX_LOGO = require('../assets/dapp-icons/tiwiflix.svg');
 
-const SHORTCUTS: Shortcut[] = [
+const TIWI_ECOSYSTEM_SHORTCUTS: Shortcut[] = [
     { label: 'Tiwi Protocol', url: 'https://app.tiwiprotocol.xyz', icon: TIWI_LOGO },
+    { label: 'Tiwi Ecosystem', url: 'https://tiwiecosystem.xyz', icon: TIWI_ECOSYSTEM_LOGO },
+    { label: 'TiwiFlix', url: 'https://app.tiwiflix.xyz', icon: TIWIFLIX_LOGO },
+];
+
+const OTHER_SHORTCUTS: Shortcut[] = [
     { label: 'CDS Labs', url: 'https://cdslabs.xyz' },
-    { label: 'Uniswap', url: 'https://app.uniswap.org' },
     { label: 'OpenSea', url: 'https://opensea.io' },
     { label: 'DeFiLlama', url: 'https://defillama.com' },
     { label: 'CoinGecko', url: 'https://www.coingecko.com' },
@@ -584,8 +590,31 @@ export default function BrowserScreen() {
                     <View style={styles.homeContainer}>
                         <Text style={styles.homeTitle}>Explore</Text>
                         <Text style={styles.homeSubtitle}>Search the web or jump into a DApp</Text>
+
+                        <Text style={styles.sectionHeading}>Tiwi Ecosystem</Text>
                         <View style={styles.shortcutsGrid}>
-                            {SHORTCUTS.map((s) => (
+                            {TIWI_ECOSYSTEM_SHORTCUTS.map((s) => (
+                                <TouchableOpacity
+                                    key={s.url}
+                                    style={styles.shortcut}
+                                    onPress={() => handleShortcutPress(s.url)}
+                                    activeOpacity={0.7}
+                                >
+                                    <ShortcutIcon
+                                        url={s.url}
+                                        label={s.label}
+                                        icon={s.icon}
+                                        style={styles.shortcutIcon}
+                                        textStyle={styles.shortcutInitial}
+                                    />
+                                    <Text style={styles.shortcutLabel}>{s.label}</Text>
+                                </TouchableOpacity>
+                            ))}
+                        </View>
+
+                        <Text style={styles.sectionHeading}>Others</Text>
+                        <View style={styles.shortcutsGrid}>
+                            {OTHER_SHORTCUTS.map((s) => (
                                 <TouchableOpacity
                                     key={s.url}
                                     style={styles.shortcut}
@@ -880,10 +909,20 @@ const styles = StyleSheet.create({
         marginTop: 4,
         marginBottom: 24,
     },
+    sectionHeading: {
+        fontFamily: 'Manrope-SemiBold',
+        fontSize: 14,
+        color: colors.titleText,
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+        marginTop: 8,
+        marginBottom: 12,
+    },
     shortcutsGrid: {
         flexDirection: 'row',
         flexWrap: 'wrap',
         gap: 16,
+        marginBottom: 24,
     },
     shortcut: {
         width: '28%',

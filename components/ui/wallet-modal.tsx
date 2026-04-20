@@ -27,14 +27,14 @@ interface WalletModalProps {
     onClose: () => void;
     walletAddress?: string;
     totalBalance?: string;
-    onHistoryPress?: () => void;
+    onReferralPress?: () => void;
     onSettingsPress?: () => void;
     onDisconnectPress?: () => void;
 }
 
 const TiwiCat = require('../../assets/home/tiwicat.svg');
 const TiwiCatToken = require('../../assets/home/tiwicat-token.svg');
-const TransactionHistory = require('../../assets/home/transaction-history.svg');
+const ReferralIcon = require('../../assets/settings/user-group-02.svg');
 const SettingsIcon = require('../../assets/home/settings-03.svg');
 const CopyIcon = require('../../assets/wallet/copy-01.svg');
 const LogoutIcon = require('../../assets/wallet/logout-01.svg');
@@ -86,7 +86,7 @@ export const WalletModal: React.FC<WalletModalProps> = (props) => {
         onClose,
         walletAddress,
         totalBalance: initialBalance,
-        onHistoryPress,
+        onReferralPress,
         onSettingsPress,
         onDisconnectPress,
     } = props;
@@ -505,9 +505,9 @@ export const WalletModal: React.FC<WalletModalProps> = (props) => {
                         </TouchableOpacity>
 
                         <View style={styles.actionCardsRow}>
-                            <TouchableOpacity onPress={onHistoryPress} style={styles.actionCard} activeOpacity={0.7}>
-                                <ExpoImage source={TransactionHistory} style={{ width: 20, height: 20, marginBottom: 8 }} contentFit="contain" />
-                                <Text style={styles.cardLabel}>History</Text>
+                            <TouchableOpacity onPress={onReferralPress} style={styles.actionCard} activeOpacity={0.7}>
+                                <ExpoImage source={ReferralIcon} style={{ width: 20, height: 20, marginBottom: 8 }} contentFit="contain" />
+                                <Text style={styles.cardLabel}>Referrals</Text>
                             </TouchableOpacity>
 
                             <TouchableOpacity onPress={onSettingsPress} style={[styles.actionCard, styles.actionCardLast]} activeOpacity={0.7}>

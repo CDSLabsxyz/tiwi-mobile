@@ -1,12 +1,17 @@
+import { ReceiptViewerModal } from '@/components/sections/Send';
+import { TransactionReceipt } from '@/components/sections/Send/TransactionReceiptCard';
 import { ActivitiesFilterSheet } from '@/components/sections/Wallet/ActivitiesFilterSheet';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { colors } from '@/constants/colors';
+import { useChains } from '@/hooks/useChains';
+import { useResolvedReceivedAmounts } from '@/hooks/useResolvedReceivedAmounts';
 import { UnifiedActivity, useUnifiedActivities } from '@/hooks/useUnifiedActivities';
 import { useWalletStore } from '@/store/walletStore';
+import { buildReceiptFromActivity } from '@/utils/buildReceiptFromActivity';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import React, { useMemo, useState } from 'react';
-import { FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 /**
@@ -21,12 +26,60 @@ export default function ActivitiesScreen() {
 
     const [activeFilter, setActiveFilter] = useState('All');
     const [isFilterVisible, setIsFilterVisible] = useState(false);
+    const [viewingReceipt, setViewingReceipt] = useState<TransactionReceipt | null>(null);
 
     const { data: activities = [], isLoading, refetch, isRefetching } = useUnifiedActivities(100);
+    const { data: chains } = useChains();
+
+    // For Received rows whose stored amount is 0/missing, resolve the real
+    // amount from the tx receipt on-chain. Results are cached by hash, so
+    // the list re-renders in place as each row's resolver resolves without
+    // hammering the RPC.
+    const resolvedReceived = useResolvedReceivedAmounts(activities, activeAddress);
 
     const filteredActivities = useMemo(() => {
-        if (activeFilter === 'All') return activities;
-        return activities.filter(a => {
+        const validActivities = activities.filter(a => {
+            const cat = (a.category || '').toLowerCase();
+            const title = (a.title || '').toLowerCase();
+            const direction = cat === 'received' || cat === 'receive' || cat === 'swap'
+                || title.includes('received') || title.includes('swapped')
+                ? 'received' : (cat === 'sent' || cat === 'send' || cat === 'transfer' || title.includes('sent')) ? 'sent' : null;
+            
+            const key = a.hash && a.chainId && direction
+                ? `${a.chainId}:${a.hash.toLowerCase()}:${direction}`
+                : null;
+            const onChain = key ? resolvedReceived[key] : null;
+
+            const numericMatch = String(a.amount ?? '').match(/^\s*([0-9]+(?:\.[0-9]+)?)/);
+            const storedNumeric = numericMatch ? numericMatch[1] : '';
+            const storedNumericValue = storedNumeric ? parseFloat(storedNumeric) : 0;
+            
+            const isSwap = cat === 'swap' || title.includes('swapped');
+            const useOnChain = !!onChain && (isSwap || !storedNumericValue);
+            const rawAmount = useOnChain && onChain ? onChain.amount : (storedNumeric || '0');
+            const displayAmtMatch = String(rawAmount).match(/^\s*([0-9]+(?:\.[0-9]+)?)/);
+            const finalAmt = displayAmtMatch ? parseFloat(displayAmtMatch[1]) : 0;
+
+            // If our resolver figures out this "swap" was actually a Send, 
+            // the logger misclassified a purely outgoing tx. Drop it because the real 
+            // "Sent" log from the same tx is already in the list.
+            if (isSwap && onChain && onChain.resolvedDirection === 'sent') {
+                return false;
+            }
+
+            // If it's effectively 0, hide it. 
+            // - If it's a pending real Receive, it will disappear momentarily 
+            //   and pop in as soon as onChain resolves it with the real amount.
+            // - If it's a blank transaction with no value, it stays hidden forever.
+            if (finalAmt === 0) {
+                return false;
+            }
+            return true;
+        });
+
+        if (activeFilter === 'All') return validActivities;
+        
+        return validActivities.filter(a => {
             const cat = (a.category || '').toLowerCase();
             const type = (a.type || '').toLowerCase();
             const title = (a.title || '').toLowerCase();
@@ -56,7 +109,7 @@ export default function ActivitiesScreen() {
                     return true;
             }
         });
-    }, [activities, activeFilter]);
+    }, [activities, activeFilter, resolvedReceived]);
 
     const handleBack = () => {
         if (router.canGoBack()) {
@@ -86,34 +139,154 @@ export default function ActivitiesScreen() {
     };
 
     const renderActivityItem = ({ item }: { item: UnifiedActivity }) => {
-        const isReceived = item.category === 'Received' || item.title.toLowerCase().includes('received');
+        const cat = (item.category || '').toLowerCase();
+        const title = (item.title || '').toLowerCase();
+        const direction = cat === 'received' || cat === 'receive' || cat === 'swap'
+            || title.includes('received') || title.includes('swapped')
+            ? 'received'
+            : (cat === 'sent' || cat === 'send' || cat === 'transfer' || title.includes('sent'))
+                ? 'sent'
+                : null;
+        const key = item.hash && item.chainId && direction
+            ? `${item.chainId}:${item.hash.toLowerCase()}:${direction}`
+            : null;
+        const onChain = key ? resolvedReceived[key] : null;
+
+        // Numeric-prefix extraction — some loggers write "1000000", some
+        // "1000000 TWC", some "1000000 TWC TWC". Collapse to the number.
+        const numericMatch = String(item.amount ?? '').match(/^\s*([0-9]+(?:\.[0-9]+)?)/);
+        const storedNumeric = numericMatch ? numericMatch[1] : '';
+        const storedNumericValue = storedNumeric ? parseFloat(storedNumeric) : 0;
+
+        // If the on-chain resolver determined a COMPLETELY different direction than
+        // the logger (e.g. logger said 'Sent' but on-chain says we 'received' funds),
+        // we must explicitly use the on-chain data because the locally stored amount
+        // might correspond to the wrong token or the wrong side of the exchange!
+        const isSwap = cat === 'swap' || title.includes('swapped');
+        const directionMismatch = onChain && (
+            (onChain.resolvedDirection === 'sent' && (cat === 'received' || cat === 'receive')) ||
+            (onChain.resolvedDirection === 'received' && (cat === 'send' || cat === 'sent' || cat === 'transfer'))
+        );
+        const useOnChain = !!onChain && (isSwap || !storedNumericValue || directionMismatch);
+        const rawAmount = useOnChain && onChain ? onChain.amount : (storedNumeric || '0');
+        const displayAmount = String(rawAmount).match(/^\s*([0-9]+(?:\.[0-9]+)?)/)?.[1] ?? '0';
+        const displaySymbol = useOnChain && onChain?.tokenSymbol
+            ? onChain.tokenSymbol
+            : (item.tokenSymbol || '');
+
+        // Relabel rows whose stored category disagrees with on-chain truth.
+        // The resolver tries 'received' first and falls back to 'sent', so
+        // resolvedDirection='sent' means there was NO received leg — a row
+        // stored as 'Swap' in that case is really just a Send (which is
+        // exactly the mis-logged-send → Swap bug). Receives similarly get
+        // corrected if they ended up under another label.
+        const effectiveCategory = (() => {
+            if (!onChain) return item.category || item.type;
+            if (onChain.resolvedDirection === 'sent'
+                && cat !== 'sent' && cat !== 'send' && cat !== 'transfer') return 'Sent';
+            if (onChain.resolvedDirection === 'received'
+                && cat !== 'received' && cat !== 'receive' && !isSwap) return 'Received';
+            return item.category || item.type;
+        })();
+        const effectiveCategoryLower = effectiveCategory.toLowerCase();
+        const isReceived = effectiveCategoryLower === 'received' || effectiveCategoryLower.includes('received');
         const amountColor = isReceived ? '#498F00' : colors.titleText;
+        // Broadened — matches "Sent", "Send", "Transfer", "Sent USDT",
+        // "Transfer to ...", title-based "sent", etc. Any historical row
+        // the user considers a Send should get a Receipt affordance.
+        const isSent =
+            !isReceived && (
+                effectiveCategoryLower.includes('sent') ||
+                effectiveCategoryLower.includes('send') ||
+                effectiveCategoryLower.includes('transfer') ||
+                title.includes('sent') ||
+                title.includes('send')
+            );
+
+        const openReceipt = () => {
+            if (!item.hash) {
+                Alert.alert(
+                    'Receipt unavailable',
+                    'This transaction is missing its hash, so a receipt cannot be generated.',
+                );
+                return;
+            }
+            // Use the on-chain-resolved amount/symbol when our stored values
+            // are missing so the receipt matches what the row displays.
+            const activityForReceipt: UnifiedActivity = {
+                ...item,
+                amount: displayAmount,
+                tokenSymbol: displaySymbol || item.tokenSymbol,
+            };
+            const r = buildReceiptFromActivity(activityForReceipt, activeAddress, chains);
+            if (r) setViewingReceipt(r);
+        };
+
+        const openExplorer = () => {
+            if (item.hash) {
+                const url = getExplorerUrl(item.hash, item.chainId);
+                router.push({ pathname: '/browser', params: { url } });
+            }
+        };
+
+        // Non-Sent rows: whole row taps through to the block explorer.
+        // Sent rows: keep the middle Receipt pill, so only the left+right
+        // open the explorer and the middle opens the receipt modal.
+        if (!isSent) {
+            return (
+                <TouchableOpacity
+                    style={styles.activityItem}
+                    activeOpacity={0.7}
+                    onPress={openExplorer}
+                >
+                    <View style={styles.leftContent}>
+                        <Text style={styles.activityLabel}>{effectiveCategory}</Text>
+                        <Text style={styles.activityDate}>{item.date}</Text>
+                    </View>
+                    <View style={styles.rightContent}>
+                        <Text style={[styles.activityAmount, { color: amountColor }]}>
+                            {displayAmount} {displaySymbol}
+                        </Text>
+                        <Text style={styles.activityUsd}>{item.usdValue || '$0.00'}</Text>
+                    </View>
+                </TouchableOpacity>
+            );
+        }
 
         return (
-            <TouchableOpacity
-                style={styles.activityItem}
-                activeOpacity={0.7}
-                onPress={() => {
-                    if (item.hash) {
-                        const url = getExplorerUrl(item.hash, item.chainId);
-                        router.push({ pathname: '/browser', params: { url } });
-                    }
-                }}
-            >
-                {/* Left Side: Type and Date */}
-                <View style={styles.leftContent}>
-                    <Text style={styles.activityLabel}>{item.category || item.type}</Text>
+            <View style={styles.activityItem}>
+                {/* Left Side: Type and Date — tap to open explorer */}
+                <TouchableOpacity
+                    style={styles.leftContent}
+                    activeOpacity={0.7}
+                    onPress={openExplorer}
+                >
+                    <Text style={styles.activityLabel}>{effectiveCategory}</Text>
                     <Text style={styles.activityDate}>{item.date}</Text>
+                </TouchableOpacity>
+
+                {/* Middle: Receipt link */}
+                <View style={styles.middleContent}>
+                    <TouchableOpacity
+                        onPress={openReceipt}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                        <Text style={styles.receiptLink}>Receipt</Text>
+                    </TouchableOpacity>
                 </View>
 
-                {/* Right Side: Amount and USD Value */}
-                <View style={styles.rightContent}>
+                {/* Right Side: Amount and USD Value — tap to open explorer */}
+                <TouchableOpacity
+                    style={styles.rightContent}
+                    activeOpacity={0.7}
+                    onPress={openExplorer}
+                >
                     <Text style={[styles.activityAmount, { color: amountColor }]}>
-                        {item.amount || '0'} {item.tokenSymbol || ''}
+                        {displayAmount} {displaySymbol}
                     </Text>
                     <Text style={styles.activityUsd}>{item.usdValue || '$0.00'}</Text>
-                </View>
-            </TouchableOpacity>
+                </TouchableOpacity>
+            </View>
         );
     };
 
@@ -187,6 +360,12 @@ export default function ActivitiesScreen() {
                 activeFilter={activeFilter}
                 onFilterChange={setActiveFilter}
             />
+
+            <ReceiptViewerModal
+                visible={!!viewingReceipt}
+                receipt={viewingReceipt}
+                onClose={() => setViewingReceipt(null)}
+            />
         </View>
     );
 }
@@ -239,12 +418,19 @@ const styles = StyleSheet.create({
     },
     activityItem: {
         flexDirection: 'row',
+        alignItems: 'center',
         justifyContent: 'space-between',
         paddingVertical: 14,
-        // Remove border/background to match image exactly
+        width: '100%',
     },
     leftContent: {
         gap: 4,
+    },
+    middleContent: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: 8,
     },
     rightContent: {
         alignItems: 'flex-end',
@@ -269,6 +455,12 @@ const styles = StyleSheet.create({
         fontFamily: 'Manrope-Medium',
         fontSize: 12,
         color: colors.mutedText,
+    },
+    receiptLink: {
+        fontFamily: 'Manrope-SemiBold',
+        fontSize: 12,
+        color: colors.primaryCTA,
+        textDecorationLine: 'underline',
     },
     emptyContainer: {
         alignItems: 'center',

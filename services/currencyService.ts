@@ -36,6 +36,19 @@ const STATIC_FALLBACK: Record<string, number> = {
     TRY: 32.1,
 };
 
+// Currency symbol lookup — used when the locale store no longer owns a
+// currencies array. Covers the common ISO 4217 codes our price feeds return.
+const CURRENCY_SYMBOLS: Record<string, string> = {
+    USD: '$', EUR: '€', GBP: '£', JPY: '¥', CNY: '¥', HKD: 'HK$', SGD: 'S$',
+    AUD: 'A$', CAD: 'CA$', CHF: 'CHF', INR: '₹', NGN: '₦', GHS: 'GH₵',
+    KES: 'KSh', ZAR: 'R', AED: 'AED', BRL: 'R$', RUB: '₽', TRY: '₺',
+    MXN: 'Mex$', ILS: '₪', PHP: '₱', VND: '₫', THB: '฿', IDR: 'Rp',
+    PKR: '₨', EGP: 'E£', GEL: '₾', SAR: 'SAR', KRW: '₩', TWD: 'NT$',
+    PLN: 'zł', SEK: 'kr', NOK: 'kr', DKK: 'kr', CZK: 'Kč', HUF: 'Ft',
+    RON: 'lei', UAH: '₴', BGN: 'лв', MYR: 'RM', BDT: '৳', LKR: 'Rs',
+    KZT: '₸', AZN: '₼', AMD: '֏', BYN: 'Br',
+};
+
 class CurrencyService {
     private ratesCache: ExchangeRates | null = null;
 
@@ -84,11 +97,7 @@ class CurrencyService {
      * Formats a value with the correct currency symbol and regional formatting (commas/dots)
      */
     format(value: number, currencyCode: string): string {
-        const localeStore = useLocaleStore.getState();
-        const { language } = localeStore;
-
-        const currencyMetadata = localeStore.currencies.find(c => c.code === currencyCode);
-        const symbol = currencyMetadata?.symbol || currencyCode;
+        const symbol = CURRENCY_SYMBOLS[currencyCode] || currencyCode;
 
         // 1. Precise Zero Check
         if (value === 0) return `${symbol}0.00`;
@@ -150,9 +159,9 @@ class CurrencyService {
         const year = d.getFullYear();
 
         switch (dateFormat) {
-            case 'DD/MM/YYYY': return `${day}/${month}/${year}`;
+            case 'DD/MM/YY': return `${day}/${month}/${year}`;
             case 'YYYY-MM-DD': return `${year}-${month}-${day}`;
-            case 'MM/DD/YYYY':
+            case 'MM/DD/YY':
             default: return `${month}/${day}/${year}`;
         }
     }

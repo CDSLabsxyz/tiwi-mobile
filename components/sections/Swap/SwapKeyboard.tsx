@@ -101,6 +101,8 @@ export const SwapKeyboard: React.FC<SwapKeyboardProps> = ({
                             style={styles.key}
                             activeOpacity={0.7}
                             onPress={() => onKeyPress('DELETE')}
+                            onLongPress={() => onKeyPress('CLEAR')}
+                            delayLongPress={400}
                         >
                             <Ionicons name="backspace-outline" size={24} color={colors.titleText} />
                         </TouchableOpacity>

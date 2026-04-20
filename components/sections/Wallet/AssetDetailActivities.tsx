@@ -13,6 +13,7 @@ import { Text, TouchableOpacity, View } from "react-native";
 interface AssetDetailActivitiesProps {
   activities: AssetActivity[];
   onViewAllPress?: () => void;
+  onReceiptPress?: (activityId: string) => void;
 }
 
 /**
@@ -21,6 +22,7 @@ interface AssetDetailActivitiesProps {
 export const AssetDetailActivities: React.FC<AssetDetailActivitiesProps> = ({
   activities,
   onViewAllPress,
+  onReceiptPress,
 }) => {
   if (activities.length === 0) {
     return (
@@ -113,6 +115,7 @@ export const AssetDetailActivities: React.FC<AssetDetailActivitiesProps> = ({
       >
         {activities.map((activity) => {
           const isReceived = activity.type === "received";
+          const isSent = activity.type === "sent";
           const amountColor = isReceived ? "#498F00" : colors.titleText;
 
           return (
@@ -127,7 +130,7 @@ export const AssetDetailActivities: React.FC<AssetDetailActivitiesProps> = ({
               }}
             >
               {/* Left: Type and Date */}
-              <View style={{ flex: 1, gap: 2 }}>
+              <View style={{ gap: 2 }}>
                 <Text
                   style={{
                     fontFamily: "Manrope-Bold",
@@ -149,6 +152,25 @@ export const AssetDetailActivities: React.FC<AssetDetailActivitiesProps> = ({
                 >
                   {activity.date}
                 </Text>
+              </View>
+
+              {/* Middle: Receipt link on Sent rows */}
+              <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+                {isSent && onReceiptPress && (
+                  <TouchableOpacity
+                    onPress={() => onReceiptPress(activity.id)}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Text style={{
+                      fontFamily: "Manrope-SemiBold",
+                      fontSize: 11,
+                      color: colors.primaryCTA,
+                      textDecorationLine: "underline",
+                    }}>
+                      Receipt
+                    </Text>
+                  </TouchableOpacity>
+                )}
               </View>
 
               {/* Right: Amount and Value */}

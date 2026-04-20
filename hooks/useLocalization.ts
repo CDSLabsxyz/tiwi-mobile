@@ -1,25 +1,18 @@
 /**
- * Localization Hooks
- * 
- * useTranslation: For text strings
- * usePrice: For reactive currency conversion
+ * Localization hooks.
+ *
+ * `useTranslation` is re-exported from the new `@/lib/i18n/useTranslation` so
+ * every caller picks up the full super-app i18n system (200+ languages via
+ * MyMemory) without needing to change its import path.
+ *
+ * `usePrice` stays here — it's a wallet-app concern, not part of the web i18n.
  */
 
 import { useMemo } from 'react';
-import { TRANSLATIONS, TranslationKey } from '../constants/translations';
 import { currencyService } from '../services/currencyService';
 import { useLocaleStore } from '../store/localeStore';
 
-export function useTranslation() {
-    const { language } = useLocaleStore();
-
-    const t = (key: TranslationKey): string => {
-        // Fallback to English if key doesn't exist in target language
-        return TRANSLATIONS[language]?.[key] || TRANSLATIONS['en'][key] || key;
-    };
-
-    return { t, language };
-}
+export { useTranslation } from '@/lib/i18n/useTranslation';
 
 export function usePrice(usdAmount: number | string | undefined) {
     const { currency } = useLocaleStore();

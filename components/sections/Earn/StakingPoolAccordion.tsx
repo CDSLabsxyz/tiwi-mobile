@@ -15,7 +15,11 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 const TWCIcon = require('../../../assets/home/tiwicat.svg');
 
 interface StakingPoolAccordionProps {
+    /** Legacy on-chain numeric id OR DB UUID (V2). */
     poolId: number | string;
+    /** V2 per-pool contract address — when present, reads go directly to it. */
+    poolContractAddress?: string;
+    decimals?: number;
     tokenSymbol: string;
     tokenName: string;
     tokenIcon?: any;
@@ -24,13 +28,22 @@ interface StakingPoolAccordionProps {
 
 export const StakingPoolAccordion: React.FC<StakingPoolAccordionProps> = ({
     poolId,
+    poolContractAddress,
+    decimals,
     tokenSymbol,
     tokenIcon,
     onStakePress
 }) => {
     const [isExpanded, setIsExpanded] = useState(false);
-    const stakingData = useStakingPool(poolId);
-    const { apr, lockPeriod, tvlCompact, activeStakersCount, isLoading } = stakingData;
+    const stakingData = useStakingPool(poolId, decimals ?? 9, { poolContractAddress });
+    const { apr, lockPeriod, tvlCompact, maxTvlCompact, activeStakersCount, isLoading } = stakingData;
+
+    const aprNum = parseFloat(String(apr).replace(/[^\d.-]/g, ''));
+    const aprCompact = Number.isFinite(aprNum)
+        ? `${formatCompactNumber(aprNum, { decimals: aprNum < 10 ? 2 : 1 })}%`
+        : apr;
+
+    const stakersDisplay = !activeStakersCount || activeStakersCount === 'N/A' ? '0' : activeStakersCount;
 
     const toggleExpand = () => {
         LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -67,23 +80,30 @@ export const StakingPoolAccordion: React.FC<StakingPoolAccordionProps> = ({
                 </View>
 
                 {!isExpanded && (
-                    <Text style={styles.collapsedApr}>{apr}</Text>
+                    <Text style={styles.collapsedTvl}>
+                        {tvlCompact} / {maxTvlCompact} {tokenSymbol}
+                    </Text>
                 )}
 
-                <AntDesign
-                    name={isExpanded ? "up" : "down"}
-                    size={18}
-                    color={colors.mutedText}
-                />
+                <View style={styles.rightGroup}>
+                    {!isExpanded && (
+                        <Text style={styles.collapsedApr}>{aprCompact}</Text>
+                    )}
+                    <AntDesign
+                        name={isExpanded ? "up" : "down"}
+                        size={18}
+                        color={colors.mutedText}
+                    />
+                </View>
             </TouchableOpacity>
 
             {isExpanded && (
                 <View style={styles.content}>
                     {/* Headers Row */}
                     <View style={styles.labelRow}>
-                        <Text style={styles.label}>APR</Text>
-                        <Text style={styles.label}>Lock Period</Text>
-                        <View style={{ width: 24 }} />
+                        <Text style={[styles.label, styles.labelCol]}>APR</Text>
+                        <Text style={[styles.label, styles.labelCol]}>Lock Period</Text>
+                        <View style={{ width: 20 }} />
                     </View>
 
                     {/* Value Row (Actionable) */}
@@ -92,7 +112,7 @@ export const StakingPoolAccordion: React.FC<StakingPoolAccordionProps> = ({
                         onPress={onStakePress}
                         activeOpacity={0.7}
                     >
-                        <Text style={styles.valueText}>{apr}</Text>
+                        <Text style={styles.valueText}>{aprCompact}</Text>
                         <Text style={styles.valueText}>{lockPeriod}</Text>
                         <AntDesign name="arrow-right" size={20} color={colors.titleText} />
                     </TouchableOpacity>
@@ -105,9 +125,9 @@ export const StakingPoolAccordion: React.FC<StakingPoolAccordionProps> = ({
                             <Text style={styles.secondaryLabel}>TVL</Text>
                             <Text style={styles.secondaryValue}>{tvlCompact} {tokenSymbol}</Text>
                         </View>
-                        <View style={styles.statBox}>
+                        <View style={[styles.statBox, styles.statBoxRight]}>
                             <Text style={styles.secondaryLabel}>STAKERS</Text>
-                            <Text style={styles.secondaryValue}>{activeStakersCount} USERS</Text>
+                            <Text style={styles.secondaryValue}>{stakersDisplay} USERS</Text>
                         </View>
                     </View>
                 </View>
@@ -139,7 +159,7 @@ const styles = StyleSheet.create({
         width: 36,
         height: 36,
         borderRadius: 18,
-        marginRight: 10,
+        marginRight: -6,
     },
     symbolText: {
         fontFamily: 'Manrope-Bold',
@@ -151,14 +171,28 @@ const styles = StyleSheet.create({
         fontSize: 16,
         color: colors.primaryCTA,
     },
+    collapsedTvl: {
+        fontFamily: 'Manrope-SemiBold',
+        fontSize: 14,
+        color: colors.titleText,
+    },
+    collapsedMeta: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+    },
+    rightGroup: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
     content: {
         paddingHorizontal: 16,
         paddingBottom: 20,
     },
     labelRow: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
-        paddingRight: 34, // Align with values ignoring the arrow
+        alignItems: 'center',
         marginBottom: 8,
     },
     label: {
@@ -166,10 +200,13 @@ const styles = StyleSheet.create({
         fontSize: 12,
         color: colors.mutedText,
     },
+    labelCol: {
+        flex: 1,
+        textAlign: 'left',
+    },
     valueRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'space-between',
         paddingVertical: 10,
     },
     valueText: {
@@ -177,6 +214,7 @@ const styles = StyleSheet.create({
         fontSize: 18,
         color: colors.titleText,
         flex: 1,
+        textAlign: 'left',
     },
     divider: {
         height: 1,
@@ -190,6 +228,9 @@ const styles = StyleSheet.create({
     },
     statBox: {
         flex: 1,
+    },
+    statBoxRight: {
+        alignItems: 'flex-end',
     },
     secondaryLabel: {
         fontFamily: 'Manrope-Medium',

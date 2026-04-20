@@ -60,7 +60,7 @@ export const MultiSendForm: React.FC<MultiSendFormProps> = ({ onNext, onKeyboard
   useEffect(() => {
     if (addressesInput.trim()) {
       const addresses = addressesInput
-        .split(/[\s\n]+/)
+        .split(/[\s\n,;]+/)
         .map((addr) => addr.trim())
         .filter((addr) => addr.length > 0);
 
@@ -221,6 +221,10 @@ export const MultiSendForm: React.FC<MultiSendFormProps> = ({ onNext, onKeyboard
   // Custom-keyboard key handler
   const handleKeyPress = (key: string) => {
     const current = parseRawValue(localAmount);
+    if (key === "CLEAR") {
+      handleAmountChange("");
+      return;
+    }
     if (key === "DELETE") {
       handleAmountChange(current.slice(0, -1));
       return;
@@ -396,10 +400,15 @@ export const MultiSendForm: React.FC<MultiSendFormProps> = ({ onNext, onKeyboard
                   To
                 </Text>
                 <TextInput
-                  placeholder="Separate each address with a space."
+                  placeholder="Separate each address with a space or comma."
                   placeholderTextColor={colors.bodyText}
                   value={addressesInput}
                   onChangeText={handleAddressesChange}
+                  onFocus={() => setIsKeyboardVisible(false)}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  spellCheck={false}
+                  keyboardType="default"
                   multiline
                   textAlignVertical="top"
                   numberOfLines={4}
@@ -643,61 +652,69 @@ export const MultiSendForm: React.FC<MultiSendFormProps> = ({ onNext, onKeyboard
                   {localAmount || "0.00"}
                 </Text>
               </TouchableOpacity>
-              <Text
-                style={{
-                  fontFamily: "Manrope-Regular",
-                  fontSize: 12,
-                  lineHeight: 18,
-                  color: colors.bodyText,
-                }}
-              >
-                {(() => {
-                  const perRecipient = parseFloat(parseRawValue(localAmount) || "0");
-                  const totalTokens = perRecipient * totalRecipients;
-                  const price = parseFloat(selectedToken?.priceUSD || "0");
-                  const totalUsd = totalTokens * price;
-                  const fmtUsd = totalUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                  const fmtTokens = totalTokens.toLocaleString(undefined, { maximumFractionDigits: 6 });
-                  const sym = selectedToken?.symbol || "";
-                  return `Total: ${fmtTokens} ${sym}${price > 0 ? `  ≈  $${fmtUsd}` : ""}`;
-                })()}
-              </Text>
-            </View>
-          </View>
+              {(() => {
+                const perRecipient = parseFloat(parseRawValue(localAmount) || "0");
+                // Only count addresses that actually pass validation — the
+                // simulation should match what would really be sent, not what
+                // the user typed.
+                const validRecipientCount = Math.max(
+                  totalRecipients - addressErrors.length,
+                  0
+                );
+                const totalTokens = perRecipient * validRecipientCount;
+                const price = parseFloat(selectedToken?.priceUSD || "0");
+                const perRecipientUsd = perRecipient * price;
+                const totalUsd = totalTokens * price;
+                const sym = selectedToken?.symbol || "";
 
-          {/* Percentage Presets Row */}
-          <View style={{
-            flexDirection: 'row',
-            justifyContent: 'space-between',
-            marginTop: 4,
-            width: '100%',
-            gap: 12
-          }}>
-            {[25, 50, 75, 100].map((pct) => (
-              <TouchableOpacity
-                key={pct}
-                onPress={() => handlePercentagePress(pct)}
-                activeOpacity={0.7}
-                style={{
-                  flex: 1,
-                  height: 38,
-                  backgroundColor: colors.bgSemi,
-                  borderRadius: 10,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  borderWidth: 1,
-                  borderColor: 'rgba(255, 255, 255, 0.05)'
-                }}
-              >
-                <Text style={{
-                  fontFamily: 'Manrope-SemiBold',
-                  fontSize: 13,
-                  color: colors.titleText
-                }}>
-                  {pct === 100 ? 'Max' : `${pct}%`}
-                </Text>
-              </TouchableOpacity>
-            ))}
+                // Format USD so sub-cent values don't collapse to "$0.00".
+                // Tokens like TWC trade at fractions of a cent, and rounding
+                // hides the real magnitude.
+                const fmtUsdSmart = (v: number) => {
+                  if (!isFinite(v) || v === 0) return "$0.00";
+                  if (v >= 0.01) {
+                    return `$${v.toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}`;
+                  }
+                  // Sub-cent: show up to 6 significant digits.
+                  return `$${v.toPrecision(2)}`;
+                };
+                const fmtTokens = totalTokens.toLocaleString(undefined, {
+                  maximumFractionDigits: 6,
+                });
+
+                return (
+                  <>
+                    {price > 0 && perRecipient > 0 && (
+                      <Text
+                        style={{
+                          fontFamily: "Manrope-Regular",
+                          fontSize: 12,
+                          lineHeight: 18,
+                          color: colors.bodyText,
+                        }}
+                      >
+                        {`≈ ${fmtUsdSmart(perRecipientUsd)} per address`}
+                      </Text>
+                    )}
+                    <Text
+                      style={{
+                        fontFamily: "Manrope-Regular",
+                        fontSize: 12,
+                        lineHeight: 18,
+                        color: colors.bodyText,
+                      }}
+                    >
+                      {`Total: ${fmtTokens} ${sym}${
+                        price > 0 ? `  ≈  ${fmtUsdSmart(totalUsd)}` : "  · price unavailable"
+                      }`}
+                    </Text>
+                  </>
+                );
+              })()}
+            </View>
           </View>
 
           {(amountError || isInsufficientBalance) && (

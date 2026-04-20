@@ -65,9 +65,9 @@ export default function TabLayout() {
       <WalletModal
         visible={isWalletModalVisible}
         onClose={() => setWalletModalVisible(false)}
-        onHistoryPress={() => {
+        onReferralPress={() => {
           setWalletModalVisible(false);
-          router.push('/activities' as any);
+          router.push('/referral' as any);
         }}
         onSettingsPress={() => {
           setWalletModalVisible(false);

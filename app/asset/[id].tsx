@@ -9,10 +9,14 @@ import {
   AssetDetailHeader,
   PriceChart,
 } from "@/components/sections/Wallet";
+import { ReceiptViewerModal } from "@/components/sections/Send";
+import { TransactionReceipt } from "@/components/sections/Send/TransactionReceiptCard";
 import { AssetQuickActions } from "@/components/sections/Wallet/AssetQuickActions";
 import { WalletHeader } from "@/components/sections/Wallet/WalletHeader";
 import { CustomStatusBar } from "@/components/ui/custom-status-bar";
 import { colors } from "@/constants/colors";
+import { useChains } from "@/hooks/useChains";
+import { useResolvedReceivedAmounts } from "@/hooks/useResolvedReceivedAmounts";
 import { useUnifiedActivities } from "@/hooks/useUnifiedActivities";
 import {
   fetchAssetDetail,
@@ -25,6 +29,7 @@ import { useSendStore } from "@/store/sendStore";
 import { useSwapStore } from "@/store/swapStore";
 import { useWalletStore } from "@/store/walletStore";
 import { mapAssetToChainOption, mapAssetToTokenOption } from "@/utils/assetMapping";
+import { buildReceiptFromActivity } from "@/utils/buildReceiptFromActivity";
 import { useLocalSearchParams, usePathname, useRouter } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import { ScrollView, View } from "react-native";
@@ -86,46 +91,96 @@ export default function AssetDetailScreen() {
   // Fetch unified activities base on wallet address
   const { data: unifiedActivities } = useUnifiedActivities(100);
 
+  // Resolve any Swap/Received rows whose amount is missing against the
+  // on-chain tx so we can (a) drop mislogged swaps that are actually pure
+  // sends and (b) prefer concretely-typed rows when deduping by hash.
+  const resolvedReceived = useResolvedReceivedAmounts(unifiedActivities || [], WALLET_ADDRESS);
+
+  const { data: chains } = useChains();
+  const [viewingReceipt, setViewingReceipt] = useState<TransactionReceipt | null>(null);
+
+  const handleReceiptPress = (activityId: string) => {
+    const underlying = unifiedActivities?.find(u => u.id === activityId);
+    if (!underlying || !underlying.hash) {
+      return;
+    }
+    const r = buildReceiptFromActivity(underlying, WALLET_ADDRESS, chains);
+    if (r) setViewingReceipt(r);
+  };
+
   // Filter and map activities specifically for this token
   const tokenActivities = useMemo(() => {
     const mappedUnifiedForAsset: AssetActivity[] = [];
-    
+
     if (unifiedActivities && unifiedActivities.length > 0 && asset) {
       const tokenSymbol = asset.symbol.toUpperCase();
       const searchAddr = asset.address.toLowerCase();
-      
+
       const relevantActivities = unifiedActivities.filter(act => {
         const actSymbol = (act.tokenSymbol || act.metadata?.tokenSymbol || act.metadata?.symbol || '').toUpperCase();
         const actAssetId = (act.metadata?.assetId || act.metadata?.tokenAddress || '').toLowerCase();
-        
+
         const actChainId = act.chainId || act.metadata?.chainId;
         const isChainMatch = !actChainId || !asset.chainId || Number(actChainId) === Number(asset.chainId);
-        
+
         const isSymbolMatch = actSymbol === tokenSymbol;
         const isAddressMatch = actAssetId === searchAddr;
         const isNativeMatch = tokenSymbol === 'ETH' && (!actSymbol || actSymbol === 'ETH');
-        
+
         return isChainMatch && (isSymbolMatch || isAddressMatch || isNativeMatch);
       });
 
       relevantActivities.forEach(act => {
         const typeLower = (act.category || act.type || '').toLowerCase();
         const titleLower = (act.title || '').toLowerCase();
-        
+        const isSwapLogged = typeLower === 'swap' || titleLower.includes('swapped');
+
+        const actChainId = act.chainId || act.metadata?.chainId;
+        const probeDirection: 'received' | 'sent' = isSwapLogged || typeLower.includes('receive')
+          ? 'received'
+          : 'sent';
+        const key = act.hash && actChainId
+          ? `${actChainId}:${act.hash.toLowerCase()}:${probeDirection}`
+          : null;
+        const onChain = key ? resolvedReceived[key] : null;
+
+        // Classify using the same rules as the main Activities screen:
+        // when on-chain disagrees with the stored category, trust on-chain.
+        // A tx logged as "Swap" whose resolver determines there's no
+        // received leg is actually a pure Send — relabel it.
         let mappedType: AssetActivity["type"] = "swap";
-        if (typeLower.includes("receive") || titleLower.includes("receive")) mappedType = "received";
-        else if (typeLower.includes("send") || typeLower.includes("transfer") || titleLower.includes("send")) mappedType = "sent";
-        else if (typeLower.includes("stake") && !typeLower.includes("unstake")) mappedType = "stake";
-        else if (typeLower.includes("unstake")) mappedType = "unstake";
-        
+        if (onChain?.resolvedDirection === 'sent'
+          && !typeLower.includes('received') && !typeLower.includes('receive')) {
+          mappedType = 'sent';
+        }
+        else if (onChain?.resolvedDirection === 'received'
+          && (typeLower.includes('receive') || titleLower.includes('receive'))) {
+          mappedType = 'received';
+        }
+        else if (typeLower.includes('receive') || titleLower.includes('receive')) {
+          mappedType = 'received';
+        }
+        else if (typeLower.includes('send') || typeLower.includes('transfer') || titleLower.includes('send')) {
+          mappedType = 'sent';
+        }
+        else if (isSwapLogged) {
+          mappedType = 'swap';
+        }
+        else if (typeLower.includes('stake') && !typeLower.includes('unstake')) {
+          mappedType = 'stake';
+        }
+        else if (typeLower.includes('unstake')) {
+          mappedType = 'unstake';
+        }
+
         const amountVal = act.amount || act.metadata?.amount || act.metadata?.fromAmount || '0';
         const actSymbol = act.tokenSymbol || act.metadata?.tokenSymbol || act.metadata?.symbol || tokenSymbol;
-        
+
         const rawAmount = amountVal.toString().replace(new RegExp(`\\s*${actSymbol}$`, 'i'), '').trim();
         const displayAmount = `${rawAmount} ${actSymbol}`;
-        
+
         const usdVal = act.usdValue || act.metadata?.usdValue || '$0.00';
-        
+
         mappedUnifiedForAsset.push({
           id: act.id,
           type: mappedType,
@@ -133,21 +188,37 @@ export default function AssetDetailScreen() {
           usdValue: usdVal,
           usdAmount: parseFloat(usdVal.replace(/[$,]/g, '') || '0'),
           timestamp: act.timestamp,
-          date: act.date || new Date(act.timestamp).toLocaleDateString()
+          date: act.date || new Date(act.timestamp).toLocaleDateString(),
+          // Carry the hash so we can dedupe across the server-side
+          // asset.activities and the unified-activity mapping.
+          ...({ __hash: act.hash?.toLowerCase() } as any),
         });
       });
     }
 
-    const allBase = asset?.activities || [];
-    const mergedMap = new Map<string, AssetActivity>();
-    
-    allBase.forEach(a => mergedMap.set(a.id, a));
-    mappedUnifiedForAsset.forEach(a => mergedMap.set(a.id, a));
-    
-    return Array.from(mergedMap.values())
+    // `asset.activities` (fetched via fetchAssetDetail) hits the same
+    // backend endpoint as useUnifiedActivities and returns the same txs —
+    // but labeled as "Swap" for rows the logger mislabeled. Merging it
+    // produces duplicate ghost Swap rows alongside the real Sent rows
+    // from the unified pipeline. Use unified only; fall back to
+    // `asset.activities` only if unified is empty.
+    const merged = new Map<string, AssetActivity>();
+    const ingest = (a: AssetActivity) => {
+      const raw: string = (a as any).__hash || (a as any).hash || a.id;
+      const key = String(raw).toLowerCase();
+      if (!merged.has(key)) merged.set(key, a);
+    };
+
+    if (mappedUnifiedForAsset.length > 0) {
+      mappedUnifiedForAsset.forEach(ingest);
+    } else {
+      (asset?.activities || []).forEach(ingest);
+    }
+
+    return Array.from(merged.values())
       .sort((a, b) => b.timestamp - a.timestamp)
       .slice(0, 5);
-  }, [unifiedActivities, asset]);
+  }, [unifiedActivities, asset, resolvedReceived]);
 
   // Fetch asset detail for full data (activities, chart)
   useEffect(() => {
@@ -394,9 +465,16 @@ export default function AssetDetailScreen() {
           <AssetDetailActivities
             activities={tokenActivities}
             onViewAllPress={handleViewAllPress}
+            onReceiptPress={handleReceiptPress}
           />
         </View>
       </ScrollView>
+
+      <ReceiptViewerModal
+        visible={!!viewingReceipt}
+        receipt={viewingReceipt}
+        onClose={() => setViewingReceipt(null)}
+      />
     </View>
   );
 }
