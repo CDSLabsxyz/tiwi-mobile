@@ -8,12 +8,34 @@ import { api, MarketAsset, TokenItem } from '@/lib/mobile/api-client';
 import { useMarketStore } from '@/store/marketStore';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Image } from 'expo-image';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Line indicator for active tab
 const imgLine327 = 'https://www.figma.com/api/mcp/asset/2040f48a-ef4a-465d-85f9-1bc8eb6c0987';
+
+// Disk cache for the per-tab admin-enriched roster (Spotlight / Listing).
+// Loaded once at module boot so tab switches render synchronously from disk
+// while the API refetch happens in background.
+const ADMIN_CACHE_KEY_PREFIX = '@tiwi/home-adminEnriched-';
+const adminDiskCache: Record<string, { data: any; updatedAt: number }> = {};
+AsyncStorage.getAllKeys()
+    .then(keys => {
+        const ours = keys.filter(k => k.startsWith(ADMIN_CACHE_KEY_PREFIX));
+        if (!ours.length) return;
+        return AsyncStorage.multiGet(ours).then(entries => {
+            for (const [key, value] of entries) {
+                if (!value) continue;
+                try {
+                    const id = key.replace(ADMIN_CACHE_KEY_PREFIX, '');
+                    adminDiskCache[id] = JSON.parse(value);
+                } catch {}
+            }
+        });
+    })
+    .catch(() => {});
 
 // Canonical TWC fallback so it always shows on Explore even if the upstream
 // market list hasn't returned it (cold start, paginated list, network hiccup).
@@ -78,8 +100,13 @@ export const MarketSection: React.FC<MarketSectionProps> = ({
     });
 
     // 2. Fetch Spotlight/Listing tokens with price enrichment (like web app)
-    const { data: adminTokens = [], isLoading: isAdminLoading } = useQuery({
+    const adminCacheId = activeTab;
+    const adminCached = adminDiskCache[adminCacheId];
+    const adminHasSavedRef = useRef<Record<string, boolean>>({});
+    const { data: adminTokens = [], isLoading: isAdminLoading, dataUpdatedAt: adminUpdatedAt, isPlaceholderData: adminIsPlaceholder } = useQuery({
         queryKey: ['homeAdminEnriched', activeTab],
+        initialData: adminCached?.data,
+        initialDataUpdatedAt: adminCached?.updatedAt,
         queryFn: async () => {
             const res = await api.tokenSpotlight.get({
                 category: activeTab === 'listing' ? 'listing' : 'spotlight',
@@ -165,6 +192,22 @@ export const MarketSection: React.FC<MarketSectionProps> = ({
         enabled: activeTab === 'spotlight' || activeTab === 'listing',
         staleTime: 30 * 1000,
     });
+
+    // Persist fresh admin-enriched data per tab so cold loads render instantly.
+    useEffect(() => {
+        if (activeTab !== 'spotlight' && activeTab !== 'listing') return;
+        const list = Array.isArray((adminTokens as any)?.tokens) ? (adminTokens as any).tokens : [];
+        if (list.length > 0 && !adminIsPlaceholder && adminUpdatedAt > (adminDiskCache[adminCacheId]?.updatedAt || 0)) {
+            if (!adminHasSavedRef.current[adminCacheId]) {
+                adminHasSavedRef.current[adminCacheId] = true;
+                const payload = { data: adminTokens, updatedAt: Date.now() };
+                adminDiskCache[adminCacheId] = payload;
+                AsyncStorage.setItem(`${ADMIN_CACHE_KEY_PREFIX}${adminCacheId}`, JSON.stringify(payload)).catch(() => {});
+            }
+        } else {
+            adminHasSavedRef.current[adminCacheId] = false;
+        }
+    }, [adminTokens, adminUpdatedAt, adminIsPlaceholder, adminCacheId, activeTab]);
 
     // 3. Build favourites by resolving each saved favourite to its exact entry
     // in the Explore list so price / 24h / volume match Explore 1:1. CEX

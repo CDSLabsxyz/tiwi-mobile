@@ -424,7 +424,14 @@ export default function ChatbotScreen() {
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const showSub = Keyboard.addListener(showEvent, () => setIsKeyboardVisible(true));
+    const showSub = Keyboard.addListener(showEvent, () => {
+      setIsKeyboardVisible(true);
+      // Anchor to the latest message once the layout has resized above the keyboard
+      // so the user can see what they're typing without manually scrolling.
+      setTimeout(() => {
+        scrollViewRef.current?.scrollToEnd({ animated: true });
+      }, Platform.OS === 'ios' ? 50 : 100);
+    });
     const hideSub = Keyboard.addListener(hideEvent, () => setIsKeyboardVisible(false));
     return () => {
       showSub.remove();
@@ -1305,6 +1312,11 @@ export default function ChatbotScreen() {
               value={inputText}
               onChangeText={setInputText}
               onContentSizeChange={handleContentSizeChange}
+              onFocus={() => {
+                setTimeout(() => {
+                  scrollViewRef.current?.scrollToEnd({ animated: true });
+                }, 150);
+              }}
               placeholder="Ask TIWI AI Anything"
               placeholderTextColor={colors.mutedText}
               style={[
@@ -1556,6 +1568,7 @@ export default function ChatbotScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#010501',
   },
   flex1: {
     flex: 1,

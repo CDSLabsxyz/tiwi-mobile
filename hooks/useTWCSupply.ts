@@ -1,4 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
+import { useEffect, useRef } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 /**
  * useTWCSupply Hook
@@ -10,12 +12,16 @@ import { useQuery } from '@tanstack/react-query';
  *
  * If the endpoint is unreachable we fall back to the deflationary
  * static genesis supply so the home screen never shows N/A.
+ *
+ * Persists to AsyncStorage so the tile renders instantly on cold start.
  */
 
 const TIWI_SUPPLY_URL = 'https://api.tiwiecosystem.xyz/api/supply';
 
 // 905T — genesis supply, used when the live API is unreachable.
 const FALLBACK_TOTAL_SUPPLY = 905_000_000_000_000;
+
+const CACHE_KEY = '@tiwi/home-twcSupply';
 
 interface TWCSupplyResponse {
     name: string;
@@ -33,8 +39,18 @@ export interface TWCSupply {
     updatedAt: string | null;
 }
 
+let diskCache: { data: TWCSupply; updatedAt: number } | undefined;
+AsyncStorage.getItem(CACHE_KEY)
+    .then(value => {
+        if (!value) return;
+        try { diskCache = JSON.parse(value); } catch {}
+    })
+    .catch(() => {});
+
 export const useTWCSupply = () => {
-    return useQuery<TWCSupply>({
+    const hasSavedRef = useRef(false);
+
+    const query = useQuery<TWCSupply>({
         queryKey: ['twcSupply'],
         queryFn: async () => {
             try {
@@ -55,5 +71,22 @@ export const useTWCSupply = () => {
         },
         staleTime: 30 * 1000,
         gcTime: 5 * 60 * 1000,
+        initialData: diskCache?.data,
+        initialDataUpdatedAt: diskCache?.updatedAt,
     });
+
+    useEffect(() => {
+        if (query.data && !query.isPlaceholderData && query.dataUpdatedAt > (diskCache?.updatedAt || 0)) {
+            if (!hasSavedRef.current) {
+                hasSavedRef.current = true;
+                const payload = { data: query.data, updatedAt: Date.now() };
+                diskCache = payload;
+                AsyncStorage.setItem(CACHE_KEY, JSON.stringify(payload)).catch(() => {});
+            }
+        } else {
+            hasSavedRef.current = false;
+        }
+    }, [query.data, query.dataUpdatedAt]);
+
+    return query;
 };

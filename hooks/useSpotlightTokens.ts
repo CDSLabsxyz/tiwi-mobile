@@ -1,6 +1,26 @@
 import { api, MarketAsset } from '@/lib/mobile/api-client';
 import { useQuery } from '@tanstack/react-query';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const RAW_CACHE_KEY_PREFIX = '@tiwi/home-spotlightRaw-';
+
+const rawDiskCache: Record<string, { data: any[]; updatedAt: number }> = {};
+AsyncStorage.getAllKeys()
+    .then(keys => {
+        const ours = keys.filter(k => k.startsWith(RAW_CACHE_KEY_PREFIX));
+        if (!ours.length) return;
+        return AsyncStorage.multiGet(ours).then(entries => {
+            for (const [key, value] of entries) {
+                if (!value) continue;
+                try {
+                    const id = key.replace(RAW_CACHE_KEY_PREFIX, '');
+                    rawDiskCache[id] = JSON.parse(value);
+                } catch {}
+            }
+        });
+    })
+    .catch(() => {});
 
 export function useSpotlightTokens(activeOnly: boolean = true) {
     // Subscribe to the unified market list so Spotlight chips share the same
@@ -14,8 +34,13 @@ export function useSpotlightTokens(activeOnly: boolean = true) {
     });
 
     // Fetch the raw spotlight roster. Enrichment is applied below so it can
-    // re-run whenever the shared market list updates.
-    const { data: raw = [], isLoading, ...rest } = useQuery({
+    // re-run whenever the shared market list updates. Persists the raw roster
+    // to AsyncStorage so the Spotlight chips render instantly on cold start.
+    const rawCacheId = String(activeOnly);
+    const rawCached = rawDiskCache[rawCacheId];
+    const hasSavedRef = useRef(false);
+
+    const { data: raw = [], isLoading, dataUpdatedAt: rawUpdatedAt, isPlaceholderData: rawIsPlaceholder, ...rest } = useQuery({
         queryKey: ['spotlightTokensRaw', activeOnly],
         queryFn: async () => {
             const response = await api.tokenSpotlight.get({ category: 'spotlight', activeOnly: true });
@@ -26,7 +51,22 @@ export function useSpotlightTokens(activeOnly: boolean = true) {
                 .sort((a: any, b: any) => (a.rank || 0) - (b.rank || 0));
         },
         staleTime: 1000 * 60 * 5,
+        initialData: rawCached?.data,
+        initialDataUpdatedAt: rawCached?.updatedAt,
     });
+
+    useEffect(() => {
+        if (raw && Array.isArray(raw) && raw.length > 0 && !rawIsPlaceholder && rawUpdatedAt > (rawDiskCache[rawCacheId]?.updatedAt || 0)) {
+            if (!hasSavedRef.current) {
+                hasSavedRef.current = true;
+                const payload = { data: raw, updatedAt: Date.now() };
+                rawDiskCache[rawCacheId] = payload;
+                AsyncStorage.setItem(`${RAW_CACHE_KEY_PREFIX}${rawCacheId}`, JSON.stringify(payload)).catch(() => {});
+            }
+        } else {
+            hasSavedRef.current = false;
+        }
+    }, [raw, rawUpdatedAt, rawCacheId, rawIsPlaceholder]);
 
     const data = useMemo(() => {
         const byAddr = new Map<string, any>();

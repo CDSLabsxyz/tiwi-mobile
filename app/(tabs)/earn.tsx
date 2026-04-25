@@ -77,16 +77,18 @@ export default function EarnScreen() {
         fetchInitialData,
         fetchGlobalStats,
         fetchHistoricalStakes,
-        resetUserStakes,
+        swapWallet,
         liveRewards
     } = useStakingStore();
 
-    // Wipe cached active/historical stakes the moment the active wallet
-    // changes so the UI never shows the previous wallet's positions while
-    // the refetch for the new wallet is in flight.
+    // Atomic wallet transition the moment the active wallet changes:
+    // a single set() inside swapWallet replaces wallet A's positions/history
+    // with wallet B's cached positions/history (or empty if no cache yet).
+    // No empty intermediate frame, no badge flicker. Any in-flight fetch
+    // tagged for the previous wallet is invalidated by the same call.
     useEffect(() => {
-        resetUserStakes();
-    }, [walletAddress, resetUserStakes]);
+        swapWallet(walletAddress || null);
+    }, [walletAddress, swapWallet]);
 
     const [isLoading, setIsLoading] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
