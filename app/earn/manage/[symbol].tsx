@@ -288,11 +288,16 @@ export default function ManageStakeScreen() {
         try {
             if (activeTab === 'Boost') {
                 if (needsApproval) {
+                    // Approve only. The next press of this button (now showing
+                    // "Add to Stake" because allowance is sufficient) is what
+                    // actually stakes — matching the web app's two-step flow.
+                    // The previous setTimeout-based auto-stake was the cause of
+                    // "I claimed and all my tokens got staked": if the user
+                    // opened Claim while the approval was confirming, the
+                    // queued stake() still fired 1s later with the typed amount.
                     await approve();
-                    showToast('Token Approved! Proceeding to Boost...', 'pending');
-                    setTimeout(async () => {
-                        try { await stake(amount); setAmount(''); refetchStaking(); } catch (err) { }
-                    }, 1000);
+                    showToast('Token Approved! Tap Stake to confirm.', 'success');
+                    refetchStaking();
                 } else {
                     await stake(amount); setAmount(''); refetchStaking();
                 }
@@ -372,9 +377,15 @@ export default function ManageStakeScreen() {
 
                 <View style={styles.tokenHeader}>
                     <Image source={userStake?.pool.tokenLogo ? { uri: userStake.pool.tokenLogo } : TWCIcon} style={styles.tokenIcon} contentFit="cover" />
-                    <View>
-                        <Text style={styles.headerSymbol}>{symbol || 'TWC'}</Text>
-                        <Text style={{ color: colors.mutedText, fontSize: 12 }}>{userStake?.pool.tokenName || 'TIWICAT'}</Text>
+                    <View style={{ flexShrink: 1, minWidth: 0 }}>
+                        <Text style={styles.headerSymbol} numberOfLines={1}>
+                            {userStake?.pool.name || symbol || 'TWC'}
+                        </Text>
+                        <Text style={{ color: colors.mutedText, fontSize: 12 }} numberOfLines={1}>
+                            {userStake?.pool.name
+                                ? `${symbol || ''} · ${userStake?.pool.tokenName || 'TIWICAT'}`
+                                : (userStake?.pool.tokenName || 'TIWICAT')}
+                        </Text>
                     </View>
                 </View>
 
@@ -531,17 +542,25 @@ export default function ManageStakeScreen() {
                 <NumericKeypad onPress={handleKeyPress} onDelete={handleDelete} />
             </ScrollView>
 
-            <View style={[styles.bottomBar, { paddingBottom: bottom + 12 }]}>
-                <TouchableOpacity
-                    onPress={handleConfirm}
-                    disabled={isTransactionPending || !amount || parseFloat(amount) <= 0}
-                    style={[styles.confirmButton, (isTransactionPending || !amount || parseFloat(amount) <= 0) && styles.confirmButtonDisabled]}
-                >
-                    {isTransactionPending ? <TIWILoader size={40} /> : <Text style={styles.confirmButtonText}>
-                        {activeTab === 'Boost' ? (needsApproval ? 'Approve Token' : 'Add to Stake') : 'Unstake Now'}
-                    </Text>}
-                </TouchableOpacity>
-            </View>
+            {/* Hide the screen's bottom action bar while either claim/unstake
+                modal is open. Without this, a tap that lands on the modal's
+                "Claim Yield" can also register on this button (depending on
+                z-order on some Android builds), which would fire stake() with
+                whatever amount is currently in the input — exactly the
+                "I claimed and all my tokens got staked" symptom users hit. */}
+            {!isClaimModalVisible && !isUnstakeModalVisible && (
+                <View style={[styles.bottomBar, { paddingBottom: bottom + 12 }]}>
+                    <TouchableOpacity
+                        onPress={handleConfirm}
+                        disabled={isTransactionPending || !amount || parseFloat(amount) <= 0}
+                        style={[styles.confirmButton, (isTransactionPending || !amount || parseFloat(amount) <= 0) && styles.confirmButtonDisabled]}
+                    >
+                        {isTransactionPending ? <TIWILoader size={40} /> : <Text style={styles.confirmButtonText}>
+                            {activeTab === 'Boost' ? (needsApproval ? 'Approve Token' : 'Add to Stake') : 'Unstake Now'}
+                        </Text>}
+                    </TouchableOpacity>
+                </View>
+            )}
 
             <AccountSelectionModal
                 visible={isAccountModalVisible}

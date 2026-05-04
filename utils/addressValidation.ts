@@ -92,24 +92,29 @@ export const validateAddress = (address: string, chainId: ChainId | null | undef
   }
 
   // Handle numeric chain IDs from the API
-  const chainIdStr = String(chainId);
+  const chainIdStr = String(chainId).toLowerCase();
 
-  // Map chain IDs to validation logic
-  // EVM chains: 1 (Eth), 56 (BSC), 137 (Polygon), 43114 (Avalanche), 42161 (Arbitrum), 10 (Optimism)
-  const evmChains = ['1', '56', '137', '43114', '42161', '10', 'ethereum', 'verdant', 'cortex'];
-  if (evmChains.includes(chainIdStr)) {
-    return validateEVMAddress(address);
-  }
-
-  // Solana: 1399811149
-  if (chainIdStr === '1399811149' || chainIdStr === 'aegis') {
+  // Solana: numeric ids (1399811149 SLIP-44, 7565164 LiFi, 501 Phantom, 103 devnet)
+  // and string ids ('sol', 'solana', 'aegis').
+  const solanaChains = ['1399811149', '7565164', '501', '103', 'sol', 'solana', 'aegis'];
+  if (solanaChains.includes(chainIdStr)) {
     return validateSolanaAddress(address);
   }
 
-  // Apex (Cosmos?): 56 was used in mock for Apex, but in API 56 is BSC. 
-  // If internal 'apex' is used, keep cosmos validation for now.
-  if (chainIdStr === 'apex') {
+  // SUI
+  if (chainIdStr === 'sui' || chainIdStr === '784') {
+    return validateSuiAddress(address);
+  }
+
+  // Cosmos / TIWI internal 'apex'
+  if (chainIdStr === 'apex' || chainIdStr === 'cosmos' || chainIdStr === '118') {
     return validateCosmosAddress(address);
+  }
+
+  // EVM chains: 1 (Eth), 56 (BSC), 137 (Polygon), 43114 (Avalanche), 42161 (Arbitrum), 10 (Optimism), 8453 (Base), 250 (Fantom), 42220 (Celo)
+  const evmChains = ['1', '56', '137', '43114', '42161', '10', '8453', '250', '42220', 'ethereum', 'verdant', 'cortex', 'eth', 'bnb', 'polygon', 'avalanche', 'arbitrum', 'optimism', 'base'];
+  if (evmChains.includes(chainIdStr)) {
+    return validateEVMAddress(address);
   }
 
   // Default to EVM validation for unknown chains

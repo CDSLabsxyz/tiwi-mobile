@@ -56,12 +56,6 @@ export const TokenListItem = React.memo(({ token, onPress }: TokenListItemProps)
                                 />
                             </View>
                         )}
-                        {/* Rank Badge */}
-                        {token.marketCapRank && (
-                            <View style={styles.leverageBadge}>
-                                <Text style={styles.leverageText}>#{token.marketCapRank}</Text>
-                            </View>
-                        )}
                     </View>
                     {/* Volume */}
                     <Text style={styles.tokenVolume} numberOfLines={1}>

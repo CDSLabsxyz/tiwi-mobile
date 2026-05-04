@@ -1,4 +1,5 @@
 import { colors } from '@/constants/colors';
+import { useSwapStore } from '@/store/swapStore';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import React, { useEffect, useState } from 'react';
@@ -71,6 +72,7 @@ export const SwapDetailsCard: React.FC<SwapDetailsCardProps> = ({
     const rotation = useSharedValue(0);
     const height = useSharedValue(0);
     const pulseOpacity = useSharedValue(0.3);
+    const isAutoSlippage = useSwapStore((s) => s.isAutoSlippage);
 
     useEffect(() => {
         if (isLoading) {
@@ -115,7 +117,11 @@ export const SwapDetailsCard: React.FC<SwapDetailsCardProps> = ({
     }));
 
     const displayGasFee = isLoading ? undefined : (gasFee || '$0.00');
-    const displaySlippage = isLoading ? undefined : (slippageTolerance || '0%');
+    const displaySlippage = isLoading
+        ? undefined
+        : isAutoSlippage
+            ? 'Auto'
+            : (slippageTolerance || '0%');
     const displayTwcFee = isLoading ? undefined : (twcFee || '$0.00');
 
     return (

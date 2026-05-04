@@ -286,9 +286,10 @@ export default function EarnScreen() {
                                                     poolId={(pool.poolContractAddress ? pool.id : pool.poolId) as string | number}
                                                     poolContractAddress={pool.poolContractAddress}
                                                     decimals={pool.decimals}
+                                                    name={pool.name}
                                                     tokenSymbol={pool.tokenSymbol}
                                                     tokenName={pool.tokenName}
-                                                    onStakePress={() => router.push(`/earn/stake/${pool.tokenSymbol}` as any)}
+                                                    onStakePress={() => router.push(`/earn/stake/${pool.id}` as any)}
                                                 />
                                             ))
                                     ) : (

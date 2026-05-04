@@ -23,6 +23,20 @@ import { mnemonicToAccount, privateKeyToAccount } from 'viem/accounts';
 /** Yield to the UI thread so animations/renders can proceed */
 const yieldToUI = () => new Promise<void>(resolve => setTimeout(resolve, 0));
 
+/**
+ * Resolve bs58 decode across the various module-interop shapes Metro may
+ * produce for the bs58 v6 ESM/CJS package: namespace, default, or hoisted.
+ */
+function bs58Decode(value: string): Uint8Array {
+    const mod: any = bs58 as any;
+    const decode =
+        (typeof mod.decode === 'function' && mod.decode) ||
+        (mod.default && typeof mod.default.decode === 'function' && mod.default.decode) ||
+        (mod.default && mod.default.default && typeof mod.default.default.decode === 'function' && mod.default.default.decode);
+    if (!decode) throw new Error('bs58 decode unavailable');
+    return decode(value);
+}
+
 export interface CreatedWallet {
     address: string; // Master/Primary (EVM)
     addresses: {
@@ -276,47 +290,53 @@ export function validateMnemonic(mnemonic: string): boolean {
 }
 
 /**
- * Detect compatible chains for a given input (private key or mnemonic)
+ * Detect compatible chains for a given input (private key or mnemonic).
+ * A 64-char hex secret can map to any of the secp256k1 chains
+ * (EVM/Tron/Cosmos/Osmosis) and ed25519 raw seeds (TON).
  */
 export function getCompatibleChains(input: string): ChainType[] {
     const text = input.trim();
     if (!text) return [];
 
-    // 1. Check if it's a mnemonic
     if (validateMnemonic(text)) {
-        return ['EVM', 'SOLANA'];
+        return ['EVM', 'SOLANA', 'TRON', 'TON', 'COSMOS', 'OSMOSIS'];
     }
 
     const compatible: ChainType[] = [];
-
-    // 2. Check for EVM (64-char Hex)
-    if (validatePrivateKey(text, 'EVM')) {
-        compatible.push('EVM');
+    const cleanHex = text.replace(/^0x/i, '');
+    if (/^[0-9a-fA-F]{64}$/.test(cleanHex)) {
+        compatible.push('EVM', 'TRON', 'COSMOS', 'OSMOSIS', 'TON');
     }
-
-    // 3. Check for Solana (Base58)
     if (validatePrivateKey(text, 'SOLANA')) {
         compatible.push('SOLANA');
     }
-
     return compatible;
 }
 
 /**
- * Validate if a string is a valid private key
+ * Validate if a string is a valid private key.
+ * Pass `chain` to check a specific format; omit it to accept any supported chain.
  */
-export function validatePrivateKey(key: string, chain: ChainType = 'EVM'): boolean {
-    const cleanKey = key.startsWith('0x') ? key.slice(2) : key;
+export function validatePrivateKey(key: string, chain?: ChainType): boolean {
+    if (!key) return false;
+    const trimmed = key.trim();
+    const cleanHex = trimmed.replace(/^0x/i, '');
+
+    if (!chain) {
+        return getCompatibleChains(trimmed).length > 0;
+    }
+
     if (chain === 'SOLANA') {
         try {
-            const decoded = (bs58 as any).decode ? (bs58 as any).decode(key) : (bs58 as any).default.decode(key);
-            return !!decoded;
-        } catch {
+            const decoded = bs58Decode(trimmed);
+            return decoded?.length === 32 || decoded?.length === 64;
+        } catch (e) {
+            console.warn('[WalletService] bs58 decode failed:', e);
             return false;
         }
     }
-    // Default to HEX/EVM/TRON style
-    return /^[0-9a-fA-F]{64}$/.test(cleanKey);
+
+    return /^[0-9a-fA-F]{64}$/.test(cleanHex);
 }
 
 /**
@@ -328,11 +348,8 @@ export async function importWalletByMnemonic(mnemonic: string): Promise<CreatedW
     const addresses = await deriveMultiChainAddressesFromMnemonic(mnemonic);
     const primaryAddress = addresses.EVM!;
 
-    // Save EVM private key by default
     const privateKey = derivePrivateKeyFromMnemonic(mnemonic, 'EVM');
     await saveSecureWallet(primaryAddress, privateKey, 'EVM');
-
-    // Save full mnemonic tied to the group identifier (primary address)
     await saveSecureMnemonic(primaryAddress, mnemonic);
 
     return {
@@ -340,6 +357,48 @@ export async function importWalletByMnemonic(mnemonic: string): Promise<CreatedW
         addresses,
         mnemonic: mnemonic,
     };
+}
+
+/**
+ * Derive an address for the given chain from a 64-char hex private key.
+ */
+async function addressFromHexKeyForChain(hexKey: string, chain: ChainType): Promise<string> {
+    if (chain === 'EVM') {
+        const hex = (`0x${hexKey}`) as `0x${string}`;
+        return privateKeyToAccount(hex).address;
+    }
+    if (chain === 'TRON') {
+        const TronModule = await import('tronweb');
+        const TronWebConstructor =
+            (TronModule as any).TronWeb ||
+            ((TronModule as any).default && (TronModule as any).default.TronWeb) ||
+            (TronModule as any).default;
+        const tronInstance = new TronWebConstructor({ fullHost: 'https://api.trongrid.io' });
+        return tronInstance.address.fromPrivateKey(hexKey);
+    }
+    if (chain === 'COSMOS' || chain === 'OSMOSIS') {
+        const { secp256k1 } = await import('@noble/curves/secp256k1');
+        const { ripemd160 } = await import('@noble/hashes/ripemd160');
+        const { sha256 } = await import('@noble/hashes/sha2');
+        const bech32mod: any = await import('bech32');
+        const bech32 = bech32mod.bech32 || bech32mod.default || bech32mod;
+        const pubkey = secp256k1.getPublicKey(hexKey, true);
+        const ripe = ripemd160(sha256(pubkey));
+        const words = bech32.toWords(ripe);
+        return bech32.encode(chain === 'COSMOS' ? 'cosmos' : 'osmo', words);
+    }
+    if (chain === 'TON') {
+        const { WalletContractV4 } = await import('@ton/ton');
+        const { default: nacl } = await import('tweetnacl');
+        const seed = Uint8Array.from(hexKey.match(/.{2}/g)!.map(b => parseInt(b, 16)));
+        const keypair = nacl.sign.keyPair.fromSeed(seed);
+        const tonWallet = WalletContractV4.create({
+            workchain: 0,
+            publicKey: Buffer.from(keypair.publicKey),
+        });
+        return tonWallet.address.toString({ bounceable: false, testOnly: false });
+    }
+    throw new Error(`Unsupported chain for hex key import: ${chain}`);
 }
 
 /**
@@ -355,14 +414,15 @@ export async function importWalletByPrivateKey(
     let finalKey = privateKey;
 
     if (chain === 'SOLANA') {
-        const decoded = bs58.default.decode(privateKey);
-        const keypair = Keypair.fromSecretKey(decoded);
+        const decoded = bs58Decode(privateKey.trim());
+        const keypair = decoded.length === 32
+            ? Keypair.fromSeed(decoded)
+            : Keypair.fromSecretKey(decoded);
         address = keypair.publicKey.toBase58();
     } else {
-        const hex = privateKey.startsWith('0x') ? (privateKey as `0x${string}`) : (`0x${privateKey}` as `0x${string}`);
-        const account = privateKeyToAccount(hex);
-        address = account.address;
-        finalKey = hex;
+        const cleanHex = privateKey.trim().replace(/^0x/i, '');
+        finalKey = chain === 'EVM' ? `0x${cleanHex}` : cleanHex;
+        address = await addressFromHexKeyForChain(cleanHex, chain);
     }
 
     await saveSecureWallet(address, finalKey, chain);
@@ -370,6 +430,6 @@ export async function importWalletByPrivateKey(
     return {
         address,
         addresses: { [chain]: address },
-        mnemonic: '', // No mnemonic for PK import
+        mnemonic: '',
     };
 }

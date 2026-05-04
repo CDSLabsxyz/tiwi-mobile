@@ -178,7 +178,16 @@ export interface ReferralLeaderboardEntry {
     rank: number;
     walletAddress: string;
     invites: number;
-    rewards: number;
+    /** Backend canonical field — USDT-denominated rebate earned. */
+    rewardInUsdt?: number;
+    /** Optional pass-through fields the backend already returns. */
+    level?: number;
+    totalInviteSwapVolume?: number;
+    taxTotal?: number;
+    rebatePercentage?: number;
+    /** Legacy/alias — older code reads `rewards` so we keep it for back-compat.
+     *  Prefer `rewardInUsdt` going forward; fall back to this when missing. */
+    rewards?: number;
 }
 
 export interface ReferralRebateStats {
@@ -384,6 +393,7 @@ export interface MarketPriceResponse {
 
 export interface APIStakingPool {
     id: string;
+    name?: string; // Admin-set human-readable label, e.g. "TWC Genesis Pool"
     tokenSymbol: string;
     tokenName: string;
     apy: number;

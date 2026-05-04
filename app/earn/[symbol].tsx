@@ -8,9 +8,10 @@ import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { colors } from '@/constants/colors';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { stakingService, type StakingPool } from '@/services/stakingService';
 
 // Icons
 const BackIcon = require('../../assets/swap/arrow-left-02.svg');
@@ -51,6 +52,24 @@ export default function EarnDetailScreen() {
     const router = useRouter();
     const { symbol } = useLocalSearchParams<{ symbol: string }>();
     const [activeTab, setActiveTab] = useState<DetailTab>('stakers');
+    // Resolve admin pool name (if any) from the live API so the header can
+    // show "TWC Genesis Pool" instead of just the symbol.
+    const [pool, setPool] = useState<StakingPool | null>(null);
+    useEffect(() => {
+        let cancelled = false;
+        if (!symbol) return;
+        // Param is the pool DB UUID for new links; fall back to symbol
+        // lookup so older links still resolve.
+        stakingService.getPoolByIdOrSymbol(symbol).then((p) => {
+            if (!cancelled) setPool(p ?? null);
+        }).catch(() => { /* keep mock display on failure */ });
+        return () => { cancelled = true; };
+    }, [symbol]);
+
+    // The route param is now a pool DB UUID for new links — never display it
+    // directly in the header. Prefer the loaded pool's actual token symbol.
+    const looksLikeUuid = !!symbol && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(symbol);
+    const displaySymbol = pool?.tokenSymbol || (looksLikeUuid ? '' : symbol) || '';
 
     // Stats
     const stats = {
@@ -76,8 +95,15 @@ export default function EarnDetailScreen() {
 
                 <View style={styles.tokenHeader}>
                     <Image source={TWCIcon} style={styles.tokenIcon} contentFit="cover" />
-                    <View style={styles.tokenTag}>
-                        <Text style={styles.tokenTagText}>{symbol || 'TWCuediei'}</Text>
+                    <View style={styles.headerTitleColumn}>
+                        <Text style={styles.tokenTagText} numberOfLines={1}>
+                            {pool?.name || displaySymbol || 'TWC'}
+                        </Text>
+                        {!!pool?.name && !!displaySymbol && (
+                            <Text style={styles.headerSubtitle} numberOfLines={1}>
+                                {displaySymbol}
+                            </Text>
+                        )}
                     </View>
                 </View>
                 <View style={{ width: 24 }} />
@@ -229,8 +255,23 @@ const styles = StyleSheet.create({
         height: '100%',
     },
     tokenHeader: {
+        flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
+        gap: 8,
+        flex: 1,
+        minWidth: 0,
+        marginHorizontal: 8,
+    },
+    headerTitleColumn: {
+        flexShrink: 1,
+        minWidth: 0,
+    },
+    headerSubtitle: {
+        fontFamily: 'Manrope-Regular',
+        fontSize: 11,
+        color: colors.mutedText,
+        marginTop: 1,
     },
     tokenIcon: {
         width: 40,

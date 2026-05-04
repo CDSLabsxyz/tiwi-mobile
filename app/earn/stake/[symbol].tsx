@@ -77,19 +77,29 @@ export default function StakeScreen() {
     const [txStatus, setTxStatus] = useState<TransactionStatus>('idle');
     const [errorMsg, setErrorMsg] = useState('');
 
+    // Route param is a pool DB UUID for new links and a token symbol for old
+    // ones — never display it directly. Always render the loaded pool's
+    // tokenSymbol, falling back to the param only if it's not a UUID.
+    const looksLikeUuid = !!symbol && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(symbol);
+    const displaySymbol = pool?.tokenSymbol || (looksLikeUuid ? 'TWC' : symbol) || 'TWC';
+
     // Get user balance for the active wallet for this specific token.
     // Staking is scoped to the active wallet — no account selector / multi-
-    // wallet balance fan-out.
+    // wallet balance fan-out. Use the resolved token symbol from the loaded
+    // pool, since the route param itself is a UUID for new links.
     const userTokenBalance = React.useMemo(() => {
-        if (!balanceData?.tokens || !symbol) return '0';
-        const token = balanceData.tokens.find(t => t.symbol.toLowerCase() === symbol.toLowerCase());
+        if (!balanceData?.tokens || !displaySymbol) return '0';
+        const token = balanceData.tokens.find(t => t.symbol.toLowerCase() === displaySymbol.toLowerCase());
         return token?.balanceFormatted || '0';
-    }, [balanceData, symbol]);
+    }, [balanceData, displaySymbol]);
 
     useEffect(() => {
         const loadPool = async () => {
             if (symbol) {
-                const foundPool = await stakingService.getPoolBySymbol(symbol);
+                // The route param is now the pool's DB UUID (so Genesis 1 and
+                // Genesis 2 don't collapse onto the same TWC entry). Old deep
+                // links that pass a token symbol still work via fallback.
+                const foundPool = await stakingService.getPoolByIdOrSymbol(symbol);
                 if (foundPool) {
                     setPool(foundPool);
                 }
@@ -346,7 +356,16 @@ export default function StakeScreen() {
 
                 <View style={styles.tokenHeader}>
                     <Image source={pool?.tokenLogo ? { uri: pool.tokenLogo } : TWCIcon} style={styles.tokenIcon} contentFit="cover" />
-                    <Text style={styles.headerSymbol}>{symbol || 'TWC'}</Text>
+                    <View style={styles.headerTitleColumn}>
+                        <Text style={styles.headerSymbol} numberOfLines={1}>
+                            {pool?.name || displaySymbol}
+                        </Text>
+                        {!!pool?.name && (
+                            <Text style={styles.headerSubtitle} numberOfLines={1}>
+                                {displaySymbol}
+                            </Text>
+                        )}
+                    </View>
                 </View>
                 <View style={{ width: 24 }} />
             </View>
@@ -367,7 +386,7 @@ export default function StakeScreen() {
                                     <View style={styles.statItem}>
                                         <Text style={styles.statLabel}>TVL</Text>
                                         <Text style={styles.statValue}>{stats.tvl}</Text>
-                                        <Text style={styles.statInfoLabel}>{symbol}</Text>
+                                        <Text style={styles.statInfoLabel}>{displaySymbol}</Text>
                                     </View>
                                     <View style={styles.gridDividerV} />
                                     <View style={styles.statItem}>
@@ -388,13 +407,13 @@ export default function StakeScreen() {
                                     <View style={styles.statItem}>
                                         <Text style={styles.statLabel}>Total Staked</Text>
                                         <Text style={styles.statValue}>{stats.totalStaked}</Text>
-                                        <Text style={styles.statInfoLabel}>{symbol}</Text>
+                                        <Text style={styles.statInfoLabel}>{displaySymbol}</Text>
                                     </View>
                                     <View style={styles.gridDividerV} />
                                     <View style={styles.statItem}>
                                         <Text style={styles.statLabel}>Limits</Text>
                                         <Text style={styles.statValue}>{stats.limits}</Text>
-                                        <Text style={styles.statInfoLabel}>{symbol}</Text>
+                                        <Text style={styles.statInfoLabel}>{displaySymbol}</Text>
                                     </View>
                                 </View>
                             </View>
@@ -447,7 +466,7 @@ export default function StakeScreen() {
                         </View>
                         <View style={styles.balanceColumn}>
                             <View style={styles.balanceAction}>
-                                <Text style={styles.balanceValue}>{formatCompactNumber(selectedBalanceNum, { decimals: 2 })} {symbol}</Text>
+                                <Text style={styles.balanceValue}>{formatCompactNumber(selectedBalanceNum, { decimals: 2 })} {displaySymbol}</Text>
                                 <TouchableOpacity onPress={() => setIsDepositModalVisible(true)}>
                                     <AntDesign name="plus" size={16} color={colors.titleText} />
                                 </TouchableOpacity>
@@ -456,7 +475,7 @@ export default function StakeScreen() {
                                 <Text style={[styles.remainingLimitText, isAtWalletLimit && styles.remainingLimitTextError]}>
                                     {isAtWalletLimit
                                         ? 'Wallet Limit Reached'
-                                        : `Remaining Limit: ${formatCompactNumber(remainingStakeLimit, { decimals: 2 })} ${symbol}`}
+                                        : `Remaining Limit: ${formatCompactNumber(remainingStakeLimit, { decimals: 2 })} ${displaySymbol}`}
                                 </Text>
                             )}
                             {balanceUsd > 0 && (
@@ -516,7 +535,7 @@ export default function StakeScreen() {
             {/* Immersive Staking Processing Modal */}
             <StakeProcessingModal
                 status={txStatus}
-                symbol={symbol || 'TWC'}
+                symbol={displaySymbol}
                 amount={amount}
                 error={errorMsg}
                 onClose={() => setTxStatus('idle')}
@@ -651,16 +670,29 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         gap: 8,
+        flex: 1,
+        minWidth: 0,
+        marginHorizontal: 8,
     },
     tokenIcon: {
         width: 32,
         height: 32,
         borderRadius: 16,
     },
+    headerTitleColumn: {
+        flexShrink: 1,
+        minWidth: 0,
+    },
     headerSymbol: {
         fontFamily: 'Manrope-Bold',
         fontSize: 18,
         color: colors.titleText,
+    },
+    headerSubtitle: {
+        fontFamily: 'Manrope-Regular',
+        fontSize: 12,
+        color: colors.mutedText,
+        marginTop: 1,
     },
     scrollView: {
         flex: 1,

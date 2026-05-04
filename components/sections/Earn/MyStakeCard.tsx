@@ -10,6 +10,7 @@ import { Image } from 'expo-image';
 import { colors } from '@/constants/colors';
 
 interface MyStakeCardProps {
+    name?: string; // Admin-set pool name. When present it becomes the title; symbol shows underneath.
     symbol: string;
     apy: string;
     stakedAmount?: string;
@@ -23,6 +24,7 @@ interface MyStakeCardProps {
 const ChevronRightIcon = require('../../../assets/home/arrow-down-01.svg'); // Design specified this icon
 
 export const MyStakeCard: React.FC<MyStakeCardProps> = ({
+    name,
     symbol,
     apy,
     stakedAmount = "0",
@@ -63,7 +65,16 @@ export const MyStakeCard: React.FC<MyStakeCardProps> = ({
                         style={styles.tokenIcon}
                         contentFit="cover"
                     />
-                    <Text style={styles.symbolText}>{symbol}</Text>
+                    <View style={styles.titleColumn}>
+                        <Text style={styles.symbolText} numberOfLines={1}>
+                            {name || symbol}
+                        </Text>
+                        {!!name && (
+                            <Text style={styles.subtitleText} numberOfLines={1}>
+                                {symbol}
+                            </Text>
+                        )}
+                    </View>
                 </View>
 
                 <View style={styles.rightHeader}>
@@ -115,6 +126,19 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         gap: 8,
+        flex: 1,
+        minWidth: 0,
+        marginRight: 8,
+    },
+    titleColumn: {
+        flexShrink: 1,
+        minWidth: 0,
+    },
+    subtitleText: {
+        fontFamily: 'Manrope-Regular',
+        fontSize: 11,
+        color: colors.mutedText,
+        marginTop: 1,
     },
     tokenIcon: {
         width: 32,

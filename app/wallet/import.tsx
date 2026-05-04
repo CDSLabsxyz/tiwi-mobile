@@ -49,8 +49,10 @@ export default function ImportWalletScreen() {
         const text = inputText.trim();
         if (!text) return { isValid: false, type: null, error: null };
 
-        const isMnemonic = validateMnemonic(text);
-        const isPK = validatePrivateKey(text);
+        let isMnemonic = false;
+        let isPK = false;
+        try { isMnemonic = validateMnemonic(text); } catch (e) { console.warn('[Import] mnemonic check failed', e); }
+        try { isPK = validatePrivateKey(text); } catch (e) { console.warn('[Import] private key check failed', e); }
 
         if (isMnemonic) return { isValid: true, type: 'mnemonic', error: null };
         if (isPK) return { isValid: true, type: 'privateKey', error: null };

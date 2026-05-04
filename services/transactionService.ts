@@ -80,19 +80,68 @@ export const transactionService = {
      * Sends a token (Native or ERC20) to a recipient
      */
     async sendToken(params: SendTokenParams): Promise<{ hash: string; status: 'success' | 'failed'; error?: string }> {
-        const { address: fromAddress } = useWalletStore.getState();
-        if (!fromAddress) throw new Error('No active wallet found');
+        const { walletGroups, activeGroupId, address: legacyAddress } =
+            useWalletStore.getState();
+        if (!legacyAddress) throw new Error('No active wallet found');
 
-        // Fallback: If decimals is missing for native, we can assume standard 18 for BSC/ETH
+        // Solana mainnet/devnet — pulled from the same constant used elsewhere
+        // in the swap layer. Non-EVM recipients are base58 (Solana) or other
+        // formats and must NOT be sent through the EVM signer (viem rejects
+        // anything that isn't a 0x-prefixed 20-byte hex with InvalidAddressError,
+        // which is exactly the failure on the user's screen).
+        const SOLANA_CHAIN_IDS = [7565164, 1399811149];
+        const isSolana = SOLANA_CHAIN_IDS.includes(Number(params.chainId));
+
+        // Fallback: If decimals is missing for native, assume the chain default
+        // (18 for EVM, 9 for SOL).
         const decimals = (params.decimals === undefined || params.decimals === null)
-            ? (params.isNative && [1, 56, 137, 42161, 8453, 10].includes(params.chainId) ? 18 : 18)
+            ? (isSolana ? 9 : 18)
             : params.decimals;
 
         const amountBIStr = toSmallestUnit(params.amount, decimals);
 
         let txRequest: TransactionRequest;
+        // For Solana, the active address from `useWalletStore` is the EVM
+        // address (legacy field). The signer needs the SOLANA address — pull
+        // it from the active wallet group.
+        let fromAddress = legacyAddress;
+        if (isSolana) {
+            const activeGroup = walletGroups.find(g => g.id === activeGroupId)
+                ?? walletGroups.find(g => Object.values(g.addresses).some(
+                    a => a?.toLowerCase() === legacyAddress.toLowerCase()
+                ));
+            const solAddr = activeGroup?.addresses.SOLANA;
+            if (!solAddr) throw new Error('No Solana address in this wallet');
+            fromAddress = solAddr;
 
-        if (params.isNative) {
+            // `params.isNative` is computed by `isNativeToken()` which only
+            // recognises EVM sentinels (0x0…0 / 0xee…ee). For Solana, native
+            // SOL is also expressed as the wrapped-SOL mint, the literal
+            // "native"/"SOL" sentinel, or an empty token address depending
+            // on the data source. Fall back to a Solana-aware check so a
+            // straight SOL→wallet transfer doesn't get misrouted into the
+            // SPL-not-supported branch.
+            const SOL_MINT = 'So11111111111111111111111111111111111111112';
+            const tokenAddr = (params.tokenAddress || '').trim();
+            const isNativeSol = params.isNative
+                || !tokenAddr
+                || tokenAddr.toLowerCase() === 'native'
+                || tokenAddr === SOL_MINT
+                || (params.symbol || '').toUpperCase() === 'SOL';
+
+            if (!isNativeSol) {
+                // SPL token transfers need a serialized program instruction
+                // — not wired through this generic helper yet.
+                throw new Error('SPL token transfers are not supported here yet');
+            }
+
+            txRequest = {
+                chainFamily: 'solana',
+                to: params.recipientAddress,
+                value: amountBIStr, // lamports
+                chainId: params.chainId,
+            };
+        } else if (params.isNative) {
             txRequest = {
                 chainFamily: 'evm',
                 to: params.recipientAddress,
@@ -127,7 +176,13 @@ export const transactionService = {
             // recorded as "Sent Successfully". If the receipt confirms a
             // revert, roll the returned status to 'failed' so the UI toast
             // surfaces the real outcome.
-            const mined = await waitForReceiptSuccess({ hash: result.hash, chainId: params.chainId });
+            //
+            // Solana: skip the EVM receipt poller — `sendRawTransaction` already
+            // returns a signature and the SOL signer engine surfaces failures
+            // synchronously.
+            const mined = isSolana
+                ? true
+                : await waitForReceiptSuccess({ hash: result.hash, chainId: params.chainId });
             if (mined === false) {
                 return { hash: result.hash, status: 'failed', error: 'Transaction reverted on-chain' };
             }
@@ -302,10 +357,25 @@ export const transactionService = {
     },
 
     /**
-     * Estimates gas for a send transaction
+     * Estimates gas for a send transaction.
+     *
+     * EVM-only: viem's `encodeFunctionData` / `estimateGas` reject non-hex
+     * addresses (Solana base58, Tron base58check, TON friendly form, Cosmos
+     * bech32). Without this gate we'd surface "InvalidAddressError" the moment
+     * a user opens Confirm on a SOL/TRON/TON/COSMOS/OSMOSIS send. Non-EVM
+     * chains compute fees inside their own signer engine — short-circuit here
+     * with zeroed values so the review screen renders cleanly.
      */
     async estimateGas(params: SendTokenParams): Promise<{ gasLimit: bigint; gasCostNative: bigint; gasCostUSD: number }> {
+        const isEvmRecipient = /^0x[a-fA-F0-9]{40}$/.test(params.recipientAddress || '');
+        if (!isEvmRecipient) {
+            return { gasLimit: 0n, gasCostNative: 0n, gasCostUSD: 0 };
+        }
+
         const chain = getChainById(params.chainId);
+        if (!chain) {
+            return { gasLimit: 0n, gasCostNative: 0n, gasCostUSD: 0 };
+        }
         const client = createPublicClient({
             chain,
             transport: http(getRpcUrl(params.chainId), { timeout: 15000 })

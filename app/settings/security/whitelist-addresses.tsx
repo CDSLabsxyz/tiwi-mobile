@@ -1,10 +1,11 @@
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
-import { useSecurityStore, WhitelistedAddress } from '@/store/securityStore';
-import { useWalletStore } from '@/store/walletStore';
+import { useSecurityStore } from '@/store/securityStore';
+import { ChainType, useWalletStore } from '@/store/walletStore';
+import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
     BackHandler,
     FlatList,
@@ -15,7 +16,18 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
+import Animated, { useAnimatedKeyboard, useAnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+// Unified row — same shape used by the address-book sheet so rename/dedupe
+// behavior is consistent across both surfaces.
+type WhitelistRow = {
+    name: string;
+    address: string;
+    chain?: ChainType;
+    source: 'wallet' | 'contact';
+    groupId?: string;
+};
 
 const ChevronLeftIcon = require('../../../assets/swap/arrow-left-02.svg');
 const Book02Icon = require('../../../assets/settings/book-02.svg');
@@ -25,21 +37,86 @@ export default function WhitelistAddressesScreen() {
     const router = useRouter();
     const { whitelistedAddresses, addWhitelistedAddress, removeWhitelistedAddress } = useSecurityStore();
     const walletGroups = useWalletStore(state => state.walletGroups);
+    const addressNicknames = useWalletStore(state => state.addressNicknames);
+    const setAddressNickname = useWalletStore(state => state.setAddressNickname);
 
     const [isModalVisible, setIsModalVisible] = useState(false);
     const [newName, setNewName] = useState('');
     const [newAddress, setNewAddress] = useState('');
 
-    // Auto-pre-list the user's created/imported wallets in the whitelist
-    useEffect(() => {
-        const existing = new Set(whitelistedAddresses.map(a => a.address.toLowerCase()));
-        walletGroups.forEach(group => {
-            const primaryAddr = group.addresses[group.primaryChain];
-            if (primaryAddr && !existing.has(primaryAddr.toLowerCase())) {
-                addWhitelistedAddress(primaryAddr, group.name);
+    // Per-address inline rename — same UX as the address-book sheet.
+    const [editingAddress, setEditingAddress] = useState<string | null>(null);
+    const [editDraft, setEditDraft] = useState('');
+    const listRef = useRef<FlatList<WhitelistRow>>(null);
+
+    // Lift the entire screen above the keyboard while a rename input is open
+    // (mirrors the TIWI AI input — IME inset comes from native via reanimated).
+    const keyboard = useAnimatedKeyboard();
+    const keyboardPaddingStyle = useAnimatedStyle(() => ({
+        paddingBottom: keyboard.height.value,
+    }));
+
+    // Build the displayed list: every wallet × chain pair, then any manual
+    // whitelist contacts that aren't already covered. Deduped by lowercase
+    // address — the wallet entry (with chain badge) wins.
+    const rows = useMemo<WhitelistRow[]>(() => {
+        const seen = new Set<string>();
+        const out: WhitelistRow[] = [];
+
+        for (const g of walletGroups) {
+            for (const [chain, addr] of Object.entries(g.addresses) as [ChainType, string | undefined][]) {
+                if (!addr) continue;
+                const key = addr.toLowerCase();
+                if (seen.has(key)) continue;
+                seen.add(key);
+                out.push({
+                    name: addressNicknames[key] ?? g.name,
+                    address: addr,
+                    chain,
+                    source: 'wallet',
+                    groupId: g.id,
+                });
             }
-        });
-    }, [walletGroups]);
+        }
+
+        for (const w of whitelistedAddresses) {
+            const key = w.address.toLowerCase();
+            if (seen.has(key)) continue;
+            seen.add(key);
+            out.push({
+                name: addressNicknames[key] ?? w.name,
+                address: w.address,
+                source: 'contact',
+            });
+        }
+
+        return out;
+    }, [walletGroups, whitelistedAddresses, addressNicknames]);
+
+    const beginEdit = (address: string, currentName: string) => {
+        const key = address.toLowerCase();
+        setEditingAddress(key);
+        setEditDraft(currentName);
+        const idx = rows.findIndex(r => r.address.toLowerCase() === key);
+        if (idx >= 0) {
+            requestAnimationFrame(() => {
+                listRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.2 });
+            });
+        }
+    };
+
+    const cancelEdit = () => {
+        setEditingAddress(null);
+        setEditDraft('');
+    };
+
+    const commitEdit = () => {
+        const trimmed = editDraft.trim();
+        if (editingAddress && trimmed) {
+            setAddressNickname(editingAddress, trimmed);
+        }
+        cancelEdit();
+    };
 
     // Handle phone back button
     useEffect(() => {
@@ -74,22 +151,69 @@ export default function WhitelistAddressesScreen() {
         removeWhitelistedAddress(address);
     };
 
-    const renderItem = ({ item }: { item: WhitelistedAddress }) => (
-        <View style={styles.addressCard}>
-            <View style={styles.addressInfo}>
-                <Text style={styles.addressName}>{item.name}</Text>
-                <Text style={styles.addressValue} numberOfLines={1} ellipsizeMode="middle">
-                    {item.address}
-                </Text>
+    const renderItem = ({ item }: { item: WhitelistRow }) => {
+        const isEditing = item.address.toLowerCase() === editingAddress;
+        const isWallet = item.source === 'wallet';
+        return (
+            <View style={styles.addressCard}>
+                <View style={styles.addressInfo}>
+                    <View style={styles.addressNameRow}>
+                        {isEditing ? (
+                            <TextInput
+                                value={editDraft}
+                                onChangeText={setEditDraft}
+                                onSubmitEditing={commitEdit}
+                                onBlur={commitEdit}
+                                autoFocus
+                                selectTextOnFocus
+                                placeholder="Wallet name"
+                                placeholderTextColor="rgba(255,255,255,0.3)"
+                                style={styles.editInput}
+                                returnKeyType="done"
+                            />
+                        ) : (
+                            <Text style={styles.addressName}>{item.name}</Text>
+                        )}
+                        {item.chain && (
+                            <View style={styles.chainBadge}>
+                                <Text style={styles.chainBadgeText}>{item.chain}</Text>
+                            </View>
+                        )}
+                    </View>
+                    <Text style={styles.addressValue} numberOfLines={1} ellipsizeMode="middle">
+                        {item.address}
+                    </Text>
+                </View>
+                <View style={styles.rowActions}>
+                    {isEditing ? (
+                        <TouchableOpacity
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                            onPress={commitEdit}
+                            style={styles.iconButton}
+                        >
+                            <Feather name="check" size={18} color="#B4FF3B" />
+                        </TouchableOpacity>
+                    ) : (
+                        <TouchableOpacity
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                            onPress={() => beginEdit(item.address, item.name)}
+                            style={styles.iconButton}
+                        >
+                            <Feather name="edit-2" size={16} color="rgba(255,255,255,0.6)" />
+                        </TouchableOpacity>
+                    )}
+                    {!isWallet && !isEditing && (
+                        <TouchableOpacity
+                            onPress={() => handleRemove(item.address)}
+                            style={styles.deleteButton}
+                        >
+                            <Text style={styles.deleteText}>Remove</Text>
+                        </TouchableOpacity>
+                    )}
+                </View>
             </View>
-            <TouchableOpacity
-                onPress={() => handleRemove(item.address)}
-                style={styles.deleteButton}
-            >
-                <Text style={styles.deleteText}>Remove</Text>
-            </TouchableOpacity>
-        </View>
-    );
+        );
+    };
 
     return (
         <View style={styles.container}>
@@ -111,15 +235,15 @@ export default function WhitelistAddressesScreen() {
                     </TouchableOpacity>
 
                     <Text style={styles.headerTitle}>
-                        {whitelistedAddresses.length === 0 ? "Whitelist Address" : "Whitelisted Addresses"}
+                        {rows.length === 0 ? "Whitelist Address" : "Whitelisted Addresses"}
                     </Text>
                     <View style={styles.placeholder} />
                 </View>
             </View>
 
             {/* Content */}
-            <View style={styles.content}>
-                {whitelistedAddresses.length === 0 ? (
+            <Animated.View style={[styles.content, keyboardPaddingStyle]}>
+                {rows.length === 0 ? (
                     <View style={styles.emptyStateContainer}>
                         <View style={styles.iconContainer}>
                             <Image
@@ -146,11 +270,19 @@ export default function WhitelistAddressesScreen() {
                 ) : (
                     <View style={styles.listContainer}>
                         <FlatList
-                            data={whitelistedAddresses}
+                            ref={listRef}
+                            data={rows}
                             renderItem={renderItem}
-                            keyExtractor={item => item.address}
+                            keyExtractor={item => `${item.source}-${item.chain ?? 'wl'}-${item.address}`}
                             contentContainerStyle={styles.listContent}
                             showsVerticalScrollIndicator={false}
+                            keyboardShouldPersistTaps="handled"
+                            onScrollToIndexFailed={({ index, averageItemLength }) => {
+                                listRef.current?.scrollToOffset({
+                                    offset: averageItemLength * Math.max(0, index - 1),
+                                    animated: true,
+                                });
+                            }}
                         />
                         <TouchableOpacity
                             activeOpacity={0.8}
@@ -161,7 +293,7 @@ export default function WhitelistAddressesScreen() {
                         </TouchableOpacity>
                     </View>
                 )}
-            </View>
+            </Animated.View>
 
             {/* Add Address Modal */}
             <Modal
@@ -317,10 +449,46 @@ const styles = StyleSheet.create({
         flex: 1,
         gap: 4,
     },
+    addressNameRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        flexWrap: 'wrap',
+    },
     addressName: {
         fontFamily: 'Manrope-SemiBold',
         fontSize: 16,
         color: '#FFFFFF',
+    },
+    chainBadge: {
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: 6,
+        backgroundColor: 'rgba(255,255,255,0.08)',
+    },
+    chainBadgeText: {
+        fontFamily: 'Manrope-SemiBold',
+        fontSize: 10,
+        color: 'rgba(255,255,255,0.6)',
+        textTransform: 'uppercase',
+    },
+    editInput: {
+        fontFamily: 'Manrope-SemiBold',
+        fontSize: 16,
+        color: '#FFFFFF',
+        padding: 0,
+        minWidth: 140,
+        borderBottomWidth: 1,
+        borderBottomColor: '#B4FF3B',
+        paddingVertical: 2,
+    },
+    rowActions: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    iconButton: {
+        padding: 4,
     },
     addressValue: {
         fontFamily: 'Manrope-Regular',

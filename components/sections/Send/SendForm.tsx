@@ -5,7 +5,7 @@
  */
 
 import { colors } from "@/constants";
-import { getRpcUrl } from "@/constants/rpc";
+import { createTransportForChain } from "@/constants/rpc";
 import { useWalletBalances } from "@/hooks/useWalletBalances";
 import { transactionService } from "@/services/transactionService";
 import { useSecurityStore } from "@/store/securityStore";
@@ -18,7 +18,7 @@ import { Image } from "expo-image";
 import React, { useEffect, useRef, useState } from "react";
 import { Keyboard, Pressable, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { createPublicClient, http, parseUnits } from "viem";
+import { createPublicClient, parseUnits } from "viem";
 import { Ionicons } from "@expo/vector-icons";
 import { SendTokenSelector } from "./SendTokenSelector";
 import { WhitelistSelectSheet } from "./WhitelistSelectSheet";
@@ -120,7 +120,7 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext, onKeyboardToggle }) 
     const timer = setTimeout(async () => {
       try {
         const chain = getChainById(chainIdNum);
-        const client = createPublicClient({ chain, transport: http(getRpcUrl(chainIdNum), { timeout: 15000 }) });
+        const client = createPublicClient({ chain, transport: createTransportForChain(chainIdNum) });
         const code = await client.getCode({ address: addr as `0x${string}` });
         if (cancelled) return;
         // EOA returns undefined or '0x'. Anything else is bytecode = contract,
@@ -236,17 +236,34 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext, onKeyboardToggle }) 
 
     let targetAmount = 0;
     if (percent === 100) {
-      // Smart Max Logic: Use 99.5% for native to leave gas room
+      // Smart Max Logic.
+      //
+      // `balance` here is parsed from the *displayed* balance string (e.g.
+      // "1.5402 USDT"), which is rounded — sometimes UP — from the true
+      // on-chain amount. Sending 100% of the rounded value reverts when the
+      // actual balance is fractionally lower (1.540199…). Apply a small
+      // margin so Max always lands at the largest amount that's guaranteed
+      // to clear:
+      //   - Native (BNB/ETH): 99.5% to leave room for gas, paid in the same token.
+      //   - ERC-20: 99.9% to absorb display rounding (gas is paid in native).
       const isNative = selectedToken.address === "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" ||
         selectedToken.address === "0x0000000000000000000000000000000000000000" ||
         selectedToken.symbol === "BNB" || selectedToken.symbol === "ETH";
 
-      targetAmount = isNative ? (balance * 0.995) : balance;
+      targetAmount = balance * (isNative ? 0.995 : 0.999);
     } else {
       targetAmount = balance * (percent / 100);
     }
 
-    const amountStr = targetAmount === 0 ? "" : targetAmount.toFixed(6).replace(/\.?0+$/, "");
+    // Truncate (don't round) to the token's decimals — capped at 8 so we
+    // emit a sensible-length number for high-decimal tokens. `toFixed`
+    // rounds half-up and can re-introduce the same overshoot we just fixed.
+    const decimals = Math.min(selectedToken.decimals ?? 6, 8);
+    const factor = Math.pow(10, decimals);
+    const truncated = Math.floor(targetAmount * factor) / factor;
+    const amountStr = truncated <= 0
+      ? ""
+      : truncated.toFixed(decimals).replace(/\.?0+$/, "");
     setLocalAmount(formatWithCommas(amountStr));
     sendStore.setAmount(amountStr);
   };
@@ -394,7 +411,7 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext, onKeyboardToggle }) 
               </Text>
               <TextInput
                 ref={addressInputRef}
-                placeholder="0x061974h639u9j5803T432"
+                placeholder="Enter address"
                 placeholderTextColor={colors.bodyText}
                 value={localAddress}
                 onChangeText={handleAddressChange}

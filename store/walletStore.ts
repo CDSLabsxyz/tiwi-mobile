@@ -50,6 +50,12 @@ interface WalletState {
   setActiveGroup: (groupId: string) => void;
   setActiveChain: (chain: ChainType, networkId?: string) => void;
   updateGroupName: (groupId: string, name: string) => void;
+  /** Per-address nickname overrides for the address book. Rendered in place
+   *  of the wallet group's name when present, scoped to a single chain
+   *  address so renaming the SOL row doesn't disturb the TRON row. */
+  addressNicknames: Record<string, string>;
+  setAddressNickname: (address: string, name: string) => void;
+  clearAddressNickname: (address: string) => void;
   markBackupComplete: (groupId: string) => void;
   removeWalletGroup: (groupId: string) => void;
   syncActiveGroupAddresses: () => Promise<void>;
@@ -226,6 +232,27 @@ export const useWalletStore = create<WalletState>()(
         if (get().activeGroupId === groupId) {
           set({ name: newName });
         }
+      },
+
+      addressNicknames: {},
+      setAddressNickname: (address, name) => {
+        const key = address.toLowerCase();
+        const trimmed = name.trim();
+        const current = get().addressNicknames;
+        if (!trimmed) {
+          if (!(key in current)) return;
+          const { [key]: _drop, ...rest } = current;
+          set({ addressNicknames: rest });
+          return;
+        }
+        set({ addressNicknames: { ...current, [key]: trimmed } });
+      },
+      clearAddressNickname: (address) => {
+        const key = address.toLowerCase();
+        const current = get().addressNicknames;
+        if (!(key in current)) return;
+        const { [key]: _drop, ...rest } = current;
+        set({ addressNicknames: rest });
       },
 
       markBackupComplete: (groupId) => {

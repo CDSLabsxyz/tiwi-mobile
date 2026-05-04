@@ -11,10 +11,10 @@ import * as Clipboard from 'expo-clipboard';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, BackHandler, Dimensions, Keyboard, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import Animated, { useAnimatedKeyboard, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -338,6 +338,13 @@ export default function ChatbotScreen() {
   const [isNearBottom, setIsNearBottom] = useState(true);
   const [isFullScreenInput, setIsFullScreenInput] = useState(false);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  // IME inset sourced from native WindowInsetsCompat (Android) / keyboard frame
+  // (iOS) — works in release APKs with edge-to-edge + new arch where the older
+  // Keyboard.addListener height workaround was unreliable.
+  const keyboard = useAnimatedKeyboard();
+  const keyboardPaddingStyle = useAnimatedStyle(() => ({
+    paddingBottom: keyboard.height.value,
+  }));
   const [inputHeight, setInputHeight] = useState(20);
   const [isCalculatingHeight, setIsCalculatingHeight] = useState(false);
   const inputContentHeightRef = useRef(0);
@@ -419,25 +426,40 @@ export default function ChatbotScreen() {
     AsyncStorage.setItem(storageKey, JSON.stringify(tree)).catch(() => {});
   }, [tree, isStreaming, storageKey]);
 
+  // Stagger scrollToEnd across the keyboard animation window so we land at
+  // the true bottom even after KeyboardAvoidingView resizes the content.
+  // A single scroll fires too early and misses the post-resize layout.
+  const scrollToBottomNow = useCallback(() => {
+    requestAnimationFrame(() => {
+      scrollViewRef.current?.scrollToEnd({ animated: false });
+    });
+    setTimeout(() => {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }, 180);
+    setTimeout(() => {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }, 380);
+  }, []);
+
   // Track keyboard visibility so we can collapse the bottom safe-area
-  // inset and let the input bar sit flush against the keyboard.
+  // inset and let the input bar sit flush against the keyboard. The actual
+  // upward shift is driven by `useAnimatedKeyboard` above; this listener only
+  // controls a binary visible/hidden flag used for inputBar padding.
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
     const showSub = Keyboard.addListener(showEvent, () => {
       setIsKeyboardVisible(true);
-      // Anchor to the latest message once the layout has resized above the keyboard
-      // so the user can see what they're typing without manually scrolling.
-      setTimeout(() => {
-        scrollViewRef.current?.scrollToEnd({ animated: true });
-      }, Platform.OS === 'ios' ? 50 : 100);
+      scrollToBottomNow();
     });
-    const hideSub = Keyboard.addListener(hideEvent, () => setIsKeyboardVisible(false));
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setIsKeyboardVisible(false);
+    });
     return () => {
       showSub.remove();
       hideSub.remove();
     };
-  }, []);
+  }, [scrollToBottomNow]);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -890,10 +912,12 @@ export default function ChatbotScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={[styles.container, { backgroundColor: colors.bg }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={0}
+    <Animated.View
+      style={[
+        styles.container,
+        { backgroundColor: colors.bg },
+        keyboardPaddingStyle,
+      ]}
     >
       <CustomStatusBar />
 
@@ -1312,11 +1336,8 @@ export default function ChatbotScreen() {
               value={inputText}
               onChangeText={setInputText}
               onContentSizeChange={handleContentSizeChange}
-              onFocus={() => {
-                setTimeout(() => {
-                  scrollViewRef.current?.scrollToEnd({ animated: true });
-                }, 150);
-              }}
+              onPressIn={scrollToBottomNow}
+              onFocus={scrollToBottomNow}
               placeholder="Ask TIWI AI Anything"
               placeholderTextColor={colors.mutedText}
               style={[
@@ -1561,7 +1582,7 @@ export default function ChatbotScreen() {
       </Modal>
 
       <ImageZoomViewer uri={viewerImageUri} onClose={() => setViewerImageUri(null)} />
-    </KeyboardAvoidingView>
+    </Animated.View>
   );
 }
 

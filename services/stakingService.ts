@@ -5,7 +5,7 @@ import { createPublicClient, formatUnits, http } from 'viem';
 import { bsc } from 'viem/chains';
 import { api, StakingPool as SDKStakingPool } from '@/lib/mobile/api-client';
 import type { APIStakingPool, APIUserStake } from '@/services/apiClient';
-import { RPC_CONFIG, RPC_TRANSPORT_OPTIONS } from '@/constants/rpc';
+import { RPC_CONFIG, RPC_TRANSPORT_OPTIONS, createBscFallbackTransport } from '@/constants/rpc';
 
 // Toggle this to enable/disable mocks globally for staking
 const USE_MOCK_FALLBACK = false;
@@ -69,8 +69,12 @@ export interface UserStake {
 class StakingService {
     private bscClient = createPublicClient({
         chain: bsc,
-        transport: http(RPC_CONFIG[56], RPC_TRANSPORT_OPTIONS)
+        transport: createBscFallbackTransport(),
     });
+
+    /** Cache of last successful global stats — used to avoid rendering a
+     *  partial-failure result if even one pool's on-chain read fails. */
+    private lastGoodStats: StakingStats | null = null;
 
     /**
      * Utility to calculate APR for a pool based on on-chain config
@@ -219,13 +223,28 @@ class StakingService {
             // a pool on-chain without touching the DB, and endTime is set at
             // deployment and may not be persisted. On-chain is ground truth.
             //
+            // The bscClient now uses a multi-provider fallback transport
+            // (Alchemy + Binance dataseed + publicnode + drpc + ankr), and
+            // we treat a partial RPC failure as all-or-nothing — if any pool
+            // doesn't resolve we return the last good snapshot rather than
+            // emit a half-complete total (the prior behaviour was the cause
+            // of the 12M ↔ 122.1M ↔ 5T flicker on the dashboard).
+            //
             // Stakers counts still come from the DB because there's no
             // efficient on-chain way to enumerate historical users.
             const nowSec = Math.floor(Date.now() / 1000);
             const onChainStats = await Promise.all(allPools.map(async (p: any) => {
                 const hasV2 = !!p.poolContractAddress;
                 const hasLegacy = (p.chainId ?? 56) === 56 && p.poolId !== undefined && p.poolId !== null;
-                if (!hasV2 && !hasLegacy) return null;
+                if (!hasV2 && !hasLegacy) {
+                    return {
+                        ok: true as const,
+                        isActive: p.status === 'active',
+                        maxTvlTok: 0,
+                        totalStakedTok: 0,
+                        tokenSymbol: (p.tokenSymbol || '').toUpperCase(),
+                    };
+                }
                 try {
                     let active = false;
                     let endTimeSec = 0;
@@ -261,14 +280,30 @@ class StakingService {
                         totalStakedTok = Number(formatUnits(state?.totalStaked ?? 0n, decimals));
                     }
                     const notExpired = endTimeSec === 0 || nowSec < endTimeSec;
-                    return { isActive: active && notExpired, maxTvlTok, totalStakedTok, tokenSymbol };
+                    return {
+                        ok: true as const,
+                        isActive: active && notExpired,
+                        maxTvlTok,
+                        totalStakedTok,
+                        tokenSymbol,
+                    };
                 } catch (e) {
-                    console.warn(`[StakingService] Pool ${p.id} on-chain status read failed:`, e);
-                    return null;
+                    console.warn(`[StakingService] Pool ${p.id} on-chain status read failed across all RPC fallbacks:`, e);
+                    return { ok: false as const };
                 }
             }));
 
-            const resolvedStats = onChainStats.filter((s): s is NonNullable<typeof s> => s !== null);
+            // All-or-nothing: if any pool didn't resolve, keep the previous
+            // snapshot rather than publish a partial total. This is what kills
+            // the dashboard flicker.
+            if (onChainStats.some((s) => !s.ok) && this.lastGoodStats) {
+                console.warn('[StakingService] Partial RPC failure — returning last good stats');
+                return this.lastGoodStats;
+            }
+
+            const resolvedStats = onChainStats.filter(
+                (s): s is Extract<typeof s, { ok: true }> => s.ok,
+            );
             const activeCount = resolvedStats.filter((s) => s.isActive).length;
             const inactiveCount = Math.max(0, resolvedStats.length - activeCount);
             const overallTvlSum = resolvedStats.reduce((sum, s) => sum + s.maxTvlTok, 0);
@@ -285,7 +320,7 @@ class StakingService {
                 if (stake.status === 'active') activeWallets.add(wallet);
             }
 
-            return {
+            const stats: StakingStats = {
                 overallTvl: formatCompactNumber(overallTvlSum, { decimals: 2 }),
                 maxTvl: formatCompactNumber(overallTvlSum, { decimals: 2 }),
                 totalTwcStaked: formatCompactNumber(twcStaked, { decimals: 2 }),
@@ -294,9 +329,11 @@ class StakingService {
                 activeStakersCount: activeWallets.size.toLocaleString(),
                 allTimeStakersCount: allTimeWallets.size.toLocaleString(),
             };
+            this.lastGoodStats = stats;
+            return stats;
         } catch (error) {
             console.error('[StakingService] Error fetching global staking stats:', error);
-            return empty;
+            return this.lastGoodStats ?? empty;
         }
     }
 
@@ -376,11 +413,18 @@ class StakingService {
     }
 
     /**
-     * Get a specific stake for a user by symbol
+     * Get a specific stake for a user by symbol or pool DB UUID. Resolving
+     * by UUID first prevents Genesis 1 and Genesis 2 (both 'TWC') from
+     * collapsing onto whichever stake is returned first.
      */
-    async getUserStakeBySymbol(walletAddress: string, symbol: string): Promise<UserStake | undefined> {
+    async getUserStakeBySymbol(walletAddress: string, symbolOrPoolId: string): Promise<UserStake | undefined> {
         const stakes = await this.getUserStakes(walletAddress, 'active');
-        return stakes.find(s => s.pool?.tokenSymbol.toLowerCase() === symbol.toLowerCase());
+        const looksLikeUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(symbolOrPoolId);
+        if (looksLikeUuid) {
+            const byPool = stakes.find(s => s.pool?.id === symbolOrPoolId);
+            if (byPool) return byPool;
+        }
+        return stakes.find(s => s.pool?.tokenSymbol?.toLowerCase() === symbolOrPoolId.toLowerCase());
     }
 
     /**
@@ -392,6 +436,28 @@ class StakingService {
             return pools.find(p => p.tokenSymbol.toLowerCase() === symbol.toLowerCase());
         } catch (error) {
             console.error('[StakingService] Error fetching pool by symbol:', error);
+            return undefined;
+        }
+    }
+
+    /**
+     * Resolve a route param that may be either a pool DB id (UUID) OR a token
+     * symbol (legacy deep links). Multiple pools share the same token symbol
+     * (e.g., Genesis 1 and Genesis 2 are both TWC), so symbol-based lookup
+     * collapses them onto the first match — that was why tapping Genesis 1
+     * always opened Genesis 2. Prefer id when it looks like a UUID.
+     */
+    async getPoolByIdOrSymbol(idOrSymbol: string): Promise<StakingPool | undefined> {
+        try {
+            const pools = await this.getActivePools();
+            const looksLikeUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrSymbol);
+            if (looksLikeUuid) {
+                const byId = pools.find(p => p.id === idOrSymbol);
+                if (byId) return byId;
+            }
+            return pools.find(p => p.tokenSymbol.toLowerCase() === idOrSymbol.toLowerCase());
+        } catch (error) {
+            console.error('[StakingService] Error fetching pool by id-or-symbol:', error);
             return undefined;
         }
     }

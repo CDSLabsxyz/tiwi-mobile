@@ -1,9 +1,10 @@
 import { colors } from "@/constants";
-import { useSecurityStore, WhitelistedAddress } from "@/store/securityStore";
+import { useSecurityStore } from "@/store/securityStore";
+import { ChainType, useWalletStore } from "@/store/walletStore";
 import { truncateAddress } from "@/utils/wallet";
 import { Feather } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import React, { useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import {
     FlatList,
     Modal,
@@ -13,6 +14,7 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
+import Animated, { useAnimatedKeyboard, useAnimatedStyle } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 const UserIcon = require("@/assets/settings/user-circle.svg");
 const CheckIcon = require("@/assets/swap/checkmark-circle-01.svg");
@@ -26,6 +28,20 @@ interface WhitelistSelectSheetProps {
     onMultiSelect?: (addresses: string[]) => void;
 }
 
+// Unified address book entry — covers both user-imported whitelist contacts
+// and the user's own multi-chain wallets (EVM/Solana/Tron/TON/Cosmos/Osmosis).
+type BookEntry = {
+    name: string;
+    address: string;
+    chain?: ChainType;
+    /** "wallet" rows come from the user's walletGroups; "contact" rows come
+     *  from the security store's whitelistedAddresses. */
+    source: "wallet" | "contact";
+    /** WalletGroup id — only present for "wallet" rows. Needed to rename
+     *  the group when the user edits the displayed name. */
+    groupId?: string;
+};
+
 export const WhitelistSelectSheet: React.FC<WhitelistSelectSheetProps> = ({
     visible,
     onClose,
@@ -36,14 +52,113 @@ export const WhitelistSelectSheet: React.FC<WhitelistSelectSheetProps> = ({
 }) => {
     const { bottom } = useSafeAreaInsets();
     const { whitelistedAddresses } = useSecurityStore();
+    const walletGroups = useWalletStore((s) => s.walletGroups);
+    const addressNicknames = useWalletStore((s) => s.addressNicknames);
+    const setAddressNickname = useWalletStore((s) => s.setAddressNickname);
     const [searchQuery, setSearchQuery] = useState("");
     const [selectedList, setSelectedList] = useState<string[]>([]);
+    /** Address (lowercased) of the row currently being renamed. Per-address
+     *  rather than per-group so editing the SOL row leaves the TRON row
+     *  untouched. */
+    const [editingAddress, setEditingAddress] = useState<string | null>(null);
+    const [editDraft, setEditDraft] = useState("");
 
-    const filteredAddresses = whitelistedAddresses.filter(
-        (item) =>
-            item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            item.address.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    // Lift the whole sheet content above the keyboard, same approach used
+    // by the TIWI AI input — IME inset comes straight from native via
+    // reanimated, so it stays correct in release APKs with edge-to-edge.
+    const keyboard = useAnimatedKeyboard();
+    const keyboardPaddingStyle = useAnimatedStyle(() => ({
+        paddingBottom: keyboard.height.value,
+    }));
+
+    const listRef = useRef<FlatList<BookEntry>>(null);
+
+    const beginEdit = (address: string, currentName: string) => {
+        const key = address.toLowerCase();
+        setEditingAddress(key);
+        setEditDraft(currentName);
+        // Center the row being edited in the visible list area so the input
+        // sits comfortably above the keyboard once it animates in.
+        const idx = filteredAddresses.findIndex(
+            (e) => e.address.toLowerCase() === key
+        );
+        if (idx >= 0) {
+            requestAnimationFrame(() => {
+                listRef.current?.scrollToIndex({
+                    index: idx,
+                    animated: true,
+                    viewPosition: 0.2,
+                });
+            });
+        }
+    };
+
+    const cancelEdit = () => {
+        setEditingAddress(null);
+        setEditDraft("");
+    };
+
+    const commitEdit = () => {
+        const trimmed = editDraft.trim();
+        if (editingAddress && trimmed) {
+            setAddressNickname(editingAddress, trimmed);
+        }
+        cancelEdit();
+    };
+
+    // Flatten every non-empty (wallet × chain) pair into its own entry, then
+    // append the manually-curated whitelist. The wallet's name carries
+    // through verbatim — the chain is shown as a small suffix so the user
+    // can tell the SOL address apart from the EVM one.
+    //
+    // Dedupe across sources by address: if a whitelist contact happens to be
+    // one of the user's own wallet addresses (common — users often whitelist
+    // themselves), keep the wallet entry (which has the chain badge) and
+    // drop the un-badged duplicate.
+    const bookEntries = useMemo<BookEntry[]>(() => {
+        const seen = new Set<string>();
+        const out: BookEntry[] = [];
+
+        for (const g of walletGroups) {
+            for (const [chain, addr] of Object.entries(g.addresses) as [ChainType, string | undefined][]) {
+                if (!addr) continue;
+                const key = addr.toLowerCase();
+                if (seen.has(key)) continue;
+                seen.add(key);
+                out.push({
+                    name: addressNicknames[key] ?? g.name,
+                    address: addr,
+                    chain,
+                    source: "wallet",
+                    groupId: g.id,
+                });
+            }
+        }
+
+        for (const w of whitelistedAddresses) {
+            const key = w.address.toLowerCase();
+            if (seen.has(key)) continue;
+            seen.add(key);
+            out.push({
+                name: w.name,
+                address: w.address,
+                source: "contact",
+            });
+        }
+
+        return out;
+    }, [walletGroups, whitelistedAddresses, addressNicknames]);
+
+    const filteredAddresses = useMemo(() => {
+        const q = searchQuery.toLowerCase().trim();
+        if (!q) return bookEntries;
+        return bookEntries.filter(
+            (item) =>
+                item.name.toLowerCase().includes(q) ||
+                item.address.toLowerCase().includes(q) ||
+                (item.chain?.toLowerCase().includes(q) ?? false)
+        );
+    }, [bookEntries, searchQuery]);
 
     const handleToggleSelect = (address: string) => {
         if (multiSelect) {
@@ -65,15 +180,20 @@ export const WhitelistSelectSheet: React.FC<WhitelistSelectSheetProps> = ({
         onClose();
     };
 
-    const renderItem = ({ item }: { item: WhitelistedAddress }) => {
+    const renderItem = ({ item }: { item: BookEntry }) => {
         const isSelected = multiSelect
             ? selectedList.includes(item.address)
             : selectedAddress?.toLowerCase() === item.address.toLowerCase();
+        const isEditing = item.source === "wallet" && item.address.toLowerCase() === editingAddress;
+        const canEdit = item.source === "wallet";
 
         return (
             <TouchableOpacity
                 activeOpacity={0.7}
-                onPress={() => handleToggleSelect(item.address)}
+                onPress={() => {
+                    if (isEditing) return; // don't trigger selection while typing
+                    handleToggleSelect(item.address);
+                }}
                 style={styles.itemContainer}
             >
                 <View style={styles.itemLeft}>
@@ -81,13 +201,61 @@ export const WhitelistSelectSheet: React.FC<WhitelistSelectSheetProps> = ({
                         <Image source={UserIcon} style={styles.userIcon} contentFit="contain" />
                     </View>
                     <View style={styles.itemInfo}>
-                        <Text style={styles.itemName}>{item.name}</Text>
+                        <View style={styles.itemNameRow}>
+                            {isEditing ? (
+                                <TextInput
+                                    value={editDraft}
+                                    onChangeText={setEditDraft}
+                                    onSubmitEditing={commitEdit}
+                                    onBlur={commitEdit}
+                                    autoFocus
+                                    selectTextOnFocus
+                                    placeholder="Wallet name"
+                                    placeholderTextColor={colors.bodyText}
+                                    style={styles.editInput}
+                                    returnKeyType="done"
+                                />
+                            ) : (
+                                <Text style={styles.itemName}>{item.name}</Text>
+                            )}
+                            {item.chain && (
+                                <View style={styles.chainBadge}>
+                                    <Text style={styles.chainBadgeText}>{item.chain}</Text>
+                                </View>
+                            )}
+                        </View>
                         <Text style={styles.itemAddress}>{truncateAddress(item.address, 10, 8)}</Text>
                     </View>
                 </View>
-                {isSelected && (
-                    <Image source={CheckIcon} style={styles.checkIcon} contentFit="contain" />
-                )}
+                <View style={styles.itemActions}>
+                    {canEdit && !isEditing && (
+                        <TouchableOpacity
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                            onPress={(e) => {
+                                e.stopPropagation();
+                                beginEdit(item.address, item.name);
+                            }}
+                            style={styles.editIconButton}
+                        >
+                            <Feather name="edit-2" size={16} color={colors.bodyText} />
+                        </TouchableOpacity>
+                    )}
+                    {isEditing && (
+                        <TouchableOpacity
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                            onPress={(e) => {
+                                e.stopPropagation();
+                                commitEdit();
+                            }}
+                            style={styles.editIconButton}
+                        >
+                            <Feather name="check" size={18} color={colors.primaryCTA} />
+                        </TouchableOpacity>
+                    )}
+                    {isSelected && !isEditing && (
+                        <Image source={CheckIcon} style={styles.checkIcon} contentFit="contain" />
+                    )}
+                </View>
             </TouchableOpacity>
         );
     };
@@ -105,7 +273,7 @@ export const WhitelistSelectSheet: React.FC<WhitelistSelectSheetProps> = ({
                     activeOpacity={1}
                     onPress={onClose}
                 />
-                <View style={[styles.sheet, { paddingBottom: bottom || 20 }]}>
+                <Animated.View style={[styles.sheet, { paddingBottom: bottom || 20 }, keyboardPaddingStyle]}>
                     <View style={styles.header}>
                         <View style={styles.handle} />
                         <View style={styles.headerTitleRow}>
@@ -128,10 +296,20 @@ export const WhitelistSelectSheet: React.FC<WhitelistSelectSheetProps> = ({
                     </View>
 
                     <FlatList
+                        ref={listRef}
                         data={filteredAddresses}
-                        keyExtractor={(item) => item.address}
+                        keyExtractor={(item) => `${item.source}-${item.chain ?? "wl"}-${item.address}`}
                         renderItem={renderItem}
                         contentContainerStyle={styles.listContent}
+                        keyboardShouldPersistTaps="handled"
+                        // scrollToIndex needs this fallback for variable row heights
+                        // when the target hasn't been laid out yet.
+                        onScrollToIndexFailed={({ index, averageItemLength }) => {
+                            listRef.current?.scrollToOffset({
+                                offset: averageItemLength * Math.max(0, index - 1),
+                                animated: true,
+                            });
+                        }}
                         ListEmptyComponent={
                             <View style={styles.emptyContainer}>
                                 <Text style={styles.emptyText}>
@@ -152,7 +330,7 @@ export const WhitelistSelectSheet: React.FC<WhitelistSelectSheetProps> = ({
                             </Text>
                         </TouchableOpacity>
                     )}
-                </View>
+                </Animated.View>
             </View>
         </Modal>
     );
@@ -259,10 +437,45 @@ const styles = StyleSheet.create({
     itemInfo: {
         gap: 2,
     },
+    itemNameRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 8,
+    },
     itemName: {
         fontFamily: "Manrope-SemiBold",
         fontSize: 14,
         color: colors.titleText,
+    },
+    chainBadge: {
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: 6,
+        backgroundColor: colors.bgCards,
+    },
+    chainBadgeText: {
+        fontFamily: "Manrope-SemiBold",
+        fontSize: 10,
+        color: colors.bodyText,
+        textTransform: "uppercase",
+    },
+    editInput: {
+        fontFamily: "Manrope-SemiBold",
+        fontSize: 14,
+        color: colors.titleText,
+        padding: 0,
+        minWidth: 120,
+        borderBottomWidth: 1,
+        borderBottomColor: colors.primaryCTA,
+        paddingVertical: 2,
+    },
+    itemActions: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 8,
+    },
+    editIconButton: {
+        padding: 4,
     },
     itemAddress: {
         fontFamily: "Manrope-Regular",

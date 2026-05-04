@@ -45,7 +45,7 @@ export const RecommendedPools: React.FC<RecommendedPoolsProps> = ({
                     {recommended.map((pool) => (
                         <PoolCard
                             key={pool.id}
-                            tokenName={pool.tokenSymbol}
+                            tokenName={pool.name || pool.tokenSymbol}
                             tokenIcon={pool.tokenLogo ? { uri: pool.tokenLogo } : TWCIcon}
                             apy={pool.displayApy}
                             onPress={() => onPoolClick?.(pool)}

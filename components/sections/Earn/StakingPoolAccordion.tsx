@@ -20,6 +20,8 @@ interface StakingPoolAccordionProps {
     /** V2 per-pool contract address — when present, reads go directly to it. */
     poolContractAddress?: string;
     decimals?: number;
+    /** Admin-set pool name. When present it becomes the title; symbol shows underneath. */
+    name?: string;
     tokenSymbol: string;
     tokenName: string;
     tokenIcon?: any;
@@ -30,6 +32,7 @@ export const StakingPoolAccordion: React.FC<StakingPoolAccordionProps> = ({
     poolId,
     poolContractAddress,
     decimals,
+    name,
     tokenSymbol,
     tokenIcon,
     onStakePress
@@ -43,7 +46,8 @@ export const StakingPoolAccordion: React.FC<StakingPoolAccordionProps> = ({
         ? `${formatCompactNumber(aprNum, { decimals: aprNum < 10 ? 2 : 1 })}%`
         : apr;
 
-    const stakersDisplay = !activeStakersCount || activeStakersCount === 'N/A' ? '0' : activeStakersCount;
+    const isStakersResolved = activeStakersCount !== undefined && activeStakersCount !== 'N/A';
+    const stakersDisplay = isStakersResolved ? activeStakersCount : '0';
 
     const toggleExpand = () => {
         LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -55,9 +59,7 @@ export const StakingPoolAccordion: React.FC<StakingPoolAccordionProps> = ({
             <View style={styles.container}>
                 <View style={styles.header}>
                     <Skeleton width={40} height={40} borderRadius={20} />
-                    <Skeleton width={80} height={20} style={{ marginLeft: 12 }} />
-                    <View style={{ flex: 1 }} />
-                    <Skeleton width={60} height={20} />
+                    <Skeleton width={120} height={20} style={{ marginLeft: 12 }} />
                 </View>
             </View>
         );
@@ -76,25 +78,18 @@ export const StakingPoolAccordion: React.FC<StakingPoolAccordionProps> = ({
                         style={styles.tokenIcon}
                         contentFit="cover"
                     />
-                    <Text style={styles.symbolText}>{tokenSymbol}</Text>
+                    <View style={styles.titleColumn}>
+                        <Text style={styles.symbolText} numberOfLines={1}>
+                            {name || tokenSymbol}
+                        </Text>
+                    </View>
                 </View>
 
-                {!isExpanded && (
-                    <Text style={styles.collapsedTvl}>
-                        {tvlCompact} / {maxTvlCompact} {tokenSymbol}
-                    </Text>
-                )}
-
-                <View style={styles.rightGroup}>
-                    {!isExpanded && (
-                        <Text style={styles.collapsedApr}>{aprCompact}</Text>
-                    )}
-                    <AntDesign
-                        name={isExpanded ? "up" : "down"}
-                        size={18}
-                        color={colors.mutedText}
-                    />
-                </View>
+                <AntDesign
+                    name={isExpanded ? "up" : "down"}
+                    size={18}
+                    color={colors.mutedText}
+                />
             </TouchableOpacity>
 
             {isExpanded && (
@@ -154,37 +149,24 @@ const styles = StyleSheet.create({
     tokenInfo: {
         flexDirection: 'row',
         alignItems: 'center',
+        flex: 1,
+        minWidth: 0,
+        marginRight: 8,
     },
     tokenIcon: {
         width: 36,
         height: 36,
         borderRadius: 18,
-        marginRight: -6,
+        marginRight: 10,
+    },
+    titleColumn: {
+        flexShrink: 1,
+        minWidth: 0,
     },
     symbolText: {
         fontFamily: 'Manrope-Bold',
         fontSize: 16,
         color: colors.titleText,
-    },
-    collapsedApr: {
-        fontFamily: 'Manrope-SemiBold',
-        fontSize: 16,
-        color: colors.primaryCTA,
-    },
-    collapsedTvl: {
-        fontFamily: 'Manrope-SemiBold',
-        fontSize: 14,
-        color: colors.titleText,
-    },
-    collapsedMeta: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 10,
-    },
-    rightGroup: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
     },
     content: {
         paddingHorizontal: 16,

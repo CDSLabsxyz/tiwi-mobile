@@ -1,11 +1,15 @@
 import { getSecurePrivateKey } from '@/services/walletCreationService';
 import { useSecurityStore } from '@/store/securityStore';
 import { useWalletStore } from '@/store/walletStore';
-import { getRpcUrl } from '@/constants/rpc';
-import { createPublicClient, createWalletClient, http } from 'viem';
+import { createTransportForChain } from '@/constants/rpc';
+import { createPublicClient, createWalletClient } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { ExecutionResult, SignerEngine, TransactionRequest } from './SignerTypes';
 import { getChainById } from './SignerUtils';
+
+// BSC writes route through `createTransportForChain` so signed transactions
+// rotate across Binance dataseed / publicnode / drpc / ankr instead of
+// dying on Alchemy's HTTP 429 ("compute units per second exceeded").
 
 /**
  * LocalSignerEngine handles transaction signing and execution for wallets
@@ -106,11 +110,11 @@ export class LocalSignerEngine implements SignerEngine {
 
         const isNative = !tx.data || tx.data === '0x' || tx.data === '';
 
-        const rpcUrl = getRpcUrl(Number(tx.chainId) || 1);
+        const chainId = Number(tx.chainId) || 1;
         const walletClient = createWalletClient({
             account,
             chain,
-            transport: http(rpcUrl, { timeout: 15000 })
+            transport: createTransportForChain(chainId),
         });
 
         const signArgs: any = {
@@ -134,11 +138,11 @@ export class LocalSignerEngine implements SignerEngine {
             const chain = getChainById(Number(tx.chainId) || 1);
             const isNative = !tx.data || tx.data === '0x' || tx.data === '';
 
-            const rpcUrl = getRpcUrl(Number(tx.chainId) || 1);
+            const chainId = Number(tx.chainId) || 1;
             const walletClient = createWalletClient({
                 account,
                 chain,
-                transport: http(rpcUrl, { timeout: 15000 })
+                transport: createTransportForChain(chainId),
             });
 
             // Standardize txArgs to match viem's SendTransactionParameters
@@ -196,10 +200,9 @@ export class LocalSignerEngine implements SignerEngine {
 
     async getPublicClient(chainId: number) {
         const chain = getChainById(chainId);
-        const rpcUrl = getRpcUrl(chainId);
         return createPublicClient({
             chain,
-            transport: http(rpcUrl, { timeout: 15000 })
+            transport: createTransportForChain(chainId),
         });
     }
 
@@ -209,11 +212,10 @@ export class LocalSignerEngine implements SignerEngine {
             : await this.createSecureAccount(address);
 
         const chain = getChainById(chainId);
-        const rpcUrl = getRpcUrl(chainId);
         return createWalletClient({
             account,
             chain,
-            transport: http(rpcUrl, { timeout: 15000 })
+            transport: createTransportForChain(chainId),
         });
     }
 }

@@ -17,6 +17,8 @@ export const SwapSettingsSheet: React.FC<SwapSettingsSheetProps> = ({
     const {
         slippage,
         setSlippage,
+        isAutoSlippage,
+        setAutoSlippage,
         useRelayer,
         setUseRelayer
     } = useSwapStore();
@@ -39,18 +41,32 @@ export const SwapSettingsSheet: React.FC<SwapSettingsSheetProps> = ({
                         </TouchableOpacity>
                     </View>
                     <View style={styles.optionsRow}>
+                        <TouchableOpacity
+                            style={[
+                                styles.optionButton,
+                                isAutoSlippage && styles.activeOption,
+                            ]}
+                            onPress={setAutoSlippage}
+                        >
+                            <Text style={[
+                                styles.optionText,
+                                isAutoSlippage && styles.activeOptionText,
+                            ]}>
+                                Auto
+                            </Text>
+                        </TouchableOpacity>
                         {slippageOptions.map((option) => (
                             <TouchableOpacity
                                 key={option}
                                 style={[
                                     styles.optionButton,
-                                    slippage === option && styles.activeOption
+                                    !isAutoSlippage && slippage === option && styles.activeOption
                                 ]}
                                 onPress={() => setSlippage(option)}
                             >
                                 <Text style={[
                                     styles.optionText,
-                                    slippage === option && styles.activeOptionText
+                                    !isAutoSlippage && slippage === option && styles.activeOptionText
                                 ]}>
                                     {option}%
                                 </Text>
@@ -62,7 +78,7 @@ export const SwapSettingsSheet: React.FC<SwapSettingsSheetProps> = ({
                                 placeholder="Custom"
                                 placeholderTextColor={colors.mutedText}
                                 keyboardType="numeric"
-                                value={!slippageOptions.includes(slippage) ? slippage.toString() : ''}
+                                value={!isAutoSlippage && !slippageOptions.includes(slippage) ? slippage.toString() : ''}
                                 onChangeText={(text) => {
                                     const val = parseFloat(text);
                                     if (!isNaN(val)) setSlippage(val);
@@ -77,7 +93,12 @@ export const SwapSettingsSheet: React.FC<SwapSettingsSheetProps> = ({
                 <View style={[styles.section, styles.borderTop]}>
                     <View style={styles.switchRow}>
                         <View style={styles.switchInfo}>
-                            <Text style={styles.sectionTitle}>Managed Swap (Relayer)</Text>
+                            <View style={styles.titleRow}>
+                                <Text style={styles.sectionTitle}>Managed Swap (Relayer)</Text>
+                                <View style={styles.soonBadge}>
+                                    <Text style={styles.soonBadgeText}>SOON</Text>
+                                </View>
+                            </View>
                             <Text style={styles.sectionSubtitle}>
                                 Pay gas fees in Tiwi Cat or the token you're swapping. Cheaper and faster.
                             </Text>
@@ -88,6 +109,7 @@ export const SwapSettingsSheet: React.FC<SwapSettingsSheetProps> = ({
                             ios_backgroundColor={colors.bgCards}
                             onValueChange={setUseRelayer}
                             value={useRelayer}
+                            disabled
                         />
                     </View>
                 </View>
@@ -187,6 +209,25 @@ const styles = StyleSheet.create({
     switchInfo: {
         flex: 1,
         marginRight: 16,
+    },
+    titleRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    soonBadge: {
+        backgroundColor: colors.primaryCTA + '20',
+        borderColor: colors.primaryCTA,
+        borderWidth: 1,
+        borderRadius: 6,
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+    },
+    soonBadgeText: {
+        fontFamily: 'Manrope-Bold',
+        fontSize: 9,
+        color: colors.primaryCTA,
+        letterSpacing: 0.5,
     },
     borderTop: {
         paddingTop: 24,

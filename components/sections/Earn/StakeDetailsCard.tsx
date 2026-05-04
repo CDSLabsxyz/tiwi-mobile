@@ -56,6 +56,9 @@ function formatFull(num: number, maxDecimals = 4): string {
 export const StakeDetailsCard: React.FC<Props> = ({ stake, isExpanded, onToggle, variant }) => {
     const router = useRouter();
     const symbol = stake.pool?.tokenSymbol || 'TWC';
+    // Prefer the admin-set pool name when present; otherwise fall back to the
+    // token's full name, then to the symbol. Used as the card's primary title.
+    const poolDisplayName = stake.pool?.name || stake.pool?.tokenName || symbol;
     const name = stake.pool?.tokenName || symbol;
     const detailsIdentifier = stake.pool?.poolContractAddress ? stake.pool?.id : stake.pool?.poolId;
     const pooled = useStakingPool(detailsIdentifier, stake.pool?.decimals ?? 9, {
@@ -125,7 +128,20 @@ export const StakeDetailsCard: React.FC<Props> = ({ stake, isExpanded, onToggle,
 
     const statusStyle = STATUS_STYLES[effectiveStatus];
 
-    // Countdown math — Time Staked and Time Until Unlock.
+    // Countdown math — mirrors the web app exactly.
+    //
+    //   Time Staked       = now - user.stakeTime          (per-user, counts up)
+    //   Time Until Unlock = pool.endTime - now            (pool-wide, counts down)
+    //   Progress          = (now - user.stakeTime) / rewardDuration
+    //
+    // The unlock anchor is the pool's on-chain endTime, not stakeTime+duration:
+    // if a user joins 5 minutes after the pool started, the pool still ends at
+    // its fixed endTime, so they have ~5 minutes less than the full reward
+    // duration to wait. Progress is per-user so it ticks 0%→100% across the
+    // user's reward window even though the unlock anchor is pool-wide.
+    //
+    // Falls back to (stakeTime + rewardDuration) when on-chain endTime isn't
+    // readable yet (e.g. immediately after a fresh deploy / cache miss).
     const countdown = useMemo(() => {
         const stakeTimeMs = pooled.stakeTime > 0
             ? pooled.stakeTime * 1000
@@ -133,19 +149,26 @@ export const StakeDetailsCard: React.FC<Props> = ({ stake, isExpanded, onToggle,
         const durationSec = pooled.rewardDurationSeconds || (stake.pool?.minStakingPeriod
             ? parseIntSafe(stake.pool.minStakingPeriod) * 86400
             : 30 * 86400);
-        const endMs = stakeTimeMs + durationSec * 1000;
+
+        const onChainEndSec = pooled.endTime || Number(stake.pool?.endTime || 0);
+        const endMs = onChainEndSec > 0
+            ? onChainEndSec * 1000
+            : stakeTimeMs + durationSec * 1000;
 
         const elapsedSec = Math.max(0, Math.floor((now - stakeTimeMs) / 1000));
         const remainingSec = Math.max(0, Math.floor((endMs - now) / 1000));
-        const progress = durationSec > 0 ? Math.min(100, (elapsedSec / durationSec) * 100) : 0;
+        const progress = durationSec > 0
+            ? Math.min(100, (elapsedSec / durationSec) * 100)
+            : 0;
 
         return {
             staked: splitDuration(elapsedSec),
             remaining: splitDuration(remainingSec),
             progress,
-            totalDays: Math.ceil(durationSec / 86400),
+            totalSec: durationSec,
+            totalLabel: formatDurationLabel(durationSec),
         };
-    }, [pooled.stakeTime, pooled.rewardDurationSeconds, stake.createdAt, stake.pool?.minStakingPeriod, now]);
+    }, [pooled.stakeTime, pooled.rewardDurationSeconds, pooled.endTime, stake.createdAt, stake.pool?.minStakingPeriod, stake.pool?.endTime, now]);
 
     // Display values — live on-chain for active, DB historical for finalized.
     const displayStaked = useMemo(() => {
@@ -262,8 +285,10 @@ export const StakeDetailsCard: React.FC<Props> = ({ stake, isExpanded, onToggle,
                         style={styles.icon}
                     />
                     <View>
-                        <Text style={styles.symbol}>{symbol}</Text>
-                        <Text style={styles.name} numberOfLines={1}>{name}</Text>
+                        <Text style={styles.symbol} numberOfLines={1}>{poolDisplayName}</Text>
+                        <Text style={styles.name} numberOfLines={1}>
+                            {stake.pool?.name ? `${symbol} · ${name}` : name}
+                        </Text>
                     </View>
                 </View>
                 <View style={styles.headerRight}>
@@ -287,7 +312,7 @@ export const StakeDetailsCard: React.FC<Props> = ({ stake, isExpanded, onToggle,
                                 <Text style={styles.countdownTitle}>Staking Countdown</Text>
                                 <TouchableOpacity
                                     activeOpacity={0.85}
-                                    onPress={() => router.push(`/earn/stake/${symbol}` as any)}
+                                    onPress={() => router.push(`/earn/stake/${stake.pool?.id || symbol}` as any)}
                                     style={styles.boostButton}
                                 >
                                     <Ionicons name="flash" size={12} color="#010501" />
@@ -318,7 +343,7 @@ export const StakeDetailsCard: React.FC<Props> = ({ stake, isExpanded, onToggle,
                             <View style={styles.progressRow}>
                                 <Text style={styles.progressLabel}>Progress</Text>
                                 <Text style={styles.progressValue}>
-                                    {countdown.progress.toFixed(1)}% of {countdown.totalDays} days
+                                    {countdown.progress.toFixed(1)}% of {countdown.totalLabel}
                                 </Text>
                             </View>
                             <View style={styles.progressBg}>
@@ -336,7 +361,7 @@ export const StakeDetailsCard: React.FC<Props> = ({ stake, isExpanded, onToggle,
                     <View style={styles.statsGrid}>
                         <StatTile icon="link-outline" label="Staked Amount" value={`${formatFull(displayStaked)}`} suffix={symbol} />
                         <StatTile icon="trending-up-outline" label="Pending Rewards" value={formatFull(displayPending, 6)} suffix={symbol} valueColor="#b1f128" />
-                        <StatTile icon="lock-closed-outline" label={effectiveStatus === 'active' ? 'Reward Duration' : 'Duration'} value={`${countdown.totalDays}`} suffix="days" />
+                        <StatTile icon="lock-closed-outline" label={effectiveStatus === 'active' ? 'Reward Duration' : 'Duration'} value={countdown.totalLabel} />
                         <StatTile icon="calendar-outline" label="Started" value={startedLabel} />
                     </View>
 
@@ -419,6 +444,23 @@ function splitDuration(totalSec: number) {
     const m = Math.floor((totalSec % 3600) / 60);
     const s = totalSec % 60;
     return { d, h, m, s, totalSec };
+}
+
+// "Reward Duration" / progress label. Sub-day pools previously rounded up to
+// "1 days" via Math.ceil — show the actual d/h/m breakdown instead so a 45-minute
+// pool reads "45m" and matches the web app.
+function formatDurationLabel(totalSec: number): string {
+    if (!Number.isFinite(totalSec) || totalSec <= 0) return '0min';
+    const d = Math.floor(totalSec / 86400);
+    const h = Math.floor((totalSec % 86400) / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = Math.floor(totalSec % 60);
+    const parts: string[] = [];
+    if (d > 0) parts.push(`${d}d`);
+    if (h > 0) parts.push(`${h}h`);
+    if (m > 0) parts.push(`${m}min`);
+    if (s > 0 && d === 0 && h === 0) parts.push(`${s}sec`);
+    return parts.length ? parts.join(' ') : '<1min';
 }
 
 function parseIntSafe(raw: string | number | undefined): number {

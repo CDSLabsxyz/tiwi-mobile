@@ -73,6 +73,11 @@ interface SwapState {
 
   // Settings state
   slippage: number;
+  /** Auto-slippage mode — keeps slippage at the safe default and lets the
+   *  app pick a value per-route in the future. The numeric `slippage` field
+   *  continues to drive the actual swap so quoting code doesn't need to
+   *  branch. */
+  isAutoSlippage: boolean;
   useRelayer: boolean;
   gasPaymentToken: TokenOption | null;
 
@@ -102,6 +107,7 @@ interface SwapState {
 
   // Actions - Settings
   setSlippage: (slippage: number) => void;
+  setAutoSlippage: () => void;
   setUseRelayer: (useRelayer: boolean) => void;
   setGasPaymentToken: (token: TokenOption | null) => void;
 
@@ -137,7 +143,8 @@ export const useSwapStore = create<SwapState>((set, get) => ({
   toFiatAmount: "$0",
 
   // Settings implementation
-  slippage: 3.0,
+  slippage: 0.5,
+  isAutoSlippage: true,
   useRelayer: false,
   gasPaymentToken: null,
 
@@ -173,7 +180,9 @@ export const useSwapStore = create<SwapState>((set, get) => ({
   setToFiatAmount: (amount) => set({ toFiatAmount: amount }),
 
   // Actions - Settings implementation
-  setSlippage: (slippage) => set({ slippage }),
+  // Manual slippage selection always exits auto mode.
+  setSlippage: (slippage) => set({ slippage, isAutoSlippage: false }),
+  setAutoSlippage: () => set({ slippage: 0.5, isAutoSlippage: true }),
   setUseRelayer: (useRelayer) => set({ useRelayer }),
   setGasPaymentToken: (token) => set({ gasPaymentToken: token }),
 

@@ -1,7 +1,7 @@
 
 import { createAcrossClient } from "@across-protocol/app-sdk";
-import { getRpcUrl } from "@/constants/rpc";
-import { createPublicClient, formatUnits, getAddress, http, parseUnits } from "viem";
+import { createTransportForChain } from "@/constants/rpc";
+import { createPublicClient, formatUnits, getAddress, parseUnits } from "viem";
 import { arbitrum, base, bsc, mainnet, optimism, polygon, zksync, scroll, mantle, blast, lisk } from "viem/chains";
 import { SwapQuote, TokenMinimal } from "./swap/types";
 
@@ -47,7 +47,7 @@ export class AcrossService {
         const chain = SUPPORTED_CHAINS.find(c => c.id === chainId) || mainnet;
         return createPublicClient({
             chain,
-            transport: http(getRpcUrl(chainId), { timeout: 15000 }),
+            transport: createTransportForChain(chainId),
         });
     }
 

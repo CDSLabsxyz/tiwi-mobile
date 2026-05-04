@@ -1,6 +1,6 @@
 import { ERC20_ABI, STAKING_FACTORY_ABI, STAKING_POOL_V2_ABI } from '@/constants/abis';
 import { STAKING_FACTORY_ADDRESSES } from '@/constants/contracts';
-import { RPC_CONFIG, RPC_TRANSPORT_OPTIONS } from '@/constants/rpc';
+import { RPC_CONFIG, RPC_TRANSPORT_OPTIONS, createBscFallbackTransport } from '@/constants/rpc';
 import { useToastStore } from '@/store/useToastStore';
 import { formatCompactNumber } from '@/utils/formatting';
 import { useQuery } from '@tanstack/react-query';
@@ -37,6 +37,10 @@ export interface OnChainPoolStats {
     // New fields for Mining/Live Stats
     stakeTime: number;
     rewardDurationSeconds: number;
+    /** Pool start time in Unix seconds (0 if unknown). */
+    startTime: number;
+    /** Pool end time in Unix seconds — authoritative unlock anchor. */
+    endTime: number;
     earningRate: number; // rewards per second
     emissionVelocity: number;
     isLocked: boolean;
@@ -49,12 +53,33 @@ const STAKING_CHAIN_ID = 56; // BSC Mainnet
 const SECONDS_PER_YEAR_NUM = 31536000;
 const TWC_ADDRESS_BSC = '0xDA1060158F7D593667cCE0a15DB346BB3FfB3596';
 
+// Render a duration in seconds as a compact "Nd Nh Nm" string. Sub-day pools
+// (e.g. 45m reward windows) previously rounded up to "1 days" because the
+// formatter only emitted whole days.
+function formatLockDuration(seconds: number): string {
+    if (!Number.isFinite(seconds) || seconds <= 0) return '0min';
+    const days = Math.floor(seconds / 86400);
+    const hours = Math.floor((seconds % 86400) / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+    const parts: string[] = [];
+    if (days > 0) parts.push(`${days}d`);
+    if (hours > 0) parts.push(`${hours}h`);
+    if (minutes > 0) parts.push(`${minutes}min`);
+    if (secs > 0 && days === 0 && hours === 0) parts.push(`${secs}sec`);
+    if (!parts.length) return '<1min';
+    return parts.join(' ');
+}
+
 // AppKit's WagmiAdapter hard-codes transports to rpc.walletconnect.org, which
 // drops ~20% of eth_call requests on BSC. Reads go through a dedicated viem
-// client on Alchemy — wagmi only handles writes (via the connected signer).
+// client on a multi-provider fallback transport (Alchemy + Binance dataseed +
+// publicnode + drpc + ankr) — wagmi only handles writes via the connected signer.
 const bscReadClient = createPublicClient({
     chain: bsc,
-    transport: http(RPC_CONFIG[STAKING_CHAIN_ID], RPC_TRANSPORT_OPTIONS),
+    transport: STAKING_CHAIN_ID === 56
+        ? createBscFallbackTransport()
+        : http(RPC_CONFIG[STAKING_CHAIN_ID], RPC_TRANSPORT_OPTIONS),
 });
 
 /**
@@ -231,6 +256,30 @@ export function useStakingPool(
             });
         },
         enabled: !!stakingToken && !!effectiveAddress,
+    });
+
+    // Stakers count — counted from the backend's user_stakes table (unique
+    // wallets per pool). The on-chain contracts don't store an enumerable
+    // staker list, and reconstructing it from Deposit logs would require
+    // scanning the full pool history each render. The DB is the practical
+    // source of truth here, mirroring how the web app's pool list resolves it.
+    const { data: stakersCountData } = useQuery({
+        queryKey: ['staking', 'stakersCount', String(poolId ?? '')],
+        queryFn: async () => {
+            if (poolId === undefined || poolId === null) return 0;
+            const uuid = await apiClient.resolvePoolUuid(poolId as number | string);
+            if (!uuid) return 0;
+            const stakes = await apiClient.getUserStakes(undefined, undefined, uuid);
+            const unique = new Set(
+                (stakes || [])
+                    .map((s: any) => s?.userWallet?.toLowerCase?.())
+                    .filter(Boolean)
+            );
+            return unique.size;
+        },
+        enabled: !isMock && poolId !== undefined && poolId !== null,
+        refetchInterval: 30000,
+        staleTime: 15000,
     });
 
     // --- ON-CHAIN CLAIMED + DEPOSITED TOTALS ---
@@ -621,6 +670,13 @@ export function useStakingPool(
         // correct claimed amount — the on-chain value will be ~0 (full) or
         // reduced by `pct` (partial) after the tx lands.
         const prePending = (userInfo as any)?.[3] ?? (userInfo as any)?.pending ?? 0n;
+        // Refuse to broadcast a claim with 0 pending. On-chain this either
+        // reverts (some pool versions) or no-ops, but worse — a tap that
+        // bypasses the modal and ends up routing to stake/deposit could
+        // reuse the typed amount instead. Hard-fail at the source.
+        if ((prePending as bigint) === 0n) {
+            throw new Error('No rewards available to claim');
+        }
         const claimedWei = (prePending as bigint) * BigInt(pct) / 100n;
         const claimedAmount = formatUnits(claimedWei, decimals);
         showToast('Confirm Claim in Wallet...', 'pending');
@@ -748,6 +804,8 @@ export function useStakingPool(
                 refetch: () => console.log('Mock refetch'),
                 stakeTime: Math.floor(Date.now() / 1000) - 86400 * 4, // 4 days ago
                 rewardDurationSeconds: 2592000, // 30 days
+                startTime: Math.floor(Date.now() / 1000) - 86400 * 4,
+                endTime: Math.floor(Date.now() / 1000) + 86400 * 26,
                 earningRate: 0.009837963,
                 emissionVelocity: 0.009837963,
                 isLocked: true,
@@ -809,7 +867,7 @@ export function useStakingPool(
             // The contract caps `_secondsElapsed` at `endTime`, so once the
             // pool has expired no further rewards accrue — zero the displayed
             // rate to match.
-            const endTimeSec = Number(poolConfig[8] ?? poolConfig.endTime ?? 0);
+            const endTimeSec = Number(poolConfig.endTime ?? poolConfig[9] ?? 0);
             const isPoolExpired = endTimeSec > 0 && Date.now() / 1000 >= endTimeSec;
             if (maxTvl > 0 && rewardDurationSeconds > 0 && !isPoolExpired) {
                 const userStakedNum = Number(formatUnits(userStaked, decimals));
@@ -822,8 +880,22 @@ export function useStakingPool(
         }
 
         const duration = poolConfig?.[5] ?? poolConfig?.rewardDurationSeconds ?? 0n;
-        const lockPeriodDays = Number(duration) / 86400;
-        const lockPeriodFormatted = lockPeriodDays > 0 ? `${Math.ceil(lockPeriodDays)} days` : (poolConfig?.minStakingPeriod || '30 days');
+        const lockPeriodSeconds = Number(duration);
+        const lockPeriodDays = lockPeriodSeconds / 86400;
+        const lockPeriodFormatted = lockPeriodSeconds > 0 ? formatLockDuration(lockPeriodSeconds) : (poolConfig?.minStakingPeriod || '30 days');
+
+        // Pool config index layout (factory + V2-normalized):
+        //   [poolId, stakingToken, rewardToken, poolOwner, poolReward,
+        //    rewardDurationSeconds, maxTvl, rewardPerSecond,
+        //    startTime,   ← index 8
+        //    endTime,     ← index 9
+        //    active, ...]
+        // The earlier `?.[8] ?? .endTime` was reading startTime and only
+        // falling back to .endTime when startTime was 0/missing — which is
+        // why the unlock countdown collapsed to "completed" the moment any
+        // active pool was opened.
+        const startTimeSec = Number(poolConfig?.startTime ?? poolConfig?.[8] ?? 0);
+        const endTimeSecOut = Number(poolConfig?.endTime ?? poolConfig?.[9] ?? 0);
 
         const maxTvlNum = poolConfig ? Number(formatUnits(poolConfig.maxTvl ?? 0n, decimals)) : 0;
         const isFull = maxTvlNum > 0 && totalStakedNum >= maxTvlNum;
@@ -847,13 +919,15 @@ export function useStakingPool(
             tvlCompact: totalStakedCompact,
             maxTvlCompact,
             limitsFormatted: poolConfig ? `${formatCompactNumber(Number(formatUnits(poolConfig.minStakeAmount || 0n, decimals)), {})}-${formatCompactNumber(Number(formatUnits(poolConfig.maxStakeAmount || 0n, decimals)), {})} TWC` : 'N/A',
-            activeStakersCount: 'N/A',
+            activeStakersCount: typeof stakersCountData === 'number' ? stakersCountData.toLocaleString() : 'N/A',
             lockPeriod: lockPeriodFormatted,
             isLoading: isPoolLoading || isUserLoading || isAllowanceLoading,
             isTransactionPending,
             refetch: refetchAll,
             stakeTime,
             rewardDurationSeconds,
+            startTime: startTimeSec,
+            endTime: endTimeSecOut,
             earningRate, // Also known as emissionVelocity for individual user
             emissionVelocity: earningRate,
             isLocked: lockPeriodDays > 0,
@@ -861,7 +935,7 @@ export function useStakingPool(
             poolReward: poolRewardNum,
             tvl: totalStakedNum
         };
-    }, [isMock, poolConfig, poolState, userInfo, allowance, stakingToken, isPoolLoading, isUserLoading, isAllowanceLoading, isTransactionPending, decimals, refetchAll, priceData, onChainClaimedTotal, onChainTotalDeposited]);
+    }, [isMock, poolConfig, poolState, userInfo, allowance, stakingToken, isPoolLoading, isUserLoading, isAllowanceLoading, isTransactionPending, decimals, refetchAll, priceData, onChainClaimedTotal, onChainTotalDeposited, stakersCountData]);
 
     return {
         ...stats,

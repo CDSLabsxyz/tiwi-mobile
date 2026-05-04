@@ -13,6 +13,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 const ArrowDownIcon = require('../../../assets/home/arrow-down-01.svg');
 
 interface StakingTokenCardProps {
+    name?: string; // Admin-set pool label, preferred over tokenSymbol when present
     tokenSymbol: string;
     tokenName: string;
     apy: string;
@@ -28,6 +29,7 @@ interface StakingTokenCardProps {
  * Staking Token Card - Token display with APY, TVL, and Stakers
  */
 export const StakingTokenCard: React.FC<StakingTokenCardProps> = ({
+    name,
     tokenSymbol,
     tokenName,
     apy,
@@ -57,9 +59,16 @@ export const StakingTokenCard: React.FC<StakingTokenCardProps> = ({
                             <View style={styles.placeholderIcon} />
                         )}
                     </View>
-                    <Text style={styles.symbolText} numberOfLines={1}>
-                        {tokenSymbol}
-                    </Text>
+                    <View style={styles.titleColumn}>
+                        <Text style={styles.symbolText} numberOfLines={1}>
+                            {name || tokenSymbol}
+                        </Text>
+                        {!!name && (
+                            <Text style={styles.subtitleText} numberOfLines={1}>
+                                {tokenSymbol}
+                            </Text>
+                        )}
+                    </View>
                 </View>
 
                 <View style={styles.apyContainer}>
@@ -138,11 +147,21 @@ const styles = StyleSheet.create({
         height: '100%',
         backgroundColor: colors.bgStroke,
     },
+    titleColumn: {
+        flexShrink: 1,
+        minWidth: 0,
+    },
     symbolText: {
         fontFamily: 'Manrope-SemiBold',
         fontSize: 14,
         color: colors.titleText,
         flexShrink: 1,
+    },
+    subtitleText: {
+        fontFamily: 'Manrope-Regular',
+        fontSize: 11,
+        color: '#7c7c7c',
+        marginTop: 1,
     },
     apyContainer: {
         flexDirection: 'row',

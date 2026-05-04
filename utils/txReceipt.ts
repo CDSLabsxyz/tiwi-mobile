@@ -10,20 +10,19 @@
  * `null` as "unknown" and, for safety, decline to log as successful.
  */
 
-import { getRpcUrl, RPC_TRANSPORT_OPTIONS } from '@/constants/rpc';
+import { getRpcUrl, createTransportForChain } from '@/constants/rpc';
 import { getChainById } from '@/services/signer/SignerUtils';
-import { createPublicClient, http } from 'viem';
+import { createPublicClient } from 'viem';
 
-const clients = new Map<number, ReturnType<typeof createPublicClient>>();
+const clients = new Map<number, any>();
 
 function clientFor(chainId: number) {
     const cached = clients.get(chainId);
     if (cached) return cached;
-    const rpc = getRpcUrl(chainId);
-    if (!rpc) return null;
+    if (!getRpcUrl(chainId)) return null;
     const client = createPublicClient({
         chain: getChainById(chainId) as any,
-        transport: http(rpc, RPC_TRANSPORT_OPTIONS),
+        transport: createTransportForChain(chainId),
     });
     clients.set(chainId, client);
     return client;

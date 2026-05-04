@@ -18,14 +18,14 @@ const imgFrameReferral = require('../../assets/home/frame-referral.png');
 const imgCopy01 = require('../../assets/referral/copy-01.svg');
 const imgShare01 = require('../../assets/referral/share-01.svg');
 
-// Static leaderboard tier data (Standard for Tiwi)
+// Static leaderboard tier data — mirrors the web app's Rebate Level table.
 const rebateTierData = [
-    { level: 1, volumeRange: '<$100,5000', rebateShare: '30%', color: '#B1F128' },
-    { level: 2, volumeRange: '>$100,000', rebateShare: '35%', color: '#B1F128' },
-    { level: 3, volumeRange: '>$5,000,0000', rebateShare: '40%', color: '#B1F128' },
-    { level: 4, volumeRange: '>$10,000,0000', rebateShare: '45%', color: '#B1F128' },
-    { level: 5, volumeRange: '>$12,500,0000', rebateShare: '50%', color: '#B1F128' },
-    { level: 6, volumeRange: '>$20,500,0000', rebateShare: '60%', color: '#B1F128' },
+    { level: 1, volumeRange: '<=$100.0000', rebateShare: '30%', color: '#B1F128' },
+    { level: 2, volumeRange: '>$100.0000', rebateShare: '35%', color: '#B1F128' },
+    { level: 3, volumeRange: '>$5,000.0000', rebateShare: '40%', color: '#B1F128' },
+    { level: 4, volumeRange: '>$10,000.0000', rebateShare: '45%', color: '#B1F128' },
+    { level: 5, volumeRange: '>$12,500.0000', rebateShare: '50%', color: '#B1F128' },
+    { level: 6, volumeRange: '>$20,500.0000', rebateShare: '80%', color: '#B1F128' },
 ];
 
 const faqs = [
@@ -342,7 +342,7 @@ export default function ReferralPositionScreen() {
                             <View style={styles.leaderboardTable}>
                                 <View style={styles.tableHeader}>
                                     <Text style={styles.tableHeaderText}>Level</Text>
-                                    <Text style={styles.tableHeaderText}>28 day referee{'\n'}spot/perp vol</Text>
+                                    <Text style={styles.tableHeaderText}>28 days referee{'\n'}spot/perp vol</Text>
                                     <Text style={styles.tableHeaderText}>Rebate share</Text>
                                 </View>
                                 {rebateTierData.map((item, index) => (
@@ -373,14 +373,33 @@ export default function ReferralPositionScreen() {
                                 <Text style={styles.tableHeaderText}>Invites</Text>
                                 <Text style={styles.tableHeaderText}>Rewards</Text>
                             </View>
-                            {leaderboard?.map((item, index) => (
-                                <View key={index} style={styles.tableRow}>
-                                    <Text style={styles.tableCellText}>{item.rank}</Text>
-                                    <Text style={[styles.tableCellText, { flex: 2 }]}>{`${item.walletAddress.slice(0, 6)}...${item.walletAddress.slice(-4)}`}</Text>
-                                    <Text style={styles.tableCellText}>{item.invites}</Text>
-                                    <Text style={[styles.tableCellText, styles.rebateText]}>${item.rewards.toFixed(2)}</Text>
-                                </View>
-                            ))}
+                            {leaderboard?.map((item, index) => {
+                                // Backend occasionally returns rows with
+                                // missing/null fields (e.g. brand-new wallets
+                                // with no invites yet). Coerce defensively so
+                                // the whole table doesn't crash with
+                                // "Cannot read property 'toFixed' of undefined".
+                                const wallet = item.walletAddress || '';
+                                const truncated = wallet.length >= 10
+                                    ? `${wallet.slice(0, 6)}...${wallet.slice(-4)}`
+                                    : (wallet || '—');
+                                // Backend canonical field is `rewardInUsdt`;
+                                // older callers read `rewards`. Accept both.
+                                const rewardsNum = Number(
+                                    (item as any).rewardInUsdt ?? item.rewards
+                                );
+                                const rewardsStr = Number.isFinite(rewardsNum)
+                                    ? rewardsNum.toFixed(2)
+                                    : '0.00';
+                                return (
+                                    <View key={index} style={styles.tableRow}>
+                                        <Text style={styles.tableCellText}>{item.rank ?? index + 1}</Text>
+                                        <Text style={[styles.tableCellText, { flex: 2 }]}>{truncated}</Text>
+                                        <Text style={styles.tableCellText}>{item.invites ?? 0}</Text>
+                                        <Text style={[styles.tableCellText, styles.rebateText]}>${rewardsStr}</Text>
+                                    </View>
+                                );
+                            })}
                         </View>
                     )}
                 </View>

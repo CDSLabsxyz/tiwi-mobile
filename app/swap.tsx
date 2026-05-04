@@ -494,7 +494,7 @@ export default function SwapScreen() {
             setIsLoadingQuote(false);
             setIsRefreshing(false);
         }
-    }, [fromAmount, fromToken, toToken, address, region, currency]);
+    }, [fromAmount, fromToken, toToken, address, region, currency, slippage]);
 
     useEffect(() => {
         // Only run initial fetch if values actually changed
@@ -502,7 +502,7 @@ export default function SwapScreen() {
             updateQuote(false);
         }, 500);
         return () => clearTimeout(timer);
-    }, [fromAmount, fromToken, toToken, updateQuote]);
+    }, [fromAmount, fromToken, toToken, slippage, updateQuote]);
 
     // 60-second Heartbeat Auto-Refresh
     useEffect(() => {
