@@ -1,8 +1,9 @@
 import { colors } from '@/constants/colors';
 import { truncateAddress } from '@/utils/wallet';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { useFocusEffect } from '@react-navigation/native';
 import { Image } from 'expo-image';
-import React from 'react';
+import React, { useCallback } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 interface HeaderProps {
@@ -88,7 +89,16 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
     const router = useRouter();
     const { address, activeChain, activeNetworkId } = useWalletStore();
-    const { unreadCount } = useNotifications();
+    const { unreadCount, refresh: refreshNotifications } = useNotifications();
+
+    // Refresh the unread badge whenever the screen regains focus (e.g. user
+    // navigates back from /notifications after reading items). Without this,
+    // the badge would stay stale until the 200s poll fires.
+    useFocusEffect(
+        useCallback(() => {
+            refreshNotifications();
+        }, [refreshNotifications])
+    );
     const fullAddress = walletAddress || address || '';
     const displayAddress = truncateAddress(fullAddress, 4, 3);
 
@@ -172,8 +182,8 @@ export const Header: React.FC<HeaderProps> = ({
                 <TouchableOpacity onPress={() => router.push('/scanner' as any)} style={styles.iconButton} activeOpacity={0.7}>
                     <Ionicons name="scan-outline" size={24} color={colors.titleText} />
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => router.push('/browser' as any)} style={styles.iconButton} activeOpacity={0.7}>
-                    <Ionicons name="compass-outline" size={24} color={colors.titleText} />
+                <TouchableOpacity onPress={() => router.push('/settings' as any)} style={styles.iconButton} activeOpacity={0.7}>
+                    <Ionicons name="settings-outline" size={24} color={colors.titleText} />
                 </TouchableOpacity>
                 {/* <TouchableOpacity onPress={onScanPress} style={styles.iconButton} activeOpacity={0.7}>
                     <Image source={Scan} style={styles.icon} contentFit="contain" />

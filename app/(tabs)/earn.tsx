@@ -19,9 +19,11 @@ import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { Header } from '@/components/ui/header';
 import { TIWILoader } from '@/components/ui/TIWILoader';
 import { colors } from '@/constants/colors';
+import { TIWI_API_BASE_URL } from '@/lib/mobile/api-client';
 import { stakingService, type StakingPool, type UserStake } from '@/services/stakingService';
 import { useWalletStore } from '@/store/walletStore';
 import { useStakingStore } from '@/store/stakingStore';
+import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, usePathname, useRouter } from 'expo-router';
 import React, { useEffect, useState, useMemo } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -80,6 +82,35 @@ export default function EarnScreen() {
         swapWallet,
         liveRewards
     } = useStakingStore();
+
+    // Unread admin/agent replies on the user's staking-support chat. Drives
+    // the bell badge on the Staking Support entry card above the stats box.
+    const [supportUnread, setSupportUnread] = useState(0);
+    useEffect(() => {
+        if (!walletAddress) {
+            setSupportUnread(0);
+            return;
+        }
+        let cancelled = false;
+        const fetchUnread = async () => {
+            try {
+                const res = await fetch(
+                    `${TIWI_API_BASE_URL}/api/v1/staking-support/chats?userWallet=${encodeURIComponent(walletAddress)}`,
+                );
+                if (!res.ok) return;
+                const data = await res.json();
+                if (!cancelled) setSupportUnread(data.chat?.unreadUser ?? 0);
+            } catch {
+                /* polling failures are non-fatal */
+            }
+        };
+        fetchUnread();
+        const id = setInterval(fetchUnread, 10_000);
+        return () => {
+            cancelled = true;
+            clearInterval(id);
+        };
+    }, [walletAddress, pathname]);
 
     // Atomic wallet transition the moment the active wallet changes:
     // a single set() inside swapWallet replaces wallet A's positions/history
@@ -210,14 +241,46 @@ export default function EarnScreen() {
                 }
             >
                 <View style={styles.mainContent}>
-                    {/* Top Level Category Tabs (Staking, Farming, etc) */}
+                    {/* Top Level Category Tabs hidden — only Staking is active for now
                     <View style={{ marginBottom: 8, width: '100%' }}>
                         <EarnTabSwitcher activeTab={activeTab} onTabChange={setActiveTab} />
                     </View>
+                    */}
 
                     {/* Staking Tab Content */}
                     {activeTab === 'staking' && (
                         <View style={styles.tabContent}>
+                            {/* Staking Support entry point — sits above the stats card so
+                                users can jump to the help chat from the top of the page.
+                                When there are unread admin/agent replies, a bell + counter
+                                surfaces on the right. */}
+                            <TouchableOpacity
+                                activeOpacity={0.85}
+                                onPress={() => router.push('/earn/staking-support' as any)}
+                                style={styles.supportEntry}
+                            >
+                                <View style={styles.supportEntryIcon}>
+                                    <Text style={styles.supportEntryIconText}>?</Text>
+                                </View>
+                                <View style={{ flex: 1 }}>
+                                    <Text style={styles.supportEntryTitle}>Staking Support</Text>
+                                    <Text style={styles.supportEntrySub}>
+                                        Need a hand? Chat with our team about staking issues.
+                                    </Text>
+                                </View>
+                                {supportUnread > 0 && (
+                                    <View style={styles.supportBellWrap}>
+                                        <Ionicons name="notifications" size={18} color="#b1f128" />
+                                        <View style={styles.supportBellBadge}>
+                                            <Text style={styles.supportBellBadgeText}>
+                                                {supportUnread > 9 ? '9+' : String(supportUnread)}
+                                            </Text>
+                                        </View>
+                                    </View>
+                                )}
+                                <Text style={styles.supportEntryChevron}>›</Text>
+                            </TouchableOpacity>
+
                             {/* Total Staked Card (Web-style mobile grid) */}
                             <TotalStakedCard
                                 overallTvl={globalStats.overallTvl}
@@ -381,6 +444,71 @@ const styles = StyleSheet.create({
     subTabText: {
         fontFamily: 'Manrope-SemiBold',
         fontSize: 14,
+    },
+    supportEntry: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        backgroundColor: '#0f130d',
+        borderColor: '#1f261e',
+        borderWidth: 1,
+        borderRadius: 14,
+        paddingHorizontal: 14,
+        paddingVertical: 12,
+    },
+    supportEntryIcon: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        backgroundColor: 'rgba(177,241,40,0.12)',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    supportEntryIconText: {
+        color: '#b1f128',
+        fontFamily: 'Manrope-Bold',
+        fontSize: 18,
+        lineHeight: 20,
+    },
+    supportEntryTitle: {
+        color: '#fff',
+        fontFamily: 'Manrope-SemiBold',
+        fontSize: 14,
+    },
+    supportEntrySub: {
+        color: '#b5b5b5',
+        fontFamily: 'Manrope-Regular',
+        fontSize: 12,
+        marginTop: 2,
+    },
+    supportEntryChevron: {
+        color: '#b5b5b5',
+        fontSize: 22,
+        marginLeft: 4,
+    },
+    supportBellWrap: {
+        marginRight: 6,
+        position: 'relative',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    supportBellBadge: {
+        position: 'absolute',
+        top: -6,
+        right: -8,
+        minWidth: 18,
+        height: 18,
+        paddingHorizontal: 4,
+        borderRadius: 9,
+        backgroundColor: '#ef4444',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    supportBellBadgeText: {
+        color: '#fff',
+        fontFamily: 'Manrope-Bold',
+        fontSize: 10,
+        lineHeight: 12,
     },
     cardsList: {
         flexDirection: 'column',

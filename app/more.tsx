@@ -93,36 +93,6 @@ const allActions: MoreAction[] = [
         route: '/activities',
         category: 'popular',
     },
-    // Coming soon
-    {
-        id: 'pool',
-        label: 'Pool',
-        icon: require('../assets/home/coins-02-1.svg'),
-        // route: '/pool',
-        category: 'coming-soon',
-        disabled: true,
-    },
-    {
-        id: 'pay',
-        label: 'Pay',
-        icon: require('../assets/home/more/payment-02.svg'),
-        category: 'coming-soon',
-        disabled: true,
-    },
-    {
-        id: 'lend',
-        label: 'Lend',
-        icon: require('../assets/home/more/money-send-flow-02.svg'),
-        category: 'coming-soon',
-        disabled: true,
-    },
-    {
-        id: 'vote',
-        label: 'Vote',
-        icon: require('../assets/home/more/user-dollar.svg'),
-        category: 'coming-soon',
-        disabled: true,
-    },
 ];
 
 // Convert to searchable items
@@ -185,14 +155,11 @@ export default function MoreScreen() {
     // Group actions by category
     const recommendedActions = filteredActions.filter((a) => a.category === 'recommended');
     const popularActions = filteredActions.filter((a) => a.category === 'popular');
-    const comingSoonActions = filteredActions.filter((a) => a.category === 'coming-soon');
-    console.log("🚀 ~ MoreScreen ~ comingSoonActions:", comingSoonActions)
 
     // Show sections only if they have items after filtering
     // When no search query, show all sections
     const showRecommended = searchQuery.trim() ? recommendedActions.length > 0 : true;
     const showPopular = searchQuery.trim() ? popularActions.length > 0 : true;
-    const showComingSoon = searchQuery.trim() ? comingSoonActions.length > 0 : true;
 
     return (
         <View style={[styles.container, { backgroundColor: colors.bg }]}>
@@ -323,51 +290,6 @@ export default function MoreScreen() {
                                             style={[
                                                 styles.actionLabel,
                                                 { color: action.disabled ? colors.mutedText : colors.titleText }
-                                            ]}
-                                        >
-                                            {action.label}
-                                        </Text>
-                                    </TouchableOpacity>
-                                );
-                            })}
-                        </View>
-                    </View>
-                )}
-
-                {/* Coming Soon Section */}
-                {showComingSoon && (
-                    <View style={styles.sectionContainer}>
-                        <Text style={styles.sectionTitle}>
-                            Coming soon
-                        </Text>
-                        <View style={styles.gridContainer}>
-                            {Array.from({ length: 5 }).map((_, index) => {
-                                const action = comingSoonActions[index];
-                                if (!action) {
-                                    return <View key={`empty-${index}`} style={styles.emptyAction} />;
-                                }
-                                return (
-                                    <TouchableOpacity
-                                        key={action.id}
-                                        onPress={() => handleActionPress(action)}
-                                        disabled={action.disabled}
-                                        style={[styles.actionItem, { opacity: action.disabled ? 0.5 : 1 }]}
-                                    >
-                                        <View style={styles.iconContainer}>
-                                            {typeof action.icon === 'string' ? (
-                                                <Ionicons name={action.icon as any} size={24} color={colors.titleText} />
-                                            ) : (
-                                                <Image
-                                                    source={action.icon}
-                                                    style={styles.actionIcon}
-                                                    contentFit="contain"
-                                                />
-                                            )}
-                                        </View>
-                                        <Text
-                                            style={[
-                                                styles.actionLabel,
-                                                { color: colors.mutedText } // Grayed out for coming soon
                                             ]}
                                         >
                                             {action.label}

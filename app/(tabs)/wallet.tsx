@@ -353,7 +353,7 @@ export default function WalletScreen() {
                     <QuickActions
                         onSendPress={() => router.push('/send')}
                         onReceivePress={() => router.push('/receive')}
-                        onPayPress={() => { /* TODO: Implement Pay logic */ }}
+                        onReferralsPress={() => router.push('/referral')}
                         onActivitiesPress={() => router.push('/activities')}
                     />
 

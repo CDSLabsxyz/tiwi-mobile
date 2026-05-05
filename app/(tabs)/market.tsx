@@ -658,14 +658,15 @@ export default function MarketScreen() {
 
             {/* Header with Tabs */}
             <View style={[styles.headerContainer, { paddingTop: top }]}>
-                {/* Spot/Perp Tabs */}
+                {/* Header title row */}
                 <View style={styles.mainTabsContainer}>
+                    <Text style={styles.headerTitle}>Swap</Text>
+                    {/* legacy tab scroller hidden — only Swap is active for now
                     <ScrollView
                         horizontal
                         showsHorizontalScrollIndicator={false}
                         contentContainerStyle={styles.tabsLeft}
                     >
-                        {/* Swap Tab */}
                         <TouchableOpacity
                             onPress={() => setMarketType('all')}
                             style={styles.tabButton}
@@ -688,7 +689,7 @@ export default function MarketScreen() {
                                 </View>
                             )}
                         </TouchableOpacity>
-                        {/* Spot Tab */}
+                        {/* Spot / Perp / Stocks / Forex tabs hidden for now
                         <TouchableOpacity
                             onPress={() => setMarketType('Spot')}
                             style={styles.tabButton}
@@ -712,7 +713,6 @@ export default function MarketScreen() {
                             )}
                         </TouchableOpacity>
 
-                        {/* Perp Tab */}
                         <TouchableOpacity
                             onPress={() => setMarketType('Perps')}
                             style={styles.tabButton}
@@ -736,7 +736,6 @@ export default function MarketScreen() {
                             )}
                         </TouchableOpacity>
 
-                        {/* Stocks Tab */}
                         <TouchableOpacity
                             onPress={() => setMarketType('Stocks')}
                             style={styles.tabButton}
@@ -760,7 +759,6 @@ export default function MarketScreen() {
                             )}
                         </TouchableOpacity>
 
-                        {/* Forex Tab */}
                         <TouchableOpacity
                             onPress={() => setMarketType('Forex')}
                             style={styles.tabButton}
@@ -784,11 +782,12 @@ export default function MarketScreen() {
                             )}
                         </TouchableOpacity>
                     </ScrollView>
+                    end legacy tab scroller */}
 
                     {/* Search Icon */}
                     <TouchableOpacity
                         onPress={handleSearchPress}
-                        style={styles.iconMedium}
+                        style={styles.headerSearchIcon}
                     >
                         <Image
                             source={SearchIcon}
@@ -953,6 +952,14 @@ const styles = StyleSheet.create({
         width: 24,
         height: 24,
     },
+    headerSearchIcon: {
+        width: 24,
+        height: 24,
+        position: 'absolute',
+        right: 20,
+        top: '50%',
+        marginTop: -12,
+    },
     searchInputContainer: {
         flex: 1,
         flexDirection: 'row',
@@ -1006,10 +1013,18 @@ const styles = StyleSheet.create({
     },
     mainTabsContainer: {
         flexDirection: 'row',
-        alignItems: 'flex-start',
-        justifyContent: 'space-between',
+        alignItems: 'center',
+        justifyContent: 'center',
         paddingHorizontal: 20,
-        paddingVertical: 0,
+        paddingVertical: 12,
+        position: 'relative',
+    },
+    headerTitle: {
+        fontFamily: 'Manrope-SemiBold',
+        fontSize: 18,
+        lineHeight: 24,
+        color: colors.titleText,
+        textAlign: 'center',
     },
     tabsLeft: {
         flexDirection: 'row',

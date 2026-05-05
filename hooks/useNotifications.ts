@@ -1,9 +1,11 @@
 import { activityService, UserActivity } from '@/services/activityService';
 import { AdminNotification, adminNotificationService } from '@/services/adminNotificationService';
 import { useWalletStore } from '@/store/walletStore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 const POLLING_INTERVAL = 200000; // 200 seconds as requested
+const READ_CUTOFF_KEY = (addr: string) => `notifications:read-cutoff:${addr.toLowerCase()}`;
 
 export function useNotifications() {
     const { address } = useWalletStore();
@@ -25,6 +27,10 @@ export function useNotifications() {
         if (showLoading) setLoading(true);
 
         try {
+            // Read the per-wallet "mark all read" cutoff
+            const cutoffRaw = await AsyncStorage.getItem(READ_CUTOFF_KEY(address)).catch(() => null);
+            const cutoffMs = cutoffRaw ? parseInt(cutoffRaw, 10) || 0 : 0;
+
             // Fetch both personal activities and global admin notifications
             const [localActivities, { notifications: globalNotifications, unreadCount: adminUnreadCount }] = await Promise.all([
                 activityService.getActivities(address, 50),
@@ -43,8 +49,12 @@ export function useNotifications() {
             const vIds = new Set(globalNotifications.map(n => n.id).filter(id => !unreadAdminIds.has(id)));
             setViewedAdminIds(vIds);
 
-            // Calculate totals
-            const localUnread = localActivities.filter(a => !a.is_read).length;
+            // Calculate totals — local activities older than cutoff are read
+            const localUnread = localActivities.filter(a => {
+                if (a.is_read) return false;
+                if (cutoffMs && a.created_at && new Date(a.created_at).getTime() <= cutoffMs) return false;
+                return true;
+            }).length;
             setUnreadCount(localUnread + adminUnreadCount);
 
         } catch (error) {

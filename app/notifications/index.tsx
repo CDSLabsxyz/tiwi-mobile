@@ -2,6 +2,7 @@ import { colors } from '@/constants/colors';
 import { activityService, ActivityType } from '@/services/activityService';
 import { useWalletStore } from '@/store/walletStore';
 import { useUnifiedActivities } from '@/hooks/useUnifiedActivities';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { formatDistanceToNow } from 'date-fns';
 import { useRouter } from 'expo-router';
 import { Image } from 'expo-image';
@@ -31,15 +32,28 @@ const CATEGORIES: { label: string; value: ActivityType | 'all' | 'announcement' 
     { label: 'Transactions', value: 'transaction' },
 ];
 
+// Per-wallet "mark all read" cutoff. Anything older is treated as read for
+// activity items that have no server-side read state (global tx/NFT rows).
+const READ_CUTOFF_KEY = (addr: string) => `notifications:read-cutoff:${addr.toLowerCase()}`;
+
 export default function NotificationsScreen() {
     const router = useRouter();
     const { address } = useWalletStore();
     const [filter, setFilter] = useState<ActivityType | 'all' | 'announcement'>('all');
     const [viewedAdminIds, setViewedAdminIds] = useState<Set<string>>(new Set());
+    const [readCutoff, setReadCutoff] = useState<number>(0);
 
     const { data: unifiedActivities = [], isLoading: isUnifiedLoading, refetch: refetchUnified } = useUnifiedActivities(100);
     const [liveAnnouncements, setLiveAnnouncements] = useState<any[]>([]);
     const [isLoadingAnnouncements, setIsLoadingAnnouncements] = useState(false);
+
+    // Hydrate read cutoff for this wallet
+    useEffect(() => {
+        if (!address) return;
+        AsyncStorage.getItem(READ_CUTOFF_KEY(address))
+            .then(raw => setReadCutoff(raw ? parseInt(raw, 10) || 0 : 0))
+            .catch(() => setReadCutoff(0));
+    }, [address]);
 
     const fetchAnnouncements = useCallback(async () => {
         if (!address) return;
@@ -94,6 +108,16 @@ export default function NotificationsScreen() {
         // Mark activities read locally
         await activityService.markAllAsRead(address);
 
+        // Bump the per-wallet read cutoff so global tx/NFT rows (which have no
+        // server-side read flag) render as read going forward.
+        const nowMs = Date.now();
+        try {
+            await AsyncStorage.setItem(READ_CUTOFF_KEY(address), String(nowMs));
+        } catch (e) {
+            console.warn('Failed to persist read cutoff', e);
+        }
+        setReadCutoff(nowMs);
+
         // Mark announcements read remotely
         if (liveAnnouncements.length > 0) {
             try {
@@ -141,7 +165,12 @@ export default function NotificationsScreen() {
     };
 
     const isUnread = (item: any) => {
-        if (item.displayType === 'activity') return !item.is_read;
+        if (item.displayType === 'activity') {
+            if (item.is_read) return false;
+            // Treat anything older than the per-wallet read cutoff as read
+            if (readCutoff && item.timestamp && item.timestamp <= readCutoff) return false;
+            return !item.is_read;
+        }
         return !viewedAdminIds.has(item.id);
     };
 

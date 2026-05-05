@@ -1,5 +1,6 @@
 import { colors } from '@/constants/colors';
 import { useTranslation } from '@/hooks/useLocalization';
+import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import React from 'react';
@@ -10,6 +11,7 @@ interface QuickAction {
     label: string;
     icon: any;
     route: string;
+    ioniconName?: keyof typeof Ionicons.glyphMap;
 }
 
 /**
@@ -24,8 +26,8 @@ export const QuickActionsSection: React.FC = () => {
         { id: 'swap', label: t('nav.swap'), icon: require('../../../assets/home/exchange-01.svg'), route: '/swap' },
         { id: 'stake', label: t('home.stake'), icon: require('../../../assets/home/stake-1.svg'), route: '/earn' },
         // { id: 'pool', label: 'Pool', icon: require('../../../assets/home/coins-02-1.svg'), route: '/pool' },
-        { id: 'history', label: 'History', icon: require('../../../assets/home/transaction-history.svg'), route: '/activities' },
-        { id: 'settings', label: 'Settings', icon: require('../../../assets/home/settings-03.svg'), route: '/settings' },
+        { id: 'referrals', label: 'Referrals', icon: null, ioniconName: 'gift-outline' as const, route: '/referral' },
+        { id: 'browser', label: 'Browser', icon: null, ioniconName: 'compass-outline' as const, route: '/browser' },
         { id: 'more', label: 'More', icon: require('../../../assets/home/dashboard-square-edit.svg'), route: '/more' },
     ];
 
@@ -39,11 +41,15 @@ export const QuickActionsSection: React.FC = () => {
                     activeOpacity={0.7}
                 >
                     <View style={styles.iconWrapper}>
-                        <Image
-                            source={action.icon}
-                            style={styles.icon}
-                            contentFit="contain"
-                        />
+                        {action.ioniconName ? (
+                            <Ionicons name={action.ioniconName} size={24} color={colors.titleText} />
+                        ) : (
+                            <Image
+                                source={action.icon}
+                                style={styles.icon}
+                                contentFit="contain"
+                            />
+                        )}
                     </View>
                     <Text style={styles.label}>
                         {action.label}

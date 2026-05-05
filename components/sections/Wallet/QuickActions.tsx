@@ -1,23 +1,23 @@
 /**
  * Quick Actions Component
- * Four action buttons: Send, Receive, Pay, Activities
+ * Four action buttons: Send, Receive, Referrals, Activities
  */
 
 import { colors } from '@/constants/colors';
 import { useTranslation } from '@/hooks/useLocalization';
+import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 const SendIcon = require("@/assets/wallet/navigation-03.svg");
 const ReceiveIcon = require("@/assets/wallet/download-04.svg");
-const PayIcon = require("@/assets/home/more/payment-02.svg");
 const ActivitiesIcon = require("@/assets/home/transaction-history.svg");
 
 interface QuickActionsProps {
     onSendPress?: () => void;
     onReceivePress?: () => void;
-    onPayPress?: () => void;
+    onReferralsPress?: () => void;
     onActivitiesPress?: () => void;
 }
 
@@ -27,7 +27,7 @@ interface QuickActionsProps {
 export const QuickActions: React.FC<QuickActionsProps> = ({
     onSendPress,
     onReceivePress,
-    onPayPress,
+    onReferralsPress,
     onActivitiesPress,
 }) => {
     const { t } = useTranslation();
@@ -35,21 +35,25 @@ export const QuickActions: React.FC<QuickActionsProps> = ({
     const actions = [
         {
             icon: SendIcon,
+            ioniconName: undefined as keyof typeof Ionicons.glyphMap | undefined,
             label: t('nav.send'),
             onPress: onSendPress,
         },
         {
             icon: ReceiveIcon,
+            ioniconName: undefined as keyof typeof Ionicons.glyphMap | undefined,
             label: t('nav.receive'),
             onPress: onReceivePress,
         },
         {
-            icon: PayIcon,
-            label: t('nav.pay'),
-            onPress: onPayPress,
+            icon: null,
+            ioniconName: 'gift-outline' as keyof typeof Ionicons.glyphMap | undefined,
+            label: 'Referrals',
+            onPress: onReferralsPress,
         },
         {
             icon: ActivitiesIcon,
+            ioniconName: undefined as keyof typeof Ionicons.glyphMap | undefined,
             label: t('nav.activities'),
             onPress: onActivitiesPress,
         },
@@ -73,12 +77,15 @@ export const QuickActions: React.FC<QuickActionsProps> = ({
                     {/* Icon Container */}
                     <View style={styles.iconContainer}>
                         <View style={styles.iconWrapper}>
-                            <Image
-                                source={action.icon}
-                                style={styles.fullSize}
-                                contentFit="contain"
-                            // tintColor={colors.titleText}
-                            />
+                            {action.ioniconName ? (
+                                <Ionicons name={action.ioniconName} size={24} color={colors.titleText} />
+                            ) : (
+                                <Image
+                                    source={action.icon}
+                                    style={styles.fullSize}
+                                    contentFit="contain"
+                                />
+                            )}
                         </View>
                     </View>
 
