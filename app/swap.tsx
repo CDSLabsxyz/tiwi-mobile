@@ -504,17 +504,20 @@ export default function SwapScreen() {
         return () => clearTimeout(timer);
     }, [fromAmount, fromToken, toToken, slippage, updateQuote]);
 
-    // 60-second Heartbeat Auto-Refresh
+    // 60-second Heartbeat Auto-Refresh — fires only after the user has been
+    // idle for 60s. Including fromAmount/fromToken/toToken/slippage in deps
+    // means every keystroke or token change resets the clock, so the heartbeat
+    // never fights with active typing or interrupts mid-input.
     useEffect(() => {
         if (!swapQuote || isLoadingQuote || isRefreshing || isLoadingSwap) return;
 
         const interval = setInterval(() => {
-            console.log("[Swap] 60s passed, refreshing quote...");
+            console.log("[Swap] 60s idle, refreshing quote...");
             updateQuote(true);
         }, 60000);
 
         return () => clearInterval(interval);
-    }, [swapQuote, isLoadingQuote, isRefreshing, isLoadingSwap, updateQuote]);
+    }, [swapQuote, isLoadingQuote, isRefreshing, isLoadingSwap, fromAmount, fromToken, toToken, slippage, updateQuote]);
 
     // Update From Fiat whenever amount or token changes
     useEffect(() => {

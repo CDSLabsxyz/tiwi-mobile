@@ -15,13 +15,11 @@ interface UseTokensParams {
 export function useTokens({ query, chains, limit = 50, enabled = true, category }: UseTokensParams) {
     const queryResult = useQuery({
         queryKey: ['tokensList', query, chains, limit, category],
-        queryFn: async (): Promise<TokensResponse> => {
-            return api.tokens.list({
-                query,
-                chains,
-                limit,
-                category,
-            });
+        queryFn: async ({ signal }): Promise<TokensResponse> => {
+            return api.tokens.list(
+                { query, chains, limit, category },
+                { signal },
+            );
         },
         enabled,
         staleTime: 1000 * 60 * 10,

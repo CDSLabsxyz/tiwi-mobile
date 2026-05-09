@@ -111,35 +111,7 @@ export async function fetchSwapQuote(
     // tokens without completing the swap. For same-chain, go straight to native DEX routing.
     const isSameChain = Number(fromToken.chainId) === Number(toToken.chainId);
 
-    if (!isSolanaSwap && !isSameChain) {
-        try {
-            console.log(`[SwapService] Cross-chain swap — checking Relay Protocol first...`);
-            const relayQuote = await relayService.fetchRelayQuote(fromAmount, fromToken, toToken, fromAddress, recipient, slippage);
-
-            if (relayQuote) {
-                console.log(`[SwapService] Using Relay Protocol quote for ${fromToken.symbol} -> ${toToken.symbol}`);
-                return relayQuote;
-            }
-        } catch (relayError) {
-            console.warn(`[SwapService] Relay quote fetch failed or unavailable, falling back to Tiwi Routing Engine:`, relayError);
-        }
-    } else if (!isSolanaSwap && isSameChain) {
-        console.log(`[SwapService] Same-chain swap (${fromToken.symbol} -> ${toToken.symbol} on chain ${fromToken.chainId}) — skipping Relay, using native DEX routing`);
-    } else {
-        console.log(`[SwapService] Solana swap detected — using Jupiter direct`);
-
-        // Direct Jupiter quote + swap transaction
-        try {
-            const jupiterQuote = await fetchJupiterQuote(fromAmount, fromToken, toToken, fromAddress, slippage);
-            if (jupiterQuote) return jupiterQuote;
-        } catch (jupError: any) {
-            console.warn('[SwapService] Jupiter direct failed:', jupError.message);
-        }
-    }
-
-    try {
-        console.log(`[SwapService] Using Tiwi Routing Engine for ${fromToken.symbol} -> ${toToken.symbol}`);
-
+    const fetchTiwiRouteQuote = async (): Promise<SwapQuote> => {
         const routeReq: RouteRequest = {
             fromToken: {
                 chainId: fromToken.chainId,
@@ -170,17 +142,14 @@ export async function fetchSwapQuote(
         // Force routing through DexExecutor which uses the FoT-compatible PancakeSwap router.
         let router = response.route.router;
         let transactionRequest = response.transactionRequest;
-        const isSameChain = Number(fromToken.chainId) === Number(toToken.chainId);
+        const sameChainResp = Number(fromToken.chainId) === Number(toToken.chainId);
 
-        if (router === 'relay' && isSameChain) {
+        if (router === 'relay' && sameChainResp) {
             console.log(`[SwapService] Same-chain swap — forcing DexExecutor (discarding Relay tx)`);
             router = 'dex';
-            // Clear transactionRequest — DexExecutor will construct its own using
-            // swapExactTokensForTokensSupportingFeeOnTransferTokens which handles tax tokens.
             transactionRequest = undefined;
         }
 
-        // Map RouteResponse to SwapQuote (UI Compatibility)
         return {
             toAmount: response.route.toToken?.amount || '0',
             fiatAmount: response.route.toToken?.amountUSD || '0',
@@ -194,9 +163,50 @@ export async function fetchSwapQuote(
             raw: response.route.raw,
             quoteId: response.route.routeId,
         };
-    } catch (error: any) {
-        console.error('[SwapService] fetchSwapQuote failed:', error);
-        throw error;
+    };
+
+    if (!isSolanaSwap && !isSameChain) {
+        // Cross-chain: race Relay against the Tiwi Routing Engine. First successful
+        // quote wins — historically these were called serially and a slow/timed-out
+        // Relay request doubled the user-perceived quote time.
+        console.log(`[SwapService] Cross-chain swap — racing Relay vs Tiwi Routing Engine`);
+        const relayPromise = relayService
+            .fetchRelayQuote(fromAmount, fromToken, toToken, fromAddress, recipient, slippage)
+            .then((q) => {
+                if (!q) throw new Error('Relay returned no quote');
+                return q;
+            });
+        try {
+            const winner = await Promise.any([relayPromise, fetchTiwiRouteQuote()]);
+            console.log(`[SwapService] Cross-chain quote winner: ${winner.router || winner.source?.[0]}`);
+            return winner;
+        } catch (err: any) {
+            // Both providers failed
+            console.error('[SwapService] Both Relay and Tiwi Routing Engine failed:', err);
+            throw new Error('No swap route found');
+        }
+    } else if (!isSolanaSwap && isSameChain) {
+        console.log(`[SwapService] Same-chain swap (${fromToken.symbol} -> ${toToken.symbol} on chain ${fromToken.chainId}) — using native DEX routing`);
+        try {
+            return await fetchTiwiRouteQuote();
+        } catch (error: any) {
+            console.error('[SwapService] fetchSwapQuote failed:', error);
+            throw error;
+        }
+    } else {
+        console.log(`[SwapService] Solana swap detected — using Jupiter direct`);
+        try {
+            const jupiterQuote = await fetchJupiterQuote(fromAmount, fromToken, toToken, fromAddress, slippage);
+            if (jupiterQuote) return jupiterQuote;
+        } catch (jupError: any) {
+            console.warn('[SwapService] Jupiter direct failed:', jupError.message);
+        }
+        try {
+            return await fetchTiwiRouteQuote();
+        } catch (error: any) {
+            console.error('[SwapService] fetchSwapQuote failed:', error);
+            throw error;
+        }
     }
 }
 

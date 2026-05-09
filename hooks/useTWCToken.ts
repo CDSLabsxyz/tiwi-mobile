@@ -36,7 +36,7 @@ export const useTWCToken = () => {
             });
             return resp.tokens.length > 0 ? resp.tokens[0] : null;
         },
-        staleTime: 30 * 1000, // 30 seconds
+        staleTime: 3 * 60 * 1000, // 3 minutes
         initialData: diskCache?.data,
         initialDataUpdatedAt: diskCache?.updatedAt,
     });

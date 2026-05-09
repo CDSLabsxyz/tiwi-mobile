@@ -48,7 +48,7 @@ jobs:
       - name: Build Android APK on EAS
         run: |
           # Start the build on EAS servers and wait for it to finish
-          eas build --platform android --profile preview --non-interactive --json > build-result.json 2>&1 || true
+          eas build --platform android --profile production --non-interactive --json > build-result.json 2>&1 || true
 
           # Extract the build URL from EAS output
           BUILD_URL=$(cat build-result.json | node -e "

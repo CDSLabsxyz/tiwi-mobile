@@ -69,8 +69,8 @@ export const useTWCSupply = () => {
                 return { totalSupply: FALLBACK_TOTAL_SUPPLY, circulatingSupply: 0, updatedAt: null };
             }
         },
-        staleTime: 30 * 1000,
-        gcTime: 5 * 60 * 1000,
+        staleTime: 5 * 60 * 1000,
+        gcTime: 30 * 60 * 1000,
         initialData: diskCache?.data,
         initialDataUpdatedAt: diskCache?.updatedAt,
     });

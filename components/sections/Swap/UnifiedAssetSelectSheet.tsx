@@ -8,7 +8,7 @@ import { formatTokenQuantity, formatUSDPrice, getColorFromSeed } from '@/utils/f
 import { Ionicons } from '@expo/vector-icons';
 import { Image as ExpoImage } from 'expo-image';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Dimensions, FlatList, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Dimensions, FlatList, ScrollView, SectionList, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useWalletStore, ChainType } from '@/store/walletStore';
 import { useCustomTokenStore } from '@/store/customTokenStore';
@@ -596,6 +596,10 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
                     contentContainerStyle={styles.scrollContent}
                     showsVerticalScrollIndicator={false}
                     keyboardShouldPersistTaps="handled"
+                    initialNumToRender={12}
+                    maxToRenderPerBatch={12}
+                    windowSize={7}
+                    removeClippedSubviews
                 />
             );
         }
@@ -603,34 +607,37 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
         const owned = tokenOptions.filter(t => t.isOwned);
         const others = tokenOptions.filter(t => !t.isOwned);
 
+        const sections = [
+            ...(owned.length > 0 ? [{ title: 'Your Assets', data: owned }] : []),
+            ...(others.length > 0 ? [{ title: 'Other Tokens', data: others }] : []),
+        ];
+
+        if (sections.length === 0) {
+            return (
+                <View style={styles.emptyContainer}>
+                    <Text style={styles.emptyText}>No tokens found</Text>
+                </View>
+            );
+        }
+
         return (
-            <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-                {owned.length > 0 && (
-                    <>
-                        <Text style={styles.sectionHeader}>Your Assets</Text>
-                        {owned.map(t => (
-                            <React.Fragment key={`owned-${t.id}`}>
-                                {renderTokenItem({ item: t })}
-                            </React.Fragment>
-                        ))}
-                    </>
+            <SectionList
+                sections={sections}
+                renderItem={renderTokenItem}
+                renderSectionHeader={({ section }) => (
+                    <Text style={styles.sectionHeader}>{section.title}</Text>
                 )}
-                {others.length > 0 && (
-                    <>
-                        <Text style={styles.sectionHeader}>Other Tokens</Text>
-                        {others.map(t => (
-                            <React.Fragment key={`other-${t.id}`}>
-                                {renderTokenItem({ item: t })}
-                            </React.Fragment>
-                        ))}
-                    </>
-                )}
-                {tokenOptions.length === 0 && (
-                    <View style={styles.emptyContainer}>
-                        <Text style={styles.emptyText}>No tokens found</Text>
-                    </View>
-                )}
-            </ScrollView>
+                keyExtractor={(item, index) => `${item.id}-${index}`}
+                style={styles.scroll}
+                contentContainerStyle={styles.scrollContent}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                stickySectionHeadersEnabled={false}
+                initialNumToRender={12}
+                maxToRenderPerBatch={12}
+                windowSize={7}
+                removeClippedSubviews
+            />
         );
     };
 

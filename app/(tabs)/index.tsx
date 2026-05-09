@@ -92,39 +92,27 @@ export default function HomeScreen() {
 
   React.useEffect(() => {
     const categories: ('hot' | 'new' | 'gainers' | 'losers')[] = ['hot', 'new', 'gainers', 'losers'];
-    const prefetch = async () => {
+
+    queryClient.prefetchQuery({
+      queryKey: ['spotlightTokens'],
+      queryFn: () => api.tokenSpotlight.get(),
+    });
+
+    for (const category of categories) {
       queryClient.prefetchQuery({
-        queryKey: ['spotlightTokens'],
-        queryFn: () => api.tokenSpotlight.get(),
+        queryKey: ['tokens', category, 5, undefined],
+        queryFn: () => api.market.pairs({ category, limit: 5 }),
+        staleTime: 60 * 1000,
       });
+    }
 
-      // Removed smartMarkets prefetch if deprecated or merged into tokens.list
-      // queryClient.prefetchQuery({
-      //   queryKey: ['smartMarkets'],
-      //   queryFn: () => api.tokens.list({ category: 'hot', limit: 30 }),
-      // });
-
-      for (const category of categories) {
-        queryClient.prefetchQuery({
-          queryKey: ['tokens', category, 5, undefined],
-          queryFn: () => api.market.pairs({ category, limit: 5 }),
-          staleTime: 60 * 1000,
-        });
-        await new Promise(resolve => setTimeout(resolve, 300));
-      }
-
-      if (marketFavorites.length > 0) {
-        for (const id of marketFavorites) {
-          const [chainId, address] = id.split('-');
-          queryClient.prefetchQuery({
-            queryKey: ['tokens', address, [parseInt(chainId)], 1],
-            queryFn: () => api.tokens.list({ address, chains: [parseInt(chainId)], limit: 1 }),
-          });
-          await new Promise(resolve => setTimeout(resolve, 100));
-        }
-      }
-    };
-    prefetch();
+    for (const id of marketFavorites) {
+      const [chainId, address] = id.split('-');
+      queryClient.prefetchQuery({
+        queryKey: ['tokens', address, [parseInt(chainId)], 1],
+        queryFn: () => api.tokens.list({ address, chains: [parseInt(chainId)], limit: 1 }),
+      });
+    }
   }, [queryClient, marketFavorites]);
 
   const onRefresh = useCallback(async () => {
@@ -197,9 +185,10 @@ export default function HomeScreen() {
         name: m.name,
         logo: m.logo
       })),
-      isLoading: isLoadingSpotlight || isLoadingChains || isLoadingTWCToken || isLoadingSmartMarkets || isLoadingTWCSupply,
     };
-  }, [spotlightTokens, isLoadingSpotlight, chains, twcToken, isLoadingChains, isLoadingTWCToken, smartMarkets, isLoadingSmartMarkets, isLoadingTWCSupply, formattedTWCPrice, formattedTWCMcap, formattedTWCVol, formattedTWCTotalSupply, t]);
+  }, [spotlightTokens, chains, smartMarkets, formattedTWCPrice, formattedTWCMcap, formattedTWCVol, formattedTWCTotalSupply, t]);
+
+  const isStatsLoading = isLoadingChains || isLoadingTWCToken || isLoadingTWCSupply;
 
   const handleOpenWallet = useCallback(() => {
     console.log('[HomeScreen] Opening Global Wallet Modal...');
@@ -236,16 +225,16 @@ export default function HomeScreen() {
             />
           }
         >
-          <NewsfeedSection items={homeData.newsfeed} isLoading={homeData.isLoading} />
+          <NewsfeedSection items={homeData.newsfeed} isLoading={false} />
 
           <View style={styles.paddedContent}>
             <QuickActionsSection />
             <UpdateBanner />
             <StakeBanner />
-            {(homeData.spotlight.length > 0 || homeData.isLoading) && (
+            {(homeData.spotlight.length > 0 || isLoadingSpotlight) && (
               <SpotlightSection
                 tokens={homeData.spotlight}
-                isLoading={homeData.isLoading}
+                isLoading={isLoadingSpotlight}
                 onTokenPress={(token) => {
                   const marketId = token.pair || token.symbol;
                   router.push({
@@ -260,9 +249,9 @@ export default function HomeScreen() {
                 }}
               />
             )}
-            <MarketSection isLoading={homeData.isLoading} />
-            <TradeStatsSection stats={homeData.stats} chains={chains} isLoading={homeData.isLoading} />
-            <SmartMarketsSection markets={homeData.dexMarkets} isLoading={homeData.isLoading} />
+            <MarketSection />
+            <TradeStatsSection stats={homeData.stats} chains={chains} isLoading={isStatsLoading} />
+            <SmartMarketsSection markets={homeData.dexMarkets} isLoading={isLoadingSmartMarkets} />
           </View>
         </ScrollView>
 

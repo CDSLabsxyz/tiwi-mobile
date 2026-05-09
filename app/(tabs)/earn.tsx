@@ -24,9 +24,9 @@ import { stakingService, type StakingPool, type UserStake } from '@/services/sta
 import { useWalletStore } from '@/store/walletStore';
 import { useStakingStore } from '@/store/stakingStore';
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams, usePathname, useRouter } from 'expo-router';
-import React, { useEffect, useState, useMemo } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useFocusEffect, useLocalSearchParams, usePathname, useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react';
+import { AppState, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // Mock token icon - in production, use actual token logo
@@ -85,14 +85,24 @@ export default function EarnScreen() {
 
     // Unread admin/agent replies on the user's staking-support chat. Drives
     // the bell badge on the Staking Support entry card above the stats box.
+    // Polling only runs while the Earn screen is focused AND the app is in
+    // the foreground — backgrounded tabs do nothing.
     const [supportUnread, setSupportUnread] = useState(0);
+    const [isScreenFocused, setIsScreenFocused] = useState(false);
+    useFocusEffect(
+        useCallback(() => {
+            setIsScreenFocused(true);
+            return () => setIsScreenFocused(false);
+        }, []),
+    );
+
     useEffect(() => {
-        if (!walletAddress) {
-            setSupportUnread(0);
+        if (!walletAddress || !isScreenFocused) {
             return;
         }
         let cancelled = false;
         const fetchUnread = async () => {
+            if (AppState.currentState !== 'active') return;
             try {
                 const res = await fetch(
                     `${TIWI_API_BASE_URL}/api/v1/staking-support/chats?userWallet=${encodeURIComponent(walletAddress)}`,
@@ -105,12 +115,12 @@ export default function EarnScreen() {
             }
         };
         fetchUnread();
-        const id = setInterval(fetchUnread, 10_000);
+        const id = setInterval(fetchUnread, 30_000);
         return () => {
             cancelled = true;
             clearInterval(id);
         };
-    }, [walletAddress, pathname]);
+    }, [walletAddress, isScreenFocused]);
 
     // Atomic wallet transition the moment the active wallet changes:
     // a single set() inside swapWallet replaces wallet A's positions/history
@@ -160,16 +170,22 @@ export default function EarnScreen() {
         setRefreshing(false);
     };
 
+    // Initial load fires once per wallet/tab change. Sub-tab switching is a
+    // pure UI filter on already-loaded state and must not retrigger fetches.
     useEffect(() => {
         loadData();
+    }, [walletAddress, activeTab]);
 
-        // Real-time auto-refresh every 30 seconds
+    // Auto-refresh only while the Earn screen is focused and the app is
+    // in the foreground. Backgrounded or other-tab = no refresh.
+    useEffect(() => {
+        if (!isScreenFocused || activeTab !== 'staking') return;
         const intervalId = setInterval(() => {
+            if (AppState.currentState !== 'active') return;
             fetchData();
         }, 30000);
-
         return () => clearInterval(intervalId);
-    }, [stakingSubTab, walletAddress, activeTab]);
+    }, [isScreenFocused, activeTab, walletAddress]);
 
     // Auto-expand the first stake whenever the relevant list changes, so users
     // land on a useful view instead of a pile of collapsed rows.

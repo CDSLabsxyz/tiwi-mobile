@@ -422,15 +422,18 @@ class TokensModule {
      * GET /api/v1/tokens
      * List / search tokens.
      */
-    list(params?: {
-        chains?: number[];
-        query?: string;
-        limit?: number;
-        address?: string;
-        category?: 'hot' | 'new' | 'gainers' | 'losers' | 'trending';
-        source?: 'market' | 'default' | 'dexscreener';
-        marketType?: 'spot' | 'perp';
-    }): Promise<TokensResponse> {
+    list(
+        params?: {
+            chains?: number[];
+            query?: string;
+            limit?: number;
+            address?: string;
+            category?: 'hot' | 'new' | 'gainers' | 'losers' | 'trending';
+            source?: 'market' | 'default' | 'dexscreener';
+            marketType?: 'spot' | 'perp';
+        },
+        options?: { signal?: AbortSignal }
+    ): Promise<TokensResponse> {
         const flat: Record<string, string | number | boolean | undefined | null> = {};
         if (params?.chains?.length) flat.chains = params.chains.join(',');
         if (params?.query) flat.query = params.query;
@@ -439,7 +442,7 @@ class TokensModule {
         if (params?.category) flat.category = params.category;
         if (params?.source) flat.source = params.source;
         if (params?.marketType) flat.marketType = params.marketType;
-        return apiFetch(this.base, '/api/v1/tokens', undefined, flat);
+        return apiFetch(this.base, '/api/v1/tokens', options?.signal ? { signal: options.signal } : undefined, flat);
     }
 }
 
