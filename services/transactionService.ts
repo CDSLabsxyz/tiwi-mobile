@@ -1,9 +1,9 @@
 import { DISPERSE_CONTRACTS } from '@/constants/contracts';
-import { getRpcUrl } from '@/constants/rpc';
+import { createTransportForChain } from '@/constants/rpc';
 import { useWalletStore } from '@/store/walletStore';
 import { toSmallestUnit } from '@/utils/formatting';
 import { waitForReceiptSuccess } from '@/utils/txReceipt';
-import { createPublicClient, encodeFunctionData, http } from 'viem';
+import { createPublicClient, encodeFunctionData } from 'viem';
 import { activityService } from './activityService';
 import { apiClient } from './apiClient';
 import { signerController } from './signer/SignerController';
@@ -263,7 +263,9 @@ export const transactionService = {
             // for the total amount first or the call reverts with 0x.
             try {
                 const chain = getChainById(params.chainId);
-                const publicClient = createPublicClient({ chain, transport: http(getRpcUrl(params.chainId), { timeout: 15000 }) });
+                // Use the multi-provider fallback transport so an Alchemy 429
+                // on the allowance pre-check doesn't tank the whole multi-send.
+                const publicClient = createPublicClient({ chain, transport: createTransportForChain(params.chainId) });
 
                 const ERC20_ALLOWANCE_ABI = [{
                     name: 'allowance',
@@ -378,7 +380,7 @@ export const transactionService = {
         }
         const client = createPublicClient({
             chain,
-            transport: http(getRpcUrl(params.chainId), { timeout: 15000 })
+            transport: createTransportForChain(params.chainId)
         });
 
         const amountBI = BigInt(toSmallestUnit(params.amount, params.decimals));
