@@ -574,17 +574,19 @@ class WalletModule {
     constructor(private base: string) { }
 
     /**
-     * GET /api/v1/wallet/balances
-     * Token balances for a wallet address. Pass comma-separated `chains` to filter.
+     * Token balances for a wallet address.
+     *
+     * Routes directly to Nexxend — the TIWI super-app backend's own
+     * /api/v1/wallet/balances currently returns `{ balances: [] }` for
+     * every wallet (server-side regression). When the backend is fixed,
+     * either remove the Nexxend short-circuit or keep it as primary.
      */
-    balances(params: {
+    async balances(params: {
         address: string;
         chains?: number[];
     }): Promise<WalletBalanceResponse> {
-        return apiFetch(this.base, '/api/v1/wallet/balances', undefined, {
-            address: params.address,
-            chains: params.chains?.join(','),
-        });
+        const { getNexxendBalances } = await import('@/services/nexxendService');
+        return getNexxendBalances(params.address, params.chains ?? []);
     }
 
     /**

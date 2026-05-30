@@ -626,12 +626,17 @@ class TiwiApiClient {
     }
 
     /**
-     * Get balances for a wallet across specified chains
+     * Get balances for a wallet across specified chains.
+     *
+     * Routed through Nexxend — the TIWI super-app backend's own
+     * /api/v1/wallet/balances currently returns `{ balances: [] }` for
+     * every wallet. Keep this in sync with WalletModule.balances() in
+     * lib/mobile/api-client.ts when the backend is restored.
      */
     async getWalletBalances(address: string, chains?: number[]): Promise<WalletBalancesResponse> {
-        const chainsParam = chains ? `?chains=${chains.join(',')}` : '';
-        const result = await this.fetcher<WalletBalancesResponse>(`/api/v1/wallet/balances?address=${address}${chainsParam ? `&${chainsParam.slice(1)}` : ''}`);
-        return result;
+        const { getNexxendBalances } = await import('./nexxendService');
+        const resp = await getNexxendBalances(address, chains ?? []);
+        return resp as unknown as WalletBalancesResponse;
     }
 
     /**
