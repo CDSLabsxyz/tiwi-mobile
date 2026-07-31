@@ -1,9 +1,22 @@
 import { DISPERSE_CONTRACTS } from '@/constants/contracts';
+import { createTransportForChain } from '@/constants/rpc';
 import { SendTokenParams, transactionService } from '@/services/transactionService';
+import { getChainById } from '@/services/signer/SignerUtils';
+import {
+    executeMultiSendGroups,
+    type MultiSendExecOptions,
+    type MultiSendResult,
+} from '@/services/multiSendExecutor';
 import { useWalletStore } from '@/store/walletStore';
+import {
+    chainFamilyForId,
+    chainFamilyLabel,
+    groupIsNative,
+    type MultiSendTokenGroup,
+} from '@/utils/multiSend';
 import { waitForReceiptSuccess } from '@/utils/txReceipt';
 import { useCallback, useState } from 'react';
-import { parseUnits } from 'viem';
+import { createPublicClient, erc20Abi, parseUnits } from 'viem';
 import { useSendTransaction, useWriteContract } from 'wagmi';
 
 const DISPERSE_ABI = [
@@ -252,9 +265,160 @@ export const useTransactionExecution = () => {
         }
     }, [activeAddress, writeContractAsync]);
 
+    /**
+     * Per-row multi-token multi-send. Consumes token groups (from
+     * groupRowsByToken) and returns an aggregated result. Local (Tiwi) wallets
+     * go through the all-chains executor service; external wallets execute EVM
+     * groups via wagmi (disperse when available, else per-recipient) and report
+     * non-EVM groups as unsupported.
+     */
+    const executeMultiGroups = useCallback(async (
+        groups: MultiSendTokenGroup[],
+        cbs?: Pick<MultiSendExecOptions, 'onStatus' | 'onProgress' | 'onGroupComplete'>
+    ): Promise<MultiSendResult> => {
+        setIsExecuting(true);
+        setError(null);
+        setLastHash(null);
+
+        try {
+            const { walletGroups } = useWalletStore.getState();
+            const wallet = walletGroups.find(g =>
+                Object.values(g.addresses).some(addr => addr?.toLowerCase() === activeAddress?.toLowerCase())
+            );
+            const isLocal = wallet?.source === 'local' || wallet?.source === 'internal' || wallet?.source === 'imported';
+
+            if (isLocal) {
+                const result = await executeMultiSendGroups({ groups, ...cbs });
+                const first = result.hashes[0]?.hash;
+                if (first) setLastHash(first);
+                return result;
+            }
+
+            // ---- External wallet (wagmi) — EVM only ----
+            const hashes: MultiSendResult['hashes'] = [];
+            const failedGroups: MultiSendResult['failedGroups'] = [];
+            const total = groups.length;
+            cbs?.onProgress?.({ current: 0, total, success: 0, failed: 0 });
+
+            for (const group of groups) {
+                const chainId = group.token.chainId;
+                const symbol = group.token.symbol;
+                const family = chainFamilyForId(chainId);
+
+                if (family !== 'evm') {
+                    failedGroups.push({
+                        token: symbol,
+                        chainId,
+                        error: `External wallets support EVM multi-send only. Import a Tiwi wallet to send ${chainFamilyLabel(family)}.`,
+                    });
+                    cbs?.onProgress?.({ current: hashes.length + failedGroups.length, total, success: hashes.length, failed: failedGroups.length });
+                    continue;
+                }
+
+                const isNative = groupIsNative(group);
+                const amountsBI = group.amountsDisplay.map(a => parseUnits(a, group.token.decimals));
+                const totalAmountBI = amountsBI.reduce((a, b) => a + b, 0n);
+                const disperseAddress = DISPERSE_CONTRACTS[chainId];
+                const useDisperse = !!disperseAddress && group.recipients.length > 1;
+
+                try {
+                    let hash: `0x${string}` | undefined;
+
+                    if (useDisperse) {
+                        cbs?.onStatus?.(`Approve & batch ${symbol}...`);
+                        if (!isNative) {
+                            // ERC20 disperse needs allowance for the total.
+                            const chain = getChainById(chainId);
+                            const publicClient = createPublicClient({ chain, transport: createTransportForChain(chainId) });
+                            const allowance = (await publicClient.readContract({
+                                address: group.token.address as `0x${string}`,
+                                abi: erc20Abi,
+                                functionName: 'allowance',
+                                args: [activeAddress as `0x${string}`, disperseAddress as `0x${string}`],
+                            })) as bigint;
+                            if (allowance < totalAmountBI) {
+                                const approveHash = await writeContractAsync({
+                                    address: group.token.address as `0x${string}`,
+                                    abi: erc20Abi,
+                                    functionName: 'approve',
+                                    args: [disperseAddress as `0x${string}`, totalAmountBI],
+                                    chainId,
+                                });
+                                await waitForReceiptSuccess({ hash: approveHash, chainId });
+                            }
+                        }
+                        hash = await writeContractAsync({
+                            address: disperseAddress as `0x${string}`,
+                            abi: DISPERSE_ABI,
+                            functionName: isNative ? 'disperseEther' : 'disperseTokenSimple',
+                            args: isNative
+                                ? [group.recipients as `0x${string}`[], amountsBI]
+                                : [group.token.address as `0x${string}`, group.recipients as `0x${string}`[], amountsBI],
+                            value: isNative ? totalAmountBI : undefined,
+                            chainId,
+                        } as any);
+                    } else {
+                        // Per-recipient via wagmi.
+                        for (let i = 0; i < group.recipients.length; i++) {
+                            const to = group.recipients[i] as `0x${string}`;
+                            cbs?.onStatus?.(`Sending ${symbol} ${i + 1}/${group.recipients.length}...`);
+                            if (isNative) {
+                                hash = await sendTransactionAsync({ to, value: amountsBI[i], chainId });
+                            } else {
+                                hash = await writeContractAsync({
+                                    address: group.token.address as `0x${string}`,
+                                    abi: erc20Abi,
+                                    functionName: 'transfer',
+                                    args: [to, amountsBI[i]],
+                                    chainId,
+                                });
+                            }
+                            await waitForReceiptSuccess({ hash, chainId });
+                        }
+                    }
+
+                    if (hash) {
+                        const mined = await waitForReceiptSuccess({ hash, chainId });
+                        if (mined === false) throw new Error('Multi-send reverted on-chain');
+                        hashes.push({ token: symbol, hash, chainId });
+                        cbs?.onGroupComplete?.(group, hash);
+                        try {
+                            const { apiClient } = require('@/services/apiClient');
+                            await apiClient.logTransaction({
+                                walletAddress: activeAddress!,
+                                transactionHash: hash,
+                                chainId,
+                                type: 'Transfer',
+                                fromTokenAddress: group.token.address,
+                                fromTokenSymbol: symbol,
+                                amount: group.totalDisplay,
+                                amountFormatted: `Multi-send ${symbol}`,
+                                routerName: 'Tiwi Multi-Send',
+                            });
+                        } catch { /* logging is best-effort */ }
+                    }
+                } catch (err: any) {
+                    failedGroups.push({ token: symbol, chainId, error: err?.shortMessage || err?.message || 'Failed' });
+                }
+
+                cbs?.onProgress?.({ current: hashes.length + failedGroups.length, total, success: hashes.length, failed: failedGroups.length });
+            }
+
+            const first = hashes[0]?.hash;
+            if (first) setLastHash(first);
+            return { hashes, failedGroups };
+        } catch (err: any) {
+            setError(err.message || 'Multi-send failed');
+            throw err;
+        } finally {
+            setIsExecuting(false);
+        }
+    }, [activeAddress, writeContractAsync, sendTransactionAsync]);
+
     return {
         execute,
         executeMulti,
+        executeMultiGroups,
         isExecuting,
         lastHash,
         error

@@ -13,6 +13,13 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 
 const PASSCODE_KEY = 'tiwi_user_passcode_hash';
 
+/**
+ * Auto-lock default for every user: 0 = "Immediately".
+ * Only overridden when the user explicitly picks another option in
+ * app/settings/security/auto-lock-timer.tsx.
+ */
+export const DEFAULT_AUTO_LOCK_TIMEOUT = 0;
+
 export interface WhitelistedAddress {
     address: string;
     name: string;
@@ -31,6 +38,7 @@ interface SecurityState {
     setupPhase: SetupPhase; // New field
     lastActive: number;
     autoLockTimeout: number; // in milliseconds
+    hasCustomAutoLockTimeout: boolean; // true once the user picks a value themselves
 
     // Fraud Protection Settings
     isSuspiciousActivityEnabled: boolean;
@@ -81,7 +89,8 @@ export const useSecurityStore = create<SecurityState>()(
             isSetupComplete: false,
             setupPhase: 'WELCOME',
             lastActive: Date.now(),
-            autoLockTimeout: 30000, // Default 30s as requested
+            autoLockTimeout: DEFAULT_AUTO_LOCK_TIMEOUT, // Default: lock immediately on background
+            hasCustomAutoLockTimeout: false,
 
             isSuspiciousActivityEnabled: true,
             isTransactionRiskEnabled: true,
@@ -99,7 +108,10 @@ export const useSecurityStore = create<SecurityState>()(
                 isSetupComplete: phase === 'COMPLETED'
             }),
             updateLastActive: () => set({ lastActive: Date.now() }),
-            setAutoLockTimeout: (timeoutMs) => set({ autoLockTimeout: timeoutMs }),
+            setAutoLockTimeout: (timeoutMs) => set({
+                autoLockTimeout: timeoutMs,
+                hasCustomAutoLockTimeout: true,
+            }),
 
             setPasscode: async (code, state) => {
                 const hash = await Crypto.digestStringAsync(
@@ -193,7 +205,9 @@ export const useSecurityStore = create<SecurityState>()(
                     whitelistedAddresses: [],
                     isLocked: false,
                     isSetupComplete: false,
-                    setupPhase: 'WELCOME'
+                    setupPhase: 'WELCOME',
+                    autoLockTimeout: DEFAULT_AUTO_LOCK_TIMEOUT,
+                    hasCustomAutoLockTimeout: false,
                 });
             },
             _hasHydrated: false,
@@ -202,6 +216,24 @@ export const useSecurityStore = create<SecurityState>()(
         {
             name: 'tiwi-security-storage',
             storage: createJSONStorage(() => AsyncStorage),
+            version: 1,
+            // v0 shipped a hard-coded 30s auto-lock with no way to tell an
+            // explicit choice from the default. Anyone still on that value
+            // never chose it, so move them onto the new "Immediately" default.
+            migrate: (persistedState, version) => {
+                const state = persistedState as Partial<SecurityState> | undefined;
+                if (!state) return persistedState as SecurityState;
+
+                if (version === 0 && state.hasCustomAutoLockTimeout === undefined) {
+                    return {
+                        ...state,
+                        autoLockTimeout: DEFAULT_AUTO_LOCK_TIMEOUT,
+                        hasCustomAutoLockTimeout: false,
+                    } as SecurityState;
+                }
+
+                return state as SecurityState;
+            },
             onRehydrateStorage: (state) => {
                 return () => state?.setHasHydrated(true);
             }

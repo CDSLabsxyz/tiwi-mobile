@@ -14,6 +14,11 @@ interface HeaderProps {
     disableWalletModal?: boolean;
     showBackButton?: boolean;
     onBackPress?: () => void;
+    /**
+     * Third right-hand icon. Defaults to the in-app browser; the wallet tab
+     * shows Settings there instead.
+     */
+    trailingAction?: 'browser' | 'settings';
 }
 
 const TiwiCat = require('../../assets/images/tiwi-logo.svg');
@@ -31,42 +36,21 @@ const ChainIcons = {
     OSMOSIS: require('../../assets/home/chains/osmosis.svg'),
 };
 
-// Network-specific icons — keyed by activeNetworkId so EVM networks (ETH vs BNB vs
-// BASE, etc.) each show their own badge instead of a shared EVM/Ethereum icon.
-const NetworkIcons: Record<string, any> = {
-    ETH: require('../../assets/home/chains/ethereum.svg'),
-    BSC: require('../../assets/home/chains/bsc.svg'),
-    POLYGON: require('../../assets/home/chains/polygon.svg'),
-    BASE: require('../../assets/home/chains/base.png'),
-    OPTIMISM: require('../../assets/home/chains/optimism.png'),
-    AVALANCHE: require('../../assets/home/chains/avalanche.svg'),
-    SOLANA: require('../../assets/home/chains/solana.svg'),
-    TRON: require('../../assets/home/chains/tron.png'),
-    TON: require('../../assets/home/chains/ton.jpg'),
-    COSMOS: require('../../assets/home/chains/cosmos.svg'),
-    OSMOSIS: require('../../assets/home/chains/osmosis.svg'),
-};
+// Network-specific icon + label, keyed by activeNetworkId so EVM networks
+// (ETH vs BNB vs BASE, …) each show their own badge instead of a shared
+// Ethereum icon. Resolved from the shared network list, so a network added
+// there is immediately correct here — the old hand-written map covered 11 of
+// the wallet's networks and everything else fell back to the chain icon.
 
+import { getWalletNetwork } from '@/constants/walletNetworks';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useWalletStore } from '@/store/walletStore';
 import { useRouter } from 'expo-router';
 
-const NETWORK_LABELS: Record<string, string> = {
-    ETH: 'ETH',
-    BSC: 'BNB',
-    POLYGON: 'MATIC',
-    BASE: 'BASE',
-    OPTIMISM: 'OP',
-    AVALANCHE: 'AVAX',
-    SOLANA: 'SOL',
-    TRON: 'TRX',
-    TON: 'TON',
-    COSMOS: 'ATOM',
-    OSMOSIS: 'OSMO',
-};
-
 function getNetworkLabel(chain: string, networkId: string | null): string {
-    if (networkId && NETWORK_LABELS[networkId]) return NETWORK_LABELS[networkId];
+    const network = getWalletNetwork(networkId);
+    if (network?.symbol) return network.symbol;
+    if (network) return network.name.toUpperCase();
     if (chain === 'SOLANA') return 'SOL';
     if (chain === 'TRON') return 'TRX';
     if (chain === 'TON') return 'TON';
@@ -86,6 +70,7 @@ export const Header: React.FC<HeaderProps> = ({
     disableWalletModal = false,
     showBackButton = false,
     onBackPress,
+    trailingAction = 'browser',
 }) => {
     const router = useRouter();
     const { address, activeChain, activeNetworkId } = useWalletStore();
@@ -131,7 +116,7 @@ export const Header: React.FC<HeaderProps> = ({
                             <View style={styles.logoChainBadge}>
                                 <Image
                                     source={
-                                        (activeNetworkId && NetworkIcons[activeNetworkId]) ||
+                                        getWalletNetwork(activeNetworkId)?.icon ||
                                         (ChainIcons as any)[activeChain]
                                     }
                                     style={styles.iconFull}
@@ -182,9 +167,21 @@ export const Header: React.FC<HeaderProps> = ({
                 <TouchableOpacity onPress={() => router.push('/scanner' as any)} style={styles.iconButton} activeOpacity={0.7}>
                     <Ionicons name="scan-outline" size={24} color={colors.titleText} />
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => router.push('/settings' as any)} style={styles.iconButton} activeOpacity={0.7}>
-                    <Ionicons name="settings-outline" size={24} color={colors.titleText} />
-                </TouchableOpacity>
+                {/* Browser lives here now (Settings moved to the home quick-actions
+                    row), except on the wallet tab which keeps Settings. */}
+                {trailingAction === 'settings' ? (
+                    <TouchableOpacity
+                        onPress={onSettingsPress ?? (() => router.push('/settings' as any))}
+                        style={styles.iconButton}
+                        activeOpacity={0.7}
+                    >
+                        <Ionicons name="settings-outline" size={24} color={colors.titleText} />
+                    </TouchableOpacity>
+                ) : (
+                    <TouchableOpacity onPress={() => router.push('/browser' as any)} style={styles.iconButton} activeOpacity={0.7}>
+                        <Ionicons name="compass-outline" size={24} color={colors.titleText} />
+                    </TouchableOpacity>
+                )}
                 {/* <TouchableOpacity onPress={onScanPress} style={styles.iconButton} activeOpacity={0.7}>
                     <Image source={Scan} style={styles.icon} contentFit="contain" />
                 </TouchableOpacity> */}

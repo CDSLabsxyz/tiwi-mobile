@@ -101,14 +101,42 @@ export const validateAddress = (address: string, chainId: ChainId | null | undef
     return validateSolanaAddress(address);
   }
 
-  // SUI
-  if (chainIdStr === 'sui' || chainIdStr === '784') {
+  // SUI (canonical 101) & Aptos (canonical 637) — both are 0x + 64 hex.
+  if (chainIdStr === 'sui' || chainIdStr === '784' || chainIdStr === '101'
+      || chainIdStr === 'aptos' || chainIdStr === '637') {
     return validateSuiAddress(address);
   }
 
-  // Cosmos / TIWI internal 'apex'
-  if (chainIdStr === 'apex' || chainIdStr === 'cosmos' || chainIdStr === '118') {
+  // Cosmos-family (bech32): Cosmos Hub 118, Osmosis 249339, and the extended
+  // family 8000003–8000012 (juno/stride/dydx/kujira/secret/celestia/archway/
+  // saga/neutron/nibiru), plus string ids.
+  const cosmosChains = [
+    'apex', 'cosmos', 'osmosis', 'injective', 'inj', '118', '249339', '8000001',
+    '8000003', '8000004', '8000005', '8000006', '8000007',
+    '8000008', '8000009', '8000010', '8000011', '8000012',
+  ];
+  if (cosmosChains.includes(chainIdStr)) {
     return validateCosmosAddress(address);
+  }
+
+  // Bitcoin (8332): bech32 (bc1…) or legacy base58 (1…/3…).
+  if (chainIdStr === '8332' || chainIdStr === 'bitcoin' || chainIdStr === 'btc') {
+    const t = address.trim();
+    if (!t) return { isValid: false, error: 'Address is required' };
+    if (!/^(bc1[ac-hj-np-z02-9]{11,71}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})$/.test(t)) {
+      return { isValid: false, error: 'Invalid Bitcoin address format' };
+    }
+    return { isValid: true };
+  }
+
+  // Starknet (23448594291968334): 0x + up to 64 hex.
+  if (chainIdStr === '23448594291968334' || chainIdStr === 'starknet' || chainIdStr === 'strk') {
+    const t = address.trim();
+    if (!t) return { isValid: false, error: 'Address is required' };
+    if (!/^0x[a-fA-F0-9]{1,64}$/.test(t)) {
+      return { isValid: false, error: 'Invalid Starknet address format' };
+    }
+    return { isValid: true };
   }
 
   // EVM chains: 1 (Eth), 56 (BSC), 137 (Polygon), 43114 (Avalanche), 42161 (Arbitrum), 10 (Optimism), 8453 (Base), 250 (Fantom), 42220 (Celo)

@@ -1,6 +1,7 @@
 import { activityService, UserActivity } from '@/services/activityService';
 import { AdminNotification, adminNotificationService } from '@/services/adminNotificationService';
 import { useWalletStore } from '@/store/walletStore';
+import { logNetworkAwareError } from '@/utils/networkErrors';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -58,7 +59,7 @@ export function useNotifications() {
             setUnreadCount(localUnread + adminUnreadCount);
 
         } catch (error) {
-            console.error('[useNotifications] Refresh failed:', error);
+            logNetworkAwareError('[useNotifications] Refresh failed:', error);
         } finally {
             if (showLoading) setLoading(false);
         }

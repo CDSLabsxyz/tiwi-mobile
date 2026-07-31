@@ -297,6 +297,17 @@ export default function RootLayout() {
 
   const isReadyForApp = isAppInitialized && isHydrated && isNavigationReady;
 
+  // Backfill/repair the active wallet's derived addresses once the store has
+  // hydrated. This carries the TON derivation fix (secp256k1 → ed25519) to
+  // wallets created before it — waiting for the wallet modal to be opened would
+  // leave them showing a TON address the signer can't reproduce.
+  useEffect(() => {
+    if (!isHydrated) return;
+    useWalletStore.getState().syncActiveGroupAddresses().catch(err => {
+      console.warn('[RootLayout] Address sync failed:', err?.message);
+    });
+  }, [isHydrated]);
+
   // 1. Initialize app state
   useEffect(() => {
     const init = async () => {

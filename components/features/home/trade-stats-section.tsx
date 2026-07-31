@@ -4,8 +4,9 @@ import { useTranslation } from '@/hooks/useLocalization';
 import { ChainItem } from '@/lib/mobile/api-client';
 import { StatCard } from '@/types';
 import { Image } from 'expo-image';
-import React, { useEffect } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StatInfoId, StatInfoSheet } from './stat-info-sheet';
 import Animated, {
     Easing,
     cancelAnimation,
@@ -51,7 +52,9 @@ const ChainMarquee = ({ chains = [] }: { chains?: ChainItem[] }) => {
 
     // Use dynamic logos from API if available, otherwise fallback to local icons
     const logos = chains.length > 0
-        ? chains.map(c => c.logoURI || c.logo).filter(Boolean)
+        // `logo` isn't on ChainItem but some API responses carry it — keep the
+        // runtime fallback, just don't let it break the build.
+        ? chains.map(c => c.logoURI || (c as { logo?: string }).logo).filter(Boolean)
         : localChainLogos;
 
     const totalContentWidth = logos.length * itemWidth;
@@ -98,6 +101,7 @@ export const TradeStatsSection: React.FC<TradeStatsSectionProps> = ({
     isLoading = false,
 }) => {
     const { t } = useTranslation();
+    const [activeInfoId, setActiveInfoId] = useState<StatInfoId | null>(null);
 
     if (isLoading) {
         return (
@@ -130,7 +134,12 @@ export const TradeStatsSection: React.FC<TradeStatsSectionProps> = ({
             {/* First Row: 2 Cards */}
             <View style={styles.row}>
                 {firstRow.map((stat) => (
-                    <View key={stat.id} style={styles.largeCard}>
+                    <TouchableOpacity
+                        key={stat.id}
+                        activeOpacity={0.8}
+                        onPress={() => setActiveInfoId(stat.id as StatInfoId)}
+                        style={styles.largeCard}
+                    >
                         {stat.id === 'chain-count' ? (
                             <View style={styles.statContent}>
                                 <ChainMarquee chains={chains} />
@@ -156,7 +165,7 @@ export const TradeStatsSection: React.FC<TradeStatsSectionProps> = ({
                                 </View>
                             </View>
                         )}
-                    </View>
+                    </TouchableOpacity>
                 ))}
             </View>
 
@@ -164,7 +173,12 @@ export const TradeStatsSection: React.FC<TradeStatsSectionProps> = ({
             {otherRows.map((row, rowIndex) => (
                 <View key={rowIndex} style={styles.row}>
                     {row.map((stat) => (
-                        <View key={stat.id} style={styles.smallCard}>
+                        <TouchableOpacity
+                            key={stat.id}
+                            activeOpacity={0.8}
+                            onPress={() => setActiveInfoId(stat.id as StatInfoId)}
+                            style={styles.smallCard}
+                        >
                             <View style={styles.statContent}>
                                 {stat.icon && iconMap[stat.icon] && (
                                     <Image
@@ -178,7 +192,7 @@ export const TradeStatsSection: React.FC<TradeStatsSectionProps> = ({
                                     <Text style={styles.statLabel}>{stat.label}</Text>
                                 </View>
                             </View>
-                        </View>
+                        </TouchableOpacity>
                     ))}
                     {/* Fill remaining space if row has less than 3 cards */}
                     {row.length < 3 && Array(3 - row.length).fill(0).map((_, i) => (
@@ -186,6 +200,12 @@ export const TradeStatsSection: React.FC<TradeStatsSectionProps> = ({
                     ))}
                 </View>
             ))}
+
+            <StatInfoSheet
+                statId={activeInfoId}
+                onClose={() => setActiveInfoId(null)}
+                chains={chains}
+            />
         </View>
     );
 };

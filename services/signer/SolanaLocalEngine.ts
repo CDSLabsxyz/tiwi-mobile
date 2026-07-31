@@ -107,6 +107,19 @@ export class SolanaLocalEngine implements SignerEngine {
         return Keypair.fromSeed(derived.key);
     }
 
+    /**
+     * Public accessor for the derived keypair.
+     *
+     * The swap engine's Solana executors (Jupiter, Rubic) expect a wallet
+     * *adapter* — `{ publicKey, signTransaction }` — rather than a fire-and-
+     * forget send, because they build and partially sign multi-instruction
+     * transactions (tax transfer + swap) before broadcasting. Reuses the exact
+     * same three-path key resolution as `sendTransaction`.
+     */
+    async getKeypairForAddress(solAddress?: string): Promise<Keypair> {
+        return this.getKeypair(solAddress);
+    }
+
     async signTransaction(tx: TransactionRequest, address: string): Promise<string> {
         await this.authenticate();
 

@@ -8,9 +8,11 @@ import {
     ComingSoon,
     EarnEmptyState,
     EarnTabSwitcher,
+    MyPoolsView,
     MyStakeCard,
     StakeDetailsCard,
     StakingPoolAccordion,
+    StakingPoolCreator,
     StakingTokenCard,
     TotalStakedCard,
     type EarnTabKey
@@ -32,7 +34,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 // Mock token icon - in production, use actual token logo
 const TWCIcon = require('../../assets/home/tiwicat.svg');
 
-type StakingSubTab = 'stake' | 'active' | 'my-stakes';
+type StakingSubTab = 'stake' | 'active' | 'my-stakes' | 'create-pool' | 'my-pools';
 
 export default function EarnScreen() {
     const { top, bottom } = useSafeAreaInsets();
@@ -47,7 +49,7 @@ export default function EarnScreen() {
 
     // Handle deep-link tab switching (e.g., from staking success)
     useEffect(() => {
-        if (tab === 'active' || tab === 'my-stakes' || tab === 'stake') {
+        if (tab === 'active' || tab === 'my-stakes' || tab === 'stake' || tab === 'create-pool' || tab === 'my-pools') {
             setStakingSubTab(tab as StakingSubTab);
             setActiveTab('staking');
             fetchData(); // Trigger immediate fetch
@@ -68,7 +70,14 @@ export default function EarnScreen() {
         useWalletStore.getState().setWalletModalVisible(true);
     };
 
-    const { address: walletAddress } = useWalletStore();
+    const { address: walletAddress, walletGroups, activeGroupId } = useWalletStore();
+    // The staking deployer + fee/withdraw txns are EVM-only. Resolve the active
+    // group's EVM address (falls back to the primary address) for Create Pool /
+    // My Pools, which the web equally gates behind an EVM wallet.
+    const evmAddress = useMemo(() => {
+        const group = walletGroups.find(g => g.id === activeGroupId);
+        return group?.addresses?.EVM || walletAddress || null;
+    }, [walletGroups, activeGroupId, walletAddress]);
     const {
         activePositions,
         historicalStakes,
@@ -297,6 +306,24 @@ export default function EarnScreen() {
                                 <Text style={styles.supportEntryChevron}>›</Text>
                             </TouchableOpacity>
 
+                            {/* Create Pool entry point — launches the deployer flow. */}
+                            <TouchableOpacity
+                                activeOpacity={0.85}
+                                onPress={() => router.push('/earn/create' as any)}
+                                style={styles.supportEntry}
+                            >
+                                <View style={styles.supportEntryIcon}>
+                                    <Text style={styles.supportEntryIconText}>+</Text>
+                                </View>
+                                <View style={{ flex: 1 }}>
+                                    <Text style={styles.supportEntryTitle}>Create Staking Pool</Text>
+                                    <Text style={styles.supportEntrySub}>
+                                        Launch your own pool and reward stakers of your token.
+                                    </Text>
+                                </View>
+                                <Text style={styles.supportEntryChevron}>›</Text>
+                            </TouchableOpacity>
+
                             {/* Total Staked Card (Web-style mobile grid) */}
                             <TotalStakedCard
                                 overallTvl={globalStats.overallTvl}
@@ -348,11 +375,45 @@ export default function EarnScreen() {
                                 >
                                     <Text style={[styles.subTabText, { color: stakingSubTab === 'my-stakes' ? '#b1f128' : '#b5b5b5' }]}>My Stakes</Text>
                                 </TouchableOpacity>
+
+                                <TouchableOpacity
+                                    activeOpacity={0.8}
+                                    onPress={() => setStakingSubTab('create-pool')}
+                                    style={[
+                                        styles.subTabButton,
+                                        { backgroundColor: stakingSubTab === 'create-pool' ? '#081f02' : '#0b0f0a' }
+                                    ]}
+                                >
+                                    <Text style={[styles.subTabText, { color: stakingSubTab === 'create-pool' ? '#b1f128' : '#b5b5b5' }]}>Create Pool</Text>
+                                </TouchableOpacity>
+
+                                <TouchableOpacity
+                                    activeOpacity={0.8}
+                                    onPress={() => setStakingSubTab('my-pools')}
+                                    style={[
+                                        styles.subTabButton,
+                                        { backgroundColor: stakingSubTab === 'my-pools' ? '#081f02' : '#0b0f0a' }
+                                    ]}
+                                >
+                                    <Text style={[styles.subTabText, { color: stakingSubTab === 'my-pools' ? '#b1f128' : '#b5b5b5' }]}>My Pools</Text>
+                                </TouchableOpacity>
                             </ScrollView>
 
                             {/* Cards List Section */}
                             <View style={styles.cardsList}>
-                                {stakingSubTab === 'stake' ? (
+                                {stakingSubTab === 'create-pool' ? (
+                                    <StakingPoolCreator
+                                        activeWalletAddress={evmAddress}
+                                        onConnectEvmWallet={() => useWalletStore.getState().setWalletModalVisible(true)}
+                                        onViewPools={() => setStakingSubTab('my-pools')}
+                                    />
+                                ) : stakingSubTab === 'my-pools' ? (
+                                    <MyPoolsView
+                                        activeWalletAddress={evmAddress}
+                                        onConnectEvmWallet={() => useWalletStore.getState().setWalletModalVisible(true)}
+                                        onCreatePool={() => setStakingSubTab('create-pool')}
+                                    />
+                                ) : stakingSubTab === 'stake' ? (
                                     activePools.length > 0 ? (
                                         activePools
                                             // Show the pool if it has either a V2 per-pool contract

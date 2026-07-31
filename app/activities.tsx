@@ -8,6 +8,7 @@ import { useResolvedReceivedAmounts } from '@/hooks/useResolvedReceivedAmounts';
 import { UnifiedActivity, useUnifiedActivities } from '@/hooks/useUnifiedActivities';
 import { useWalletStore } from '@/store/walletStore';
 import { buildReceiptFromActivity } from '@/utils/buildReceiptFromActivity';
+import { getActivityLabel } from '@/utils/activityLabels';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import React, { useMemo, useState } from 'react';
@@ -240,7 +241,7 @@ export default function ActivitiesScreen() {
                     onPress={openExplorer}
                 >
                     <View style={styles.leftContent}>
-                        <Text style={styles.activityLabel}>{effectiveCategory}</Text>
+                        <Text style={styles.activityLabel}>{getActivityLabel(effectiveCategory)}</Text>
                         <Text style={styles.activityDate}>{item.date}</Text>
                     </View>
                     <View style={styles.rightContent}>

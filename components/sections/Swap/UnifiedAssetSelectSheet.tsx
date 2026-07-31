@@ -10,7 +10,8 @@ import { Image as ExpoImage } from 'expo-image';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Dimensions, FlatList, ScrollView, SectionList, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
-import { useWalletStore, ChainType } from '@/store/walletStore';
+import { useWalletStore } from '@/store/walletStore';
+import { addressKeyForChain } from '@/services/swap/core/platform/wallet-context';
 import { useCustomTokenStore } from '@/store/customTokenStore';
 import { SelectionBottomSheet } from './SelectionBottomSheet';
 
@@ -127,50 +128,66 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
     }));
 
     // --- Chain Logic ---
-    const WALLET_CHAINS_TYPES: Record<number, ChainType> = {
-        1: 'EVM', 56: 'EVM', 137: 'EVM', 8453: 'EVM', 10: 'EVM', 42161: 'EVM', 43114: 'EVM',
-        7565164: 'SOLANA', 728126428: 'TRON', 1100: 'TON', 118: 'COSMOS', 12345: 'OSMOSIS'
-    };
+    //
+    // Chain → wallet address key comes from `addressKeyForChain`, the canonical
+    // mapping the swap engine and balance layer use. The old 12-entry local map
+    // fell back to 'EVM' for everything it didn't list (Sui, Aptos, Injective,
+    // Bitcoin, every Cosmos chain, and all long-tail EVM chains), and it keyed
+    // Osmosis off a bogus id (12345 instead of 249339).
+    //
+    // Combined with the old "only show chains this wallet holds" filter, that
+    // meant a wallet WITHOUT an EVM address (a Cosmos- or Solana-only import)
+    // saw almost nothing — hence a Cosmos wallet being offered just "Cosmos Hub".
+    //
+    // Every chain is now listed. Restricting the list was wrong anyway: the
+    // DESTINATION of a cross-chain swap doesn't have to be a chain you already
+    // hold, and with a pasted recipient it can be anywhere at all. Chains this
+    // wallet has an address for are simply sorted to the top and marked.
 
-    const activeGroup = useMemo(() => 
+    const activeGroup = useMemo(() =>
         walletGroups.find(g => g.id === activeGroupId),
         [walletGroups, activeGroupId]
     );
 
+    /** True when the active wallet holds an address on this chain. */
+    const walletHasChain = useCallback((chainId: number) => {
+        const key = addressKeyForChain(chainId);
+        return !!(activeGroup?.addresses as Record<string, string | undefined> | undefined)?.[key];
+    }, [activeGroup]);
+
     const filteredChains = useMemo(() => {
         if (!chains) return [];
-        
-        // 1. Filter chains that the wallet has addresses for (Sync with receive.tsx)
-        const supported = chains.filter(c => {
-            const type = WALLET_CHAINS_TYPES[c.id] || 'EVM';
-            return !!activeGroup?.addresses?.[type];
-        });
 
-        // 2. Map and search filter
-        const mapped = supported.map(c => ({
+        const mapped = chains.map(c => ({
             id: c.id,
             name: c.name,
             icon: c.logoURI || (c as any).logo || require('@/assets/home/chains/ethereum.svg'),
-            symbol: (c as any).symbol
+            symbol: (c as any).symbol,
+            inWallet: walletHasChain(c.id),
         }));
 
-        return mapped.filter(c =>
+        const searched = mapped.filter(c =>
             c.name.toLowerCase().includes(chainSearchQuery.toLowerCase()) ||
             c.symbol?.toLowerCase().includes(chainSearchQuery.toLowerCase())
         );
-    }, [chains, chainSearchQuery, activeGroup]);
+
+        // Wallet chains first, each group keeping the registry's own order.
+        return [
+            ...searched.filter(c => c.inWallet),
+            ...searched.filter(c => !c.inWallet),
+        ];
+    }, [chains, chainSearchQuery, walletHasChain]);
 
     // --- Token Logic ---
     // Fetch all chain IDs if "All Networks" is selected, matching receive.tsx behavior
     const stableChains = useMemo(() => {
         if (selectedChain && selectedChain.id !== 'all') return [selectedChain.id as number];
-        
-        // Filter out chains not supported by wallet when in "All Networks" mode
-        return chains?.filter(c => {
-            const type = WALLET_CHAINS_TYPES[c.id] || 'EVM';
-            return !!activeGroup?.addresses?.[type];
-        }).map(c => c.id) || [];
-    }, [selectedChain, chains, activeGroup]);
+
+        // "All Networks" means all of them. This used to drop every chain the
+        // wallet had no address for, which on a non-EVM wallet was nearly the
+        // whole list — so the token search came back empty.
+        return chains?.map(c => c.id) || [];
+    }, [selectedChain, chains]);
 
     const isSearching = debouncedQuery.length > 0;
 
@@ -249,6 +266,8 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
                 usdValueNum: totalUSD,
                 priceUSD: t.priceUSD,
                 _liquidity: parseFloat(t.liquidity?.toString() || '0'),
+                // Carried through to the swap quote as `liquidityUSD`.
+                liquidity: t.liquidity,
                 _verified: !!(t as any).verified,
                 isNative: NATIVE_ADDRS.includes(t.address?.toLowerCase()) || (chainInfo?.nativeCurrency?.symbol === t.symbol)
             };
@@ -282,6 +301,9 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
                     isOwned: true,
                     usdValueNum: usdVal,
                     priceUSD: wt.priceUSD,
+                    // No liquidity figure from this source (wallet/custom
+                    // token); the dedup merge picks it up from the API entry.
+                    liquidity: undefined as number | undefined,
                     _liquidity: 0,
                     _verified: true,
                     isNative: isNative
@@ -312,6 +334,9 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
                     isOwned: bal > 0,
                     usdValueNum: usdVal,
                     priceUSD: ct.priceUSD,
+                    // No liquidity figure from this source (wallet/custom
+                    // token); the dedup merge picks it up from the API entry.
+                    liquidity: undefined as number | undefined,
                     _liquidity: 0,
                     _verified: false,
                     isNative: false,
@@ -357,13 +382,32 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
         });
 
         // 5. Deduplicate by chain+symbol
+        //
+        // The winner is chosen as before (owned beats unowned, then deeper
+        // liquidity), but `liquidity` is MERGED across the variants instead of
+        // being dropped. Only the API-sourced entry carries a real liquidity
+        // figure — wallet-balance and custom-token entries have none — so the
+        // old "owned replaces unowned" swap silently discarded it for exactly
+        // the tokens users swap most (the ones they hold). That number is sent
+        // to the route API as `liquidityUSD`; without it every quote for a held
+        // token pays for a server-side DexScreener lookup (seconds, not ms).
         const seen = new Map<string, any>();
         filtered.forEach(t => {
             const key = `${t.chainId}-${t.symbol.toUpperCase()}`;
             const existing = seen.get(key);
-            if (!existing || (t.isOwned && !existing.isOwned) || (t._liquidity > existing._liquidity)) {
-                seen.set(key, t);
-            }
+
+            const bestLiquidity = Math.max(
+                Number(t.liquidity) || 0,
+                Number(existing?.liquidity) || 0,
+            ) || undefined;
+            const bestLiquidityRank = Math.max(t._liquidity || 0, existing?._liquidity || 0);
+
+            const winner =
+                !existing || (t.isOwned && !existing.isOwned) || (t._liquidity > existing._liquidity)
+                    ? t
+                    : existing;
+
+            seen.set(key, { ...winner, liquidity: bestLiquidity, _liquidity: bestLiquidityRank });
         });
 
         // 6. Final Sort: Ownership, Native priority, Solana ecosystem priority, then market metrics
@@ -499,6 +543,15 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
                     <ExpoImage source={chain.icon} style={styles.fullSize} contentFit="contain" />
                 </View>
                 <Text style={styles.chainName}>{chain.name}</Text>
+                {/* Chains this wallet already has an address on are sorted to
+                    the top; the badge says why they're up there. The rest stay
+                    fully selectable — you can still swap TO a chain you don't
+                    hold yet by pasting a recipient address. */}
+                {!isAll && chain.inWallet && !isSelected && (
+                    <View style={styles.walletBadge}>
+                        <Text style={styles.walletBadgeText}>IN WALLET</Text>
+                    </View>
+                )}
                 {isSelected && (
                     <Ionicons name="checkmark-circle" size={24} color={colors.primaryCTA} style={styles.checkIcon} />
                 )}
@@ -784,6 +837,19 @@ const styles = StyleSheet.create({
         height: 32,
         borderRadius: 16,
         overflow: 'hidden',
+    },
+    walletBadge: {
+        marginLeft: 'auto',
+        backgroundColor: 'rgba(177,241,40,0.14)',
+        paddingHorizontal: 7,
+        paddingVertical: 3,
+        borderRadius: 5,
+    },
+    walletBadgeText: {
+        color: colors.primaryCTA,
+        fontSize: 9,
+        fontWeight: '800',
+        letterSpacing: 0.4,
     },
     chainName: {
         flex: 1,

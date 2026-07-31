@@ -21,6 +21,10 @@ const BscLogo = require('../../assets/home/chains/bsc.svg');
 const PolyLogo = require('../../assets/home/chains/polygon.svg');
 const BaseLogo = require('../../assets/home/chains/base.png');
 const AllNetworkLogo = require('../../assets/swap/all-networks.svg');
+const TronLogo = require('../../assets/home/chains/tron.png');
+const TonLogo = require('../../assets/home/chains/ton.jpg');
+const CosmosLogo = require('../../assets/home/chains/cosmos.svg');
+const OsmosisLogo = require('../../assets/home/chains/osmosis.svg');
 
 interface NetworkOption {
     id: ChainType | 'MULTI';
@@ -34,7 +38,8 @@ interface NetworkSelectionModalProps {
     visible: boolean;
     onClose: () => void;
     onSelect: (network: ChainType | 'MULTI') => void;
-    mode: 'mnemonic' | 'privateKey';
+    /** `tonMnemonic` = a native 24-word TON phrase, which derives TON only. */
+    mode: 'mnemonic' | 'privateKey' | 'tonMnemonic';
     compatibleChains?: ChainType[];
 }
 
@@ -59,6 +64,33 @@ const NETWORK_OPTIONS: NetworkOption[] = [
         // subtext: 'Fast, secure, and scalable high-performance network.',
         icons: [SolLogo],
     },
+    // Chain-specific key imports. Each of these is only shown when the pasted
+    // secret can actually produce that chain's account (`compatibleChains`),
+    // and each maps to a wallet the app can sign every transaction for.
+    {
+        id: 'TRON',
+        label: 'Tron',
+        subtext: 'TRX and TRC-20 tokens.',
+        icons: [TronLogo],
+    },
+    {
+        id: 'TON',
+        label: 'TON',
+        subtext: 'Toncoin and jettons.',
+        icons: [TonLogo],
+    },
+    {
+        id: 'COSMOS',
+        label: 'Cosmos Hub',
+        subtext: 'ATOM and the Cosmos ecosystem.',
+        icons: [CosmosLogo],
+    },
+    {
+        id: 'OSMOSIS',
+        label: 'Osmosis',
+        subtext: 'OSMO and IBC assets.',
+        icons: [OsmosisLogo],
+    },
 ];
 
 export const NetworkSelectionModal: React.FC<NetworkSelectionModalProps> = ({
@@ -82,9 +114,12 @@ export const NetworkSelectionModal: React.FC<NetworkSelectionModalProps> = ({
                 easing: Easing.out(Easing.cubic),
             });
             opacity.value = withTiming(1, { duration: 400 });
-            // Default selection for mnemonic
+            // Default selection: multi-chain for a BIP39 phrase, TON for a TON
+            // phrase (the only thing it can derive), nothing for a private key.
             if (mode === 'mnemonic') {
                 setSelected('MULTI');
+            } else if (mode === 'tonMnemonic') {
+                setSelected('TON');
             } else {
                 setSelected(null);
             }
@@ -154,10 +189,14 @@ export const NetworkSelectionModal: React.FC<NetworkSelectionModalProps> = ({
                         >
                             {NETWORK_OPTIONS.map((option) => {
                                 const isSelected = selected === option.id;
-                                const isDisabled = mode === 'privateKey' && option.id === 'MULTI';
+                                const isDisabled = mode !== 'mnemonic' && option.id === 'MULTI';
 
-                                // Filter based on compatibility if in privateKey mode
-                                const isCompatible = mode === 'mnemonic' ||
+                                // A native TON phrase derives exactly one chain;
+                                // a BIP39 phrase derives them all; a private key
+                                // derives only what `compatibleChains` allows.
+                                const isCompatible = mode === 'tonMnemonic'
+                                    ? option.id === 'TON'
+                                    : mode === 'mnemonic' ||
                                     option.id === 'MULTI' ||
                                     compatibleChains.includes(option.id as ChainType);
 

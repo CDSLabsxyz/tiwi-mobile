@@ -9,8 +9,9 @@ import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { colors } from '@/constants/colors';
 import { useChains } from '@/hooks/useChains';
 import { useTokens } from '@/hooks/useTokens';
+import { WALLET_NETWORKS } from '@/constants/walletNetworks';
 import { useToastStore } from '@/store/useToastStore';
-import { useWalletStore, ChainType } from '@/store/walletStore';
+import { useWalletStore, AddressKey, ChainType } from '@/store/walletStore';
 import { truncateAddress, NATIVE_TOKEN_ADDRESS, MORALIS_NATIVE_ADDRESS } from '@/utils/wallet';
 import * as Clipboard from 'expo-clipboard';
 import { Image } from 'expo-image';
@@ -89,26 +90,26 @@ export default function ReceiveScreen() {
 
     const { data: chains } = useChains();
 
-    // Chain options from wallet addresses for filter chips (Canonical IDs)
-    const WALLET_CHAINS: { id: number; chain: ChainType; name: string; icon: any }[] = [
-        { id: 1, chain: 'EVM', name: 'Ethereum', icon: require('../assets/home/chains/ethereum.svg') },
-        { id: 56, chain: 'EVM', name: 'BSC', icon: require('../assets/home/chains/bsc.svg') },
-        { id: 137, chain: 'EVM', name: 'Polygon', icon: require('../assets/home/chains/polygon.svg') },
-        { id: 8453, chain: 'EVM', name: 'Base', icon: require('../assets/home/chains/base.png') },
-        { id: 10, chain: 'EVM', name: 'Optimism', icon: require('../assets/home/chains/optimism.png') },
-        { id: 42161, chain: 'EVM', name: 'Arbitrum', icon: require('../assets/home/chains/ethereum.svg') }, // Use ETH icon for Arbitrum
-        { id: 43114, chain: 'EVM', name: 'Avalanche', icon: require('../assets/home/chains/avalanche.svg') },
-        { id: 7565164, chain: 'SOLANA', name: 'Solana', icon: require('../assets/home/chains/solana.svg') },
-        { id: 728126428, chain: 'TRON', name: 'TRON', icon: require('../assets/home/chains/tron.png') },
-        { id: 1100, chain: 'TON', name: 'TON', icon: require('../assets/home/chains/ton.jpg') },
-        { id: 118, chain: 'COSMOS', name: 'Cosmos Hub', icon: require('../assets/home/chains/cosmos.svg') },
-    ];
+    // Chain options for the filter chips, derived from the shared network list
+    // so this screen offers the same networks the wallet actually holds an
+    // address on. Rows without a numeric id (Other EVM Networks) or without a
+    // signing chain (receive-only) are skipped — the chips drive token fetches.
+    const WALLET_CHAINS: { id: number; chain: ChainType; addressKey: AddressKey; name: string; icon: any }[] =
+        WALLET_NETWORKS
+            .filter(n => !!n.chainId && !!n.chain)
+            .map(n => ({
+                id: n.chainId!,
+                chain: n.chain!,
+                addressKey: n.addressKey,
+                name: n.name,
+                icon: n.icon,
+            }));
 
     // Only show chains that the wallet has addresses for
     const activeGroup = walletGroups.find(g => g.id === useWalletStore.getState().activeGroupId);
     const availableChains = useMemo(() => {
         if (!activeGroup) return WALLET_CHAINS;
-        return WALLET_CHAINS.filter(wc => !!activeGroup.addresses?.[wc.chain]);
+        return WALLET_CHAINS.filter(wc => !!activeGroup.addresses?.[wc.addressKey]);
     }, [activeGroup]);
 
     // IDs for fetching tokens

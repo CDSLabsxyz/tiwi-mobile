@@ -1,10 +1,11 @@
 import { colors } from '@/constants/colors';
+import { WALLET_NETWORKS } from '@/constants/walletNetworks';
 import { truncateAddress } from '@/utils/wallet';
 import * as Clipboard from 'expo-clipboard';
 import { Image as ExpoImage } from 'expo-image';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
-import { ActivityIndicator, Dimensions, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Dimensions, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
     interpolate,
@@ -53,19 +54,9 @@ const WalletOutlineIcon = require('../../assets/home/wallet-03.svg');
 const DownloadIcon = require('../../assets/home/download-04.svg');
 
 type ModalMode = 'MAIN' | 'ADD_OPTIONS';
-const ALL_NETWORKS = [
-    { id: 'ETH', name: 'Ethereum', chain: 'EVM', icon: require('../../assets/home/chains/ethereum.svg') },
-    { id: 'BSC', name: 'BNB Chain', chain: 'EVM', icon: require('../../assets/home/chains/bsc.svg') },
-    { id: 'POLYGON', name: 'Polygon', chain: 'EVM', icon: require('../../assets/home/chains/polygon.svg') },
-    { id: 'BASE', name: 'Base', chain: 'EVM', icon: require('../../assets/home/chains/base.png') },
-    { id: 'OPTIMISM', name: 'Optimism', chain: 'EVM', icon: require('../../assets/home/chains/optimism.png') },
-    { id: 'AVALANCHE', name: 'Avalanche', chain: 'EVM', icon: require('../../assets/home/chains/avalanche.svg') },
-    { id: 'SOLANA', name: 'Solana', chain: 'SOLANA', icon: require('../../assets/home/chains/solana.svg') },
-    { id: 'TRON', name: 'Tron', chain: 'TRON', icon: require('../../assets/home/chains/tron.png') },
-    { id: 'TON', name: 'TON', chain: 'TON', icon: require('../../assets/home/chains/ton.jpg') },
-    { id: 'COSMOS', name: 'Cosmos', chain: 'COSMOS', icon: require('../../assets/home/chains/cosmos.svg') },
-    { id: 'OSMOSIS', name: 'Osmosis', chain: 'OSMOSIS', icon: require('../../assets/home/chains/osmosis.svg') },
-] as const;
+// Every network the wallet derives an address for — shared with Account
+// Settings and the receive screen so the three can't drift apart.
+const ALL_NETWORKS = WALLET_NETWORKS;
 
 const ChainIcons = {
     EVM: require('../../assets/home/chains/ethereum.svg'),
@@ -74,6 +65,11 @@ const ChainIcons = {
     TON: require('../../assets/home/chains/ton.jpg'),
     COSMOS: require('../../assets/home/chains/cosmos.svg'),
     OSMOSIS: require('../../assets/home/chains/osmosis.svg'),
+    SUI: require('../../assets/home/chains/sui.svg'),
+    APTOS: require('../../assets/home/chains/aptos.svg'),
+    INJECTIVE: require('../../assets/home/chains/injective.svg'),
+    BITCOIN: require('../../assets/home/chains/bitcoin.svg'),
+    STARKNET: require('../../assets/home/chains/starknet.svg'),
 };
 
 /**
@@ -124,6 +120,7 @@ export const WalletModal: React.FC<WalletModalProps> = (props) => {
     const [mode, setMode] = useState<ModalMode>('MAIN');
     const [copied, setCopied] = useState(false);
     const [selectedNetworkId, setSelectedNetworkId] = useState<string | null>(null);
+    const [networkQuery, setNetworkQuery] = useState('');
     const [isExpanded, setIsExpanded] = useState(false);
     const [isWalletListExpanded, setIsWalletListExpanded] = useState(false);
 
@@ -225,6 +222,23 @@ export const WalletModal: React.FC<WalletModalProps> = (props) => {
         }, 0);
         return `$${sum.toFixed(2)}`;
     }, [balanceData, hiddenKeySet]);
+
+    // The list is ~38 rows now that every derived chain is shown, so the search
+    // box that used to be a decorative placeholder actually filters.
+    //
+    // MUST stay above the early return below — this component bails out with
+    // `null` while hidden, so a hook placed after that point runs only on the
+    // renders where the modal is open. That is exactly the "rendered more hooks
+    // than during the previous render" crash.
+    const visibleNetworks = React.useMemo(() => {
+        const q = networkQuery.trim().toLowerCase();
+        if (!q) return ALL_NETWORKS;
+        return ALL_NETWORKS.filter(n =>
+            n.name.toLowerCase().includes(q)
+            || n.id.toLowerCase().includes(q)
+            || (n.symbol?.toLowerCase().includes(q) ?? false)
+        );
+    }, [networkQuery]);
 
     // EARLY RENDERING CHECK
     if (!_hasHydrated || (!renderModal && !visible)) return null;
@@ -330,17 +344,25 @@ export const WalletModal: React.FC<WalletModalProps> = (props) => {
                         <View style={styles.searchContainer}>
                             <View style={styles.searchInputWrapper}>
                                 <ExpoImage source={SearchIcon} style={{ width: 20, height: 20 }} tintColor={colors.mutedText} contentFit="contain" />
-                                <Text style={styles.searchPlaceholder}>Search network</Text>
+                                <TextInput
+                                    style={styles.searchInput}
+                                    placeholder="Search network"
+                                    placeholderTextColor={colors.mutedText}
+                                    value={networkQuery}
+                                    onChangeText={setNetworkQuery}
+                                    autoCapitalize="none"
+                                    autoCorrect={false}
+                                />
                             </View>
                         </View>
 
                         <View style={styles.chainSwitcherListContainer}>
                             <Text style={styles.sectionLabel}>TRENDING NETWORKS</Text>
                             <ScrollView showsVerticalScrollIndicator={false} style={styles.chainListScroll} nestedScrollEnabled>
-                                {ALL_NETWORKS.map((network) => {
+                                {visibleNetworks.map((network) => {
                                     const isChainActive = selectedNetworkId === network.id;
-                                    const hasAddress = activeGroup?.addresses?.[network.chain];
-                                    const chainAddress = activeGroup?.addresses?.[network.chain] || '';
+                                    const chainAddress = activeGroup?.addresses?.[network.addressKey] || '';
+                                    const hasAddress = !!chainAddress;
                                     const displayChainAddress = truncateAddress(chainAddress);
 
                                     return (
@@ -355,7 +377,10 @@ export const WalletModal: React.FC<WalletModalProps> = (props) => {
                                             onPress={() => {
                                                 if (!hasAddress) return;
                                                 setSelectedNetworkId(network.id);
-                                                setActiveChain(network.chain as any, network.id);
+                                                // Receive-only rows carry no `chain` — they display and
+                                                // copy their address but never become the signing chain.
+                                                if (!network.chain) return;
+                                                setActiveChain(network.chain, network.id, network.addressKey);
                                             }}
                                             disabled={!hasAddress}
                                         >
@@ -761,6 +786,13 @@ const styles = StyleSheet.create({
         borderColor: colors.bgStroke
     },
     searchPlaceholder: { color: colors.mutedText, fontSize: 16, fontFamily: 'Manrope-Medium' },
+    searchInput: {
+        flex: 1,
+        color: colors.titleText,
+        fontSize: 16,
+        fontFamily: 'Manrope-Medium',
+        padding: 0,
+    },
 
     // Chain Switcher List
     chainSwitcherListContainer: { width: '100%', paddingHorizontal: 4, flex: 1 },

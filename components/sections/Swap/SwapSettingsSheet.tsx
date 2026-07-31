@@ -19,8 +19,6 @@ export const SwapSettingsSheet: React.FC<SwapSettingsSheetProps> = ({
         setSlippage,
         isAutoSlippage,
         setAutoSlippage,
-        useRelayer,
-        setUseRelayer
     } = useSwapStore();
 
     const slippageOptions = [0.1, 0.5, 1.0, 3.0];
@@ -89,32 +87,13 @@ export const SwapSettingsSheet: React.FC<SwapSettingsSheetProps> = ({
                     </View>
                 </View>
 
-                {/* Relayer / Managed Swap Section */}
-                <View style={[styles.section, styles.borderTop]}>
-                    <View style={styles.switchRow}>
-                        <View style={styles.switchInfo}>
-                            <View style={styles.titleRow}>
-                                <Text style={styles.sectionTitle}>Managed Swap (Relayer)</Text>
-                                <View style={styles.soonBadge}>
-                                    <Text style={styles.soonBadgeText}>SOON</Text>
-                                </View>
-                            </View>
-                            <Text style={styles.sectionSubtitle}>
-                                Pay gas fees in Tiwi Cat or the token you're swapping. Cheaper and faster.
-                            </Text>
-                        </View>
-                        <Switch
-                            trackColor={{ false: colors.bgCards, true: colors.primaryCTA + '80' }}
-                            thumbColor={useRelayer ? colors.primaryCTA : '#f4f3f4'}
-                            ios_backgroundColor={colors.bgCards}
-                            onValueChange={setUseRelayer}
-                            value={useRelayer}
-                            disabled
-                        />
-                    </View>
-                </View>
+                {/* The "Managed Swap (Relayer) — SOON" toggle used to live here.
+                    Removed: the BSC gasless relayer is live, and the control for
+                    it is the gas-token selector on the swap card (TWC / BNB /
+                    other BEP-20), which is where the web app puts it too. A
+                    permanently-disabled "SOON" switch alongside a shipped
+                    feature just told users the opposite of the truth. */}
 
-                {/* Future: Gas Payment Token selection could go here */}
 
                 <TouchableOpacity
                     style={styles.saveButton}

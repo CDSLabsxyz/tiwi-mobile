@@ -1,4 +1,5 @@
 import { api, Notification as SDKNotification } from '@/lib/mobile/api-client';
+import { logNetworkAwareError } from '@/utils/networkErrors';
 
 export type NotificationStatus = 'live' | 'removed' | 'scheduled';
 export type NotificationPriority = 'normal' | 'important' | 'critical';
@@ -43,7 +44,9 @@ class AdminNotificationService {
                 unreadCount: response.unreadCount || 0
             };
         } catch (error: any) {
-            console.error('[AdminNotificationService] Exception fetching notifications:', error);
+            // This runs on a background poll, so a dropped request is expected
+            // when the device is offline — warn instead of raising a red box.
+            logNetworkAwareError('[AdminNotificationService] Exception fetching notifications:', error);
             return { notifications: [], unreadCount: 0 };
         }
     }
@@ -65,7 +68,7 @@ class AdminNotificationService {
                 )
             );
         } catch (error: any) {
-            console.error('[AdminNotificationService] Exception marking viewed:', error);
+            logNetworkAwareError('[AdminNotificationService] Exception marking viewed:', error);
         }
     }
 }

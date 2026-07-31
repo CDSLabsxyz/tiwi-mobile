@@ -1,0 +1,26 @@
+diff --git a/node_modules/@scure/sr25519/lib/esm/index.js b/node_modules/@scure/sr25519/lib/esm/index.js
+index 14152f1..0f21030 100644
+--- a/node_modules/@scure/sr25519/lib/esm/index.js
++++ b/node_modules/@scure/sr25519/lib/esm/index.js
+@@ -380,7 +380,7 @@ const dleq = {
+     proove(keyScalar, nonce, pubPoint, t, input, output) {
+         t.protoName('DLEQProof');
+         t.commitPoint('vrf:h', input);
+-        const r = t.witnessScalar(`proving${'\0'}0`, [nonce]);
++        const r = t.witnessScalar("proving\u00000", [nonce]);
+         const R = RistrettoPoint.BASE.multiply(r);
+         t.commitPoint('vrf:R=g^r', R);
+         const Hr = input.multiply(r);
+diff --git a/node_modules/@scure/sr25519/lib/index.js b/node_modules/@scure/sr25519/lib/index.js
+index dd03166..608eb80 100644
+--- a/node_modules/@scure/sr25519/lib/index.js
++++ b/node_modules/@scure/sr25519/lib/index.js
+@@ -389,7 +389,7 @@ const dleq = {
+     proove(keyScalar, nonce, pubPoint, t, input, output) {
+         t.protoName('DLEQProof');
+         t.commitPoint('vrf:h', input);
+-        const r = t.witnessScalar(`proving${'\0'}0`, [nonce]);
++        const r = t.witnessScalar("proving\u00000", [nonce]);
+         const R = ed25519_js_1.RistrettoPoint.BASE.multiply(r);
+         t.commitPoint('vrf:R=g^r', R);
+         const Hr = input.multiply(r);

@@ -3,6 +3,7 @@ import { colors } from '@/constants/colors';
 import { useTokens } from '@/hooks/useTokens';
 import { useWalletBalances } from '@/hooks/useWalletBalances';
 import { api } from '@/lib/mobile/api-client';
+import { fetchSolanaTokenBalance } from '@/services/customTokenBalance';
 import { getDexScreenerLogo, getTokenLogo } from '@/services/tokenLogoService';
 import { useCustomTokenStore } from '@/store/customTokenStore';
 import { useWalletStore } from '@/store/walletStore';
@@ -11,11 +12,13 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Clipboard from 'expo-clipboard';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { arbitrum, avalanche, base, bsc, erc20Abi, formatUnits, mainnet, optimism, polygon } from 'viem';
-import { createPublicClient, http } from 'viem';
+import { getRpcUrls } from '@/services/swap/core/config/rpc-config';
+import { getCachedPublicClient } from '@/services/swap/core/platform/viem-clients';
+import { getCanonicalChain, getCanonicalChains } from '@/services/swap/core/registry/chains';
+import { erc20Abi, formatUnits } from 'viem';
 
 const PasteIcon = require('@/assets/wallet/clipboard.svg');
 
@@ -37,15 +40,96 @@ function getTrustWalletLogo(chainId?: number, address?: string): string | undefi
     return `https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/${slug}/assets/${address}/logo.png`;
 }
 
-const CHAIN_CONFIG: Record<number, { chain: any; rpcUrl?: string }> = {
-    1: { chain: mainnet, rpcUrl: 'https://eth.llamarpc.com' },
-    56: { chain: bsc, rpcUrl: 'https://bsc-dataseed.binance.org' },
-    137: { chain: polygon, rpcUrl: 'https://polygon-rpc.com' },
-    8453: { chain: base, rpcUrl: 'https://mainnet.base.org' },
-    42161: { chain: arbitrum, rpcUrl: 'https://arb1.arbitrum.io/rpc' },
-    10: { chain: optimism, rpcUrl: 'https://mainnet.optimism.io' },
-    43114: { chain: avalanche, rpcUrl: 'https://api.avax.network/ext/bc/C/rpc' },
+const isEvmAddress = (a?: string | null): a is string => !!a && /^0x[a-fA-F0-9]{40}$/.test(a);
+
+/** Display name for ANY chain id, not just the eleven with a chip in the UI. */
+const chainNameFor = (id: number): string =>
+    CHAINS.find(c => c.id === id)?.name || getCanonicalChain(id)?.name || `Chain ${id}`;
+
+// Every EVM chain the app can actually reach: in the canonical registry AND
+// with at least one configured RPC endpoint. This replaces a hand-written
+// seven-chain table that made anything on zkSync/Scroll/Mantle/Linea/Sonic/
+// Berachain/… report as "unsupported" when it was only unscanned.
+const SCANNABLE_EVM_CHAINS: number[] = getCanonicalChains()
+    .filter(c => c.type === 'EVM' && (getRpcUrls(c.id)?.length ?? 0) > 0)
+    .map(c => c.id);
+
+// Probed first, so the overwhelmingly common case costs one small wave of
+// requests instead of sweeping the whole registry.
+const PRIORITY_EVM_CHAINS = [56, 1, 8453, 42161, 137, 10, 43114];
+
+type EvmHit = {
+    chainId: number;
+    symbol: string;
+    name: string;
+    decimals: number;
+    balance: string;
+    balanceFormatted: string;
 };
+
+/** Is there a contract deployed here at all? One `eth_getCode` call. */
+async function hasContractCode(chainId: number, addr: string): Promise<boolean> {
+    try {
+        const code = await getCachedPublicClient(chainId).getBytecode({ address: addr as `0x${string}` });
+        return !!code && code !== '0x';
+    } catch { return false; }
+}
+
+/**
+ * Read a token's identity straight off the chain — no price feed, no indexer,
+ * no allowlist. `balanceOf` is folded in when we know the user's address.
+ */
+async function readErc20(chainId: number, addr: string, walletAddr?: string): Promise<EvmHit | null> {
+    const client = getCachedPublicClient(chainId);
+    const call = { address: addr as `0x${string}`, abi: erc20Abi } as const;
+
+    const [decimals, symbol, name, balance] = await Promise.all([
+        client.readContract({ ...call, functionName: 'decimals' }).catch(() => null),
+        client.readContract({ ...call, functionName: 'symbol' }).catch(() => null),
+        client.readContract({ ...call, functionName: 'name' }).catch(() => null),
+        isEvmAddress(walletAddr)
+            ? client.readContract({ ...call, functionName: 'balanceOf', args: [walletAddr as `0x${string}`] }).catch(() => 0n)
+            : Promise.resolve(0n),
+    ]);
+
+    // Contract code with neither decimals() nor symbol() is not an ERC-20.
+    if (decimals === null && symbol === null) return null;
+
+    const dec = Number(decimals ?? 18);
+    return {
+        chainId,
+        decimals: dec,
+        symbol: (symbol as string) || 'UNKNOWN',
+        name: (name as string) || (symbol as string) || 'Custom Token',
+        balance: (balance as bigint).toString(),
+        balanceFormatted: formatUnits(balance as bigint, dec),
+    };
+}
+
+/**
+ * Find the chain(s) an ERC-20 is deployed on. Probes in two waves — selected
+ * chain + majors, then everything else — and stops at the first wave that
+ * turns anything up, so a BSC token costs 8 `eth_getCode` calls, not 60.
+ */
+async function scanEvmChains(addr: string, walletAddr: string | undefined, preferred?: number): Promise<EvmHit[]> {
+    const head = Array.from(new Set([preferred, ...PRIORITY_EVM_CHAINS]))
+        .filter((c): c is number => typeof c === 'number' && SCANNABLE_EVM_CHAINS.includes(c));
+    const tail = SCANNABLE_EVM_CHAINS.filter(c => !head.includes(c));
+
+    for (const wave of [head, tail]) {
+        if (!wave.length) continue;
+        const present = (await Promise.all(
+            wave.map(async c => (await hasContractCode(c, addr)) ? c : null)
+        )).filter((c): c is number => c !== null);
+        if (!present.length) continue;
+
+        const hits = (await Promise.all(
+            present.map(c => readErc20(c, addr, walletAddr).catch(() => null))
+        )).filter((h): h is EvmHit => h !== null);
+        if (hits.length) return hits;
+    }
+    return [];
+}
 
 async function fetchSolanaBalance(mintAddr: string, walletAddr: string) {
     const rpcUrl = 'https://api.mainnet-beta.solana.com';
@@ -130,49 +214,6 @@ async function fetchCosmosBalance(denom: string, walletAddr: string) {
         ? whole.toString()
         : `${whole}.${frac.toString().padStart(decimals, '0').replace(/0+$/, '')}`;
     return { balance: amount, balanceFormatted, decimals };
-}
-
-async function fetchOnChainBalance(chainId: number, contractAddr: string, walletAddr: string) {
-    const config = CHAIN_CONFIG[chainId];
-    if (!config) throw new Error('Unsupported chain');
-
-    const client = createPublicClient({
-        chain: config.chain,
-        transport: http(config.rpcUrl),
-    });
-
-    const [balance, decimals, symbol, name] = await Promise.all([
-        client.readContract({
-            address: contractAddr as `0x${string}`,
-            abi: erc20Abi,
-            functionName: 'balanceOf',
-            args: [walletAddr as `0x${string}`],
-        }),
-        client.readContract({
-            address: contractAddr as `0x${string}`,
-            abi: erc20Abi,
-            functionName: 'decimals',
-        }).catch(() => 18),
-        client.readContract({
-            address: contractAddr as `0x${string}`,
-            abi: erc20Abi,
-            functionName: 'symbol',
-        }).catch(() => 'UNKNOWN'),
-        client.readContract({
-            address: contractAddr as `0x${string}`,
-            abi: erc20Abi,
-            functionName: 'name',
-        }).catch(() => 'Custom Token'),
-    ]);
-
-    const balanceFormatted = formatUnits(balance as bigint, decimals as number);
-    return {
-        balance: (balance as bigint).toString(),
-        balanceFormatted,
-        decimals: decimals as number,
-        symbol: symbol as string,
-        name: name as string,
-    };
 }
 
 const CHAINS = [
@@ -279,13 +320,79 @@ export default function ManageTokensScreen() {
     };
 
     const { addToken, hasToken, toggleTokenHidden, removeToken, toggleWalletTokenHidden, isWalletTokenHidden } = useCustomTokenStore();
+    const updateTokenBalance = useCustomTokenStore(s => s.updateTokenBalance);
     const tokensByWallet = useCustomTokenStore(s => s.tokensByWallet);
     const hiddenWalletTokens = useCustomTokenStore(s => s.hiddenWalletTokens);
-    const { walletGroups, activeGroupId, address } = useWalletStore();
+    const { walletGroups, activeGroupId, address, activeAddress } = useWalletStore();
     const walletKey = activeGroupId || address || 'default';
     const myTokens = useMemo(() => tokensByWallet[walletKey] || [], [tokensByWallet, walletKey]);
     const { data: balanceData } = useWalletBalances();
     const fetchedTokens = balanceData?.tokens || [];
+
+    // Keep custom-token balances live, same as the wallet tab does. Without
+    // this the row renders the snapshot taken at add time — a token added
+    // before it was funded (or one whose lookup couldn't reach the wallet's
+    // EVM address) shows no amount forever, because the portfolio route
+    // filters out cheap/long-tail holdings and never re-supplies it.
+    useEffect(() => {
+        if (!myTokens.length) return;
+        const group = walletGroups.find(g => g.id === activeGroupId);
+        const evmAddr = group?.addresses?.EVM
+            || (isEvmAddress(activeAddress) ? activeAddress : undefined)
+            || (isEvmAddress(address) ? address : undefined);
+        if (!group && !evmAddr) return;
+
+        let cancelled = false;
+
+        (async () => {
+            for (const ct of myTokens) {
+                // Fast path — the portfolio route already carries this token.
+                const match = fetchedTokens.find((t: any) =>
+                    t.address?.toLowerCase() === ct.address.toLowerCase() && Number(t.chainId) === ct.chainId
+                );
+                if (match) {
+                    const bal = match.balanceFormatted || '0';
+                    const price = match.priceUSD || ct.priceUSD;
+                    const usd = match.usdValue || (parseFloat(bal) * parseFloat(price || '0')).toFixed(2);
+                    if (bal !== ct.balanceFormatted || usd !== ct.usdValue || price !== ct.priceUSD) {
+                        updateTokenBalance(walletKey, ct.address, ct.chainId, {
+                            balanceFormatted: bal, usdValue: usd, priceUSD: price,
+                        });
+                    }
+                    continue;
+                }
+
+                // Otherwise read the balance straight off the chain. EVM goes
+                // through readErc20 so this works on every registry chain, not
+                // just the seven customTokenBalance.ts knows about.
+                let freshBal: string | null = null;
+                if (ct.chainId === 7565164) {
+                    const solAddr = group?.addresses?.SOLANA;
+                    if (solAddr) freshBal = await fetchSolanaTokenBalance(ct.address, solAddr);
+                } else if (evmAddr && SCANNABLE_EVM_CHAINS.includes(ct.chainId)) {
+                    freshBal = (await readErc20(ct.chainId, ct.address, evmAddr).catch(() => null))?.balanceFormatted ?? null;
+                }
+                if (cancelled || freshBal === null) continue;
+
+                let freshPrice = ct.priceUSD || '0';
+                try {
+                    const info = await api.tokenInfo.get(ct.chainId, ct.address);
+                    if (info?.pool?.priceUsd) freshPrice = String(info.pool.priceUsd);
+                } catch {}
+                if (cancelled) continue;
+
+                const freshUsd = (parseFloat(freshBal) * parseFloat(freshPrice)).toFixed(2);
+                if (freshBal !== ct.balanceFormatted || freshUsd !== ct.usdValue || freshPrice !== ct.priceUSD) {
+                    updateTokenBalance(walletKey, ct.address, ct.chainId, {
+                        balanceFormatted: freshBal, usdValue: freshUsd, priceUSD: freshPrice,
+                    });
+                }
+            }
+        })();
+
+        return () => { cancelled = true; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [balanceData, myTokens.length, walletKey, walletGroups, activeGroupId, activeAddress, address, updateTokenBalance]);
 
     // Unified "Your Tokens" list: wallet-held tokens + user-added tokens,
     // deduped by (chainId,address). Custom entries override fetched ones so
@@ -592,8 +699,11 @@ export default function ManageTokensScreen() {
     // and chain (e.g. tapping a browse-list "+") can run the lookup without
     // waiting for a state flush from setContractAddress/setSelectedChain.
     const handleLookup = async (addrOverride?: string, chainOverride?: number) => {
-        const addr = (addrOverride ?? contractAddress).trim();
-        const preferredChain = chainOverride ?? selectedChain;
+        // Guard the type too: React Native hands `onPress` a gesture event, and
+        // a stray `onPress={handleLookup}` would otherwise land here as the
+        // address and blow up on `.trim()`.
+        const addr = (typeof addrOverride === 'string' ? addrOverride : contractAddress).trim();
+        const preferredChain = typeof chainOverride === 'number' ? chainOverride : selectedChain;
         if (!addr) {
             setError('Please enter a contract address');
             return;
@@ -604,124 +714,117 @@ export default function ManageTokensScreen() {
         setTokenInfo(null);
 
         const group = walletGroups.find(g => g.id === activeGroupId);
-        const evmAddr = group?.addresses?.EVM;
+        // `activeAddress` is the fallback for wallets with no active group —
+        // without it the on-chain reads were skipped entirely and every lookup
+        // collapsed onto the price API, which is what produced the bogus
+        // "not found on any supported network" for perfectly real tokens.
+        const evmAddr = group?.addresses?.EVM
+            || (isEvmAddress(activeAddress) ? activeAddress! : undefined)
+            || (isEvmAddress(address) ? address! : undefined);
         const solAddr = group?.addresses?.SOLANA;
         const tronAddr = group?.addresses?.TRON;
         const tonAddr = group?.addresses?.TON;
         const cosmosAddr = group?.addresses?.COSMOS;
 
-        const allChains = [1, 56, 137, 42161, 8453, 10, 43114, 59144, 250, 42220, 100, 7565164, 728126428, 1100, 118];
-        const evmChains = Object.keys(CHAIN_CONFIG).map(Number);
+        const isEvm = isEvmAddress(addr);
+        // Ask the price API about the selected chain plus the non-EVM chains;
+        // for EVM the on-chain scan below decides which chain the token is on,
+        // so blanketing every chain here would just be wasted requests.
+        const priceProbeChains = Array.from(new Set(
+            isEvm ? [preferredChain, 1, 56, 137, 42161, 8453, 10, 43114] : [preferredChain, 7565164, 728126428, 1100, 118]
+        ));
 
-        const [tokenInfoResults, searchResult, onChainResults, solBal, tronBal, tonBal, cosmosBal] = await Promise.all([
-            Promise.all(allChains.map(async (cid) => {
+        const [tokenInfoResults, searchResult, evmHits, solBal, tronBal, tonBal, cosmosBal] = await Promise.all([
+            Promise.all(priceProbeChains.map(async (cid) => {
                 try {
                     const info = await api.tokenInfo.get(cid, addr);
-                    if (info?.token && info?.pool?.priceUsd) return { chainId: cid, info };
+                    if (info?.token) return { chainId: cid, info };
                     return null;
                 } catch { return null; }
             })),
             api.tokens.list({ query: addr, limit: 10 }).catch(() => ({ tokens: [] } as any)),
-            evmAddr ? Promise.all(evmChains.map(async (cid) => {
-                try {
-                    const r = await fetchOnChainBalance(cid, addr, evmAddr);
-                    return { chainId: cid, ...r };
-                } catch { return null; }
-            })) : Promise.resolve([] as any[]),
+            isEvm ? scanEvmChains(addr, evmAddr, preferredChain) : Promise.resolve([]),
             solAddr ? fetchSolanaBalance(addr, solAddr).catch(() => null) : Promise.resolve(null),
             tronAddr ? fetchTronBalance(addr, tronAddr).catch(() => null) : Promise.resolve(null),
             tonAddr ? fetchTonBalance(addr, tonAddr).catch(() => null) : Promise.resolve(null),
             cosmosAddr ? fetchCosmosBalance(addr, cosmosAddr).catch(() => null) : Promise.resolve(null),
         ]);
 
+        // Price/logo, keyed by chain — enrichment only. A token with no price
+        // feed is still a real token, so nothing below is allowed to reject it.
+        const infoByChain = new Map<number, any>();
+        tokenInfoResults.forEach(r => { if (r) infoByChain.set(r.chainId, r.info); });
+        const apiMatch = (searchResult as any)?.tokens?.find((t: any) =>
+            t.address?.toLowerCase() === addr.toLowerCase()
+        );
+
         let tokenData: any = null;
 
-        const tokenInfoMatch = tokenInfoResults.find(r => r?.chainId === preferredChain && r?.info?.pool?.priceUsd)
-            || tokenInfoResults.find((r): r is NonNullable<typeof r> => r !== null);
+        // ── EVM: the chain is whatever the bytecode says, not what an API knows ──
+        if (evmHits.length) {
+            const chosen =
+                evmHits.filter(h => parseFloat(h.balanceFormatted) > 0)
+                    .sort((a, b) => parseFloat(b.balanceFormatted) - parseFloat(a.balanceFormatted))[0]
+                || evmHits.find(h => h.chainId === preferredChain)
+                || evmHits.find(h => h.symbol !== 'UNKNOWN')
+                || evmHits[0];
 
-        if (tokenInfoMatch) {
-            const t = tokenInfoMatch.info.token;
+            const info = infoByChain.get(chosen.chainId);
+            const price = info?.pool?.priceUsd
+                ?? (apiMatch && Number(apiMatch.chainId) === chosen.chainId ? apiMatch.priceUSD : null)
+                ?? null;
+            const bal = parseFloat(chosen.balanceFormatted);
+
             tokenData = {
                 address: addr,
-                chainId: tokenInfoMatch.chainId,
-                symbol: t.symbol || 'UNKNOWN',
-                name: t.name || 'Unknown Token',
-                decimals: t.decimals || 18,
-                logoURI: t.logo || '',
-                price: tokenInfoMatch.info.pool?.priceUsd || null,
-                balance: '0',
-                balanceFormatted: '0',
-                usdValue: '0',
+                chainId: chosen.chainId,
+                symbol: chosen.symbol,
+                name: chosen.name,
+                decimals: chosen.decimals,
+                logoURI: info?.token?.logo || (apiMatch?.logoURI ?? ''),
+                price: price ? String(price) : null,
+                balance: chosen.balance,
+                balanceFormatted: bal.toString(),
+                usdValue: price ? (bal * parseFloat(String(price))).toFixed(2) : '0',
+                // Surfaced in the preview when the token turned up on more than
+                // one chain, so the user can tell which deployment they're adding.
+                otherChains: evmHits.filter(h => h.chainId !== chosen.chainId).map(h => h.chainId),
             };
         }
 
+        // ── Non-EVM (and any EVM address the scan couldn't reach): API-derived ──
         if (!tokenData) {
-            const found = (searchResult as any)?.tokens?.find((t: any) =>
-                t.address?.toLowerCase() === addr.toLowerCase()
-            );
-            if (found) {
+            const infoHit = infoByChain.get(preferredChain)
+                ? { chainId: preferredChain, info: infoByChain.get(preferredChain) }
+                : tokenInfoResults.find((r): r is NonNullable<typeof r> => r !== null);
+
+            if (infoHit) {
+                const t = infoHit.info.token;
                 tokenData = {
-                    address: found.address,
-                    chainId: found.chainId,
-                    symbol: found.symbol,
-                    name: found.name,
-                    decimals: found.decimals || 18,
-                    logoURI: found.logoURI || '',
-                    price: found.priceUSD || null,
+                    address: addr,
+                    chainId: infoHit.chainId,
+                    symbol: t.symbol || 'UNKNOWN',
+                    name: t.name || 'Unknown Token',
+                    decimals: t.decimals ?? 18,
+                    logoURI: t.logo || '',
+                    price: infoHit.info.pool?.priceUsd ? String(infoHit.info.pool.priceUsd) : null,
                     balance: '0',
                     balanceFormatted: '0',
                     usdValue: '0',
                 };
-            }
-        }
-
-        type ChosenResult = NonNullable<typeof onChainResults[number]>;
-        const withBalance = onChainResults
-            .filter((r): r is ChosenResult => r !== null && parseFloat(r.balanceFormatted) > 0)
-            .sort((a, b) => parseFloat(b.balanceFormatted) - parseFloat(a.balanceFormatted));
-
-        let chosen: ChosenResult | undefined = withBalance[0];
-        if (!chosen) {
-            if (tokenData?.chainId) {
-                const byApi = onChainResults.find(r => r?.chainId === tokenData.chainId);
-                if (byApi) chosen = byApi;
-            }
-            if (!chosen) {
-                const selected = onChainResults.find(r => r?.chainId === preferredChain);
-                if (selected && selected.symbol !== 'UNKNOWN') chosen = selected;
-            }
-            if (!chosen) {
-                const anyValid = onChainResults.find((r): r is ChosenResult =>
-                    r !== null && r.symbol !== 'UNKNOWN' && r.symbol.length > 0);
-                if (anyValid) chosen = anyValid;
-            }
-        }
-
-        if (chosen) {
-            const bal = parseFloat(chosen.balanceFormatted);
-            if (!tokenData) {
+            } else if (apiMatch) {
                 tokenData = {
-                    address: addr,
-                    chainId: chosen.chainId,
-                    symbol: chosen.symbol,
-                    name: chosen.name,
-                    decimals: chosen.decimals,
-                    logoURI: '',
-                    price: null,
-                    balance: chosen.balance,
-                    balanceFormatted: bal.toString(),
+                    address: apiMatch.address,
+                    chainId: Number(apiMatch.chainId),
+                    symbol: apiMatch.symbol,
+                    name: apiMatch.name,
+                    decimals: apiMatch.decimals ?? 18,
+                    logoURI: apiMatch.logoURI || '',
+                    price: apiMatch.priceUSD || null,
+                    balance: '0',
+                    balanceFormatted: '0',
                     usdValue: '0',
                 };
-            } else {
-                tokenData.chainId = chosen.chainId;
-                tokenData.balance = chosen.balance;
-                tokenData.balanceFormatted = bal.toString();
-                tokenData.decimals = chosen.decimals;
-                if (tokenData.symbol === 'UNKNOWN' && chosen.symbol) tokenData.symbol = chosen.symbol;
-                if (tokenData.name === 'Custom Token' && chosen.name) tokenData.name = chosen.name;
-                if (tokenData.price) {
-                    tokenData.usdValue = (bal * parseFloat(tokenData.price)).toFixed(2);
-                }
             }
         }
 
@@ -743,8 +846,32 @@ export default function ManageTokensScreen() {
         if (tokenData?.chainId === 1100) applyNonEvmBalance(tonBal);
         if (tokenData?.chainId === 118) applyNonEvmBalance(cosmosBal);
 
+        // Last resort: a non-EVM address nothing recognised, but a balance read
+        // came back. That proves the token exists on that chain — take it.
         if (!tokenData) {
-            setError('Token not found on any supported network. This token may be on an unsupported chain (e.g. zkSync Era, Scroll, Mantle). Support for more networks is coming soon.');
+            const nonEvm: [number, any][] = [[7565164, solBal], [728126428, tronBal], [1100, tonBal], [118, cosmosBal]];
+            const hit = nonEvm.find(([, r]) => r && parseFloat(r.balanceFormatted || '0') > 0);
+            if (hit) {
+                const [cid, r] = hit;
+                tokenData = {
+                    address: addr,
+                    chainId: cid,
+                    symbol: r.symbol || 'UNKNOWN',
+                    name: r.name || 'Custom Token',
+                    decimals: r.decimals ?? 9,
+                    logoURI: '',
+                    price: null,
+                    balance: r.balance,
+                    balanceFormatted: String(parseFloat(r.balanceFormatted)),
+                    usdValue: '0',
+                };
+            }
+        }
+
+        if (!tokenData) {
+            setError(isEvm
+                ? `No contract found at this address on any of the ${SCANNABLE_EVM_CHAINS.length} EVM networks we can reach. Check the address and the network.`
+                : 'Could not resolve this address. Check that it is a valid token address for the selected network.');
             setIsLoading(false);
             return;
         }
@@ -1074,7 +1201,7 @@ export default function ManageTokensScreen() {
                                 {/* Lookup Button */}
                                 <TouchableOpacity
                                     style={[styles.lookupBtn, isLoading && { opacity: 0.5 }]}
-                                    onPress={handleLookup}
+                                    onPress={() => handleLookup()}
                                     disabled={isLoading}
                                 >
                                     {isLoading ? (
@@ -1124,6 +1251,16 @@ export default function ManageTokensScreen() {
                                                 )}
                                             </View>
                                         </View>
+
+                                        {/* Which chain this actually resolved on — the scan covers far
+                                            more networks than the chip row above, so the chosen chain
+                                            is worth stating outright. */}
+                                        <Text style={styles.previewChain}>
+                                            Found on {chainNameFor(tokenInfo.chainId)}
+                                            {tokenInfo.otherChains?.length
+                                                ? ` · also deployed on ${tokenInfo.otherChains.map(chainNameFor).join(', ')}`
+                                                : ''}
+                                        </Text>
 
                                         <TouchableOpacity
                                             style={[styles.addBtn, (alreadyAdded || alreadyInAssets) && { backgroundColor: colors.bgStroke }]}
@@ -1358,6 +1495,12 @@ const styles = StyleSheet.create({
         fontSize: 12,
         color: colors.mutedText,
         marginTop: 2,
+    },
+    previewChain: {
+        fontFamily: 'Manrope-Regular',
+        fontSize: 11,
+        color: colors.mutedText,
+        marginTop: 8,
     },
     previewBalance: {
         fontFamily: 'Manrope-Bold',

@@ -7,11 +7,13 @@ import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-nati
 
 const TiwiLogo = require('@/assets/logo/tiwi-logo.svg');
 
-const CHAIN_META: { chain: ChainType; label: string; icon: string }[] = [
-    { chain: 'EVM', label: 'Ethereum', icon: 'logo-electron' },
-    { chain: 'SOLANA', label: 'Solana', icon: 'planet-outline' },
-    { chain: 'TRON', label: 'Tron', icon: 'flash-outline' },
-    { chain: 'COSMOS', label: 'Cosmos', icon: 'globe-outline' },
+// Real network logos — the same assets the wallet/receive/network sheets use,
+// so a chain looks identical everywhere in the app.
+const CHAIN_META: { chain: ChainType; label: string; icon: any }[] = [
+    { chain: 'EVM', label: 'Ethereum', icon: require('@/assets/home/chains/ethereum.svg') },
+    { chain: 'SOLANA', label: 'Solana', icon: require('@/assets/home/chains/solana.svg') },
+    { chain: 'TRON', label: 'Tron', icon: require('@/assets/home/chains/tron.png') },
+    { chain: 'COSMOS', label: 'Cosmos', icon: require('@/assets/home/chains/cosmos.svg') },
 ];
 
 interface FinalizeStepProps {
@@ -87,7 +89,14 @@ export default function FinalizeStep({ address, addresses, onComplete }: Finaliz
                             if (!addr) return null;
                             return (
                                 <View key={chain} style={styles.chainRow}>
-                                    <Ionicons name={icon as any} size={16} color={colors.primaryCTA} />
+                                    <View style={styles.chainIconCircle}>
+                                        <Image
+                                            source={icon}
+                                            style={styles.chainIcon}
+                                            contentFit="contain"
+                                            priority="high"
+                                        />
+                                    </View>
                                     <Text style={styles.chainLabel}>{label}</Text>
                                     <Text style={styles.chainAddr}>{truncate(addr)}</Text>
                                 </View>
@@ -208,6 +217,19 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         gap: 10,
+    },
+    chainIconCircle: {
+        width: 22,
+        height: 22,
+        borderRadius: 11,
+        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        overflow: 'hidden',
+    },
+    chainIcon: {
+        width: '100%',
+        height: '100%',
     },
     chainLabel: {
         fontFamily: 'Manrope-SemiBold',

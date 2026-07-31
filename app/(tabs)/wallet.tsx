@@ -10,7 +10,7 @@ import {
 } from '@/components/sections/Wallet';
 import { useCustomTokenStore, type CustomToken } from '@/store/customTokenStore';
 import { fetchEvmTokenBalance, fetchSolanaTokenBalance } from '@/services/customTokenBalance';
-import { api } from '@/lib/mobile/api-client';
+import { api, ChainItem } from '@/lib/mobile/api-client';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { Header } from '@/components/ui/header';
 import { colors } from '@/constants/colors';
@@ -25,6 +25,7 @@ import {
 import { useFilterStore } from '@/store/filterStore';
 import { useWalletStore } from '@/store/walletStore';
 import { applyFilters } from '@/utils/assetFilters';
+import { CHAIN_NAMES } from '@/utils/chain';
 import { useQueryClient } from '@tanstack/react-query';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -34,12 +35,10 @@ import { Image as ExpoImage } from 'expo-image';
 const DeleteIcon = require('@/assets/settings/delete-02.svg');
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const FALLBACK_NAMES: Record<number, string> = {
-    1: 'Ethereum', 56: 'BNB Chain', 137: 'Polygon', 42161: 'Arbitrum',
-    8453: 'Base', 10: 'Optimism', 43114: 'Avalanche', 59144: 'Linea',
-    250: 'Fantom', 42220: 'Celo', 100: 'Gnosis', 7565164: 'Solana',
-    1100: 'TON', 728126428: 'TRON',
-};
+// Used when the live chain registry (useChains) hasn't loaded yet, or for a
+// chain it doesn't return. Mirrors the backend registry via CHAIN_NAMES so a
+// long-tail holding never renders as "Unknown".
+const FALLBACK_NAMES: Record<number, string> = CHAIN_NAMES;
 
 const FALLBACK_LOGOS: Record<number, string> = {
     1: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png',
@@ -320,6 +319,7 @@ export default function WalletScreen() {
                 onWalletPress={() => useWalletStore.getState().setWalletModalVisible(true)}
                 onSettingsPress={() => router.push('/settings')}
                 onScanPress={() => { }}
+                trailingAction="settings"
             />
 
             <ScrollView
@@ -373,7 +373,7 @@ export default function WalletScreen() {
                         <View style={styles.assetList}>
                             {filteredTokens.map((token: any) => {
                                 // Find the chain logo and name from the chains data with fallback
-                                const tokenChain = (chainsData || []).find(c => Number(c.id) === Number(token.chainId));
+                                const tokenChain = (chainsData || []).find((c: ChainItem) => Number(c.id) === Number(token.chainId));
 
                                 const chainName = tokenChain?.name || FALLBACK_NAMES[token.chainId] || 'Unknown';
 

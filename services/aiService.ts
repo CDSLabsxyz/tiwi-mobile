@@ -4,7 +4,7 @@
  * Fallback chain: OpenAI direct → Gemini → legacy backend
  */
 
-import { api } from '@/lib/mobile/api-client';
+import { api, type AiCreditBalance, type AiValidationResult } from '@/lib/mobile/api-client';
 
 const OPENAI_API_KEY = process.env.EXPO_PUBLIC_OPENAI_API_KEY || '';
 const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
@@ -20,6 +20,54 @@ export interface AIChatContext {
     tokens: Array<{ symbol: string; balance: string; usdValue: string }>;
   };
   history?: Array<{ role: 'user' | 'assistant'; content: string }>;
+  /** Client-side credit balance, mirrored to the server for logging/telemetry. */
+  credits?: { available?: number; monthlyLeft?: number; paidLeft?: number };
+}
+
+/** An image the user attached to a prompt. */
+export interface AIAttachment {
+  uri: string;
+  mimeType?: string;
+}
+
+/**
+ * Everything the reply carries beyond its text. The super-app backend returns
+ * a security-validation verdict and whether the answer cost a credit — the
+ * chat UI renders both as chips under the bubble (parity with the web app).
+ * Fallback providers can't produce these, so `source` tells the UI which
+ * pipeline actually answered.
+ */
+export interface AIChatMeta {
+  validation?: AiValidationResult;
+  creditCharged: boolean;
+  source: 'superapp' | 'openai' | 'gemini' | 'backend';
+  /**
+   * The wallet's balance AFTER this request, straight from the shared ledger.
+   * The server spends the credit, so this is the authoritative number — the
+   * client mirrors it rather than deducting anything itself.
+   */
+  balance?: AiCreditBalance | null;
+}
+
+/** Thrown when the shared ledger says the wallet has nothing left to spend. */
+export class OutOfCreditsError extends Error {
+  balance: AiCreditBalance | null;
+  constructor(message: string, balance: AiCreditBalance | null) {
+    super(message);
+    this.name = 'OutOfCreditsError';
+    this.balance = balance;
+  }
+}
+
+export interface StreamAIOptions {
+  prompt: string;
+  /** All attachments are forwarded; the backend accepts up to 4 images. */
+  images?: AIAttachment[];
+  context?: AIChatContext;
+  abortSignal?: AbortSignal;
+  onChunk?: (chunk: string) => void;
+  onComplete?: (fullText: string, meta: AIChatMeta) => void;
+  onError?: (error: Error) => void;
 }
 
 const SYSTEM_PROMPT = `You are TIWI AI, the intelligent assistant for TIWI Protocol — a multichain DeFi super-app.
@@ -273,22 +321,26 @@ const imageUriToBase64 = async (uri: string): Promise<string> => {
  *  3. Gemini — secondary fallback
  *  4. Legacy backend — last resort
  */
-export const streamAIResponse = async (
-  prompt: string,
-  imageUri?: string,
-  imageMimeType?: string,
-  onChunk?: (chunk: string) => void,
-  onComplete?: (fullText: string) => void,
-  onError?: (error: Error) => void,
-  abortSignal?: AbortSignal,
-  context?: AIChatContext,
-): Promise<void> => {
+export const streamAIResponse = async (options: StreamAIOptions): Promise<void> => {
+  const { prompt, images = [], context, abortSignal, onChunk, onComplete, onError } = options;
+  const first = images[0];
+
+  // A fallback provider answered, so there's no server-side validation verdict
+  // and nothing was charged — the UI shows no chips for these.
+  const fallbackComplete = (source: AIChatMeta['source']) =>
+    (text: string) => onComplete?.(text, { creditCharged: false, source });
+
   // 1. Super-app backend (primary) — handles enrichment server-side
   try {
-    await streamFromSuperApp(prompt, imageUri, imageMimeType, onChunk, onComplete, abortSignal, context);
+    await streamFromSuperApp(prompt, images, onChunk, onComplete, abortSignal, context);
     return;
   } catch (e: any) {
     if (abortSignal?.aborted) return;
+    // Being out of credits is a verdict, not an outage — don't route around it.
+    if (e instanceof OutOfCreditsError) {
+      onError?.(e);
+      return;
+    }
     console.warn('[AIService] Super-app backend failed, falling back to OpenAI:', e?.message);
   }
 
@@ -305,7 +357,7 @@ export const streamAIResponse = async (
   // 2. OpenAI direct
   if (OPENAI_API_KEY) {
     try {
-      await streamFromOpenAI(enrichedPrompt, imageUri, imageMimeType, onChunk, onComplete, onError, abortSignal);
+      await streamFromOpenAI(enrichedPrompt, first?.uri, first?.mimeType, onChunk, fallbackComplete('openai'), onError, abortSignal);
       return;
     } catch (e: any) {
       console.warn('[AIService] OpenAI failed, trying Gemini:', e.message);
@@ -315,7 +367,7 @@ export const streamAIResponse = async (
   // 3. Gemini
   if (GEMINI_API_KEY) {
     try {
-      await streamFromGemini(enrichedPrompt, imageUri, imageMimeType, onChunk, onComplete, onError, abortSignal);
+      await streamFromGemini(enrichedPrompt, first?.uri, first?.mimeType, onChunk, fallbackComplete('gemini'), onError, abortSignal);
       return;
     } catch (e: any) {
       console.warn('[AIService] Gemini failed, trying legacy backend:', e.message);
@@ -324,7 +376,7 @@ export const streamAIResponse = async (
 
   // 4. Legacy backend
   try {
-    await streamFromBackend(prompt, imageUri, imageMimeType, onChunk, onComplete, onError, abortSignal);
+    await streamFromBackend(prompt, first?.uri, first?.mimeType, onChunk, fallbackComplete('backend'), onError, abortSignal);
   } catch {
     onError?.(new Error('AI service is temporarily unavailable. Please try again.'));
   }
@@ -361,24 +413,29 @@ async function fakeStream(
   }
 }
 
+/** The backend rejects more than 4 images per request. */
+const MAX_BACKEND_IMAGES = 4;
+
 async function streamFromSuperApp(
   prompt: string,
-  imageUri: string | undefined,
-  imageMimeType: string | undefined,
+  attachments: AIAttachment[],
   onChunk: ((chunk: string) => void) | undefined,
-  onComplete: ((fullText: string) => void) | undefined,
+  onComplete: ((fullText: string, meta: AIChatMeta) => void) | undefined,
   abortSignal: AbortSignal | undefined,
   context: AIChatContext | undefined,
 ): Promise<void> {
+  // Every attachment goes up, not just the first — the backend's vision prompt
+  // is written for multiple images (charts + a portfolio screenshot together).
   const images: string[] = [];
-  if (imageUri) {
-    images.push(await imageUriToDataUrl(imageUri, imageMimeType));
+  for (const attachment of attachments.slice(0, MAX_BACKEND_IMAGES)) {
+    images.push(await imageUriToDataUrl(attachment.uri, attachment.mimeType));
   }
 
   const body: Record<string, unknown> = { message: prompt };
   if (context?.walletAddress) body.walletAddress = context.walletAddress;
   if (context?.portfolio) body.portfolio = context.portfolio;
   if (context?.history?.length) body.history = context.history.slice(-8);
+  if (context?.credits) body.credits = context.credits;
   if (images.length) body.images = images;
 
   const response = await fetch(SUPERAPP_AI_URL, {
@@ -387,6 +444,17 @@ async function streamFromSuperApp(
     body: JSON.stringify(body),
     signal: abortSignal,
   });
+
+  // 402 = the shared credit ledger says this wallet is out. Surface it as its
+  // own error so the caller can open the billing sheet instead of silently
+  // falling through to a fallback provider — that would hand out free answers.
+  if (response.status === 402) {
+    const json = await response.json().catch(() => null);
+    throw new OutOfCreditsError(
+      json?.error || 'You are out of AI credits. Buy more with TWC to continue.',
+      json?.balance ?? null,
+    );
+  }
 
   if (!response.ok) {
     throw new Error(`Super-app AI returned ${response.status}`);
@@ -397,7 +465,12 @@ async function streamFromSuperApp(
   if (!reply) throw new Error('Empty reply from super-app AI');
 
   await fakeStream(reply, onChunk, abortSignal);
-  onComplete?.(reply);
+  onComplete?.(reply, {
+    validation: json?.validation,
+    creditCharged: Boolean(json?.credits?.charged),
+    source: 'superapp',
+    balance: json?.balance ?? null,
+  });
 }
 
 // ─── OpenAI streaming ────────────────────────────────────────────────────────

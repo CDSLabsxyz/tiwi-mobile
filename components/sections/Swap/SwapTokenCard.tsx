@@ -28,7 +28,21 @@ interface SwapTokenCardProps {
     onInputPress?: () => void;
     isLoadingQuote?: boolean;
     isRefreshing?: boolean;
+    /** Staged routing copy shown beside the skeleton while quoting. */
+    quoteStep?: string;
     isStale?: boolean;
+    /**
+     * "To" card only: opens the recipient picker. When set, the "To" label
+     * becomes a dropdown so the destination address is chosen right where the
+     * destination is chosen, instead of in a separate row below the card.
+     */
+    onRecipientPress?: () => void;
+    /**
+     * Truncated destination address, shown next to the label. This is the
+     * EFFECTIVE recipient — a custom one if set, otherwise your own address on
+     * the destination chain — so the label always says where the output lands.
+     */
+    recipientLabel?: string | null;
 }
 
 /**
@@ -51,7 +65,10 @@ export const SwapTokenCard: React.FC<SwapTokenCardProps> = ({
     onInputPress,
     isLoadingQuote = false,
     isRefreshing = false,
+    quoteStep,
     isStale = false,
+    onRecipientPress,
+    recipientLabel,
 }) => {
     const isFrom = variant === 'from';
     const label = isFrom ? 'From' : 'To';
@@ -80,7 +97,25 @@ export const SwapTokenCard: React.FC<SwapTokenCardProps> = ({
         <View style={styles.card}>
             {/* Header: Label (left) | Balance (right) */}
             <View style={styles.headerRow}>
-                <Text style={styles.label}>{label}</Text>
+                {onRecipientPress ? (
+                    <TouchableOpacity
+                        activeOpacity={0.8}
+                        onPress={onRecipientPress}
+                        style={styles.labelDropdown}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                        <Text style={styles.label}>{label}</Text>
+                        {!!recipientLabel && (
+                            <View style={styles.recipientPill}>
+                                <Image source={WalletIcon} style={styles.recipientPillIcon} contentFit="contain" />
+                                <Text style={styles.recipientPillText} numberOfLines={1}>{recipientLabel}</Text>
+                            </View>
+                        )}
+                        <Image source={ArrowDown01} style={styles.labelChevron} contentFit="contain" />
+                    </TouchableOpacity>
+                ) : (
+                    <Text style={styles.label}>{label}</Text>
+                )}
 
                 <View style={styles.balanceContainer}>
                     <View style={styles.balanceRow}>
@@ -138,7 +173,17 @@ export const SwapTokenCard: React.FC<SwapTokenCardProps> = ({
 
                 <View style={styles.rightSide}>
                     {isLoadingQuote ? (
-                        <View style={styles.skeletonAmount} />
+                        // Web shows the routing stage next to the skeleton in
+                        // the amount slot; same here so a multi-second quote
+                        // reads as "working", not "stuck".
+                        <View style={styles.skeletonRow}>
+                            {!!quoteStep && (
+                                <Text style={styles.quoteStepText} numberOfLines={1}>
+                                    {quoteStep}
+                                </Text>
+                            )}
+                            <View style={styles.skeletonAmount} />
+                        </View>
                     ) : isFrom ? (
                         <TouchableOpacity
                             activeOpacity={0.7}
@@ -192,6 +237,39 @@ const styles = StyleSheet.create({
         borderRadius: 12,
         padding: 16,
         gap: 12,
+    },
+    labelDropdown: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        flexShrink: 1,
+    },
+    labelChevron: {
+        width: 14,
+        height: 14,
+        tintColor: colors.primaryCTA,
+    },
+    recipientPill: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        marginLeft: 2,
+        maxWidth: 132,
+        backgroundColor: 'rgba(177,241,40,0.14)',
+        paddingHorizontal: 6,
+        paddingVertical: 3,
+        borderRadius: 6,
+    },
+    recipientPillIcon: {
+        width: 11,
+        height: 11,
+        tintColor: colors.primaryCTA,
+    },
+    recipientPillText: {
+        flexShrink: 1,
+        color: colors.primaryCTA,
+        fontSize: 10,
+        fontWeight: '700',
     },
     headerRow: {
         flexDirection: 'row',
@@ -361,6 +439,18 @@ const styles = StyleSheet.create({
         fontSize: 12,
         color: colors.bodyText,
         opacity: 0.6,
+    },
+    skeletonRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'flex-end',
+        gap: 8,
+    },
+    quoteStepText: {
+        color: colors.primaryCTA,
+        fontSize: 10,
+        fontWeight: '500',
+        flexShrink: 1,
     },
     skeletonAmount: {
         width: 100,

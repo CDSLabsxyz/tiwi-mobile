@@ -4,7 +4,22 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
-export type ChainType = 'EVM' | 'SOLANA' | 'TRON' | 'TON' | 'COSMOS' | 'OSMOSIS';
+export type ChainType = 'EVM' | 'SOLANA' | 'TRON' | 'TON' | 'COSMOS' | 'OSMOSIS' | 'SUI' | 'APTOS' | 'INJECTIVE' | 'BITCOIN' | 'STARKNET';
+
+/**
+ * Extra chains whose addresses we DERIVE for balance discovery / display only.
+ * They are NOT part of ChainType (which drives on-device signing) — mirrors the
+ * web app's split between its 27-entry `MultiChainAddresses` bag and its signing
+ * chains. Re-encode chains (INJECTIVE, cosmos-family) reuse the EVM/Cosmos keys.
+ */
+export type ExtraAddressKey =
+  | 'LITECOIN' | 'DOGECOIN' | 'BITCOINCASH'
+  | 'STACKS' | 'POLKADOT'
+  | 'THORCHAIN' | 'JUNO' | 'STRIDE' | 'DYDX' | 'KUJIRA' | 'SECRET'
+  | 'CELESTIA' | 'ARCHWAY' | 'SAGA' | 'NEUTRON' | 'NIBIRU';
+
+/** Every key that can appear in a wallet's `addresses` map. */
+export type AddressKey = ChainType | ExtraAddressKey;
 
 export interface WalletGroup {
   id: string;
@@ -12,12 +27,24 @@ export interface WalletGroup {
   type: 'mnemonic' | 'privateKey' | 'external';
   primaryChain: ChainType;
   addresses: {
-    [key in ChainType]?: string;
+    [key in AddressKey]?: string;
   };
   source: string; // e.g., 'internal', 'imported', 'metamask', etc.
   walletIcon?: string;
   isBackupComplete?: boolean;
+  /**
+   * Which derivation revision produced `addresses`. Bumped when a chain's
+   * derivation is corrected so existing wallets re-derive on next unlock
+   * instead of keeping an address the signer can't reproduce.
+   *   1 → original
+   *   2 → TON moved from secp256k1 to ed25519 (the old TON address was
+   *       unsignable: a 33-byte secp256k1 key fed to an ed25519 contract)
+   */
+  addressSchemaVersion?: number;
 }
+
+/** Current derivation revision — see `WalletGroup.addressSchemaVersion`. */
+export const ADDRESS_SCHEMA_VERSION = 2;
 
 interface WalletState {
   // Currently Active Identity
@@ -48,7 +75,13 @@ interface WalletState {
 
   addWalletGroup: (group: WalletGroup) => void;
   setActiveGroup: (groupId: string) => void;
-  setActiveChain: (chain: ChainType, networkId?: string) => void;
+  /**
+   * @param addressKey overrides which `addresses` slot becomes `activeAddress`.
+   * The Cosmos-family chains all sign as COSMOS but each has its own bech32
+   * address, so selecting "Juno" must show juno1… while keeping the signing
+   * chain COSMOS. Defaults to `chain`.
+   */
+  setActiveChain: (chain: ChainType, networkId?: string, addressKey?: AddressKey) => void;
   updateGroupName: (groupId: string, name: string) => void;
   /** Per-address nickname overrides for the address book. Rendered in place
    *  of the wallet group's name when present, scoped to a single chain
@@ -166,7 +199,9 @@ export const useWalletStore = create<WalletState>()(
 
         const updatedGroups = [
           ...uniqueGroups.filter(g => g.id !== newGroup.id),
-          newGroup
+          // A group created right now used the current derivation, so stamp it
+          // — otherwise the migration below would pointlessly re-derive it.
+          { ...newGroup, addressSchemaVersion: newGroup.addressSchemaVersion ?? ADDRESS_SCHEMA_VERSION },
         ];
 
         set({
@@ -207,11 +242,11 @@ export const useWalletStore = create<WalletState>()(
         }
       },
 
-      setActiveChain: (chain, networkId) => {
+      setActiveChain: (chain, networkId, addressKey) => {
         const state = get();
         const activeGroup = state.walletGroups.find(g => g.id === state.activeGroupId);
         if (activeGroup) {
-          const chainAddr = activeGroup.addresses[chain] || null;
+          const chainAddr = activeGroup.addresses[addressKey ?? chain] || null;
           set({
             activeChain: chain,
             activeNetworkId: networkId || null,
@@ -294,22 +329,52 @@ export const useWalletStore = create<WalletState>()(
         const activeGroup = state.walletGroups.find(g => g.id === state.activeGroupId);
         if (!activeGroup || activeGroup.type !== 'mnemonic') return;
 
-        // Skip if all chain addresses are already derived
-        const allChains: ChainType[] = ['EVM', 'SOLANA', 'TRON', 'TON', 'COSMOS', 'OSMOSIS'];
+        // Chain-only phrase imports (a native 24-word TON mnemonic) are NOT
+        // BIP39 and derive exactly one account. Running the multi-chain
+        // derivation over one would mint junk addresses for every other chain
+        // and — worse — overwrite the real TON address with a BIP39-path one.
+        // A BIP39 wallet always has an EVM address; a chain-only one never does.
+        if (!activeGroup.addresses.EVM) return;
+
+        // Skip if all chain addresses (core 6 + extra) are already derived.
+        // Existing wallets created before the extra chains were added get
+        // backfilled to the full set on their next unlock.
+        const allChains: AddressKey[] = [
+            'EVM', 'SOLANA', 'TRON', 'TON', 'COSMOS', 'OSMOSIS',
+            'INJECTIVE', 'BITCOIN', 'LITECOIN', 'DOGECOIN', 'BITCOINCASH',
+            'STACKS', 'POLKADOT', 'SUI', 'APTOS', 'STARKNET',
+            'THORCHAIN', 'JUNO', 'STRIDE', 'DYDX', 'KUJIRA', 'SECRET',
+            'CELESTIA', 'ARCHWAY', 'SAGA', 'NEUTRON', 'NIBIRU',
+        ];
         const missingChains = allChains.filter(c => !activeGroup.addresses[c]);
-        if (missingChains.length === 0) return;
+        // Wallets stamped with an older derivation revision re-derive even when
+        // nothing is missing — a corrected chain (TON) must overwrite the stale
+        // address, not be skipped because a value is present.
+        const isStale = (activeGroup.addressSchemaVersion ?? 1) < ADDRESS_SCHEMA_VERSION;
+        if (missingChains.length === 0 && !isStale) return;
 
         try {
           const mnemonic = await getSecureMnemonic(activeGroup.id);
           if (mnemonic) {
-            const newAddresses = await deriveMultiChainAddressesFromMnemonic(mnemonic);
+            const derived = await deriveMultiChainAddressesFromMnemonic(mnemonic);
+
+            // Drop chains that failed to derive (each is individually caught and
+            // returns undefined) — merging them would wipe a good address.
+            const newAddresses = Object.fromEntries(
+              Object.entries(derived).filter(([, v]) => !!v)
+            ) as Partial<Record<AddressKey, string>>;
+
+            // Only stamp the revision once the corrected chain actually derived,
+            // so a transient library failure doesn't permanently skip the fix.
+            const migrated = !!newAddresses.TON;
 
             // Merge new addresses into existing group
             const updatedGroups = get().walletGroups.map(g => {
               if (g.id === activeGroup.id) {
                 return {
                   ...g,
-                  addresses: { ...g.addresses, ...newAddresses }
+                  addresses: { ...g.addresses, ...newAddresses },
+                  ...(migrated ? { addressSchemaVersion: ADDRESS_SCHEMA_VERSION } : {}),
                 };
               }
               return g;

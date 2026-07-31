@@ -6,6 +6,9 @@ import {
     LimitAssetSheet,
     LimitWhenPriceCard,
     SwapConfirmButton,
+    BscGasSelector,
+    RecipientAddressSheet,
+    truncateAddress,
     SwapDetailsCard,
     SwapDirectionButton,
     SwapHeader,
@@ -27,11 +30,12 @@ import { useTokenPrefetch } from '@/hooks/useTokenPrefetch';
 import { useWalletBalances } from '@/hooks/useWalletBalances';
 import { activityService } from '@/services/activityService';
 import { api } from '@/lib/mobile/api-client';
-import { signerController } from '@/services/signer/SignerController';
 import { getChainById } from '@/services/signer/SignerUtils';
 import { securityGuard } from '@/services/securityGuard';
 import { executeSwap, fetchSwapQuote } from '@/services/swap';
 import { isNativeToken } from '@/services/swap/constants';
+import { BASIS_POINTS, GasTokenType, getTaxRate } from '@/services/swap/core/config/tax-config';
+import { isAddressChainCompatible } from '@/services/swap/core/utils/wallet-display';
 import { MORALIS_NATIVE_ADDRESS, NATIVE_TOKEN_ADDRESS } from '@/utils/wallet';
 import { useLocaleStore } from '@/store/localeStore';
 import { useCustomTokenStore } from '@/store/customTokenStore';
@@ -91,6 +95,8 @@ export default function SwapScreen() {
         hasValidQuote,
         setSwapQuote,
         swapQuote,
+        quoteStep,
+        setQuoteStep,
         whenPrice,
         setWhenPrice,
         expiresOption,
@@ -103,6 +109,10 @@ export default function SwapScreen() {
         openChainSheet,
         closeChainSheet,
         chainSheetTarget,
+        selectedGasTokenType,
+        setSelectedGasTokenType,
+        selectedGasToken,
+        setSelectedGasToken,
     } = useSwapStore();
 
     const [fromFiatAmount, setFromFiatAmount] = useState('$0.00');
@@ -132,10 +142,24 @@ export default function SwapScreen() {
     const [isComingSoonVisible, setIsComingSoonVisible] = useState(false);
     const [swapErrorMessage, setSwapErrorMessage] = useState<string | null>(null);
     const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
-    const [taxPaid, setTaxPaid] = useState(false);
-    const [isPayingTax, setIsPayingTax] = useState(false);
+    /** Live stage from the swap engine ("Approving…", "Confirming…", …). */
+    const [swapStage, setSwapStage] = useState<string | null>(null);
+    /** Token picker for the BSC "Other token" fee tier. */
+    const [isGasTokenSheetVisible, setIsGasTokenSheetVisible] = useState(false);
+    /**
+     * Optional "send to" override. null = deliver to my own wallet.
+     * This is what makes cross-VM swaps possible when the wallet has no address
+     * on the destination chain — the engine's cross-VM guard needs a recipient
+     * that is valid there or it refuses the swap.
+     */
+    const [recipientAddress, setRecipientAddress] = useState<string | null>(null);
+    const [isRecipientSheetVisible, setIsRecipientSheetVisible] = useState(false);
 
     const scrollViewRef = React.useRef<ScrollView>(null);
+    /** Aborts a superseded in-flight quote. */
+    const quoteAbortRef = React.useRef<AbortController | null>(null);
+    /** Signature of the last requested quote, to skip duplicate fetches. */
+    const lastQuoteKeyRef = React.useRef<string>('');
 
     useEffect(() => {
         if (isKeyboardVisible) {
@@ -154,6 +178,22 @@ export default function SwapScreen() {
         if (chainId === 728126428) return 'TRON';
         if (chainId === 1100 || chainId === 99999) return 'TON';
         if (chainId === 118 || chainId === 99998) return 'COSMOS';
+        if (chainId === 249339) return 'OSMOSIS';
+        if (chainId === 8000001) return 'INJECTIVE';
+        if (chainId === 8000003) return 'JUNO';
+        if (chainId === 8000004) return 'STRIDE';
+        if (chainId === 8000005) return 'DYDX';
+        if (chainId === 8000006) return 'KUJIRA';
+        if (chainId === 8000007) return 'SECRET';
+        if (chainId === 8000008) return 'CELESTIA';
+        if (chainId === 8000009) return 'ARCHWAY';
+        if (chainId === 8000010) return 'SAGA';
+        if (chainId === 8000011) return 'NEUTRON';
+        if (chainId === 8000012) return 'NIBIRU';
+        if (chainId === 101) return 'SUI';
+        if (chainId === 637) return 'APTOS';
+        if (chainId === 8332) return 'BITCOIN';
+        if (chainId === 23448594291968334) return 'STARKNET';
         return 'EVM';
     };
 
@@ -164,6 +204,28 @@ export default function SwapScreen() {
         const chainType = getChainTypeFromId(chainId);
         return (group.addresses as any)?.[chainType] || address || '';
     }, [walletGroups, activeGroupId, address]);
+
+    /**
+     * The address the swap output goes to.
+     *
+     * A user-set recipient wins; otherwise it's our own address on the
+     * destination chain (which may be '' when the wallet has no key for that
+     * chain — in that case the swap needs a pasted recipient and the engine
+     * will say so rather than deliver somewhere unrecoverable).
+     */
+    // A recipient is only valid for the chain it was entered for. If the user
+    // changes the destination, drop an address that no longer fits rather than
+    // quoting (and worse, delivering) to an address of the wrong family.
+    useEffect(() => {
+        if (!recipientAddress || !toToken?.chainId) return;
+        if (!isAddressChainCompatible(recipientAddress, Number(toToken.chainId))) {
+            setRecipientAddress(null);
+        }
+    }, [recipientAddress, toToken?.chainId]);
+
+    const resolveRecipient = useCallback((chainId: any) => {
+        return recipientAddress || getAddressForChain(chainId);
+    }, [recipientAddress, getAddressForChain]);
 
     // Determine if this is a bridge (cross-chain) or same-chain swap
     const isBridge = useMemo(() => {
@@ -280,13 +342,28 @@ export default function SwapScreen() {
                         api.tokens.list({ address: '0xDA1060158F7D593667CCE0A15DB346BB3FFB3596', chains: [56], limit: 1 })
                     ]);
 
+                    // `liquidity` is carried through as well as the price: it's
+                    // sent to the route API as liquidityUSD, and without it the
+                    // very first quote a user sees (the default BNB→TWC pair)
+                    // pays for a server-side DexScreener lookup — seconds, not
+                    // milliseconds. This response already contains it.
                     if (isDefaultBnb && bnbRes.tokens?.[0]) {
                         const bnb = bnbRes.tokens[0];
-                        setFromToken({ ...fromToken!, priceUSD: bnb.priceUSD, tvl: bnb.marketCap ? `$${formatCompactNumber(bnb.marketCap)}` : fromToken!.tvl });
+                        setFromToken({
+                            ...fromToken!,
+                            priceUSD: bnb.priceUSD,
+                            liquidity: bnb.liquidity ?? fromToken!.liquidity,
+                            tvl: bnb.marketCap ? `$${formatCompactNumber(bnb.marketCap)}` : fromToken!.tvl,
+                        });
                     }
                     if (isDefaultTwc && twcRes.tokens?.[0]) {
                         const twc = twcRes.tokens[0];
-                        setToToken({ ...toToken!, priceUSD: twc.priceUSD, tvl: twc.marketCap ? `$${formatCompactNumber(twc.marketCap)}` : toToken!.tvl });
+                        setToToken({
+                            ...toToken!,
+                            priceUSD: twc.priceUSD,
+                            liquidity: twc.liquidity ?? toToken!.liquidity,
+                            tvl: twc.marketCap ? `$${formatCompactNumber(twc.marketCap)}` : toToken!.tvl,
+                        });
                     }
                 }
             } catch (err) {
@@ -313,7 +390,8 @@ export default function SwapScreen() {
                     icon: chain.logoURI
                 };
                 setFromChain(chainOption);
-                setFromToken({
+
+                const seeded = {
                     id: params.assetId || params.symbol,
                     symbol: params.symbol!,
                     name: params.name || params.symbol!,
@@ -323,10 +401,35 @@ export default function SwapScreen() {
                     priceUSD: params.priceUSD || '0',
                     address: params.assetId || '',
                     chainId: chainOption.id,
-                    decimals: 18
-                } as any);
+                    decimals: 18,
+                } as any;
+                setFromToken(seeded);
                 setToChain(null);
                 setToToken(null);
+
+                // The deep-link params carry no `liquidity` and no real
+                // `decimals` — the 18 above is a placeholder. Enrich from the
+                // token list (the same source the asset sheet uses):
+                //   • `liquidity` → sent as liquidityUSD, without which every
+                //     quote for this token pays a slow server-side lookup.
+                //   • `decimals`  → a hardcoded 18 mis-scales the amount for any
+                //     token that isn't 18dp (USDC/USDT are 6, TWC is 9), so the
+                //     quote is for the wrong size entirely.
+                if (seeded.address) {
+                    api.tokens
+                        .list({ address: seeded.address, chains: [chainOption.id], limit: 1 })
+                        .then((res) => {
+                            const real = res?.tokens?.[0];
+                            if (!real) return;
+                            setFromToken({
+                                ...seeded,
+                                decimals: real.decimals ?? seeded.decimals,
+                                liquidity: real.liquidity,
+                                priceUSD: real.priceUSD || seeded.priceUSD,
+                            } as any);
+                        })
+                        .catch((e) => console.warn('[SwapScreen] Deep-link token enrich failed:', e));
+                }
             }
         }
     }, [hasParams, chains]);
@@ -351,8 +454,31 @@ export default function SwapScreen() {
         setFromFiatAmount('$0.00');
         setToFiatAmount('$0.00');
         setSwapQuote(null);
-        setTaxPaid(false); // Reset tax on token change
         handleCloseAssetSheet();
+    };
+
+    /**
+     * Gas-token pick for the BSC fee tier.
+     *
+     * Picking TWC or BNB snaps to their own (cheaper) tier rather than leaving
+     * the user on the 0.30% "other" rate for a token that has a dedicated one.
+     * Any other BEP-20 sets OTHER_BSC with that token attached. Clears the quote
+     * because the tier changes the fee the routing engine prices in.
+     */
+    const handleGasTokenSelect = (_chain: ChainOption, token: TokenOption) => {
+        const symbol = token.symbol?.toUpperCase();
+
+        if (symbol === 'TWC') {
+            setSelectedGasTokenType(GasTokenType.TWC);
+        } else if (symbol === 'BNB' || symbol === 'WBNB') {
+            setSelectedGasTokenType(GasTokenType.BNB);
+        } else {
+            setSelectedGasTokenType(GasTokenType.OTHER_BSC);
+            setSelectedGasToken(token);
+        }
+
+        setSwapQuote(null);
+        setIsGasTokenSheetVisible(false);
     };
 
     const handleChainOptionSelect = (option: any) => {
@@ -417,12 +543,18 @@ export default function SwapScreen() {
         if (maxBal <= 0) return;
         let val = maxBal * percentage / 100;
 
-        // When using max on EVM swaps, reserve 0.25% for the service fee
-        if (percentage === 100 && !taxPaid) {
+        // On Max, leave room for the protocol fee. The engine transfers it ON
+        // TOP of the swap amount, so a true 100% would leave nothing to pay it
+        // with. Rate comes from the same config the executors charge from — not
+        // a hardcoded number — and only applies where a SEPARATE fee transfer
+        // actually happens (ERC-20 input on an EVM chain).
+        if (percentage === 100) {
             const chainId = Number(fromChain?.id) || 56;
-            const isEvm = ![7565164, 1399811149, 728126428, 1100, 99999, 118, 99998].includes(chainId);
-            if (isEvm) {
-                val = val * 0.99;
+            const isEvm = ![7565164, 1399811149, 728126428, 1100, 99999, 118, 99998, 249339, 8000001, 8000003, 8000004, 8000005, 8000006, 8000007, 8000008, 8000009, 8000010, 8000011, 8000012, 101, 637, 8332, 23448594291968334].includes(chainId);
+            const feeIsInline = useSwapStore.getState().swapQuote?.route?.fees?.taxMode === 'inline';
+            if (isEvm && !feeIsInline && !isNativeToken(fromToken.address)) {
+                const feeRate = getTaxRate(chainId, selectedGasTokenType) / BASIS_POINTS;
+                val = val / (1 + feeRate);
             }
         }
 
@@ -441,9 +573,38 @@ export default function SwapScreen() {
             setToFiatAmount('$0.00');
             setLastFetchTime(0);
             setIsStale(false);
-            setTaxPaid(false); // Reset tax on amount change
+            lastQuoteKeyRef.current = '';
             return;
         }
+
+        // Duplicate-request guard (ported from useSwapQuote). The pair MUST be
+        // part of the key — otherwise changing one token while keeping the same
+        // amount produces an identical key, the fetch is skipped, and the
+        // previous pair's quote stays on screen.
+        const quoteKey = `${fromAmount}-${fromToken.chainId}:${fromToken.address}->${toToken.chainId}:${toToken.address}-${slippage}`;
+        if (!isRefresh && quoteKey === lastQuoteKeyRef.current) {
+            return;
+        }
+        lastQuoteKeyRef.current = quoteKey;
+
+        // Cancel any quote still in flight. Without this a slow request could
+        // land AFTER a newer one and overwrite the fresh rate with a stale one,
+        // and rapid typing left several requests racing.
+        quoteAbortRef.current?.abort();
+        const abortController = new AbortController();
+        quoteAbortRef.current = abortController;
+
+        // Staged progress copy, ported from useSwapQuote. Routing genuinely
+        // takes a few seconds on thin pairs, and a silent skeleton reads as a
+        // hung screen — this tells the user what the router is doing.
+        const stepTimers: any[] = [];
+        setQuoteStep('Searching routes...');
+        stepTimers.push(setTimeout(() => setQuoteStep('Scanning DEXes...'), 1200));
+        stepTimers.push(setTimeout(() => setQuoteStep('Tiwiculating best price...'), 3500));
+        stepTimers.push(setTimeout(() => setQuoteStep('Verifying liquidity...'), 8000));
+        stepTimers.push(setTimeout(() => setQuoteStep('Finalizing best route...'), 15000));
+        stepTimers.push(setTimeout(() => setQuoteStep('Searching deeper for better rates...'), 25000));
+        const clearStepTimers = () => stepTimers.forEach(clearTimeout);
 
         if (isRefresh) {
             setIsRefreshing(true);
@@ -453,54 +614,71 @@ export default function SwapScreen() {
         }
         try {
             const fromAddr = getAddressForChain(fromToken.chainId);
-            const toAddr = getAddressForChain(toToken.chainId);
-            // TWC has a 5% transfer tax — enforce minimum slippage to prevent "Return amount is not enough" reverts
-            const isTwcSwap = fromToken.address.toLowerCase() === '0xda1060158f7d593667cce0a15db346bb3ffb3596' ||
-                              toToken.address.toLowerCase() === '0xda1060158f7d593667cce0a15db346bb3ffb3596';
-            const effectiveSlippage = isTwcSwap ? Math.max(slippage, 10) : slippage;
-            const fetchedQuote = await fetchSwapQuote(fromAmount, fromToken, toToken, fromAddr, toAddr, effectiveSlippage);
+            const toAddr = resolveRecipient(toToken.chainId);
+            // No token-specific client-side overrides here — the web app has
+            // none. Fee-on-transfer tokens (TWC and friends) are handled where
+            // they should be: the backend routes them, and the executors run
+            // with isFeeOnTransfer so they call the
+            // …SupportingFeeOnTransferTokens router functions. The old
+            // client-side forced 10% slippage and price-derived output override
+            // showed a number the route would never actually deliver.
+            const fetchedQuote = await fetchSwapQuote(
+                fromAmount, fromToken, toToken, fromAddr, toAddr, slippage,
+                { signal: abortController.signal },
+            );
+
+            // A newer quote superseded this one while it was in flight.
+            if (abortController.signal.aborted) return;
 
             if (fetchedQuote) {
-                // Override output for TWC swaps — backend quotes are unreliable for fee-on-transfer tokens
-                const isTwcFrom = fromToken.address.toLowerCase() === '0xda1060158f7d593667cce0a15db346bb3ffb3596';
-                const isTwcTo = toToken.address.toLowerCase() === '0xda1060158f7d593667cce0a15db346bb3ffb3596';
-                if ((isTwcFrom || isTwcTo) && fromToken.priceUSD && toToken.priceUSD && parseFloat(toToken.priceUSD) > 0 && parseFloat(fromToken.priceUSD) > 0) {
-                    const fromUsd = parseFloat(fromAmount) * parseFloat(fromToken.priceUSD);
-                    const correctedToAmount = (fromUsd / parseFloat(toToken.priceUSD)).toFixed(8).replace(/\.?0+$/, '');
-                    fetchedQuote.toAmount = correctedToAmount;
-                }
-
                 setSwapQuote(fetchedQuote);
                 setLastFetchTime(Date.now());
                 setToAmount(fetchedQuote.toAmount);
                 setIsStale(false);
 
-                // Calculate To Fiat using toToken.priceUSD
-                if (toToken.priceUSD && parseFloat(fetchedQuote.toAmount) > 0) {
+                // Prefer the route's own USD figure (route.toToken.amountUSD),
+                // which is what the web card shows. It reflects the actual
+                // routed output; a local price × amount multiply drifts from it
+                // on taxed tokens and thin pools. Fall back to the price calc
+                // only when the route carries no USD value.
+                const routeToUsd = parseFloat(fetchedQuote.toAmountUSD || fetchedQuote.fiatAmount || '0');
+                if (routeToUsd > 0) {
+                    setToFiatAmount(formatFiatValue(routeToUsd, region, currency));
+                } else if (toToken.priceUSD && parseFloat(fetchedQuote.toAmount) > 0) {
                     const toUsdValue = parseFloat(fetchedQuote.toAmount) * parseFloat(toToken.priceUSD);
                     setToFiatAmount(formatFiatValue(toUsdValue, region, currency));
                 } else {
                     setToFiatAmount('$0.00');
                 }
             }
-        } catch (error) {
+        } catch (error: any) {
+            // An abort is not a failure — a newer quote replaced this one.
+            if (abortController.signal.aborted || error?.name === 'AbortError') return;
+
             console.error('Failed to fetch quote:', error);
+            // Allow an immediate retry of the same input after a failure.
+            lastQuoteKeyRef.current = '';
             // Don't clear quote on background refresh failure, just mark as stale
             if (!isRefresh) {
                 setSwapQuote(null);
             }
             setIsStale(true);
         } finally {
-            setIsLoadingQuote(false);
-            setIsRefreshing(false);
+            clearStepTimers();
+            if (!abortController.signal.aborted) {
+                setIsLoadingQuote(false);
+                setIsRefreshing(false);
+                setQuoteStep('');
+            }
         }
-    }, [fromAmount, fromToken, toToken, address, region, currency, slippage]);
+    }, [fromAmount, fromToken, toToken, address, region, currency, slippage, resolveRecipient]);
 
     useEffect(() => {
-        // Only run initial fetch if values actually changed
+        // 200ms matches useSwapQuote's default delay. Mobile sat at 500ms, so
+        // every quote started 300ms later than the web app's for no reason.
         const timer = setTimeout(() => {
             updateQuote(false);
-        }, 500);
+        }, 200);
         return () => clearTimeout(timer);
     }, [fromAmount, fromToken, toToken, slippage, updateQuote]);
 
@@ -574,168 +752,49 @@ export default function SwapScreen() {
         if (!requireBackup()) return;
         if (!fromAmount || !fromToken || !toToken || !address) return;
 
-        const maxBal = parseBalanceToken(fromToken.balanceToken || '0');
+        // Validation mirrors the web app's executeSwapTransaction exactly.
+        // Deliberately NO minimum-USD gate, NO balance pre-check and NO
+        // pre-flight gas simulation: the web app has none of those, and each
+        // of them refused swaps that go through fine on web (a $0.05 dust
+        // swap; a fee-on-transfer token whose estimateGas always reverts; a
+        // balance check that didn't know the route collects its fee inline).
+        // The executors surface the real on-chain reason if a swap can't run.
+
         const swapAmount = parseFloat(fromAmount);
-
-        // Pre-check: Minimum swap amount ($0.10)
-        const fromUsdValue = fromToken.priceUSD ? swapAmount * parseFloat(fromToken.priceUSD) : 0;
-        if (fromUsdValue > 0 && fromUsdValue < 0.1) {
-            setSwapErrorMessage('Swap amount is too small. Please enter a higher amount.');
+        if (!(swapAmount > 0)) {
+            setSwapErrorMessage('Please enter a valid amount');
             return;
         }
 
-        // Pre-check: Insufficient balance
-        if (swapAmount > maxBal) {
-            setSwapErrorMessage(`Not enough ${fromToken.symbol} to complete this swap. Please try with a lower amount.`);
+        if (!swapQuote?.route) {
+            setSwapErrorMessage('Still preparing a secure route. Please try again in a moment.');
             return;
         }
 
-        // Pre-check: After 0.25% tax, will there be enough left to swap?
-        const fromChainId = Number(fromChain?.id) || 56;
-        const isEvmSwap = ![7565164, 1399811149, 728126428, 1100, 99999, 118, 99998].includes(fromChainId);
-        if (isEvmSwap && !taxPaid) {
-            const taxAmount = swapAmount * 0.0025;
-            const remainingAfterTax = maxBal - taxAmount;
-            if (swapAmount > remainingAfterTax) {
-                setSwapErrorMessage(`Not enough ${fromToken.symbol} to complete this swap. Please try with a lower amount.`);
-                return;
-            }
+        // Quote expiry — the backend emits `expiresAt` in unix SECONDS.
+        const expiresAt = swapQuote.expiresAt ?? swapQuote.route?.expiresAt;
+        if (expiresAt && Math.floor(Date.now() / 1000) >= Number(expiresAt)) {
+            setSwapErrorMessage('Quote has expired. Please get a new quote.');
+            return;
         }
 
         setIsLoadingSwap(true);
 
         try {
-            // PRE-FLIGHT: Simulate swap transaction before collecting tax
-            // This prevents tax loss when the swap would fail (e.g. amount too small, reverts)
-            if (!taxPaid && isEvmSwap && swapQuote) {
-                const txReq = swapQuote.transactionRequest;
-                if (txReq?.to && txReq?.data && txReq.data !== '0x') {
-                    try {
-                        console.log('[Swap] Pre-flight: simulating swap transaction...');
-                        const publicClient = await signerController.getPublicClient(fromChainId);
-                        const evmAddr = getAddressForChain(fromChainId);
-                        await publicClient.estimateGas({
-                            account: evmAddr as `0x${string}`,
-                            to: txReq.to as `0x${string}`,
-                            data: txReq.data as `0x${string}`,
-                            value: txReq.value ? BigInt(txReq.value) : 0n,
-                        });
-                        console.log('[Swap] Pre-flight: simulation passed');
-                    } catch (simError: any) {
-                        const msg = simError.message || '';
-                        // Log as warn (not error) — this is expected when swap would revert.
-                        // console.error triggers the React Native LogBox red screen.
-                        console.warn('[Swap] Pre-flight simulation failed (expected for unsupported tokens):', msg.slice(0, 200));
-                        const isFeeOnTransferError =
-                            msg.includes('TRANSFER_FROM_FAILED') ||
-                            msg.includes('TransferHelper: TRANSFER_FROM_FAILED') ||
-                            msg.includes('SafeERC20: low-level call failed') ||
-                            msg.includes('SafeERC20');
-
-                        if (msg.includes('TOO_SMALL')) {
-                            setSwapErrorMessage('Swap amount is too small for this route. Please increase the amount.');
-                        } else if (isFeeOnTransferError) {
-                            setSwapErrorMessage(
-                                `${fromToken.symbol} has a transfer tax that isn't supported by the available routes. ` +
-                                `This token can't be swapped on-chain through our current DEX integration. ` +
-                                `Try sending ${fromToken.symbol} directly to an exchange to swap it there.`
-                            );
-                        } else if (msg.includes('INSUFFICIENT_OUTPUT_AMOUNT')) {
-                            setSwapErrorMessage('Price moved — increase slippage or try a smaller amount.');
-                        } else if (msg.includes('insufficient funds')) {
-                            const chain = getChainById(fromChainId);
-                            const gasToken = chain.nativeCurrency?.symbol || 'ETH';
-                            setSwapErrorMessage(`Not enough ${gasToken} on ${chain.name} to pay for gas fees.`);
-                        } else {
-                            setSwapErrorMessage(`Swap would fail: ${msg.slice(0, 150)}`);
-                        }
-                        setIsLoadingSwap(false);
-                        return;
-                    }
-                }
-            }
-
-            // STEP 1: Pay 0.25% Initialization Fee (EVM only)
-            if (!taxPaid && isEvmSwap) {
-                console.log("[Swap] Executing Step 1 (Initialization)...");
-
-                const taxAmount = (parseFloat(fromAmount) * 0.0025).toFixed(fromToken.decimals || 18);
-                const revenueWallet = "0x2452fC6B401FaB80D9fDa6050b2De0Dd42b233bc";
-                const chainId = Number(fromChain?.id) || 56;
-                const evmAddr = getAddressForChain(chainId);
-
-                const isNative = isNativeToken(fromToken.address);
-
-                let step1Hash = '';
-
-                if (isNative) {
-                    const { parseUnits } = require('viem');
-                    const valueAtomic = parseUnits(taxAmount, 18);
-
-                    const res = await signerController.executeTransaction({
-                        chainFamily: 'evm',
-                        to: revenueWallet,
-                        value: valueAtomic.toString(),
-                        data: '0x',
-                        chainId: chainId,
-                    }, evmAddr, { skipAuthorize: true });
-                    if (res.status === 'failed') throw new Error(res.error || 'Initialization failed (Step 1)');
-                    step1Hash = res.hash;
-                } else {
-                    const { encodeFunctionData, parseUnits } = require('viem');
-                    const amountAtomic = parseUnits(taxAmount, fromToken.decimals || 18);
-
-                    const res = await signerController.executeTransaction({
-                        chainFamily: 'evm',
-                        to: fromToken.address,
-                        data: encodeFunctionData({
-                            abi: [{
-                                inputs: [{ name: 'recipient', type: 'address' }, { name: 'amount', type: 'uint256'}],
-                                name: 'transfer',
-                                type: 'function'
-                            }],
-                            functionName: 'transfer',
-                            args: [revenueWallet, amountAtomic]
-                        }),
-                        chainId: chainId,
-                    }, evmAddr, { skipAuthorize: true });
-                    if (res.status === 'failed') throw new Error(res.error || 'Initialization failed (Step 1)');
-                    step1Hash = res.hash;
-                }
-
-                // Wait for Step 1 confirmation before Step 2 to avoid nonce conflicts
-                if (step1Hash) {
-                    try {
-                        const publicClient = await signerController.getPublicClient(chainId);
-                        await publicClient.waitForTransactionReceipt({ hash: step1Hash as `0x${string}`, timeout: 60000 });
-                        console.log("[Swap] Step 1 confirmed on-chain:", step1Hash);
-                    } catch (waitErr: any) {
-                        console.warn("[Swap] Step 1 confirmation wait failed, proceeding:", waitErr.message);
-                        // Brief fallback wait to allow nonce propagation
-                        await new Promise(r => setTimeout(r, 3000));
-                    }
-                }
-
-                setTaxPaid(true); // Persist if the final swap fails so we don't double charge on retry
-            }
-
-            // Calculate the actual swap amount after tax deduction
-            // Only deduct if tax was paid in this session (EVM swaps deduct 0.25% from the same token)
-            const taxRate = 0.0025;
-            const wasTaxJustPaid = isEvmSwap; // tax is always charged for EVM swaps
-            const actualSwapAmount = wasTaxJustPaid
-                ? (parseFloat(fromAmount) * (1 - taxRate)).toString()
-                : fromAmount;
-
-            // STEP 2: Execute Swap (Chain directly after Step 1)
-            console.log("[Swap] Executing Step 2 (Finalization)...");
+            // The full amount the user typed is what gets swapped. The protocol
+            // fee is owned end-to-end by the engine (collectEvmTax): tier-aware
+            // on BSC, charged ON TOP rather than deducted, skipped entirely when
+            // the aggregator already skims it inline, and charged once across a
+            // multi-leg swap. The screen must not touch it.
+            const actualSwapAmount = fromAmount;
 
             // Security Check: Token Risk
-            if (isTransactionRiskEnabled && !taxPaid) { // Only check once if possible
+            if (isTransactionRiskEnabled) {
                 try {
                     const toTokenRisk = await securityGuard.checkTokenRisk(toToken.address, Number(fromChain?.id) || 1);
                     if (!toTokenRisk.isSafe) {
-                        setIsLoadingSwap(false); // Pause loading for alert
+                        setIsLoadingSwap(false);
+            setSwapStage(null); // Pause loading for alert
                         Alert.alert(
                             'Security Warning',
                             `Tiwi Protocol detected risks with ${toToken.symbol}:\n\n${toTokenRisk.warnings.join('\n')}\n\nDo you want to proceed anyway?`,
@@ -760,6 +819,7 @@ export default function SwapScreen() {
         } catch (error: any) {
             console.error("Swap sequence failed:", error.message, error);
             setIsLoadingSwap(false);
+            setSwapStage(null);
             if (isGasError(error)) {
                 const chain = getChainById(Number(fromChain?.id) || 1);
                 const gasToken = chain.nativeCurrency?.symbol || 'ETH';
@@ -779,131 +839,25 @@ export default function SwapScreen() {
         try {
             if (!swapQuote) throw new Error('No swap quote available');
 
-            // PRE-APPROVE: For Relay swaps with ERC20 tokens, approve before executing (EVM only)
-            const execChainId = Number(fromChain?.id) || 56;
-            const isEvmExec = ![7565164, 1399811149, 728126428, 1100, 99999, 118, 99998].includes(execChainId);
-
-            if (swapQuote.router === 'relay' && !isNativeToken(fromToken.address) && isEvmExec) {
-                console.log('[Swap] Pre-approving token for Relay swap...');
-                const { encodeFunctionData, getAddress, parseUnits: viemParseUnits } = require('viem');
-                const chainId = Number(fromChain?.id) || 56;
-                const amountIn = viemParseUnits(swapFromAmount, fromToken.decimals || 18);
-                const publicClient = await signerController.getPublicClient(chainId);
-                const tokenAddr = getAddress(fromToken.address).toLowerCase();
-
-                // Collect spender addresses from multiple sources
-                const spenderAddresses = new Set<string>();
-
-                const steps = swapQuote.raw?.steps || [];
-
-                // Log full step structure for debugging
-                console.log(`[Swap] Quote has ${steps.length} steps`);
-                for (const step of steps) {
-                    for (const item of (step as any).items || []) {
-                        const to = item.data?.to || '';
-                        const data = String(item.data?.data || '');
-                        console.log(`[Swap]   Item: to=${to}, data=${data.slice(0, 20)}..., approvalAddress=${item.data?.approvalAddress || 'none'}`);
-
-                        // Source 1: Explicit approvalAddress from Relay quote
-                        if (item.data?.approvalAddress) {
-                            spenderAddresses.add(item.data.approvalAddress.toLowerCase());
-                        }
-
-                        // Source 2: Decode spender from approve() calldata
-                        // If this item is an approve() call (selector 0x095ea7b3), the spender is in the calldata
-                        if (data.toLowerCase().startsWith('0x095ea7b3') && data.length >= 74) {
-                            const spenderHex = '0x' + data.slice(34, 74);
-                            console.log(`[Swap]   Decoded spender from approve calldata: ${spenderHex}`);
-                            spenderAddresses.add(spenderHex.toLowerCase());
-                        }
-
-                        // Source 3: Non-token 'to' addresses (the actual Relay contract)
-                        if (to && getAddress(to).toLowerCase() !== tokenAddr) {
-                            spenderAddresses.add(to.toLowerCase());
-                        }
-                    }
-                }
-
-                // Source 4: Fetch official ApprovalProxy from Relay API
-                try {
-                    const chainsRes = await fetch('https://api.relay.link/chains');
-                    if (chainsRes.ok) {
-                        const chainsData = await chainsRes.json();
-                        const chain = (chainsData.chains || []).find((c: any) => c.id === chainId);
-                        const proxy = chain?.contracts?.v3ApprovalProxy || chain?.contracts?.approvalProxy;
-                        if (proxy) {
-                            spenderAddresses.add(proxy.toLowerCase());
-                            console.log(`[Swap] Relay API ApprovalProxy: ${proxy}`);
-                        }
-                    }
-                } catch (e) {
-                    console.warn('[Swap] Failed to fetch Relay chains:', e);
-                }
-
-                console.log(`[Swap] Final spender set: ${[...spenderAddresses].join(', ')}`);
-
-                const ERC20_ABI = [
-                    { inputs: [{ name: 'spender', type: 'address' }, { name: 'amount', type: 'uint256' }], name: 'approve', outputs: [{ type: 'bool' }], stateMutability: 'nonpayable', type: 'function' },
-                    { inputs: [{ name: 'owner', type: 'address' }, { name: 'spender', type: 'address' }], name: 'allowance', outputs: [{ type: 'uint256' }], stateMutability: 'view', type: 'function' },
-                ] as const;
-
-                // Approve each spender with max uint256
-                for (const spender of spenderAddresses) {
-                    try {
-                        const allowance = await publicClient.readContract({
-                            address: getAddress(fromToken.address),
-                            abi: ERC20_ABI,
-                            functionName: 'allowance',
-                            args: [getAddress(address), getAddress(spender)],
-                        }) as bigint;
-
-                        console.log(`[Swap] Allowance for ${spender}: ${allowance.toString()}`);
-
-                        if (allowance < amountIn) {
-                            console.log(`[Swap] Approving ${fromToken.symbol} for ${spender}...`);
-                            const approveData = encodeFunctionData({
-                                abi: ERC20_ABI,
-                                functionName: 'approve',
-                                args: [getAddress(spender), BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')],
-                            });
-
-                            const approveResult = await signerController.executeTransaction({
-                                chainFamily: 'evm',
-                                to: fromToken.address,
-                                data: approveData,
-                                chainId: chainId,
-                            }, address, { skipAuthorize: true });
-
-                            if (approveResult.status === 'failed') {
-                                throw new Error('Token approval failed: ' + (approveResult.error || 'Unknown error'));
-                            }
-
-                            // Wait for on-chain confirmation
-                            if (approveResult.hash) {
-                                try {
-                                    await publicClient.waitForTransactionReceipt({ hash: approveResult.hash as `0x${string}`, timeout: 30000 });
-                                } catch {
-                                    await new Promise(r => setTimeout(r, 5000));
-                                }
-                            } else {
-                                await new Promise(r => setTimeout(r, 5000));
-                            }
-                            console.log(`[Swap] Approval confirmed for ${spender}`);
-                        } else {
-                            console.log(`[Swap] Already approved for ${spender}`);
-                        }
-                    } catch (err: any) {
-                        console.error(`[Swap] Approval error for ${spender}:`, err.message);
-                        throw new Error(`Token approval failed: ${err.message}`);
-                    }
-                }
-
-                console.log('[Swap] All approvals done, proceeding to swap...');
-            }
+            // Token approvals are handled by the swap engine. Each executor
+            // knows its own spender (Relay's ApprovalProxy, a DEX router, the
+            // TiwiProtocolDEX contract, …) via getSpenderAddress/
+            // ensureTokenApproval, and approves max once per (token, spender).
+            // The screen used to guess Relay's spender set by decoding calldata
+            // and querying api.relay.link, which both over-approved and missed
+            // every non-Relay router.
 
             const fromAddr = getAddressForChain(fromToken.chainId);
-            const toAddr = getAddressForChain(toToken.chainId);
-            const result = await executeSwap(swapFromAmount, fromToken, toToken, fromAddr, toAddr, swapQuote);
+            const toAddr = resolveRecipient(toToken.chainId);
+            const result = await executeSwap(
+                swapFromAmount,
+                fromToken,
+                toToken,
+                fromAddr,
+                toAddr,
+                swapQuote,
+                (status) => setSwapStage(status.message),
+            );
 
             const txHash = result?.txHash;
             if (!txHash) {
@@ -911,20 +865,11 @@ export default function SwapScreen() {
             }
             const chainId = Number(fromChain?.id) || 56;
 
-            // Verify the swap tx was confirmed on-chain (not just broadcast)
-            try {
-                const publicClient = await signerController.getPublicClient(chainId);
-                const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash as `0x${string}`, timeout: 60000 });
-                if (receipt.status === 'reverted') {
-                    throw new Error('Swap transaction reverted on-chain. Your tokens were not swapped.');
-                }
-                console.log('[Swap] Step 2 confirmed on-chain:', txHash);
-            } catch (verifyErr: any) {
-                if (verifyErr.message?.includes('reverted')) {
-                    throw verifyErr;
-                }
-                console.warn('[Swap] Could not verify tx receipt, proceeding:', verifyErr.message);
-            }
+            // No receipt re-verification here — matching the web app. Every
+            // executor already waits for its own confirmation (and reverts are
+            // raised from inside it), so a second 60s wait only added latency,
+            // and on non-EVM chains it was looking up an EVM receipt for a
+            // Solana signature / Cosmos hash / Sui digest that will never exist.
 
             // 1. Log detailed transaction to backend for indexing
             try {
@@ -966,6 +911,7 @@ export default function SwapScreen() {
             );
 
             setIsLoadingSwap(false);
+            setSwapStage(null);
             setIsSuccessModalVisible(true);
 
             // Immediately refresh wallet balances so new amounts show up
@@ -974,6 +920,7 @@ export default function SwapScreen() {
         } catch (error: any) {
             console.error('Swap execution failed:', error.message, error);
             setIsLoadingSwap(false);
+            setSwapStage(null);
             if (isGasError(error)) {
                 const chain = getChainById(Number(fromChain?.id) || 1);
                 const gasToken = chain.nativeCurrency?.symbol || 'ETH';
@@ -1020,6 +967,26 @@ export default function SwapScreen() {
                     onClose={closeChainSheet}
                 />
 
+                <RecipientAddressSheet
+                    visible={isRecipientSheetVisible}
+                    onClose={() => setIsRecipientSheetVisible(false)}
+                    onSave={(addr) => { setRecipientAddress(addr); setSwapQuote(null); }}
+                    currentAddress={recipientAddress}
+                    toChainId={toToken ? Number(toToken.chainId) : undefined}
+                    toChainName={toChain?.name}
+                />
+
+                {/* Gas-token picker for the BSC "Other" fee tier. Opens straight
+                    on BSC's token list — the tier only applies to BEP-20s. */}
+                <UnifiedAssetSelectSheet
+                    visible={isGasTokenSheetVisible}
+                    initialStep="tokens"
+                    initialChainId={56}
+                    selectedTokenId={selectedGasToken?.id}
+                    onSelect={handleGasTokenSelect}
+                    onClose={() => setIsGasTokenSheetVisible(false)}
+                />
+
                 <UnifiedAssetSelectSheet
                     visible={!!assetSheetTarget}
                     initialStep={assetSheetInitialStep}
@@ -1048,7 +1015,7 @@ export default function SwapScreen() {
                     onSelect={handleLimitAssetSelect}
                 />
 
-                <SwapLoadingOverlay visible={isLoadingSwap} />
+                <SwapLoadingOverlay visible={isLoadingSwap} stage={swapStage} />
 
                 <SwapSuccessModal
                     visible={isSuccessModalVisible}
@@ -1161,6 +1128,18 @@ export default function SwapScreen() {
                                     isLoadingQuote={isLoadingQuote}
                                     isRefreshing={isRefreshing}
                                     isStale={isStale}
+                                    quoteStep={quoteStep}
+                                    // Destination address is picked from the "To"
+                                    // label itself — same place the destination
+                                    // token/chain is chosen.
+                                    onRecipientPress={() => setIsRecipientSheetVisible(true)}
+                                    // Always show where the output actually lands —
+                                    // the custom recipient if set, otherwise our own
+                                    // address on the destination chain.
+                                    recipientLabel={(() => {
+                                        const dest = resolveRecipient(toToken?.chainId);
+                                        return dest ? truncateAddress(dest, 6, 4) : null;
+                                    })()}
                                 />
                             </View>
 
@@ -1183,11 +1162,33 @@ export default function SwapScreen() {
                             </View>
                         )}
 
+                        {/* BSC-only: the fee tier is priced into the quote AND read
+                            back at execution, so it must be chosen before quoting. */}
+                        {Number(fromChain?.id) === 56 && (
+                            <View style={styles.gasSelectorWrapper}>
+                                <BscGasSelector
+                                    selectedType={selectedGasTokenType}
+                                    onSelectType={setSelectedGasTokenType}
+                                    selectedToken={
+                                        selectedGasToken
+                                            ? {
+                                                symbol: selectedGasToken.symbol,
+                                                name: selectedGasToken.name,
+                                                icon: selectedGasToken.icon,
+                                            }
+                                            : null
+                                    }
+                                    onPickOtherToken={() => setIsGasTokenSheetVisible(true)}
+                                />
+                            </View>
+                        )}
+
                         <SwapDetailsCard
                             gasFee={swapQuote?.gasFee}
                             slippageTolerance={`${swapQuote?.slippage || slippage}%`}
                             twcFee={swapQuote?.twcFee}
                             source={swapQuote?.source}
+                            chainId={Number(fromChain?.id) || undefined}
                             isLoading={isLoadingQuote}
                             isRefreshing={isRefreshing}
                             isStale={isStale}
@@ -1212,14 +1213,14 @@ export default function SwapScreen() {
                         <View style={styles.spacerLarge} />
 
                         <SwapConfirmButton
-                            disabled={!isFormValid() || !swapQuote || isLoadingSwap || isRefreshing || isLoadingQuote || isPayingTax}
-                            loading={isLoadingSwap || isPayingTax}
+                            disabled={!isFormValid() || !swapQuote || isLoadingSwap || isRefreshing || isLoadingQuote}
+                            loading={isLoadingSwap}
                             onPress={handleConfirmSwap}
                             isRefreshing={isRefreshing}
                             isStale={isStale}
                             activeTab={activeTab}
                             hasValidQuote={hasValidQuote()}
-                            title={!taxPaid ? (isBridge ? 'Bridge' : 'Swap') : 'Finalize Swap'}
+                            title={isBridge ? 'Bridge' : 'Swap'}
                         />
                     </View>
                 </ScrollView>
@@ -1281,6 +1282,10 @@ const styles = StyleSheet.create({
         width: '100%',
     },
     expiresWrapper: {
+        marginTop: 16,
+        width: '100%',
+    },
+    gasSelectorWrapper: {
         marginTop: 16,
         width: '100%',
     },

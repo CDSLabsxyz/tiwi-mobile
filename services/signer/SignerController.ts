@@ -1,7 +1,15 @@
 import { useWalletStore } from '@/store/walletStore';
+import { AptosLocalEngine } from './AptosLocalEngine';
+import { BitcoinLocalEngine } from './BitcoinLocalEngine';
+import { CosmosLocalEngine } from './CosmosLocalEngine';
+import { InjectiveLocalEngine } from './InjectiveLocalEngine';
 import { LocalSignerEngine } from './LocalSignerEngine';
-import { ExecutionResult, TransactionRequest } from './SignerTypes';
+import { StarknetLocalEngine } from './StarknetLocalEngine';
+import { ChainFamily, ExecutionResult, SignerEngine, TransactionRequest } from './SignerTypes';
 import { SolanaLocalEngine } from './SolanaLocalEngine';
+import { SuiLocalEngine } from './SuiLocalEngine';
+import { TonLocalEngine } from './TonLocalEngine';
+import { TronLocalEngine } from './TronLocalEngine';
 
 /**
  * SignerController is the main entry point for all transaction signatures.
@@ -11,10 +19,40 @@ import { SolanaLocalEngine } from './SolanaLocalEngine';
 export class SignerController {
     private evmEngine: LocalSignerEngine;
     private solanaEngine: SolanaLocalEngine;
+    private suiEngine: SuiLocalEngine;
+    private aptosEngine: AptosLocalEngine;
+    private cosmosEngine: CosmosLocalEngine;
+    private injectiveEngine: InjectiveLocalEngine;
+    private bitcoinEngine: BitcoinLocalEngine;
+    private starknetEngine: StarknetLocalEngine;
+    private tronEngine: TronLocalEngine;
+    private tonEngine: TonLocalEngine;
+    /** Non-EVM engines keyed by chainFamily. EVM is handled separately (default). */
+    private engines: Partial<Record<ChainFamily, SignerEngine>>;
 
     constructor() {
         this.evmEngine = new LocalSignerEngine();
         this.solanaEngine = new SolanaLocalEngine();
+        this.suiEngine = new SuiLocalEngine();
+        this.aptosEngine = new AptosLocalEngine();
+        this.cosmosEngine = new CosmosLocalEngine();
+        this.injectiveEngine = new InjectiveLocalEngine();
+        this.bitcoinEngine = new BitcoinLocalEngine();
+        this.starknetEngine = new StarknetLocalEngine();
+        this.tronEngine = new TronLocalEngine();
+        this.tonEngine = new TonLocalEngine();
+        this.engines = {
+            evm: this.evmEngine,
+            solana: this.solanaEngine,
+            sui: this.suiEngine,
+            aptos: this.aptosEngine,
+            cosmos: this.cosmosEngine,
+            injective: this.injectiveEngine,
+            bitcoin: this.bitcoinEngine,
+            starknet: this.starknetEngine,
+            tron: this.tronEngine,
+            ton: this.tonEngine,
+        };
     }
 
     /**
@@ -32,8 +70,8 @@ export class SignerController {
         const isLocal = walletGroup?.source === 'internal' || walletGroup?.source === 'imported';
 
         if (isLocal) {
-            // 2. Select Engine based on Chain Family
-            const engine = tx.chainFamily === 'evm' ? this.evmEngine : this.solanaEngine;
+            // 2. Select Engine based on Chain Family (defaults to EVM).
+            const engine = this.engines[tx.chainFamily] ?? this.evmEngine;
 
             // 3. Execute (Engine will prompt for biometrics unless skipAuthorize is true)
             return await engine.sendTransaction(tx, address, options);

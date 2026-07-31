@@ -8,6 +8,7 @@ import type { ExpiresOption } from "@/components/sections/Swap/ExpiresSection";
 import type { SwapTabKey } from "@/components/sections/Swap/SwapTabs";
 import type { TokenOption } from "@/components/sections/Swap/TokenSelectSheet";
 import type { SwapQuote } from "@/services/swap/types";
+import { GasTokenType } from "@/services/swap/core/config/tax-config";
 import { create } from "zustand";
 
 const DEFAULT_BNB_TOKEN: TokenOption = {
@@ -70,6 +71,12 @@ interface SwapState {
   // Quote state
   swapQuote: SwapQuote | null;
   toFiatAmount: string;
+  /**
+   * Staged progress copy while a quote is in flight ("Searching routes…",
+   * "Scanning DEXes…", …). Ported from the web swap store — routing can take a
+   * few seconds and a bare spinner reads as frozen.
+   */
+  quoteStep: string;
 
   // Settings state
   slippage: number;
@@ -80,6 +87,15 @@ interface SwapState {
   isAutoSlippage: boolean;
   useRelayer: boolean;
   gasPaymentToken: TokenOption | null;
+
+  /**
+   * BSC gas-token tier. Drives BOTH the Tiwi fee rate and which relayer path
+   * runs: TWC 0.20% / BNB 0.25% (user pays own gas) / other BEP-20 0.30%.
+   * Read by the swap engine through services/swap/core/platform/swap-store.
+   */
+  selectedGasTokenType: GasTokenType;
+  /** The actual BEP-20 the relayer deducts gas in (OTHER_BSC tier only). */
+  selectedGasToken: TokenOption | null;
 
   // Actions - Form
   setActiveTab: (tab: SwapTabKey) => void;
@@ -104,11 +120,14 @@ interface SwapState {
   // Actions - Quote
   setSwapQuote: (quote: SwapQuote | null) => void;
   setToFiatAmount: (amount: string) => void;
+  setQuoteStep: (step: string) => void;
 
   // Actions - Settings
   setSlippage: (slippage: number) => void;
   setAutoSlippage: () => void;
   setUseRelayer: (useRelayer: boolean) => void;
+  setSelectedGasTokenType: (type: GasTokenType) => void;
+  setSelectedGasToken: (token: TokenOption | null) => void;
   setGasPaymentToken: (token: TokenOption | null) => void;
 
   // Actions - Complex operations
@@ -141,12 +160,17 @@ export const useSwapStore = create<SwapState>((set, get) => ({
   tokenSheetTarget: "from",
   swapQuote: null,
   toFiatAmount: "$0",
+  quoteStep: "",
 
   // Settings implementation
   slippage: 0.5,
   isAutoSlippage: true,
   useRelayer: false,
   gasPaymentToken: null,
+  // BNB = the standard 0.25% tier; the user pays their own gas unless they
+  // explicitly pick a token for the relayer to deduct from.
+  selectedGasTokenType: GasTokenType.BNB,
+  selectedGasToken: null,
 
   // Actions - Form
   setActiveTab: (tab) => set({ activeTab: tab }),
@@ -178,12 +202,21 @@ export const useSwapStore = create<SwapState>((set, get) => ({
   // Actions - Quote
   setSwapQuote: (quote) => set({ swapQuote: quote }),
   setToFiatAmount: (amount) => set({ toFiatAmount: amount }),
+  setQuoteStep: (quoteStep) => set({ quoteStep }),
 
   // Actions - Settings implementation
   // Manual slippage selection always exits auto mode.
   setSlippage: (slippage) => set({ slippage, isAutoSlippage: false }),
   setAutoSlippage: () => set({ slippage: 0.5, isAutoSlippage: true }),
   setUseRelayer: (useRelayer) => set({ useRelayer }),
+  setSelectedGasTokenType: (selectedGasTokenType) =>
+    set({
+      selectedGasTokenType,
+      // Leaving the OTHER_BSC tier clears the chosen gas token so a stale
+      // selection can't leak into the next swap's relayer request.
+      ...(selectedGasTokenType === GasTokenType.OTHER_BSC ? {} : { selectedGasToken: null }),
+    }),
+  setSelectedGasToken: (selectedGasToken) => set({ selectedGasToken }),
   setGasPaymentToken: (token) => set({ gasPaymentToken: token }),
 
   // Actions - Complex operations
@@ -213,6 +246,8 @@ export const useSwapStore = create<SwapState>((set, get) => ({
     slippage: 0.5,
     useRelayer: false,
     gasPaymentToken: null,
+    selectedGasTokenType: GasTokenType.BNB,
+    selectedGasToken: null,
   }),
 
   // Computed selectors

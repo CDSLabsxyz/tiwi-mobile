@@ -1,4 +1,5 @@
 import { DISPERSE_CONTRACTS } from '@/constants/contracts';
+import { getCosmosConfig } from '@/constants/cosmosChains';
 import { createTransportForChain } from '@/constants/rpc';
 import { useWalletStore } from '@/store/walletStore';
 import { toSmallestUnit } from '@/utils/formatting';
@@ -91,11 +92,29 @@ export const transactionService = {
         // which is exactly the failure on the user's screen).
         const SOLANA_CHAIN_IDS = [7565164, 1399811149];
         const isSolana = SOLANA_CHAIN_IDS.includes(Number(params.chainId));
+        // Canonical ids: Sui = 101, Aptos = 637. These are non-EVM (Move) chains
+        // signed by their own engines — never route them through the EVM signer.
+        const isSui = Number(params.chainId) === 101;
+        const isAptos = Number(params.chainId) === 637;
+        // Injective (8000001) — eth_secp256k1, its own engine (NOT the cosmjs path).
+        const isInjective = Number(params.chainId) === 8000001;
+        // Bitcoin (8332, UTXO) & Starknet (account-abstraction).
+        const isBitcoin = Number(params.chainId) === 8332;
+        const isStarknet = Number(params.chainId) === 23448594291968334;
+        // Cosmos-family (ATOM/OSMO/juno/…) — standard secp256k1 via @cosmjs.
+        const cosmosCfg = getCosmosConfig(params.chainId);
+        const isCosmos = !!cosmosCfg;
+        // TRON (base58 addresses, tronweb) & TON (ed25519, V4R2 external message).
+        // Both have their own engines — routing them to the EVM signer made viem
+        // reject the recipient outright.
+        const isTron = Number(params.chainId) === 728126428;
+        const isTon = [1100, 99999].includes(Number(params.chainId));
 
         // Fallback: If decimals is missing for native, assume the chain default
-        // (18 for EVM, 9 for SOL).
+        // (18 EVM, 9 SOL, 9 SUI/MIST, 8 APT/octas, per-chain Cosmos, 18 INJ,
+        // 8 BTC/sats, 18 STRK).
         const decimals = (params.decimals === undefined || params.decimals === null)
-            ? (isSolana ? 9 : 18)
+            ? (isSolana || isSui || isTon ? 9 : isAptos || isBitcoin ? 8 : isTron ? 6 : isCosmos ? cosmosCfg!.decimals : 18)
             : params.decimals;
 
         const amountBIStr = toSmallestUnit(params.amount, decimals);
@@ -141,6 +160,155 @@ export const transactionService = {
                 value: amountBIStr, // lamports
                 chainId: params.chainId,
             };
+        } else if (isSui || isAptos) {
+            // Move chains — pull the chain-specific address from the active group
+            // (the legacy `address` field is the EVM address).
+            const activeGroup = walletGroups.find(g => g.id === activeGroupId)
+                ?? walletGroups.find(g => Object.values(g.addresses).some(
+                    a => a?.toLowerCase() === legacyAddress.toLowerCase()
+                ));
+            const chainAddr = isSui ? activeGroup?.addresses.SUI : activeGroup?.addresses.APTOS;
+            if (!chainAddr) throw new Error(`No ${isSui ? 'Sui' : 'Aptos'} address in this wallet`);
+            fromAddress = chainAddr;
+
+            // Native token sentinels: Sui `0x2::sui::SUI` (9dp), Aptos
+            // `0x1::aptos_coin::AptosCoin` (8dp). `params.isNative` only knows EVM
+            // sentinels, so fall back to a chain-aware check.
+            const tokenAddr = (params.tokenAddress || '').trim().toLowerCase();
+            const nativeSym = isSui ? 'SUI' : 'APT';
+            const nativeAddr = isSui ? '0x2::sui::sui' : '0x1::aptos_coin::aptoscoin';
+            const isNativeMove = params.isNative
+                || !tokenAddr
+                || tokenAddr === 'native'
+                || tokenAddr === nativeAddr
+                || (params.symbol || '').toUpperCase() === nativeSym;
+            if (!isNativeMove) {
+                throw new Error(`${isSui ? 'Sui' : 'Aptos'} token transfers are not supported here yet`);
+            }
+
+            txRequest = {
+                chainFamily: isSui ? 'sui' : 'aptos',
+                to: params.recipientAddress,
+                value: amountBIStr, // MIST (Sui) / octas (Aptos)
+                chainId: params.chainId,
+            };
+        } else if (isBitcoin || isStarknet) {
+            const activeGroup = walletGroups.find(g => g.id === activeGroupId)
+                ?? walletGroups.find(g => Object.values(g.addresses).some(
+                    a => a?.toLowerCase() === legacyAddress.toLowerCase()
+                ));
+            const chainAddr = isBitcoin ? activeGroup?.addresses.BITCOIN : activeGroup?.addresses.STARKNET;
+            if (!chainAddr) throw new Error(`No ${isBitcoin ? 'Bitcoin' : 'Starknet'} address in this wallet`);
+            fromAddress = chainAddr;
+
+            // Both send only their native asset here (BTC / STRK). Non-native
+            // (BRC-20 / Starknet ERC20) isn't wired through this helper yet.
+            const tokenAddr = (params.tokenAddress || '').trim().toLowerCase();
+            const nativeSym = isBitcoin ? 'BTC' : 'STRK';
+            const isNativeUtxoOrSn = params.isNative
+                || !tokenAddr
+                || tokenAddr === 'native'
+                || tokenAddr === '0x0000000000000000000000000000000000000000'
+                || (params.symbol || '').toUpperCase() === nativeSym;
+            if (!isNativeUtxoOrSn) {
+                throw new Error(`${isBitcoin ? 'Bitcoin' : 'Starknet'} token transfers are not supported here yet`);
+            }
+
+            txRequest = {
+                chainFamily: isBitcoin ? 'bitcoin' : 'starknet',
+                to: params.recipientAddress,
+                value: amountBIStr, // sats (BTC) / wei-equivalent (STRK, 18dp)
+                chainId: params.chainId,
+            };
+        } else if (isInjective) {
+            const activeGroup = walletGroups.find(g => g.id === activeGroupId)
+                ?? walletGroups.find(g => Object.values(g.addresses).some(
+                    a => a?.toLowerCase() === legacyAddress.toLowerCase()
+                ));
+            fromAddress = activeGroup?.addresses.INJECTIVE ?? legacyAddress;
+
+            const tokenAddr = (params.tokenAddress || '').trim().toLowerCase();
+            const isNativeInj = params.isNative
+                || !tokenAddr
+                || tokenAddr === 'native'
+                || tokenAddr === 'inj'
+                || tokenAddr === '0x0000000000000000000000000000000000000000'
+                || (params.symbol || '').toUpperCase() === 'INJ';
+            if (!isNativeInj) {
+                throw new Error('Injective CW20/token transfers are not supported here yet');
+            }
+
+            txRequest = {
+                chainFamily: 'injective',
+                to: params.recipientAddress,
+                value: amountBIStr, // inj base units (18 decimals)
+                chainId: params.chainId,
+            };
+        } else if (isTron || isTon) {
+            const activeGroup = walletGroups.find(g => g.id === activeGroupId)
+                ?? walletGroups.find(g => Object.values(g.addresses).some(
+                    a => a?.toLowerCase() === legacyAddress.toLowerCase()
+                ));
+            const chainAddr = isTron ? activeGroup?.addresses.TRON : activeGroup?.addresses.TON;
+            if (!chainAddr) throw new Error(`No ${isTron ? 'TRON' : 'TON'} address in this wallet`);
+            fromAddress = chainAddr;
+
+            // Native sentinels differ per source: `params.isNative` only knows the
+            // EVM ones, so treat the usual placeholders as native too.
+            const tokenAddr = (params.tokenAddress || '').trim();
+            const lowered = tokenAddr.toLowerCase();
+            const nativeSym = isTron ? 'TRX' : 'TON';
+            const isNativeHere = params.isNative
+                || !tokenAddr
+                || lowered === 'native'
+                || lowered === '0x0000000000000000000000000000000000000000'
+                || (params.symbol || '').toUpperCase() === nativeSym;
+
+            // The contract/jetton-master address rides in `data` — the engines
+            // read it to decide between a native transfer and a token transfer.
+            txRequest = {
+                chainFamily: isTron ? 'tron' : 'ton',
+                to: params.recipientAddress,
+                value: amountBIStr, // sun (TRX, 6dp) / nanotons (TON, 9dp)
+                ...(isNativeHere ? {} : { data: tokenAddr }),
+                chainId: params.chainId,
+            };
+        } else if (isCosmos) {
+            // Pull the chain-specific bech32 address for logging (the engine
+            // re-derives the authoritative sender from the mnemonic + prefix).
+            const activeGroup = walletGroups.find(g => g.id === activeGroupId)
+                ?? walletGroups.find(g => Object.values(g.addresses).some(
+                    a => a?.toLowerCase() === legacyAddress.toLowerCase()
+                ));
+            fromAddress = activeGroup?.addresses[cosmosCfg!.addressKey] ?? legacyAddress;
+
+            // Cosmos native tokens reach here as the zero-address, an empty
+            // string, the native denom, or the native symbol — `params.isNative`
+            // (EVM sentinels) misses them, so use a chain-aware check.
+            const tokenAddr = (params.tokenAddress || '').trim().toLowerCase();
+            const rawToken = (params.tokenAddress || '').trim();
+            const isNativeCosmos = params.isNative
+                || !tokenAddr
+                || tokenAddr === 'native'
+                || tokenAddr === '0x0000000000000000000000000000000000000000'
+                || tokenAddr === cosmosCfg!.nativeDenom.toLowerCase();
+
+            // Non-native balances on Cosmos are bank denoms (ibc/…, factory/…,
+            // or a plain u-denom) and send through the very same MsgSend — the
+            // engine reads the denom off `data`. CW20 contracts are the one
+            // shape that needs a different message, so they still stop here.
+            const isCw20 = /^[a-z0-9]+1[a-z0-9]{38,}$/.test(rawToken);
+            if (!isNativeCosmos && isCw20) {
+                throw new Error('Cosmos CW20 token transfers are not supported here yet');
+            }
+
+            txRequest = {
+                chainFamily: 'cosmos',
+                to: params.recipientAddress,
+                value: amountBIStr, // base denom (uatom, uosmo, …)
+                ...(isNativeCosmos ? {} : { data: rawToken }),
+                chainId: params.chainId,
+            };
         } else if (params.isNative) {
             txRequest = {
                 chainFamily: 'evm',
@@ -180,7 +348,7 @@ export const transactionService = {
             // Solana: skip the EVM receipt poller — `sendRawTransaction` already
             // returns a signature and the SOL signer engine surfaces failures
             // synchronously.
-            const mined = isSolana
+            const mined = (isSolana || isSui || isAptos || isCosmos || isInjective || isBitcoin || isStarknet || isTron || isTon)
                 ? true
                 : await waitForReceiptSuccess({ hash: result.hash, chainId: params.chainId });
             if (mined === false) {

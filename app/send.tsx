@@ -7,13 +7,14 @@ import { Image } from 'expo-image';
 
 import {
     MultiSendForm,
-    MultiSendReview,
+    MultiSendPreview,
     PasscodeScreen,
     SendForm,
     SendReview,
     SendTokenSelector,
     SendTokenSelectSheet
 } from '@/components/sections/Send';
+import { groupRowsByToken, preflightMultiSend } from '@/utils/multiSend';
 import { TransactionReceiptCard } from '@/components/sections/Send/TransactionReceiptCard';
 import { WalletHeader } from '@/components/sections/Wallet/WalletHeader';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
@@ -24,14 +25,15 @@ import { apiClient } from '@/services/apiClient';
 import { fetchWalletData } from '@/services/walletService';
 import { useSendStore } from '@/store/sendStore';
 import { useWalletStore } from '@/store/walletStore';
-import { validateAddress, validateAddresses, validateAmount } from '@/utils/addressValidation';
+import { validateAddress, validateAmount } from '@/utils/addressValidation';
 import { mapAssetToTokenOption } from '@/utils/assetMapping';
 import { isNativeToken } from '@/utils/wallet';
 import * as Haptics from 'expo-haptics';
 import { useRequireBackup } from '@/hooks/useRequireBackup';
 import { useLocalSearchParams, usePathname, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useToastStore } from '@/store/useToastStore';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -47,6 +49,10 @@ export default function SendScreen() {
     // so we can pad + auto-scroll the parent ScrollView, matching swap.tsx).
     const [isAmountKeyboardVisible, setIsAmountKeyboardVisible] = useState(false);
     const sendScrollRef = React.useRef<ScrollView>(null);
+
+    // Live status line for the multi-send processing overlay.
+    const [multiStatus, setMultiStatus] = useState<string>('');
+    const { showToast } = useToastStore();
 
     // Receipt details captured at the moment a tx succeeds, so the success
     // screen can show them and the user can download/share them.
@@ -113,7 +119,15 @@ export default function SendScreen() {
 
     const { address: walletAddress, walletGroups } = useWalletStore();
     const { data: chains } = useChains();
-    const { execute, executeMulti, isExecuting } = useTransactionExecution();
+    const { execute, executeMultiGroups, isExecuting } = useTransactionExecution();
+
+    // Multi-send derived state (per-row multi-token model).
+    const multiGroups = React.useMemo(
+        () => groupRowsByToken(sendStore.multiSendRows).groups,
+        [sendStore.multiSendRows]
+    );
+    const multiPreflight = React.useMemo(() => preflightMultiSend(multiGroups), [multiGroups]);
+    const multiTotalRecipients = multiGroups.reduce((acc, g) => acc + g.recipients.length, 0);
 
     useEffect(() => {
         if (isExecuting) {
@@ -267,9 +281,9 @@ export default function SendScreen() {
     const handleConfirmFromReview = async () => {
         if (!requireBackup()) return;
 
-        // Multi-send logic placeholder
-        if (activeTab === 'multi-send') {
-            setCurrentStep('passcode');
+        // Block multi-send if preflight has errors.
+        if (activeTab === 'multi-send' && !multiPreflight.ok) {
+            Alert.alert('Fix before sending', multiPreflight.errors[0]?.message || 'Some rows are invalid.');
             return;
         }
 
@@ -293,16 +307,11 @@ export default function SendScreen() {
     };
 
     const performTransaction = async () => {
-        if (!selectedToken || !sendStore.selectedChain) {
-            return;
-        }
-
         try {
-            let hash: string | undefined;
-
             if (activeTab === 'send-to-one') {
+                if (!selectedToken || !sendStore.selectedChain) return;
                 if (!sendStore.recipientAddress || !sendStore.amount) return;
-                hash = await execute({
+                const hash = await execute({
                     tokenAddress: selectedToken.address,
                     symbol: selectedToken.symbol,
                     decimals: selectedToken.decimals,
@@ -311,43 +320,76 @@ export default function SendScreen() {
                     chainId: Number(sendStore.selectedChain.id),
                     isNative: isNativeToken(selectedToken.address),
                 });
-            } else {
-                if (sendStore.recipients.length === 0 || !sendStore.amountPerRecipient) return;
-                hash = await executeMulti({
-                    tokenAddress: selectedToken.address,
-                    symbol: selectedToken.symbol,
-                    decimals: selectedToken.decimals,
-                    recipients: sendStore.recipients.map(r => r.address),
-                    amounts: sendStore.recipients.map(() => sendStore.amountPerRecipient),
-                    chainId: Number(sendStore.selectedChain.id),
-                    isNative: isNativeToken(selectedToken.address),
-                });
+                if (hash) {
+                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                    setReceipt({
+                        txHash: hash,
+                        amount: parseFloat(sendStore.amount || '0').toLocaleString(undefined, { maximumFractionDigits: 8 }),
+                        symbol: selectedToken.symbol,
+                        network: sendStore.selectedChain?.name || '',
+                        sender: walletAddress || '',
+                        recipient: sendStore.recipientAddress,
+                        recipientCount: 1,
+                        completedAt: new Date().toISOString(),
+                        isMulti: false,
+                    });
+                    setCurrentStep('success');
+                }
+                return;
             }
 
-            if (hash) {
-                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                const isMulti = activeTab === 'multi-send';
-                const totalTokens = isMulti
-                    ? (parseFloat(sendStore.amountPerRecipient || '0') * sendStore.recipients.length)
-                    : parseFloat(sendStore.amount || '0');
-                setReceipt({
-                    txHash: hash,
-                    amount: totalTokens.toLocaleString(undefined, { maximumFractionDigits: 8 }),
-                    symbol: selectedToken.symbol,
-                    network: sendStore.selectedChain?.name || '',
-                    sender: walletAddress || '',
-                    recipient: isMulti
-                        ? sendStore.recipients.map(r => r.address).join(',\n')
-                        : sendStore.recipientAddress,
-                    recipientCount: isMulti ? sendStore.recipients.length : 1,
-                    completedAt: new Date().toISOString(),
-                    isMulti,
-                });
-                setCurrentStep('success');
+            // ---- Multi-send (per-row multi-token) ----
+            const groups = groupRowsByToken(sendStore.multiSendRows).groups;
+            if (groups.length === 0) return;
+
+            const preflight = preflightMultiSend(groups);
+            if (!preflight.ok) {
+                Alert.alert('Fix before sending', preflight.errors[0]?.message || 'Some rows are invalid.');
+                return;
             }
+
+            const result = await executeMultiGroups(groups, {
+                onStatus: (m) => setMultiStatus(m),
+            });
+
+            if (result.hashes.length === 0) {
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+                Alert.alert('Multi-send failed', result.failedGroups[0]?.error || 'No transfers were sent.');
+                return;
+            }
+
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+            const totalRecipients = groups.reduce((acc, g) => acc + g.recipients.length, 0);
+            const sentGroups = new Set(result.hashes.map((h) => `${h.chainId}:${h.token}`));
+            const sentRecipients = groups
+                .filter((g) => sentGroups.has(`${g.token.chainId}:${g.token.symbol}`))
+                .reduce((acc, g) => acc + g.recipients.length, 0);
+            const symbolLabel = groups.length === 1 ? groups[0].token.symbol : `${groups.length} tokens`;
+            const networkLabel = new Set(groups.map((g) => g.token.chainId)).size === 1
+                ? (groups[0].token as any)?.chainName || sendStore.selectedChain?.name || 'Multiple'
+                : 'Multiple networks';
+
+            if (result.failedGroups.length > 0) {
+                showToast?.(`Completed with ${result.failedGroups.length} failed group(s).`, 'error');
+            }
+
+            setReceipt({
+                txHash: result.hashes[0].hash,
+                amount: `${sentRecipients}/${totalRecipients} recipients`,
+                symbol: symbolLabel,
+                network: networkLabel,
+                sender: walletAddress || '',
+                recipient: groups.flatMap((g) => g.recipients).join(',\n'),
+                recipientCount: totalRecipients,
+                completedAt: new Date().toISOString(),
+                isMulti: true,
+            });
+            setCurrentStep('success');
         } catch (e) {
             console.error('Send failed:', e);
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+            Alert.alert('Send failed', (e as any)?.message || 'Something went wrong.');
         }
     };
 
@@ -415,7 +457,7 @@ export default function SendScreen() {
             if (activeTab === 'send-to-one') {
                 return <SendReview onConfirm={handleConfirmFromReview} />;
             } else {
-                return <MultiSendReview onConfirm={handleConfirmFromReview} />;
+                return <MultiSendPreview />;
             }
         } else if (currentStep === 'passcode') {
             return <PasscodeScreen onSuccess={handlePasscodeSuccess} />;
@@ -441,14 +483,8 @@ export default function SendScreen() {
                     (!sendStore.isContractRecipient || sendStore.acknowledgedContractRecipient)
                 );
             } else {
-                return (
-                    sendStore.recipients.length > 0 &&
-                    validateAddresses(sendStore.recipients.map(r => r.address), sendStore.selectedChain?.id).isValid &&
-                    parseFloat(sendStore.amountPerRecipient) > 0 &&
-                    validateAmount(sendStore.amountPerRecipient).isValid &&
-                    sendStore.selectedToken &&
-                    !sendStore.isInsufficientBalance
-                );
+                // Multi-send: at least one valid (address+amount+token) row.
+                return multiGroups.length > 0;
             }
         }
         return false;
@@ -488,7 +524,9 @@ export default function SendScreen() {
                         {
                             paddingBottom: isAmountKeyboardVisible
                                 ? 480
-                                : (currentStep === 'select-asset' || currentStep === 'review' ? 100 : 80),
+                                // Clear the fixed bottom action button so trailing
+                                // content (CSV note, last row) isn't hidden under it.
+                                : (bottom || 16) + 140,
                             flex: currentStep === 'passcode' ? 1 : 0, // Ensure it fills screen if passcode
                             paddingHorizontal: currentStep === 'passcode' ? 0 : 18,
                             paddingTop: currentStep === 'passcode' ? 0 : 20,
@@ -520,9 +558,13 @@ export default function SendScreen() {
                             <Text style={styles.processingSubtitle}>
                                 {activeTab === 'send-to-one'
                                     ? `Sending ${sendStore.amount} ${selectedToken?.symbol} to ${sendStore.recipientAddress.slice(0, 6)}...`
-                                    : 'Processing your multi-send request...'}
+                                    : (multiStatus || 'Processing your multi-send request...')}
                             </Text>
-                            <Text style={styles.processingStatus}>Broadcasting to {sendStore.selectedChain?.name}...</Text>
+                            <Text style={styles.processingStatus}>
+                                {activeTab === 'send-to-one'
+                                    ? `Broadcasting to ${sendStore.selectedChain?.name}...`
+                                    : `${multiTotalRecipients} recipient${multiTotalRecipients === 1 ? '' : 's'} · ${multiGroups.length} token${multiGroups.length === 1 ? '' : 's'}`}
+                            </Text>
                         </View>
                     </View>
                 )}
@@ -553,39 +595,40 @@ export default function SendScreen() {
                     </View>
                 )}
 
-                {currentStep === 'review' && (
+                {currentStep === 'review' && (() => {
+                    const isMulti = activeTab === 'multi-send';
+                    const gasBlocked = !isMulti && sendStore.isInsufficientGas;
+                    const preflightBlocked = isMulti && !multiPreflight.ok;
+                    const disabled = isExecuting || gasBlocked || preflightBlocked;
+                    return (
                     <View style={[styles.buttonContainer, { bottom: (bottom || 16) + 32 }]}>
                         <TouchableOpacity
                             activeOpacity={0.8}
                             onPress={handleConfirmFromReview}
-                            disabled={isExecuting || sendStore.isInsufficientGas}
+                            disabled={disabled}
                             style={[
                                 styles.nextButton,
-                                {
-                                    backgroundColor: (isExecuting || sendStore.isInsufficientGas) ? colors.bgCards : colors.primaryCTA
-                                }
+                                { backgroundColor: disabled ? colors.bgCards : colors.primaryCTA }
                             ]}
                         >
                             {isExecuting ? (
                                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                                     <View style={{ width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: colors.primaryCTA, borderTopColor: 'transparent' }} />
-                                    <Text style={[styles.nextButtonText, { color: colors.bodyText }]}>
-                                        {sendStore.isInsufficientGas ? 'Insufficient Gas' : 'Processing...'}
-                                    </Text>
+                                    <Text style={[styles.nextButtonText, { color: colors.bodyText }]}>Processing...</Text>
                                 </View>
                             ) : (
-                                <Text style={[
-                                    styles.nextButtonText,
-                                    { color: (isExecuting || sendStore.isInsufficientGas) ? colors.bodyText : colors.bg }
-                                ]}>
-                                    {sendStore.isInsufficientGas
+                                <Text style={[styles.nextButtonText, { color: disabled ? colors.bodyText : colors.bg }]}>
+                                    {gasBlocked
                                         ? `Insufficient ${sendStore.selectedChain?.id === 56 ? 'BNB' : (sendStore.selectedChain?.id === 1 ? 'ETH' : 'Native')} for gas`
-                                        : (activeTab === 'send-to-one' ? 'Confirm' : 'Confirm Multi-Send')}
+                                        : preflightBlocked
+                                            ? (multiPreflight.errors[0]?.message ? 'Fix errors to continue' : 'Add recipients')
+                                            : (isMulti ? 'Confirm Multi-Send' : 'Confirm')}
                                 </Text>
                             )}
                         </TouchableOpacity>
                     </View>
-                )}
+                    );
+                })()}
             </View>
             {/* </KeyboardAvoidingView> */}
 

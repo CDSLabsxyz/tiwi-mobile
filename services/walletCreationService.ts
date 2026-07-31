@@ -7,7 +7,30 @@
  * - expo-secure-store: Hardware-backed secure storage for private keys
  */
 
-import { ChainType } from '@/store/walletStore';
+import { AddressKey, ChainType } from '@/store/walletStore';
+import {
+    cosmosAddressFromPrivateKeyHex,
+    isTonMnemonic,
+    tonAddressFromPublicKey,
+    tonKeyPairFromBip39,
+    tonKeyPairFromSecretHex,
+    tonKeyPairFromTonMnemonic,
+    tronAddressFromPrivateKey,
+    tronPrivateKeyFromMnemonic,
+} from '@/services/chainKeys';
+import {
+    deriveAptosAddress,
+    deriveBitcoinAddress,
+    deriveBitcoinCashAddress,
+    deriveDogecoinAddress,
+    deriveLitecoinAddress,
+    derivePolkadotAddress,
+    deriveStacksAddress,
+    deriveStarknetAddress,
+    deriveSuiAddress,
+    evmToInjectiveAddress,
+    reEncodeBech32,
+} from '@/services/walletDerivationExtra';
 import { HDKey } from '@scure/bip32';
 import { generateMnemonic, mnemonicToSeedSync } from '@scure/bip39';
 import { wordlist } from '@scure/bip39/wordlists/english.js';
@@ -40,7 +63,7 @@ function bs58Decode(value: string): Uint8Array {
 export interface CreatedWallet {
     address: string; // Master/Primary (EVM)
     addresses: {
-        [key in ChainType]?: string;
+        [key in AddressKey]?: string;
     };
     mnemonic: string; // Ephemeral: Only available immediately after creation
 }
@@ -55,9 +78,43 @@ export const DERIVATION_PATHS: Record<ChainType, string> = {
     EVM: "m/44'/60'/0'/0/0",
     SOLANA: "m/44'/501'/0'/0'",
     TRON: "m/44'/195'/0'/0/0",
-    TON: "m/44'/607'/0'/0'/0'",
+    // ed25519 (SLIP-0010) — see chainKeys.TON_BIP39_PATH. NEVER feed this to
+    // derivePrivateKeyFromMnemonic, which is secp256k1 and would produce a key
+    // that cannot sign for the TON address the app displays.
+    TON: "m/44'/607'/0'",
     COSMOS: "m/44'/118'/0'/0/0",
     OSMOSIS: "m/44'/118'/0'/0/0",
+    // ed25519 chains — signed by their own engines (SuiLocalEngine / AptosLocalEngine),
+    // NOT via the secp256k1 derivePrivateKeyFromMnemonic path. Paths are informational
+    // + match deriveMultiChainAddressesFromMnemonic.
+    SUI: "m/44'/784'/0'/0'/0'",
+    APTOS: "m/44'/637'/0'/0'/0'",
+    // Injective shares the EVM key (eth path); Bitcoin BIP84; Starknet Stark curve.
+    // Informational — signed by their own engines, not derivePrivateKeyFromMnemonic.
+    INJECTIVE: "m/44'/60'/0'/0/0",
+    BITCOIN: "m/84'/0'/0'/0/0",
+    STARKNET: "m/44'/9004'/0'/0/0",
+};
+
+/**
+ * Cosmos-family bech32 prefixes keyed by the `addresses` slot they fill.
+ * All of them share ONE secp256k1 account (m/44'/118'), so an address for any
+ * of them is the same account re-encoded — see `reEncodeBech32`.
+ */
+export const COSMOS_FAMILY_PREFIXES: Partial<Record<AddressKey, string>> = {
+    COSMOS: 'cosmos',
+    OSMOSIS: 'osmo',
+    THORCHAIN: 'thor',
+    JUNO: 'juno',
+    STRIDE: 'stride',
+    DYDX: 'dydx',
+    KUJIRA: 'kujira',
+    SECRET: 'secret',
+    CELESTIA: 'celestia',
+    ARCHWAY: 'archway',
+    SAGA: 'saga',
+    NEUTRON: 'neutron',
+    NIBIRU: 'nibi',
 };
 
 /**
@@ -91,7 +148,7 @@ export async function generateNewWallet(): Promise<CreatedWallet> {
 /**
  * Derive addresses for all supported chains from a mnemonic.
  */
-export async function deriveMultiChainAddressesFromMnemonic(mnemonic: string): Promise<Record<ChainType, string>> {
+export async function deriveMultiChainAddressesFromMnemonic(mnemonic: string): Promise<Partial<Record<AddressKey, string>>> {
     const addresses: any = {};
     const trimmedMnemonic = mnemonic.trim();
     const seed = mnemonicToSeedSync(trimmedMnemonic);
@@ -116,50 +173,21 @@ export async function deriveMultiChainAddressesFromMnemonic(mnemonic: string): P
 
     // 3. TRON (m/44'/195'/0'/0/0)
     try {
-        const { HDKey: EthHDKey } = await import('ethereum-cryptography/hdkey');
-        const hd = EthHDKey.fromMasterSeed(seed);
-        const tronChild = hd.derive(DERIVATION_PATHS.TRON);
-        if (tronChild.privateKey) {
-            const privateKeyBuffer = Buffer.from(tronChild.privateKey);
-            const tronPrivateKeyHex = Array.from(privateKeyBuffer)
-                .map((b) => b.toString(16).padStart(2, '0'))
-                .join('');
-            
-            const TronModule = await import('tronweb');
-            // Support both { TronWeb } and { default: { TronWeb } } and { default: TronWeb }
-            const TronWebConstructor = TronModule.TronWeb || (TronModule.default && TronModule.default.TronWeb) || TronModule.default;
-            
-            if (typeof TronWebConstructor !== 'function') {
-                console.error('[WalletService] TronWeb constructor not found', TronModule);
-            } else {
-                const tronWebInstance = new TronWebConstructor({ fullHost: 'https://api.trongrid.io' });
-                addresses.TRON = tronWebInstance.address.fromPrivateKey(tronPrivateKeyHex);
-            }
-        }
+        const tronPrivateKeyHex = await tronPrivateKeyFromMnemonic(trimmedMnemonic);
+        addresses.TRON = await tronAddressFromPrivateKey(tronPrivateKeyHex);
     } catch (e) {
         console.error('[WalletService] Tron derivation failed:', e);
     }
     await yieldToUI();
 
-    // 4. TON (m/44'/607'/0'/0'/0')
+    // 4. TON (ed25519, SLIP-0010 m/44'/607'/0')
+    //
+    // This MUST use the same ed25519 derivation the signer uses. It previously
+    // used @scure/bip32 (secp256k1), feeding a 33-byte key to a contract that
+    // needs a 32-byte ed25519 key — the address shown could never be signed for.
     try {
-        const { HDKey: TonHDKey } = await import('@scure/bip32');
-        const tonSeed = mnemonicToSeedSync(trimmedMnemonic);
-        const tonHd = TonHDKey.fromMasterSeed(tonSeed);
-        const tonChild = tonHd.derive(DERIVATION_PATHS.TON);
-        
-        const { WalletContractV4 } = await import('@ton/ton');
-        
-        if (tonChild.publicKey) {
-            const tonWallet = WalletContractV4.create({
-                workchain: 0,
-                publicKey: Buffer.from(tonChild.publicKey)
-            });
-            
-            // Using non-bounceable user-friendly address (standard for user wallets)
-            addresses.TON = tonWallet.address.toString({ bounceable: false, testOnly: false });
-            console.log('[WalletService] Derived TON address:', addresses.TON);
-        }
+        const tonKeys = await tonKeyPairFromBip39(trimmedMnemonic);
+        addresses.TON = await tonAddressFromPublicKey(tonKeys.publicKey);
     } catch (e) {
         console.error('[WalletService] TON derivation failed:', e);
     }
@@ -195,6 +223,65 @@ export async function deriveMultiChainAddressesFromMnemonic(mnemonic: string): P
     } catch (e) {
         console.error('[WalletService] Cosmos/Osmosis manual derivation failed:', e);
     }
+    await yieldToUI();
+
+    // ── Extra chains (web parity — balance/display only, NOT signing) ─────────
+    // Each is isolated: a library that fails to load/run under Hermes degrades
+    // that one address to undefined and never breaks the core 6 above.
+
+    // 7. Injective — the EVM address re-encoded as inj1… (eth_secp256k1).
+    if (addresses.EVM) {
+        const inj = evmToInjectiveAddress(addresses.EVM);
+        if (inj) addresses.INJECTIVE = inj;
+    }
+
+    // 8. Standard-secp256k1 Cosmos-family — the COSMOS account re-encoded under
+    //    each chain's bech32 prefix (same key, different prefix).
+    if (addresses.COSMOS) {
+        for (const [key, prefix] of Object.entries(COSMOS_FAMILY_PREFIXES) as [AddressKey, string][]) {
+            addresses[key] = reEncodeBech32(addresses.COSMOS!, prefix) ?? undefined;
+        }
+    }
+    await yieldToUI();
+
+    // 9. Bitcoin (bc1…), BIP84.
+    try { addresses.BITCOIN = await deriveBitcoinAddress(seed); }
+    catch (e) { console.warn('[WalletService] Bitcoin derivation failed:', e); }
+    await yieldToUI();
+
+    // 10-12. Litecoin / Dogecoin / Bitcoin Cash (UTXO).
+    try { addresses.LITECOIN = await deriveLitecoinAddress(seed); }
+    catch (e) { console.warn('[WalletService] Litecoin derivation failed:', e); }
+    try { addresses.DOGECOIN = await deriveDogecoinAddress(seed); }
+    catch (e) { console.warn('[WalletService] Dogecoin derivation failed:', e); }
+    try { addresses.BITCOINCASH = await deriveBitcoinCashAddress(seed); }
+    catch (e) { console.warn('[WalletService] Bitcoin Cash derivation failed:', e); }
+    await yieldToUI();
+
+    // 13. Stacks (SP…).
+    try { addresses.STACKS = await deriveStacksAddress(seed); }
+    catch (e) { console.warn('[WalletService] Stacks derivation failed:', e); }
+    await yieldToUI();
+
+    // 13b. Polkadot (1…, sr25519 + SS58).
+    try { addresses.POLKADOT = await derivePolkadotAddress(trimmedMnemonic); }
+    catch (e) { console.warn('[WalletService] Polkadot derivation failed:', e); }
+    await yieldToUI();
+
+    // 14. Sui (0x…64-hex, ed25519).
+    try { addresses.SUI = await deriveSuiAddress(trimmedMnemonic); }
+    catch (e) { console.warn('[WalletService] Sui derivation failed:', e); }
+    await yieldToUI();
+
+    // 15. Aptos (0x…64-hex, ed25519).
+    try { addresses.APTOS = await deriveAptosAddress(trimmedMnemonic); }
+    catch (e) { console.warn('[WalletService] Aptos derivation failed:', e); }
+    await yieldToUI();
+
+    // 16. Starknet (0x…, Stark curve + OZ account).
+    try { addresses.STARKNET = await deriveStarknetAddress(seed); }
+    catch (e) { console.warn('[WalletService] Starknet derivation failed:', e); }
+    await yieldToUI();
 
     return addresses;
 }
@@ -306,6 +393,9 @@ export function getCompatibleChains(input: string): ChainType[] {
     const cleanHex = text.replace(/^0x/i, '');
     if (/^[0-9a-fA-F]{64}$/.test(cleanHex)) {
         compatible.push('EVM', 'TRON', 'COSMOS', 'OSMOSIS', 'TON');
+    } else if (/^[0-9a-fA-F]{128}$/.test(cleanHex)) {
+        // 64-byte ed25519 secret key — TON only.
+        compatible.push('TON');
     }
     if (validatePrivateKey(text, 'SOLANA')) {
         compatible.push('SOLANA');
@@ -334,6 +424,11 @@ export function validatePrivateKey(key: string, chain?: ChainType): boolean {
             console.warn('[WalletService] bs58 decode failed:', e);
             return false;
         }
+    }
+
+    // TON accepts a 32-byte ed25519 seed or a full 64-byte secret key.
+    if (chain === 'TON') {
+        return /^[0-9a-fA-F]{64}$/.test(cleanHex) || /^[0-9a-fA-F]{128}$/.test(cleanHex);
     }
 
     return /^[0-9a-fA-F]{64}$/.test(cleanHex);
@@ -368,35 +463,16 @@ async function addressFromHexKeyForChain(hexKey: string, chain: ChainType): Prom
         return privateKeyToAccount(hex).address;
     }
     if (chain === 'TRON') {
-        const TronModule = await import('tronweb');
-        const TronWebConstructor =
-            (TronModule as any).TronWeb ||
-            ((TronModule as any).default && (TronModule as any).default.TronWeb) ||
-            (TronModule as any).default;
-        const tronInstance = new TronWebConstructor({ fullHost: 'https://api.trongrid.io' });
-        return tronInstance.address.fromPrivateKey(hexKey);
+        return tronAddressFromPrivateKey(hexKey);
     }
     if (chain === 'COSMOS' || chain === 'OSMOSIS') {
-        const { secp256k1 } = await import('@noble/curves/secp256k1');
-        const { ripemd160 } = await import('@noble/hashes/ripemd160');
-        const { sha256 } = await import('@noble/hashes/sha2');
-        const bech32mod: any = await import('bech32');
-        const bech32 = bech32mod.bech32 || bech32mod.default || bech32mod;
-        const pubkey = secp256k1.getPublicKey(hexKey, true);
-        const ripe = ripemd160(sha256(pubkey));
-        const words = bech32.toWords(ripe);
-        return bech32.encode(chain === 'COSMOS' ? 'cosmos' : 'osmo', words);
+        // Derived through cosmjs (the same signer used to sign), so the address
+        // shown can never disagree with the one that signs.
+        return cosmosAddressFromPrivateKeyHex(hexKey, chain === 'COSMOS' ? 'cosmos' : 'osmo');
     }
     if (chain === 'TON') {
-        const { WalletContractV4 } = await import('@ton/ton');
-        const { default: nacl } = await import('tweetnacl');
-        const seed = Uint8Array.from(hexKey.match(/.{2}/g)!.map(b => parseInt(b, 16)));
-        const keypair = nacl.sign.keyPair.fromSeed(seed);
-        const tonWallet = WalletContractV4.create({
-            workchain: 0,
-            publicKey: Buffer.from(keypair.publicKey),
-        });
-        return tonWallet.address.toString({ bounceable: false, testOnly: false });
+        const keypair = await tonKeyPairFromSecretHex(hexKey);
+        return tonAddressFromPublicKey(keypair.publicKey);
     }
     throw new Error(`Unsupported chain for hex key import: ${chain}`);
 }
@@ -427,9 +503,45 @@ export async function importWalletByPrivateKey(
 
     await saveSecureWallet(address, finalKey, chain);
 
+    const addresses: Partial<Record<AddressKey, string>> = { [chain]: address };
+
+    // One Cosmos secp256k1 account is every Cosmos-family account — the same key
+    // re-encoded under each chain's prefix. Fan it out so the imported wallet
+    // shows (and can send from) Osmosis, Celestia, dYdX, … not just one row.
+    if (chain === 'COSMOS' || chain === 'OSMOSIS') {
+        for (const [key, prefix] of Object.entries(COSMOS_FAMILY_PREFIXES) as [AddressKey, string][]) {
+            const encoded = reEncodeBech32(address, prefix);
+            if (encoded) addresses[key] = encoded;
+        }
+    }
+
     return {
         address,
-        addresses: { [chain]: address },
+        addresses,
         mnemonic: '',
+    };
+}
+
+/**
+ * Import a native TON wallet from its 24-word TON mnemonic (Tonkeeper, TonHub,
+ * MyTonWallet). This is NOT a BIP39 phrase — it has its own checksum and its own
+ * key derivation — so it produces a TON-only wallet rather than a multi-chain one.
+ */
+export async function importWalletByTonMnemonic(mnemonic: string): Promise<CreatedWallet> {
+    const trimmed = mnemonic.trim().toLowerCase().replace(/\s+/g, ' ');
+    if (!(await isTonMnemonic(trimmed))) throw new Error('Invalid TON recovery phrase');
+
+    const keypair = await tonKeyPairFromTonMnemonic(trimmed);
+    const address = await tonAddressFromPublicKey(keypair.publicKey);
+
+    // Store BOTH: the phrase (so the user can still export it) and the derived
+    // ed25519 seed, which is what the signer actually loads.
+    await saveSecureMnemonic(address, trimmed);
+    await saveSecureWallet(address, keypair.secretKey.toString('hex'), 'TON');
+
+    return {
+        address,
+        addresses: { TON: address },
+        mnemonic: trimmed,
     };
 }

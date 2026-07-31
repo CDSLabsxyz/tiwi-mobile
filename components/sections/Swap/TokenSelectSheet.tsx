@@ -29,6 +29,9 @@ export interface TokenOption {
     chainId: number;
     decimals: number;
     priceUSD?: string;
+    /** Pair liquidity in USD — forwarded to the route API to skip a slow
+     *  server-side DexScreener lookup on every quote. */
+    liquidity?: number;
 }
 
 interface TokenSelectSheetProps {
@@ -145,6 +148,7 @@ export const TokenSelectSheet: React.FC<TokenSelectSheetProps> = ({
                 icon: t.logoURI,
                 chainIcon: chainIcon,
                 tvl: t.liquidity ? `$${t.liquidity.toLocaleString()}` : 'N/A',
+                liquidity: t.liquidity,
                 balanceFiat: totUSD > 0 ? formatUSDPrice(totUSD) : '$0.00',
                 balanceToken: hasBal ? `${formatTokenQuantity(walletToken.balanceFormatted)} ${t.symbol}` : `0 ${t.symbol}`,
                 address: t.address,

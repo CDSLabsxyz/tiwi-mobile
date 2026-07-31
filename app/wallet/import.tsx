@@ -3,10 +3,12 @@ import { QRScanner } from '@/components/ui/QRScanner';
 import { TIWILoader } from '@/components/ui/TIWILoader';
 import { NetworkSelectionModal } from '@/components/wallet/NetworkSelectionModal';
 import { colors } from '@/constants/colors';
+import { isTonMnemonic } from '@/services/chainKeys';
 import {
     getCompatibleChains,
     importWalletByMnemonic,
     importWalletByPrivateKey,
+    importWalletByTonMnemonic,
     validateMnemonic,
     validatePrivateKey
 } from '@/services/walletCreationService';
@@ -16,7 +18,7 @@ import { api } from '@/lib/mobile/api-client';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
     KeyboardAvoidingView,
     Platform,
@@ -28,6 +30,19 @@ import {
     View
 } from 'react-native';
 
+/** What the pasted secret is. `tonMnemonic` = native 24-word TON phrase. */
+type ImportType = 'mnemonic' | 'privateKey' | 'tonMnemonic' | null;
+
+/** Wallet-list label for a single-chain import, e.g. "Tron Wallet 3". */
+const CHAIN_LABELS: Partial<Record<ChainType, string>> = {
+    EVM: 'EVM',
+    SOLANA: 'Solana',
+    TRON: 'Tron',
+    TON: 'TON',
+    COSMOS: 'Cosmos',
+    OSMOSIS: 'Osmosis',
+};
+
 export default function ImportWalletScreen() {
     const router = useRouter();
     const { mode } = useLocalSearchParams<{ mode?: string }>();
@@ -37,6 +52,7 @@ export default function ImportWalletScreen() {
     const [isLoading, setIsLoading] = useState(false);
     const [showScanner, setShowScanner] = useState(false);
     const [showNetworkModal, setShowNetworkModal] = useState(false);
+    const [importError, setImportError] = useState<string | null>(null);
 
     const handleScan = (data: string) => {
         // Basic sanitization
@@ -45,29 +61,55 @@ export default function ImportWalletScreen() {
     };
 
     // Validation Logic
-    const validation = useMemo(() => {
+    const syncValidation = useMemo(() => {
         const text = inputText.trim();
-        if (!text) return { isValid: false, type: null, error: null };
+        if (!text) return { isValid: false, type: null as ImportType, error: null as string | null };
 
         let isMnemonic = false;
         let isPK = false;
         try { isMnemonic = validateMnemonic(text); } catch (e) { console.warn('[Import] mnemonic check failed', e); }
         try { isPK = validatePrivateKey(text); } catch (e) { console.warn('[Import] private key check failed', e); }
 
-        if (isMnemonic) return { isValid: true, type: 'mnemonic', error: null };
-        if (isPK) return { isValid: true, type: 'privateKey', error: null };
+        if (isMnemonic) return { isValid: true, type: 'mnemonic' as ImportType, error: null };
+        if (isPK) return { isValid: true, type: 'privateKey' as ImportType, error: null };
 
         // If it looks like a seed phrase but invalid
         if (text.split(/\s+/).length >= 12) {
-            return { isValid: false, type: 'mnemonic', error: 'The seed phrase is invalid' };
+            return { isValid: false, type: 'mnemonic' as ImportType, error: 'The seed phrase is invalid' };
         }
 
         if (text.length > 30) {
-            return { isValid: false, type: 'privateKey', error: 'The private key is invalid' };
+            return { isValid: false, type: 'privateKey' as ImportType, error: 'The private key is invalid' };
         }
 
-        return { isValid: false, type: null, error: null };
+        return { isValid: false, type: null as ImportType, error: null };
     }, [inputText]);
+
+    // A native TON phrase (Tonkeeper/TonHub) is 24 words from the BIP39
+    // wordlist but has its OWN checksum, so `validateMnemonic` rejects it and
+    // the user would be told their perfectly good phrase is invalid. Validating
+    // it needs @ton/crypto, which is async — so it runs as an effect and
+    // upgrades the verdict when it lands.
+    const [isTonPhrase, setIsTonPhrase] = useState(false);
+    useEffect(() => {
+        const text = inputText.trim();
+        if (syncValidation.isValid || text.split(/\s+/).length !== 24) {
+            setIsTonPhrase(false);
+            return;
+        }
+        let cancelled = false;
+        isTonMnemonic(text)
+            .then(ok => { if (!cancelled) setIsTonPhrase(ok); })
+            .catch(() => { if (!cancelled) setIsTonPhrase(false); });
+        return () => { cancelled = true; };
+    }, [inputText, syncValidation.isValid]);
+
+    const validation = useMemo(() => {
+        if (!syncValidation.isValid && isTonPhrase) {
+            return { isValid: true, type: 'tonMnemonic' as ImportType, error: null };
+        }
+        return syncValidation;
+    }, [syncValidation, isTonPhrase]);
 
     // Detect compatible chains for the current input
     const compatibleChains = useMemo(() => {
@@ -83,6 +125,7 @@ export default function ImportWalletScreen() {
 
     const handleContinue = async () => {
         if (!validation.isValid) return;
+        setImportError(null);
         setShowNetworkModal(true);
     };
 
@@ -94,18 +137,29 @@ export default function ImportWalletScreen() {
 
         try {
             let importedWallet;
+            const primaryChain = (selected === 'MULTI' ? 'EVM' : selected) as ChainType;
+
             if (validation.type === 'mnemonic') {
                 importedWallet = await importWalletByMnemonic(inputText.trim());
+            } else if (validation.type === 'tonMnemonic') {
+                importedWallet = await importWalletByTonMnemonic(inputText.trim());
             } else {
-                const chain = selected === 'MULTI' ? 'EVM' : selected;
-                importedWallet = await importWalletByPrivateKey(inputText.trim(), chain);
+                importedWallet = await importWalletByPrivateKey(inputText.trim(), primaryChain);
             }
+
+            // Single-chain imports carry their chain in the name so a wallet list
+            // holding a Tron key and a Cosmos key isn't two identical "Wallet N"s.
+            const index = useWalletStore.getState().walletGroups.length + 1;
+            const isSingleChain = selected !== 'MULTI' && validation.type !== 'mnemonic';
+            const name = isSingleChain
+                ? `${CHAIN_LABELS[primaryChain] ?? primaryChain} Wallet ${index}`
+                : `Wallet ${index}`;
 
             addWalletGroup({
                 id: importedWallet.address.toLowerCase(),
-                name: `Wallet ${useWalletStore.getState().walletGroups.length + 1}`,
-                type: validation.type === 'mnemonic' ? 'mnemonic' : 'privateKey',
-                primaryChain: (selected === 'MULTI' ? 'EVM' : selected) as ChainType,
+                name,
+                type: validation.type === 'privateKey' ? 'privateKey' : 'mnemonic',
+                primaryChain,
                 addresses: importedWallet.addresses,
                 source: 'imported',
                 // Imported wallets already have a seed/key stored externally — no in-app backup needed.
@@ -137,8 +191,11 @@ export default function ImportWalletScreen() {
                 setSetupPhase('WALLET_READY');
                 router.push('/security' as any);
             }
-        } catch (error) {
+        } catch (error: any) {
+            // Previously this only hit the console — the screen just stopped
+            // loading with no explanation of why the import didn't take.
             console.error('Import failed', error);
+            setImportError(error?.message || 'Could not import this wallet. Please check the phrase or key and try again.');
         } finally {
             setIsLoading(false);
         }
@@ -190,8 +247,8 @@ export default function ImportWalletScreen() {
 
                     {/* Hint / Error */}
                     <View style={styles.infoRow}>
-                        {validation.error && (
-                            <Text style={styles.errorText}>{validation.error}</Text>
+                        {(importError || validation.error) && (
+                            <Text style={styles.errorText}>{importError || validation.error}</Text>
                         )}
                     </View>
 
@@ -232,7 +289,9 @@ export default function ImportWalletScreen() {
                 visible={showNetworkModal}
                 onClose={() => setShowNetworkModal(false)}
                 onSelect={handleNetworkSelect}
-                mode={validation.type === 'mnemonic' ? 'mnemonic' : 'privateKey'}
+                mode={validation.type === 'mnemonic' || validation.type === 'tonMnemonic'
+                    ? validation.type
+                    : 'privateKey'}
                 compatibleChains={compatibleChains}
             />
 

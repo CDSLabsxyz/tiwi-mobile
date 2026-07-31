@@ -5,6 +5,7 @@
 
 import type { ChainOption } from "@/components/sections/Swap/ChainSelectSheet";
 import type { TokenOption } from "@/components/sections/Swap/TokenSelectSheet";
+import type { MultiSendRow } from "@/utils/multiSend";
 import { create } from "zustand";
 
 export type SendTab = "send-to-one" | "multi-send";
@@ -27,10 +28,13 @@ interface SendState {
   amount: string;
   usdValue: string;
 
-  // Multi-Send state
+  // Multi-Send state (legacy single-token model — kept for compatibility)
   recipients: SendRecipient[];
   amountPerRecipient: string;
   totalRecipients: number;
+
+  // Multi-Send state (per-row multi-token model — the active model)
+  multiSendRows: MultiSendRow[];
 
   // Transaction details
   networkFee: string;
@@ -53,6 +57,7 @@ interface SendState {
   setUsdValue: (value: string) => void;
   setRecipients: (recipients: SendRecipient[]) => void;
   setAmountPerRecipient: (amount: string) => void;
+  setMultiSendRows: (rows: MultiSendRow[]) => void;
   setNetworkFee: (fee: string, feeUSD: string) => void;
   openTokenSheet: () => void;
   closeTokenSheet: () => void;
@@ -75,6 +80,7 @@ const initialState = {
   recipients: [],
   amountPerRecipient: "",
   totalRecipients: 0,
+  multiSendRows: [] as MultiSendRow[],
   networkFee: "0",
   networkFeeUSD: "$0.00",
   isTokenSheetVisible: false,
@@ -125,6 +131,8 @@ export const useSendStore = create<SendState>((set, get) => ({
     });
   },
   setAmountPerRecipient: (amount) => set({ amountPerRecipient: amount }),
+  setMultiSendRows: (rows) =>
+    set({ multiSendRows: rows, totalRecipients: rows.filter((r) => r.address.trim().length > 0).length }),
   setNetworkFee: (fee, feeUSD) => set({ networkFee: fee, networkFeeUSD: feeUSD }),
   openTokenSheet: () => set({ isTokenSheetVisible: true }),
   closeTokenSheet: () => set({ isTokenSheetVisible: false }),
@@ -141,7 +149,7 @@ export const useSendStore = create<SendState>((set, get) => ({
     })),
   setAcknowledgedContractRecipient: (acknowledged) =>
     set({ acknowledgedContractRecipient: acknowledged }),
-  resetSendState: () => set(initialState),
+  resetSendState: () => set({ ...initialState, recipients: [], multiSendRows: [] }),
   prePopulateFromAsset: (token, chain, balance, usdValue) => {
     set({
       selectedToken: token,

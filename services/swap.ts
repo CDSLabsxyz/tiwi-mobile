@@ -1,235 +1,290 @@
+/**
+ * Swap service — a direct port of the web app's quote + execution pipeline.
+ *
+ * `fetchSwapQuote` mirrors `tiwi-user-app/hooks/useSwapQuote.ts` and
+ * `executeSwap` mirrors `tiwi-user-app/hooks/useSwapExecution.ts`. Behaviour is
+ * intentionally identical, so keep them in sync — the differences that used to
+ * exist here all produced worse routes on mobile than on web:
+ *
+ *   • Quotes came from THREE sources (a Relay-vs-backend race, Jupiter direct,
+ *     Skip direct) instead of one. Only the backend route carries fee mode,
+ *     per-step dexIds/router addresses and expiry, and only it considers all
+ *     ~30 routers — so mobile silently skipped better routes and lost the
+ *     inline-fee signal.
+ *   • Same-chain quotes were rewritten to `router: 'dex'` client-side, which
+ *     threw away the backend's chosen router.
+ *   • Cross-chain routes weren't checked for a one-signature aggregator, so a
+ *     mobile user could get a multi-signature route where web gets one.
+ *   • Routes weren't checked against `swapExecutor.canExecute`, so an
+ *     unexecutable winner was served instead of an executable alternative.
+ */
 
 import { api, RouteRequest } from '@/lib/mobile/api-client';
-import { parseUnits } from 'viem';
-import { relayService } from './relayService';
+import { swapExecutor } from '@/services/swap/core';
+import type { RouterRoute } from '@/services/swap/core/router-types';
+import type { SwapExecutionStatus } from '@/services/swap/core/types';
+import { GasTokenType } from '@/services/swap/core/config/tax-config';
+import { getCanonicalChain } from '@/services/swap/core/registry/chains';
+import { isAddressChainCompatible } from '@/services/swap/core/utils/wallet-display';
+import { useSwapStore } from '@/store/swapStore';
 import { SwapQuote, TokenMinimal } from './swap/types';
 import { unifiedSwapManager } from './swap/UnifiedSwapManager';
 
 export * from './swap/types';
 
-const JUPITER_API = 'https://quote-api.jup.ag/v6';
+/**
+ * The BSC relayer / gas-token tiering (TWC/BNB/Other) only applies to swaps that
+ * stay entirely on BSC. When a BSC token is paired with an off-chain token the
+ * relayer never runs, so the tiered tax falls back to the standard rate.
+ * (Mirrors `isBscOnlySwap` in useSwapQuote.)
+ */
+const BSC_CHAIN_IDS = [56, 97];
+const isBscOnlySwap = (from?: TokenMinimal | null, to?: TokenMinimal | null): boolean =>
+    !!from?.chainId &&
+    !!to?.chainId &&
+    BSC_CHAIN_IDS.includes(Number(from.chainId)) &&
+    BSC_CHAIN_IDS.includes(Number(to.chainId));
 
 /**
- * Fetch quote and swap transaction directly from Jupiter API
+ * Cross-chain routers that deliver the destination token in ONE user signature.
+ * Copied from useSwapQuote — keep the two lists identical.
  */
-async function fetchJupiterQuote(
-    fromAmount: string,
-    fromToken: TokenMinimal,
-    toToken: TokenMinimal,
-    userAddress: string,
-    slippage: number
-): Promise<SwapQuote | null> {
-    const inputMint = fromToken.address;
-    const outputMint = toToken.address;
-    const amountInLamports = parseUnits(fromAmount, fromToken.decimals).toString();
-    const slippageBps = Math.round(slippage * 100); // 0.5% -> 50 bps
+const ONE_SIG_AGGREGATORS = new Set([
+    'lifi', 'relay', 'mayan', 'squid', 'across', 'wormhole', 'thorchain',
+    'maya', 'chainflip', 'rubic', 'stonfi', 'cetus', 'thala', 'skip', 'unisat', 'jupiter',
+    // CCTP rail: user signs only on the source (relayer delivers on dest) = one signature.
+    'tiwi-cctp',
+    // Meson stablecoin rail: approve once + sign once, relayer fills dest = one signature.
+    'meson',
+]);
 
-    console.log(`[Jupiter] Fetching quote: ${inputMint} -> ${outputMint}, amount: ${amountInLamports}`);
+/** Format an output amount to 6 dp for display. Port of useSwapQuote's helper. */
+export function formatToSixDecimals(value: string): string {
+    const num = Number(value);
+    if (!isFinite(num)) return value;
+    if (num === 0) return '0';
 
-    // 1. Get quote
-    const quoteRes = await fetch(
-        `${JUPITER_API}/quote?inputMint=${inputMint}&outputMint=${outputMint}&amount=${amountInLamports}&slippageBps=${slippageBps}`
-    );
-    if (!quoteRes.ok) {
-        const err = await quoteRes.text();
-        throw new Error(`Jupiter quote failed: ${err}`);
-    }
-    const quoteData = await quoteRes.json();
-
-    if (!quoteData || !quoteData.outAmount) {
-        throw new Error('Jupiter returned no quote');
+    if (num > 1000000) {
+        if (value.includes('.')) {
+            const [intPart, decimalPart] = value.split('.');
+            return `${intPart}.${decimalPart.substring(0, 6)}`;
+        }
+        return value;
     }
 
-    console.log(`[Jupiter] Quote received: outAmount=${quoteData.outAmount}`);
-
-    // 2. Get swap transaction
-    const swapRes = await fetch(`${JUPITER_API}/swap`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            quoteResponse: quoteData,
-            userPublicKey: userAddress,
-            wrapAndUnwrapSol: true,
-            dynamicComputeUnitLimit: true,
-            prioritizationFeeLamports: 'auto',
-        }),
-    });
-    if (!swapRes.ok) {
-        const err = await swapRes.text();
-        throw new Error(`Jupiter swap tx failed: ${err}`);
-    }
-    const swapData = await swapRes.json();
-
-    if (!swapData.swapTransaction) {
-        throw new Error('Jupiter did not return swap transaction');
-    }
-
-    console.log(`[Jupiter] Swap transaction received (${swapData.swapTransaction.length} chars)`);
-
-    const outAmountFormatted = (Number(quoteData.outAmount) / Math.pow(10, toToken.decimals)).toString();
-    const priceImpact = quoteData.priceImpactPct || '0';
-
-    return {
-        toAmount: outAmountFormatted,
-        fiatAmount: '0',
-        slippage,
-        gasEstimate: '0',
-        gasFee: '$0.00',
-        twcFee: '',
-        source: ['Jupiter'],
-        router: 'jupiter',
-        raw: {
-            ...quoteData,
-            swapTransaction: swapData.swapTransaction,
-        },
-        quoteId: quoteData.contextSlot?.toString(),
-    };
+    return num.toFixed(6).replace(/\.?0+$/, '');
 }
 
 /**
- * Swap service - handles swap-related API calls using the new Routing Engine
+ * Fetch the best route for a pair.
+ *
+ * ONE source of truth: `/api/v1/route`. The backend runs every router adapter
+ * (LiFi, Relay, Jupiter, Skip, Cetus, Meson, CCTP, the Tiwi contracts, …) and
+ * returns a normalized `RouterRoute` — the exact object the executor engine
+ * settles. Nothing is quoted client-side.
  */
-
 export async function fetchSwapQuote(
     fromAmount: string,
     fromToken: TokenMinimal,
     toToken: TokenMinimal,
     fromAddress: string,
     recipient: string,
-    slippage: number = 0.5
+    slippage: number = 0.5,
+    options?: { signal?: AbortSignal },
 ): Promise<SwapQuote> {
     if (!fromAmount || parseFloat(fromAmount) <= 0) {
         throw new Error('Invalid amount');
     }
 
-    // Solana chains — skip Relay (not supported for execution), use Tiwi Routing Engine (Jupiter)
-    const SOLANA_CHAIN_IDS = [7565164, 1399811149];
-    const isSolanaSwap = SOLANA_CHAIN_IDS.includes(Number(fromToken.chainId)) || SOLANA_CHAIN_IDS.includes(Number(toToken.chainId));
+    const { selectedGasTokenType, isAutoSlippage } = useSwapStore.getState();
 
-    // Relay is a CROSS-CHAIN protocol — it must NOT be used for same-chain swaps because
-    // it can't handle fee-on-transfer tokens (e.g., WKC on BSC) and ends up taking
-    // tokens without completing the swap. For same-chain, go straight to native DEX routing.
-    const isSameChain = Number(fromToken.chainId) === Number(toToken.chainId);
+    // Addresses are only sent when they're valid on the relevant chain — a
+    // 0x… "recipient" on a Solana route makes the backend quote for an address
+    // that can't receive, and the executor would then deliver there.
+    let validFromAddress: string | undefined;
+    if (fromAddress && isAddressChainCompatible(fromAddress, Number(fromToken.chainId))) {
+        validFromAddress = fromAddress;
+    }
 
-    const fetchTiwiRouteQuote = async (): Promise<SwapQuote> => {
-        const routeReq: RouteRequest = {
-            fromToken: {
-                chainId: fromToken.chainId,
-                address: fromToken.address,
-                symbol: fromToken.symbol,
-                decimals: fromToken.decimals,
-            },
-            toToken: {
-                chainId: toToken.chainId,
-                address: toToken.address,
-                symbol: toToken.symbol,
-                decimals: toToken.decimals,
-            },
-            fromAmount,
-            fromAddress,
-            recipient,
-            slippage,
-        };
+    let validRecipient: string | undefined;
+    if (recipient && isAddressChainCompatible(recipient, Number(toToken.chainId))) {
+        validRecipient = recipient;
+    } else if (fromAddress && isAddressChainCompatible(fromAddress, Number(toToken.chainId))) {
+        validRecipient = fromAddress;
+    }
 
-        const response: any = await api.route.get(routeReq);
+    // Pair liquidity, computed exactly as useSwapQuote does: the MINIMUM of the
+    // two tokens when both are known (conservative — the route has to work for
+    // both legs), otherwise whichever one we have.
+    //
+    // Sending this is the single biggest lever on quote latency. When it's
+    // absent the backend's auto-slippage service falls back to a DexScreener
+    // pair lookup on EVERY quote: measured 2.0s–15.9s per request versus ~0.6s
+    // when the client supplies it. Mobile never sent it, which is why quotes
+    // felt so much slower here than on web.
+    let liquidityUSD: number | undefined;
+    if (fromToken.liquidity !== undefined && toToken.liquidity !== undefined) {
+        liquidityUSD = Math.min(fromToken.liquidity, toToken.liquidity);
+    } else if (fromToken.liquidity !== undefined) {
+        liquidityUSD = fromToken.liquidity;
+    } else if (toToken.liquidity !== undefined) {
+        liquidityUSD = toToken.liquidity;
+    }
+    // A zero/NaN value would be treated as "not provided" by the backend anyway.
+    if (!liquidityUSD || !isFinite(liquidityUSD) || liquidityUSD <= 0) {
+        liquidityUSD = undefined;
+    }
 
-        if (!response || !response.route) {
-            throw new Error('No swap route found');
-        }
-
-        // If the backend says "relay" but this is a same-chain swap, Relay won't work
-        // (it's a cross-chain protocol that doesn't handle fee-on-transfer tokens).
-        // Force routing through DexExecutor which uses the FoT-compatible PancakeSwap router.
-        let router = response.route.router;
-        let transactionRequest = response.transactionRequest;
-        const sameChainResp = Number(fromToken.chainId) === Number(toToken.chainId);
-
-        if (router === 'relay' && sameChainResp) {
-            console.log(`[SwapService] Same-chain swap — forcing DexExecutor (discarding Relay tx)`);
-            router = 'dex';
-            transactionRequest = undefined;
-        }
-
-        return {
-            toAmount: response.route.toToken?.amount || '0',
-            fiatAmount: response.route.toToken?.amountUSD || '0',
-            slippage: slippage,
-            gasEstimate: response.route.fees?.gasUSD || '0',
-            gasFee: response.route.fees?.gasUSD ? `$${response.route.fees.gasUSD}` : '0',
-            twcFee: '',
-            source: [router ? router.charAt(0).toUpperCase() + router.slice(1) : 'Tiwi Router'],
-            router: router,
-            transactionRequest: transactionRequest,
-            raw: response.route.raw,
-            quoteId: response.route.routeId,
-        };
+    const routeReq: RouteRequest = {
+        fromToken: {
+            chainId: Number(fromToken.chainId),
+            address: fromToken.address,
+            symbol: fromToken.symbol,
+            decimals: fromToken.decimals,
+        },
+        toToken: {
+            chainId: Number(toToken.chainId),
+            address: toToken.address,
+            symbol: toToken.symbol,
+            decimals: toToken.decimals,
+        },
+        fromAmount,
+        fromAddress: validFromAddress,
+        recipient: validRecipient,
+        // Fixed slippage sends the number; auto lets the backend pick per-route.
+        slippage: isAutoSlippage ? undefined : slippage,
+        slippageMode: isAutoSlippage ? 'auto' : 'fixed',
+        order: 'RECOMMENDED',
+        liquidityUSD,
+        // Tiered gas-token tax only for BSC-internal swaps; cross-chain from BSC
+        // uses the standard tier (the relayer can't handle cross-chain).
+        gasTokenType: isBscOnlySwap(fromToken, toToken) ? selectedGasTokenType : GasTokenType.BNB,
     };
 
-    if (!isSolanaSwap && !isSameChain) {
-        // Cross-chain: race Relay against the Tiwi Routing Engine. First successful
-        // quote wins — historically these were called serially and a slow/timed-out
-        // Relay request doubled the user-perceived quote time.
-        console.log(`[SwapService] Cross-chain swap — racing Relay vs Tiwi Routing Engine`);
-        const relayPromise = relayService
-            .fetchRelayQuote(fromAmount, fromToken, toToken, fromAddress, recipient, slippage)
-            .then((q) => {
-                if (!q) throw new Error('Relay returned no quote');
-                return q;
-            });
+    const response: any = await api.route.get(routeReq, { signal: options?.signal });
+
+    // "No route" is a VALID outcome (illiquid / unsupported pair) — the API
+    // returns { noRoute: true } on HTTP 200. Give the honest, chain-specific
+    // message instead of a generic failure.
+    if (response?.noRoute || (!response?.route && !response?.error)) {
+        const sym = toToken.symbol || 'this token';
+        let chainName = 'this network';
         try {
-            const winner = await Promise.any([relayPromise, fetchTiwiRouteQuote()]);
-            console.log(`[SwapService] Cross-chain quote winner: ${winner.router || winner.source?.[0]}`);
-            return winner;
-        } catch (err: any) {
-            // Both providers failed
-            console.error('[SwapService] Both Relay and Tiwi Routing Engine failed:', err);
-            throw new Error('No swap route found');
-        }
-    } else if (!isSolanaSwap && isSameChain) {
-        console.log(`[SwapService] Same-chain swap (${fromToken.symbol} -> ${toToken.symbol} on chain ${fromToken.chainId}) — using native DEX routing`);
-        try {
-            return await fetchTiwiRouteQuote();
-        } catch (error: any) {
-            console.error('[SwapService] fetchSwapQuote failed:', error);
-            throw error;
-        }
-    } else {
-        console.log(`[SwapService] Solana swap detected — using Jupiter direct`);
-        try {
-            const jupiterQuote = await fetchJupiterQuote(fromAmount, fromToken, toToken, fromAddress, slippage);
-            if (jupiterQuote) return jupiterQuote;
-        } catch (jupError: any) {
-            console.warn('[SwapService] Jupiter direct failed:', jupError.message);
-        }
-        try {
-            return await fetchTiwiRouteQuote();
-        } catch (error: any) {
-            console.error('[SwapService] fetchSwapQuote failed:', error);
-            throw error;
+            chainName = getCanonicalChain(Number(toToken.chainId))?.name || chainName;
+        } catch { /* keep default */ }
+
+        throw new Error(
+            response?.reason === 'unsupported_pair'
+                ? `[NO_LIQUIDITY] This swap isn't supported on ${chainName}.`
+                : `[NO_LIQUIDITY] No liquidity for ${sym} on ${chainName} — this token has no tradeable pool here.`,
+        );
+    }
+
+    if (response?.error) {
+        throw new Error(response.error);
+    }
+
+    let route: RouterRoute | undefined = response?.route;
+    let alternatives: RouterRoute[] = response?.alternatives || [];
+
+    // One-signature cross-chain: prefer a single-aggregator route that delivers
+    // the destination token in ONE signature over a multi-step swap→bridge→swap.
+    if (route && route.fromToken.chainId !== route.toToken.chainId) {
+        const isOneSig = (r: RouterRoute) => ONE_SIG_AGGREGATORS.has(r.router);
+        const cands = [route, ...alternatives].filter(Boolean);
+        const oneSig = cands
+            .filter((r) => isOneSig(r) && swapExecutor.canExecute(r))
+            .sort((a, b) => parseFloat(b.toToken.amount || '0') - parseFloat(a.toToken.amount || '0'));
+
+        if (oneSig.length > 0 && !isOneSig(route)) {
+            console.warn(`[SwapService] Cross-chain: switching "${route.router}" → one-signature "${oneSig[0].router}"`);
+            alternatives = cands.filter((r) => r !== oneSig[0]);
+            route = oneSig[0];
         }
     }
+
+    // Only serve a route an executor can actually settle. If the winner can't be
+    // executed here (e.g. a universal/V3 route on a chain where TiwiMultiSwap
+    // isn't deployed), fall back to the best executable alternative.
+    if (route && !swapExecutor.canExecute(route)) {
+        const executable = alternatives.find((alt) => swapExecutor.canExecute(alt));
+        if (executable) {
+            console.warn(`[SwapService] Winning route "${route.router}" not executable here; using "${executable.router}"`);
+            alternatives = alternatives.filter((a) => a !== executable);
+            route = executable;
+        } else {
+            console.warn(`[SwapService] No executable route for this pair/chain (winner: "${route.router}")`);
+        }
+    }
+
+    if (!route || !route.router || !route.fromToken || !route.toToken || !route.toToken.amount) {
+        console.error('[SwapService] Invalid route response:', response);
+        throw new Error('Invalid route response from server');
+    }
+
+    // Background: pre-check TiwiDEX contract viability for BSC swaps, so the
+    // single-signature path is already resolved by the time the user taps Swap.
+    if (Number(fromToken.chainId) === 56 && Number(toToken.chainId) === 56) {
+        import('@/services/swap/core/executors/tiwi-protocol-dex-executor')
+            .then((m) => m.TiwiProtocolDEXExecutor.checkViability())
+            .catch(() => { });
+    }
+
+    const router = route.router;
+
+    return {
+        toAmount: formatToSixDecimals(route.toToken.amount || '0'),
+        fiatAmount: route.toToken.amountUSD || '0',
+        fromAmountUSD: route.fromToken.amountUSD,
+        toAmountUSD: route.toToken.amountUSD,
+        slippage: parseFloat(route.slippage || String(slippage)) || slippage,
+        gasEstimate: route.fees?.gasUSD || '0',
+        gasFee: route.fees?.gasUSD ? `$${route.fees.gasUSD}` : '0',
+        twcFee: '',
+        source: [router ? router.charAt(0).toUpperCase() + router.slice(1) : 'Tiwi Router'],
+        router,
+        transactionRequest: response?.transactionRequest,
+        raw: route.raw,
+        quoteId: route.routeId,
+        // The normalized route is what actually gets executed. Everything above
+        // is display-only projection of it.
+        route,
+        alternatives,
+        expiresAt: route.expiresAt,
+    };
 }
 
+/**
+ * Settle a quote.
+ *
+ * Mirrors `useSwapExecution.execute`: the cross-VM recipient guard, then
+ * `swapExecutor.execute` with `isFeeOnTransfer: true`, and a resolved
+ * `{ success: false }` treated as a failure rather than a success.
+ */
 export async function executeSwap(
     fromAmount: string,
     fromToken: TokenMinimal,
     toToken: TokenMinimal,
     fromAddress: string,
     recipientAddress: string,
-    quote: SwapQuote
+    quote: SwapQuote,
+    onStatusUpdate?: (status: SwapExecutionStatus) => void,
 ): Promise<{ txHash: string }> {
-    const result = await unifiedSwapManager.execute({
-        fromAmount,
-        fromToken,
-        toToken,
-        fromAddress,
-        recipientAddress,
-        quote,
-    });
+    const result = await unifiedSwapManager.execute(
+        {
+            fromAmount,
+            fromToken,
+            toToken,
+            fromAddress,
+            recipientAddress,
+            quote,
+        },
+        { onStatusUpdate },
+    );
 
     if (result.success && result.txHash) {
         return { txHash: result.txHash };
-    } else {
-        throw new Error(result.error || 'Swap execution failed');
     }
+
+    throw new Error(result.error || 'Swap execution failed');
 }

@@ -2,6 +2,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { colors } from '@/constants/colors';
+import { WALLET_NETWORKS, type WalletNetwork } from '@/constants/walletNetworks';
 import { useWalletStore } from '@/store/walletStore';
 import { truncateAddress } from '@/utils/wallet';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,19 +23,9 @@ const LogoutIcon = require('@/assets/wallet/logout-01.svg');
 const CopyIcon = require('@/assets/wallet/copy-01.svg');
 const IrisScanIcon = require('@/assets/home/iris-scan.svg');
 
-const ALL_NETWORKS = [
-    { id: 'ETH', name: 'Ethereum', chain: 'EVM', icon: require('@/assets/home/chains/ethereum.svg') },
-    { id: 'BSC', name: 'BNB Chain', chain: 'EVM', icon: require('@/assets/home/chains/bsc.svg') },
-    { id: 'POLYGON', name: 'Polygon', chain: 'EVM', icon: require('@/assets/home/chains/polygon.svg') },
-    { id: 'BASE', name: 'Base', chain: 'EVM', icon: require('@/assets/home/chains/base.png') },
-    { id: 'OPTIMISM', name: 'Optimism', chain: 'EVM', icon: require('@/assets/home/chains/optimism.png') },
-    { id: 'AVALANCHE', name: 'Avalanche', chain: 'EVM', icon: require('@/assets/home/chains/avalanche.svg') },
-    { id: 'SOLANA', name: 'Solana', chain: 'SOLANA', icon: require('@/assets/home/chains/solana.svg') },
-    { id: 'TRON', name: 'Tron', chain: 'TRON', icon: require('@/assets/home/chains/tron.png') },
-    { id: 'TON', name: 'TON', chain: 'TON', icon: require('@/assets/home/chains/ton.jpg') },
-    { id: 'COSMOS', name: 'Cosmos', chain: 'COSMOS', icon: require('@/assets/home/chains/cosmos.svg') },
-    { id: 'OSMOSIS', name: 'Osmosis', chain: 'OSMOSIS', icon: require('@/assets/home/chains/osmosis.svg') },
-] as const;
+// Every network this wallet has an address on — the shared list, so this screen
+// can't drift from the wallet modal or from what the app actually derives.
+const ALL_NETWORKS = WALLET_NETWORKS;
 
 export default function AccountSettingsScreen() {
     const { top, bottom } = useSafeAreaInsets();
@@ -109,10 +100,13 @@ export default function AccountSettingsScreen() {
         setShowReceiveModal(true);
     };
 
-    const handleSwitchNetwork = (networkId: string, chain: string) => {
+    const handleSwitchNetwork = (network: WalletNetwork) => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        setSelectedNetworkId(networkId);
-        setActiveChain(chain as any, networkId);
+        setSelectedNetworkId(network.id);
+        // Receive-only rows (no `chain`) show and copy their address but must
+        // not become the active signing chain — see constants/walletNetworks.
+        if (!network.chain) return;
+        setActiveChain(network.chain, network.id, network.addressKey);
     };
 
     const handleProtectedExport = (route: string) => {
@@ -202,7 +196,7 @@ export default function AccountSettingsScreen() {
                         {networkDropdownOpen && currentWallet && (
                             <View style={styles.dropdownContainer}>
                                 {ALL_NETWORKS.map((network) => {
-                                    const chainAddress = currentWallet.addresses?.[network.chain as keyof typeof currentWallet.addresses] || '';
+                                    const chainAddress = currentWallet.addresses?.[network.addressKey] || '';
                                     const hasAddress = !!chainAddress;
                                     const isActive = selectedNetworkId === network.id;
                                     const isCopied = copiedAddr === chainAddress;
@@ -216,7 +210,7 @@ export default function AccountSettingsScreen() {
                                                 !hasAddress && styles.networkItemDisabled,
                                             ]}
                                             activeOpacity={0.7}
-                                            onPress={() => hasAddress && handleSwitchNetwork(network.id, network.chain)}
+                                            onPress={() => hasAddress && handleSwitchNetwork(network)}
                                             disabled={!hasAddress}
                                         >
                                             <View style={styles.networkItemLeft}>

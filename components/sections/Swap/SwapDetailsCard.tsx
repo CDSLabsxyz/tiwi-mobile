@@ -1,4 +1,5 @@
 import { colors } from '@/constants/colors';
+import { BASIS_POINTS, getTaxRate } from '@/services/swap/core/config/tax-config';
 import { useSwapStore } from '@/store/swapStore';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
@@ -18,6 +19,10 @@ const ArrowDown01 = require('@/assets/home/arrow-down-01.svg');
 
 interface SwapDetailsCardProps {
     gasFee?: string;
+    /** Router(s) the winning route uses — e.g. ["Relay"], ["Pancakeswap"]. */
+    source?: string[];
+    /** Source chainId — the protocol fee is tier-based on BSC. */
+    chainId?: number;
     slippageTolerance?: string;
     twcFee?: string;
     isLoading?: boolean;
@@ -61,6 +66,8 @@ const RefreshIndicator = ({ isRefreshing, isStale, lastFetchTime }: { isRefreshi
  */
 export const SwapDetailsCard: React.FC<SwapDetailsCardProps> = ({
     gasFee,
+    source,
+    chainId,
     slippageTolerance,
     twcFee,
     isLoading = false,
@@ -73,6 +80,12 @@ export const SwapDetailsCard: React.FC<SwapDetailsCardProps> = ({
     const height = useSharedValue(0);
     const pulseOpacity = useSharedValue(0.3);
     const isAutoSlippage = useSwapStore((s) => s.isAutoSlippage);
+    const selectedGasTokenType = useSwapStore((s) => s.selectedGasTokenType);
+
+    // The protocol fee is NOT a flat 0.25%: on BSC it follows the gas-token
+    // tier (TWC 0.20% / BNB 0.25% / other BEP-20 0.30%). Read it from the same
+    // config the executors charge from so the card can't drift from reality.
+    const protocolFeePct = `${(getTaxRate(Number(chainId) || 0, selectedGasTokenType) / BASIS_POINTS * 100).toFixed(2)}%`;
 
     useEffect(() => {
         if (isLoading) {
@@ -146,6 +159,21 @@ export const SwapDetailsCard: React.FC<SwapDetailsCardProps> = ({
                         />
                     )}
 
+                    {/* Route — which router actually settles the swap. Worth
+                        surfacing now that the engine can pick from ~30. */}
+                    {!!source?.length && (
+                        <View style={styles.detailRow}>
+                            <Text style={styles.detailLabel}>Route</Text>
+                            {isLoading ? (
+                                <Animated.View style={[styles.skeletonSmall, skeletonStyle]} />
+                            ) : (
+                                <Text style={[styles.detailValue, (isRefreshing || isStale) && { opacity: 0.6 }]}>
+                                    {source.join(' → ')}
+                                </Text>
+                            )}
+                        </View>
+                    )}
+
                     {/* Gas Fee */}
                     <View style={styles.detailRow}>
                         <Text style={styles.detailLabel}>Gas Fee</Text>
@@ -173,7 +201,7 @@ export const SwapDetailsCard: React.FC<SwapDetailsCardProps> = ({
                         {isLoading ? (
                             <Animated.View style={[styles.skeletonSmall, skeletonStyle]} />
                         ) : (
-                            <Text style={[styles.detailValue, (isRefreshing || isStale) && { opacity: 0.6 }]}>0.25%</Text>
+                            <Text style={[styles.detailValue, (isRefreshing || isStale) && { opacity: 0.6 }]}>{protocolFeePct}</Text>
                         )}
                     </View>
                 </View>

@@ -1,8 +1,11 @@
+import { Image } from 'expo-image';
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Dimensions, StyleSheet } from 'react-native';
-import LottieView from 'lottie-react-native';
+import { Animated, Dimensions, Easing, StyleSheet } from 'react-native';
 
-const SplashAnimation = require('../../assets/lottie/Animation - 1774567551825.json');
+// Rasterized from assets/NEWSPLASH.svg (that 7.2 MB pure-vector SVG rendered
+// wrong under expo-image — its heavy paths, incl. the green arc, got dropped).
+// This 1179×2556 (3×, 393×852 @3) PNG is pixel-perfect and loads instantly.
+const SplashImage = require('../../assets/newsplash.png');
 const { width, height } = Dimensions.get('window');
 
 interface AnimatedSplashScreenProps {
@@ -12,40 +15,45 @@ interface AnimatedSplashScreenProps {
 }
 
 export const AnimatedSplashScreen: React.FC<AnimatedSplashScreenProps> = ({ isReady, onAnimationComplete, onLoaded }) => {
-    const fadeAnim = useRef(new Animated.Value(1)).current;
+    // Drives both the container fade and the image's gentle zoom, so the splash
+    // eases INTO the app instead of cutting out. 0 = splash shown, 1 = revealed.
+    const progress = useRef(new Animated.Value(0)).current;
     const [animationFinished, setAnimationFinished] = useState(false);
-    const [lottieFinished, setLottieFinished] = useState(false);
 
     useEffect(() => {
         if (onLoaded) onLoaded();
     }, []);
 
-    // Only fade out when BOTH the app is ready AND the Lottie animation has finished
+    // Ease out once the app is ready: fade the overlay while the artwork scales
+    // up slightly, revealing the main page underneath in one smooth motion.
     useEffect(() => {
-        if (isReady && lottieFinished) {
-            Animated.timing(fadeAnim, {
-                toValue: 0,
-                duration: 300,
+        if (isReady) {
+            Animated.timing(progress, {
+                toValue: 1,
+                duration: 650,
+                easing: Easing.bezier(0.22, 1, 0.36, 1), // easeOutQuint — soft, decelerating
                 useNativeDriver: true,
             }).start(() => {
                 setAnimationFinished(true);
                 onAnimationComplete();
             });
         }
-    }, [isReady, lottieFinished]);
+    }, [isReady]);
+
+    const opacity = progress.interpolate({ inputRange: [0, 1], outputRange: [1, 0] });
+    const scale = progress.interpolate({ inputRange: [0, 1], outputRange: [1, 1.08] });
 
     if (animationFinished) return null;
 
     return (
-        <Animated.View style={[styles.container, { opacity: fadeAnim }]}>
-            <LottieView
-                source={SplashAnimation}
-                autoPlay
-                loop={false}
-                onAnimationFinish={() => setLottieFinished(true)}
-                style={styles.animation}
-                resizeMode="cover"
-            />
+        <Animated.View style={[styles.container, { opacity }]}>
+            <Animated.View style={{ transform: [{ scale }] }}>
+                <Image
+                    source={SplashImage}
+                    style={styles.image}
+                    contentFit="cover"
+                />
+            </Animated.View>
         </Animated.View>
     );
 };
@@ -58,8 +66,8 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         zIndex: 999999,
     },
-    animation: {
-        width: width,
-        height: height,
+    image: {
+        width,
+        height,
     },
 });

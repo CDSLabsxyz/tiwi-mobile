@@ -1,5 +1,6 @@
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { colors } from '@/constants/colors';
+import { browserRoute, ECOSYSTEM_LINKS } from '@/constants/ecosystem-links';
 import { SearchableItem, searchItems } from '@/utils/search';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
@@ -17,7 +18,9 @@ interface MoreAction {
     disabled?: boolean;
 }
 
-// All actions available in the More page
+// All actions available in the More page. The `recommended` group is a
+// superset of the home screen's two quick-action rows — anything reachable
+// from home is reachable here too.
 const allActions: MoreAction[] = [
     // Recommended
     {
@@ -34,6 +37,13 @@ const allActions: MoreAction[] = [
         route: '/(tabs)/earn',
         category: 'recommended',
     },
+    {
+        id: 'liquidity',
+        label: 'Liquidity Pools',
+        icon: 'water-outline',
+        route: '/pool',
+        category: 'recommended',
+    },
     // },
     // {
     // category: 'coming-soon',
@@ -48,6 +58,34 @@ const allActions: MoreAction[] = [
         label: 'Referrals',
         icon: 'gift-outline',
         route: '/referral',
+        category: 'recommended',
+    },
+    {
+        id: 'multisend',
+        label: 'Multisend',
+        icon: 'people-outline',
+        route: '/send',
+        category: 'recommended',
+    },
+    {
+        id: 'tiwilock',
+        label: 'TiwiLock',
+        icon: 'lock-closed-outline',
+        route: browserRoute(ECOSYSTEM_LINKS.tiwilock),
+        category: 'recommended',
+    },
+    {
+        id: 'campaign',
+        label: 'Campaigns',
+        icon: 'megaphone-outline',
+        route: browserRoute(ECOSYSTEM_LINKS.campaigns),
+        category: 'recommended',
+    },
+    {
+        id: 'tiwiflix',
+        label: 'TiwiFlix',
+        icon: require('../assets/dapp-icons/tiwiflix.svg'),
+        route: browserRoute(ECOSYSTEM_LINKS.tiwiflix),
         category: 'recommended',
     },
     {
@@ -218,40 +256,35 @@ export default function MoreScreen() {
                             Recommended
                         </Text>
                         <View style={styles.gridContainer}>
-                            {Array.from({ length: 5 }).map((_, index) => {
-                                const action = recommendedActions[index];
-                                if (!action) {
-                                    return <View key={`empty-${index}`} style={styles.emptyAction} />;
-                                }
-                                return (
-                                    <TouchableOpacity
-                                        key={action.id}
-                                        onPress={() => handleActionPress(action)}
-                                        disabled={action.disabled}
-                                        style={[styles.actionItem, { opacity: action.disabled ? 0.5 : 1 }]}
+                            {recommendedActions.map((action) => (
+                                <TouchableOpacity
+                                    key={action.id}
+                                    onPress={() => handleActionPress(action)}
+                                    disabled={action.disabled}
+                                    style={[styles.actionItem, { opacity: action.disabled ? 0.5 : 1 }]}
+                                >
+                                    <View style={styles.iconContainer}>
+                                        {typeof action.icon === 'string' ? (
+                                            <Ionicons name={action.icon as any} size={24} color={colors.titleText} />
+                                        ) : (
+                                            <Image
+                                                source={action.icon}
+                                                style={styles.actionIcon}
+                                                contentFit="contain"
+                                            />
+                                        )}
+                                    </View>
+                                    <Text
+                                        numberOfLines={2}
+                                        style={[
+                                            styles.actionLabel,
+                                            { color: action.disabled ? colors.mutedText : colors.titleText }
+                                        ]}
                                     >
-                                        <View style={styles.iconContainer}>
-                                            {typeof action.icon === 'string' ? (
-                                                <Ionicons name={action.icon as any} size={24} color={colors.titleText} />
-                                            ) : (
-                                                <Image
-                                                    source={action.icon}
-                                                    style={styles.actionIcon}
-                                                    contentFit="contain"
-                                                />
-                                            )}
-                                        </View>
-                                        <Text
-                                            style={[
-                                                styles.actionLabel,
-                                                { color: action.disabled ? colors.mutedText : colors.titleText }
-                                            ]}
-                                        >
-                                            {action.label}
-                                        </Text>
-                                    </TouchableOpacity>
-                                );
-                            })}
+                                        {action.label}
+                                    </Text>
+                                </TouchableOpacity>
+                            ))}
                         </View>
                     </View>
                 )}
@@ -263,40 +296,35 @@ export default function MoreScreen() {
                             Popular
                         </Text>
                         <View style={styles.gridContainer}>
-                            {Array.from({ length: 5 }).map((_, index) => {
-                                const action = popularActions[index];
-                                if (!action) {
-                                    return <View key={`empty-${index}`} style={styles.emptyAction} />;
-                                }
-                                return (
-                                    <TouchableOpacity
-                                        key={action.id}
-                                        onPress={() => handleActionPress(action)}
-                                        disabled={action.disabled}
-                                        style={[styles.actionItem, { opacity: action.disabled ? 0.5 : 1 }]}
+                            {popularActions.map((action) => (
+                                <TouchableOpacity
+                                    key={action.id}
+                                    onPress={() => handleActionPress(action)}
+                                    disabled={action.disabled}
+                                    style={[styles.actionItem, { opacity: action.disabled ? 0.5 : 1 }]}
+                                >
+                                    <View style={styles.iconContainer}>
+                                        {typeof action.icon === 'string' ? (
+                                            <Ionicons name={action.icon as any} size={24} color={colors.titleText} />
+                                        ) : (
+                                            <Image
+                                                source={action.icon}
+                                                style={styles.actionIcon}
+                                                contentFit="contain"
+                                            />
+                                        )}
+                                    </View>
+                                    <Text
+                                        numberOfLines={2}
+                                        style={[
+                                            styles.actionLabel,
+                                            { color: action.disabled ? colors.mutedText : colors.titleText }
+                                        ]}
                                     >
-                                        <View style={styles.iconContainer}>
-                                            {typeof action.icon === 'string' ? (
-                                                <Ionicons name={action.icon as any} size={24} color={colors.titleText} />
-                                            ) : (
-                                                <Image
-                                                    source={action.icon}
-                                                    style={styles.actionIcon}
-                                                    contentFit="contain"
-                                                />
-                                            )}
-                                        </View>
-                                        <Text
-                                            style={[
-                                                styles.actionLabel,
-                                                { color: action.disabled ? colors.mutedText : colors.titleText }
-                                            ]}
-                                        >
-                                            {action.label}
-                                        </Text>
-                                    </TouchableOpacity>
-                                );
-                            })}
+                                        {action.label}
+                                    </Text>
+                                </TouchableOpacity>
+                            ))}
                         </View>
                     </View>
                 )}
@@ -357,19 +385,19 @@ const styles = StyleSheet.create({
         fontSize: 12,
         color: colors.mutedText, // #7C7C7C
     },
+    // Wraps to as many rows as needed — five fixed-width columns per row, so a
+    // partial last row stays left-aligned under the one above it.
     gridContainer: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        alignItems: 'flex-start',
+        rowGap: 20,
         width: '100%',
     },
     actionItem: {
         alignItems: 'center',
         gap: 8,
-        width: 70,
-    },
-    emptyAction: {
-        width: 64,
-        height: 55,
+        width: '20%',
     },
     iconContainer: {
         width: 40,

@@ -1,4 +1,4 @@
-export type ChainFamily = 'evm' | 'solana';
+export type ChainFamily = 'evm' | 'solana' | 'sui' | 'aptos' | 'cosmos' | 'injective' | 'bitcoin' | 'starknet' | 'tron' | 'ton';
 
 export interface TransactionRequest {
     chainFamily: ChainFamily;
@@ -20,5 +20,5 @@ export interface ExecutionResult {
 
 export interface SignerEngine {
     signTransaction(tx: TransactionRequest, address: string): Promise<string>;
-    sendTransaction(tx: TransactionRequest, address: string): Promise<ExecutionResult>;
+    sendTransaction(tx: TransactionRequest, address: string, options?: { skipAuthorize?: boolean }): Promise<ExecutionResult>;
 }

@@ -1,18 +1,17 @@
+import { EVM_NETWORK_CHAIN_IDS } from '@/constants/walletNetworks';
 import { signerController } from '@/services/signer/SignerController';
 import { useDAppRequestStore } from '@/store/dappRequestStore';
 import { useWalletStore } from '@/store/walletStore';
 import { EVM_CHAINS } from '@/services/signer/SignerUtils';
 import type { WebView } from 'react-native-webview';
 
-export const NETWORK_ID_TO_CHAIN_ID: Record<string, number> = {
-    ETH: 1,
-    BSC: 56,
-    POLYGON: 137,
-    BASE: 8453,
-    OPTIMISM: 10,
-    ARBITRUM: 42161,
-    AVALANCHE: 43114,
-};
+/**
+ * Network id → EIP-155 chain id, derived from the shared network list so the
+ * dApp browser reports the right chain for every EVM network the wallet screen
+ * can select (this map used to omit Linea, zkSync, Scroll and Sei, which all
+ * silently reported as Ethereum mainnet).
+ */
+export const NETWORK_ID_TO_CHAIN_ID: Record<string, number> = EVM_NETWORK_CHAIN_IDS;
 
 export function getActiveChainId(): number {
     const { activeChain, activeNetworkId } = useWalletStore.getState();
