@@ -44,6 +44,11 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "build_number=$BUILD_NUMBER" >> $GITHUB_OUTPUT
           echo "tag=v${VERSION}-${BUILD_NUMBER}" >> $GITHUB_OUTPUT
+          echo "notes=$DEFAULT_NOTES" >> $GITHUB_OUTPUT
+        env:
+          DEFAULT_NOTES: >-
+            ${{ github.event.inputs.release_notes ||
+            'Liquidity Hub: create, fund and manage pools. Full multi-chain swap engine with gasless BSC swaps. Per-row Multi-Send across all supported chains. AI assistant with credits.' }}
 
       - name: Build Android APK on EAS
         run: |
@@ -86,7 +91,7 @@ jobs:
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: TIWI Protocol ${{ steps.version.outputs.version }}
-          body: ${{ github.event.inputs.release_notes || 'Bug fixes and improvements' }}
+          body: ${{ steps.version.outputs.notes }}
           files: ./tiwi-${{ steps.version.outputs.version }}.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -108,28 +113,49 @@ jobs:
               "version": "${{ steps.version.outputs.version }}",
               "build_number": ${{ steps.version.outputs.build_number }},
               "apk_url": "${{ steps.apk_url.outputs.url }}",
-              "release_notes": "${{ github.event.inputs.release_notes || 'Bug fixes and improvements' }}",
+              "release_notes": "${{ steps.version.outputs.notes }}",
               "force_update": ${{ github.event.inputs.force_update || 'false' }}
             }'
 
       - name: Send update notification to all users
+        env:
+          APP_VERSION: ${{ steps.version.outputs.version }}
         run: |
-          # Fetch all active push tokens from Supabase
-          TOKENS_JSON=$(curl -s "${{ secrets.SUPABASE_URL }}/rest/v1/user_push_tokens?is_active=eq.true&select=push_token" \
+          # Fetch all active push tokens from Supabase into a file.
+          # (Piping this through argv breaks on the quoting in large JSON payloads.)
+          curl -s "${{ secrets.SUPABASE_URL }}/rest/v1/user_push_tokens?is_active=eq.true&select=push_token" \
             -H "apikey: ${{ secrets.SUPABASE_SERVICE_KEY }}" \
-            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_KEY }}")
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_KEY }}" \
+            -o push-tokens.json
 
           # Build the Expo push messages array and send in batches of 100
           node -e "
-            const tokens = JSON.parse(process.argv[1] || '[]');
+            const fs = require('fs');
+
+            let parsed;
+            try {
+              parsed = JSON.parse(fs.readFileSync('push-tokens.json', 'utf8'));
+            } catch (e) {
+              console.error('Could not parse the Supabase token response:', e.message);
+              process.exit(1);
+            }
+
+            // PostgREST returns an object (not an array) on error.
+            if (!Array.isArray(parsed)) {
+              console.error('Unexpected Supabase response:', JSON.stringify(parsed));
+              process.exit(1);
+            }
+
+            const tokens = parsed.map(t => t.push_token).filter(Boolean);
             if (!tokens.length) { console.log('No push tokens found, skipping.'); process.exit(0); }
 
-            const messages = tokens.map(t => ({
-              to: t.push_token,
+            const version = process.env.APP_VERSION;
+            const messages = tokens.map(to => ({
+              to,
               sound: 'default',
               title: 'Update Available',
-              body: 'TIWI Protocol v${{ steps.version.outputs.version }} is ready. Open the app to update.',
-              data: { type: 'app_update', version: '${{ steps.version.outputs.version }}' },
+              body: 'TIWI Protocol v' + version + ' is ready. Open the app to update.',
+              data: { type: 'app_update', version },
             }));
 
             // Expo push API accepts max 100 per request
@@ -139,14 +165,23 @@ jobs:
             }
 
             (async () => {
+              let accepted = 0, failed = 0;
               for (const chunk of chunks) {
-                const res = await fetch('https://exp.host/--/api/v2/push/send', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify(chunk),
-                });
-                const result = await res.json();
-                console.log('Sent', chunk.length, 'notifications:', result.data?.length || 0, 'accepted');
+                try {
+                  const res = await fetch('https://exp.host/--/api/v2/push/send', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(chunk),
+                  });
+                  const result = await res.json();
+                  const tickets = result.data || [];
+                  accepted += tickets.filter(t => t.status === 'ok').length;
+                  failed += tickets.filter(t => t.status !== 'ok').length;
+                } catch (e) {
+                  failed += chunk.length;
+                  console.error('Batch failed:', e.message);
+                }
               }
-            })();
-          " "\$TOKENS_JSON"
+              console.log('Push summary:', accepted, 'accepted,', failed, 'failed, of', messages.length, 'total.');
+            })().catch(e => { console.error(e); process.exit(1); });
+          "
