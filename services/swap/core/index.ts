@@ -25,6 +25,7 @@ import { TronSwapExecutor } from './executors/tronswap-executor';
 import { MultiStepExecutor } from './executors/multi-step-executor';
 import { TiwiMultiSwapExecutor } from './executors/tiwi-multiswap-executor';
 import { CrossChainPreSwapExecutor } from './executors/cross-chain-preswap-executor';
+import { CrossChainPostSwapExecutor } from './executors/cross-chain-postswap-executor';
 import { CrossChainOrchestratorExecutor } from './executors/cross-chain-orchestrator-executor';
 import { TiwiCctpExecutor } from './executors/tiwi-cctp-executor';
 import { MesonExecutor } from './executors/meson-executor';
@@ -66,6 +67,13 @@ export class SwapExecutor {
       new BscDirectSwapExecutor(), // BNB gas selected: user pays own gas
       new BscRelayerExecutor(), // V1 fallback
       new BscNativeSwapExecutor(), // Native BNB → Token swaps with 0.25% tax
+      // Cross-chain INTO a taxed token (e.g. TWC): bridge to a stable on the destination
+      // chain, then swap that stable → taxed token locally with our FoT-safe BSC executors.
+      // Aggregators quote these but can't settle them — their destination swap reverts on the
+      // transfer tax and the bridge refunds in the deposited currency. Registered BEFORE the
+      // pre-swap executor so a taxed→taxed pair splits on the destination first and its leg 1
+      // (taxed source → stable) then falls to the pre-swap executor.
+      new CrossChainPostSwapExecutor(),
       // Cross-chain FROM a taxed token (e.g. TWC): pre-swap to stable on source, then
       // bridge the stable via LiFi/Relay (Phase 4a). Must precede the aggregators.
       new CrossChainPreSwapExecutor(),

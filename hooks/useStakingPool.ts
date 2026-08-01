@@ -22,6 +22,11 @@ export interface OnChainPoolStats {
     userStakedFormatted: string;
     pendingRewards: bigint | null;
     pendingRewardsFormatted: string;
+    /** Summed from Claim/Deposit event logs; zero when `skipHistoryScan` is set. */
+    onChainClaimedTotal: bigint;
+    onChainClaimedFormatted: string;
+    onChainTotalDeposited: bigint;
+    onChainTotalDepositedFormatted: string;
     allowance: bigint | null;
     stakingToken: `0x${string}` | null;
     apr: string;
@@ -32,6 +37,8 @@ export interface OnChainPoolStats {
     activeStakersCount: string;
     lockPeriod: string;
     isLoading: boolean;
+    /** Pool-config read only — see the note at the return site. */
+    isCoreLoading: boolean;
     isTransactionPending: boolean;
     refetch: () => void;
     // New fields for Mining/Live Stats
@@ -75,11 +82,16 @@ function formatLockDuration(seconds: number): string {
 // drops ~20% of eth_call requests on BSC. Reads go through a dedicated viem
 // client on a multi-provider fallback transport (Alchemy + Binance dataseed +
 // publicnode + drpc + ankr) — wagmi only handles writes via the connected signer.
+// `batch.multicall` merges the reads issued by every mounted pool card in the
+// same tick into one Multicall3 call. The Earn list mounts one hook per pool,
+// each firing getPoolInfo + getUserInfo + allowance — that was 3 round trips
+// per card, now it is one shared call.
 const bscReadClient = createPublicClient({
     chain: bsc,
     transport: STAKING_CHAIN_ID === 56
         ? createBscFallbackTransport()
         : http(RPC_CONFIG[STAKING_CHAIN_ID], RPC_TRANSPORT_OPTIONS),
+    batch: { multicall: { wait: 16 } },
 });
 
 /**
@@ -97,9 +109,21 @@ const bscReadClient = createPublicClient({
 export function useStakingPool(
     poolId?: number | string,
     decimals: number = 9,
-    options?: { poolContractAddress?: string }
+    options?: {
+        poolContractAddress?: string;
+        /**
+         * Skip the Claim/Deposit event-log scan. That scan chunks up to ~250k
+         * blocks into 5k windows and issues a getLogs per window per event —
+         * up to ~100 requests for a single pool. Only the stake and
+         * stake-details screens read its output (`onChainClaimedTotal` /
+         * `onChainTotalDeposited`), so list rows should pass `true` and avoid
+         * saturating the RPC while the pool card is trying to render.
+         */
+        skipHistoryScan?: boolean;
+    }
 ) {
     const poolContractAddress = options?.poolContractAddress;
+    const skipHistoryScan = options?.skipHistoryScan ?? false;
     const chainId = useChainId();
     const publicClient = bscReadClient;
     const { address: wagmiAddress } = useAccount();
@@ -297,11 +321,20 @@ export function useStakingPool(
     const [onChainClaimedTotal, setOnChainClaimedTotal] = useState<bigint>(0n);
     const [onChainTotalDeposited, setOnChainTotalDeposited] = useState<bigint>(0n);
 
+    // Depend on the stake timestamp itself, not the whole `userInfo` object.
+    // `userInfo` refetches every 10s and returns a fresh object each time, so
+    // depending on it rebuilt this callback on every poll and re-ran the entire
+    // log scan — up to 100 getLogs calls, every 10 seconds, per mounted card.
+    const stakeTimeSec = useMemo(
+        () => Number((userInfo as any)?.[2] ?? (userInfo as any)?.stakeTime ?? 0),
+        [userInfo],
+    );
+
     const refetchOnChainClaimed = useCallback(async () => {
+        if (skipHistoryScan) return;
         if (!publicClient || !effectiveAddress || isMock) return;
         const contractAddr = (isV2 ? v2Address : factoryAddress) as `0x${string}` | undefined;
         if (!contractAddr) return;
-        const stakeTimeSec = Number((userInfo as any)?.[2] ?? (userInfo as any)?.stakeTime ?? 0);
         try {
             const latest = await publicClient.getBlockNumber();
             const nowSec = Math.floor(Date.now() / 1000);
@@ -380,7 +413,7 @@ export function useStakingPool(
         } catch (e) {
             console.warn('[useStakingPool] refetchOnChainClaimed failed:', e);
         }
-    }, [publicClient, effectiveAddress, isMock, isV2, v2Address, factoryAddress, numericPoolId, userInfo]);
+    }, [publicClient, effectiveAddress, isMock, isV2, v2Address, factoryAddress, numericPoolId, stakeTimeSec, skipHistoryScan]);
 
     useEffect(() => {
         refetchOnChainClaimed();
@@ -791,6 +824,10 @@ export function useStakingPool(
                 userStakedFormatted: '5,000.00',
                 pendingRewards: parseUnits('124.5', decimals),
                 pendingRewardsFormatted: '124.50',
+                onChainClaimedTotal: 0n,
+                onChainClaimedFormatted: '0',
+                onChainTotalDeposited: 0n,
+                onChainTotalDepositedFormatted: '0',
                 allowance: BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'),
                 stakingToken: null,
                 apr: '12.45%',
@@ -800,6 +837,7 @@ export function useStakingPool(
                 limitsFormatted: '1M - 10M TWC',
                 activeStakersCount: '1,245',
                 isLoading: false,
+                isCoreLoading: false,
                 isTransactionPending: false,
                 refetch: () => console.log('Mock refetch'),
                 stakeTime: Math.floor(Date.now() / 1000) - 86400 * 4, // 4 days ago
@@ -922,6 +960,15 @@ export function useStakingPool(
             activeStakersCount: typeof stakersCountData === 'number' ? stakersCountData.toLocaleString() : 'N/A',
             lockPeriod: lockPeriodFormatted,
             isLoading: isPoolLoading || isUserLoading || isAllowanceLoading,
+            /**
+             * True only while the pool's own config/state read is outstanding.
+             * Everything a collapsed list row displays (APR, lock period, TVL,
+             * stakers) comes from that one read — `isLoading` additionally waits
+             * on the user's position and token allowance, and allowance can't
+             * even start until poolInfo resolves (it needs `stakingToken`), so
+             * gating a row on it costs two serial round trips it never uses.
+             */
+            isCoreLoading: isPoolLoading,
             isTransactionPending,
             refetch: refetchAll,
             stakeTime,

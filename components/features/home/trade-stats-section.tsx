@@ -205,6 +205,7 @@ export const TradeStatsSection: React.FC<TradeStatsSectionProps> = ({
                 statId={activeInfoId}
                 onClose={() => setActiveInfoId(null)}
                 chains={chains}
+                value={stats.find((s) => s.id === activeInfoId)?.value}
             />
         </View>
     );

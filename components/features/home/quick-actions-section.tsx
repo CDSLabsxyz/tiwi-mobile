@@ -7,14 +7,14 @@ import { useRouter } from 'expo-router';
 import React from 'react';
 import { StyleSheet, Text, TextStyle, TouchableOpacity, View } from 'react-native';
 
-const TiwiFlixIcon = require('../../../assets/dapp-icons/tiwiflix.svg');
-
 interface QuickAction {
     id: string;
     label: string;
     icon: any;
     route: string;
     ioniconName?: keyof typeof Ionicons.glyphMap;
+    /** Renders dimmed and ignores taps. Route is kept so it can be switched back on. */
+    disabled?: boolean;
 }
 
 /**
@@ -36,6 +36,7 @@ export const QuickActionsSection: React.FC = () => {
             icon: null,
             ioniconName: 'lock-closed-outline' as const,
             route: browserRoute(ECOSYSTEM_LINKS.tiwilock),
+            disabled: true,
         },
         { id: 'multisend', label: 'Multisend', icon: null, ioniconName: 'people-outline' as const, route: '/send' },
     ];
@@ -51,10 +52,11 @@ export const QuickActionsSection: React.FC = () => {
             route: browserRoute(ECOSYSTEM_LINKS.campaigns),
         },
         {
-            id: 'tiwiflix',
-            label: 'TiwiFlix',
-            icon: TiwiFlixIcon,
-            route: browserRoute(ECOSYSTEM_LINKS.tiwiflix),
+            id: 'extension',
+            label: 'Extension',
+            icon: null,
+            ioniconName: 'extension-puzzle-outline' as const,
+            route: '/extension-sync',
         },
         { id: 'more', label: 'More', icon: require('../../../assets/home/dashboard-square-edit.svg'), route: '/more' },
     ];
@@ -63,21 +65,29 @@ export const QuickActionsSection: React.FC = () => {
         <TouchableOpacity
             key={action.id}
             onPress={() => router.push(action.route as any)}
+            disabled={action.disabled}
             style={styles.actionButton}
             activeOpacity={0.7}
         >
-            <View style={styles.iconWrapper}>
+            <View style={[styles.iconWrapper, action.disabled && styles.iconWrapperDisabled]}>
                 {action.ioniconName ? (
-                    <Ionicons name={action.ioniconName} size={24} color={colors.titleText} />
+                    <Ionicons
+                        name={action.ioniconName}
+                        size={24}
+                        color={action.disabled ? colors.mutedText : colors.titleText}
+                    />
                 ) : (
                     <Image
                         source={action.icon}
-                        style={styles.icon}
+                        style={[styles.icon, action.disabled && styles.iconDisabled]}
                         contentFit="contain"
                     />
                 )}
             </View>
-            <Text style={[styles.label, labelStyle]} numberOfLines={2}>
+            <Text
+                style={[styles.label, labelStyle, action.disabled && styles.labelDisabled]}
+                numberOfLines={2}
+            >
                 {action.label}
             </Text>
         </TouchableOpacity>
@@ -118,9 +128,18 @@ const styles = StyleSheet.create({
         borderRadius: 12,
         backgroundColor: colors.bgCards,
     },
+    iconWrapperDisabled: {
+        opacity: 0.45,
+    },
     icon: {
         width: 24,
         height: 24,
+    },
+    iconDisabled: {
+        opacity: 0.45,
+    },
+    labelDisabled: {
+        color: colors.mutedText,
     },
     label: {
         fontFamily: 'Manrope-Medium',

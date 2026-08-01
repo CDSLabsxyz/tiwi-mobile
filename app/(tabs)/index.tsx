@@ -22,6 +22,7 @@ import { QuickActionsSection } from '@/components/features/home/quick-actions-se
 import { SmartMarketsSection } from '@/components/features/home/smart-markets-section';
 import { SpotlightSection } from '@/components/features/home/spotlight-section';
 import { StakeBanner } from '@/components/features/home/stake-banner';
+import { TiwiFlixBanner } from '@/components/features/home/tiwiflix-banner';
 import { UpdateBanner } from '@/components/features/home/update-banner';
 import { TradeStatsSection } from '@/components/features/home/trade-stats-section';
 import { usePrice, useTranslation } from '@/hooks/useLocalization';
@@ -230,7 +231,15 @@ export default function HomeScreen() {
           <View style={styles.paddedContent}>
             <QuickActionsSection />
             <UpdateBanner />
-            <StakeBanner />
+            {/*
+              Own wrapper so the two banners sit tight together. The parent's
+              24px gap plus each card's own margins otherwise pushed them ~36px
+              apart; here only the 8px stack gap applies between them.
+            */}
+            <View style={styles.bannerStack}>
+              <StakeBanner />
+              <TiwiFlixBanner />
+            </View>
             {(homeData.spotlight.length > 0 || isLoadingSpotlight) && (
               <SpotlightSection
                 tokens={homeData.spotlight}
@@ -280,5 +289,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     gap: 24,
     alignItems: 'center',
+  },
+  bannerStack: {
+    width: '100%',
+    gap: 8,
   }
 });

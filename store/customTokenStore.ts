@@ -34,7 +34,13 @@ interface CustomTokenState {
     removeToken: (walletId: string, address: string, chainId: number) => void;
     hasToken: (walletId: string, address: string, chainId: number) => boolean;
     getTokens: (walletId: string) => CustomToken[];
-    updateTokenBalance: (walletId: string, address: string, chainId: number, updates: { balanceFormatted?: string; usdValue?: string; priceUSD?: string }) => void;
+    /**
+     * Patch a stored custom token. Identity fields (symbol/name/logoURI) are
+     * patchable so a row whose metadata was resolved wrong can be corrected
+     * from an authoritative chain-scoped source instead of staying wrong
+     * forever in AsyncStorage.
+     */
+    updateTokenBalance: (walletId: string, address: string, chainId: number, updates: { balanceFormatted?: string; usdValue?: string; priceUSD?: string; symbol?: string; name?: string; logoURI?: string }) => void;
     toggleTokenHidden: (walletId: string, address: string, chainId: number) => void;
     toggleWalletTokenHidden: (walletId: string, address: string, chainId: number) => void;
     isWalletTokenHidden: (walletId: string, address: string, chainId: number) => boolean;
@@ -142,7 +148,10 @@ export const useCustomTokenStore = create<CustomTokenState>()(
                         const prev = current[i];
                         return t.balanceFormatted !== prev.balanceFormatted ||
                                t.usdValue !== prev.usdValue ||
-                               t.priceUSD !== prev.priceUSD;
+                               t.priceUSD !== prev.priceUSD ||
+                               t.symbol !== prev.symbol ||
+                               t.name !== prev.name ||
+                               t.logoURI !== prev.logoURI;
                     });
                     if (!hasChanged) return state;
                     return {

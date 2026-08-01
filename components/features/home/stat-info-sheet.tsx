@@ -2,7 +2,6 @@ import { colors } from '@/constants/colors';
 import { ChainItem } from '@/lib/mobile/api-client';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import { useRouter } from 'expo-router';
 import React, { useEffect } from 'react';
 import {
     Dimensions,
@@ -24,10 +23,6 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const TWC_ADDRESS = '0xDA1060158F7D593667cCE0a15DB346BB3FfB3596';
-const BSCSCAN_TOKEN_URL = `https://bscscan.com/token/${TWC_ADDRESS}`;
-const DEXSCREENER_URL = `https://dexscreener.com/bsc/${TWC_ADDRESS}`;
-
 // Brand lime (colors.primaryCTA) at the opacities used for tints and hairlines.
 const ACCENT_TINT = 'rgba(177, 241, 40, 0.10)';
 const ACCENT_TINT_STRONG = 'rgba(177, 241, 40, 0.14)';
@@ -43,76 +38,95 @@ export type StatInfoId =
 interface StatInfoCopy {
     title: string;
     icon: keyof typeof Ionicons.glyphMap;
+    /** Caption above the live figure at the top of the sheet. */
+    valueLabel: string;
+    /** Body copy. Text wrapped in `**` renders bold. */
     body: string;
-    /** Optional "verify this yourself" link shown as a button. */
-    verify?: { label: string; url: string };
 }
 
 /**
  * Plain-language explainer for each home stat tile. Every number the home
- * screen shows is derived, so each entry says where it comes from and — where
- * the value is on-chain — links to an explorer so the user can check it.
+ * screen shows is derived, so each entry says what it means and where it
+ * comes from.
  */
 const STAT_INFO: Record<StatInfoId, StatInfoCopy> = {
     'twc-price': {
         title: 'TWC Token Price',
         icon: 'pricetag-outline',
+        valueLabel: 'Current price',
         body:
-            'The current price of one TWC (TIWICAT) token in US dollars, taken live from the deepest TWC liquidity pool on BNB Smart Chain.\n\n' +
-            'Because TWC trades at a very small unit price, the leading zeros are shortened — $0.0(9)5301 means eight zeros after the decimal point, then 5301.\n\n' +
+            'The current price of one **TWC (TIWICAT)** token in US dollars, taken live from the deepest TWC liquidity pool on BNB Smart Chain.\n\n' +
+            'Because TWC trades at a very small unit price, the leading zeros are shortened. **$0.0(9)5135** means **nine zeros** after the decimal point, then **5135**.\n\n' +
             'Price moves whenever someone buys or sells against the pool, so this figure updates continuously.',
-        verify: { label: 'View live chart on DexScreener', url: DEXSCREENER_URL },
     },
     'chain-count': {
         title: 'Active Chains',
         icon: 'globe-outline',
+        valueLabel: 'Chains supported',
         body:
             'The number of blockchains you can hold, send, swap and bridge assets across inside this wallet.\n\n' +
-            'Each chain listed below is fully wired up — the wallet derives an address for it, reads your balances, and can route a swap through it.',
+            'Each chain listed below is fully wired up. The wallet derives an address for it, reads your balances, and can route a swap through it.',
     },
     'twc-mcap': {
         title: 'Market Cap',
         icon: 'lock-closed-outline',
+        valueLabel: 'Current market cap',
         body:
             'Market capitalisation is the total US-dollar value of every TWC token in circulation.\n\n' +
-            'It is calculated as: token price × circulating supply.\n\n' +
-            'Market cap moves with the price, and also drops permanently whenever tokens are burned — TWC is deflationary, so supply only ever goes down.\n\n' +
-            'You can confirm the supply side of this figure straight from the contract on BscScan.',
-        verify: { label: 'Verify the token on BscScan', url: BSCSCAN_TOKEN_URL },
+            'It is calculated as **token price × circulating supply**.\n\n' +
+            'Market cap moves with the price, and also drops permanently whenever tokens are burned. TWC is **deflationary**, so supply only ever goes down.',
     },
     'twc-vol': {
         title: '24h Volume',
         icon: 'trending-up-outline',
+        valueLabel: 'Traded in the last 24 hours',
         body:
-            'The total US-dollar value of TWC bought and sold over the last 24 hours, across the token\'s liquidity pools.\n\n' +
-            'Volume is a measure of trading activity, not of value — a high number means the token changed hands a lot, which usually also means you can trade a larger size without moving the price as much.\n\n' +
+            'The total US-dollar value of TWC bought and sold over the last **24 hours**, across the token\'s liquidity pools.\n\n' +
+            'Volume measures **trading activity, not value**. A high number means the token changed hands a lot, which usually also means you can trade a larger size without moving the price as much.\n\n' +
             'This resets on a rolling 24-hour window, so it is not a running total.',
-        verify: { label: 'View trades on DexScreener', url: DEXSCREENER_URL },
     },
     'twc-total-supply': {
         title: 'Total Supply',
         icon: 'layers-outline',
+        valueLabel: 'Tokens in existence right now',
         body:
             'The total number of TWC tokens that currently exist, read directly from the token contract on BNB Smart Chain.\n\n' +
-            'TWC launched with 905T tokens and is deflationary: a portion of tokens is burned over time, and burned tokens are destroyed permanently. That is why this number sits below the launch supply and only ever falls.\n\n' +
-            'This is the live on-chain figure, not a stored one — you can call totalSupply() on the contract and get the same answer.',
-        verify: { label: 'Verify supply on BscScan', url: BSCSCAN_TOKEN_URL },
+            'TWC is **deflationary**. A portion of tokens is burned over time, and burned tokens are destroyed permanently. That is why this figure sits below the launch supply and only ever falls.\n\n' +
+            'This is the **live on-chain figure**, not a stored one.',
     },
 };
+
+/**
+ * Renders `**bold**` segments inside a paragraph. Keeps the copy above
+ * readable as plain strings instead of nested Text arrays.
+ */
+const renderRichText = (text: string) =>
+    text.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
+        part.startsWith('**') && part.endsWith('**') ? (
+            <Text key={i} style={styles.bodyStrong}>{part.slice(2, -2)}</Text>
+        ) : (
+            part
+        ),
+    );
 
 interface StatInfoSheetProps {
     statId: StatInfoId | null;
     onClose: () => void;
     /** Populates the chain list inside the "Active Chains" sheet. */
     chains?: ChainItem[];
+    /**
+     * The live figure shown on the tile that opened this sheet, already
+     * formatted. Rendered at the top so the explainer and the tile can never
+     * disagree about the number.
+     */
+    value?: string;
 }
 
 /**
  * Bottom sheet explaining a single home stat tile. Opened by tapping the tile.
  */
-export const StatInfoSheet: React.FC<StatInfoSheetProps> = ({ statId, onClose, chains = [] }) => {
+export const StatInfoSheet: React.FC<StatInfoSheetProps> = ({ statId, onClose, chains = [], value }) => {
     const { bottom } = useSafeAreaInsets();
-    const router = useRouter();
 
     const { height: screenHeight } = Dimensions.get('window');
     const sheetHeight = Math.min(screenHeight * 0.78, 620);
@@ -159,13 +173,6 @@ export const StatInfoSheet: React.FC<StatInfoSheetProps> = ({ statId, onClose, c
                 translateY.value = withSpring(0, { damping: 20, stiffness: 90 });
             }
         });
-
-    // Links open in the in-app browser. Close first so the sheet isn't left
-    // hanging over the browser screen when the user comes back.
-    const handleVerifyPress = (url: string) => {
-        onClose();
-        router.push(`/browser?url=${encodeURIComponent(url)}` as any);
-    };
 
     return (
         <Modal
@@ -216,7 +223,19 @@ export const StatInfoSheet: React.FC<StatInfoSheetProps> = ({ statId, onClose, c
                         contentContainerStyle={styles.scrollContent}
                         showsVerticalScrollIndicator={false}
                     >
-                        <Text style={styles.body}>{info?.body}</Text>
+                        {/* Live figure — same string the tile shows. */}
+                        {info && value ? (
+                            <View style={styles.valueCard}>
+                                <Text style={styles.valueLabel}>{info.valueLabel}</Text>
+                                <Text style={styles.valueText} numberOfLines={1} adjustsFontSizeToFit>
+                                    {value}
+                                </Text>
+                            </View>
+                        ) : null}
+
+                        <Text style={styles.body}>
+                            {info?.body ? renderRichText(info.body) : null}
+                        </Text>
 
                         {/* Chain list — only the Active Chains sheet has one. */}
                         {statId === 'chain-count' && (
@@ -274,17 +293,6 @@ export const StatInfoSheet: React.FC<StatInfoSheetProps> = ({ statId, onClose, c
                             </View>
                         )}
 
-                        {info?.verify && (
-                            <TouchableOpacity
-                                activeOpacity={0.8}
-                                onPress={() => handleVerifyPress(info.verify!.url)}
-                                style={styles.verifyButton}
-                            >
-                                <Ionicons name="shield-checkmark-outline" size={18} color={colors.primaryCTA} />
-                                <Text style={styles.verifyLabel}>{info.verify.label}</Text>
-                                <Ionicons name="arrow-forward" size={16} color={colors.primaryCTA} />
-                            </TouchableOpacity>
-                        )}
                     </ScrollView>
                 </Animated.View>
             </View>
@@ -367,11 +375,37 @@ const styles = StyleSheet.create({
         paddingTop: 16,
         paddingBottom: 24,
     },
+    valueCard: {
+        borderRadius: 18,
+        paddingHorizontal: 16,
+        paddingVertical: 14,
+        marginBottom: 18,
+        gap: 6,
+        backgroundColor: ACCENT_TINT,
+        borderWidth: 1,
+        borderColor: ACCENT_BORDER,
+    },
+    valueLabel: {
+        fontFamily: 'Manrope-Medium',
+        fontSize: 12,
+        color: colors.bodyText,
+    },
+    valueText: {
+        fontFamily: 'Manrope-SemiBold',
+        fontSize: 26,
+        color: colors.primaryCTA,
+    },
     body: {
         fontFamily: 'Manrope-Regular',
-        fontSize: 14,
-        lineHeight: 22,
+        fontSize: 16,
+        lineHeight: 26,
         color: colors.bodyText,
+    },
+    // Inherits the body's size so inline highlights sit on the same baseline —
+    // only weight and colour change.
+    bodyStrong: {
+        fontFamily: 'Manrope-SemiBold',
+        color: colors.primaryCTA,
     },
     chainSection: {
         marginTop: 22,
@@ -456,22 +490,5 @@ const styles = StyleSheet.create({
         fontFamily: 'Manrope-Medium',
         fontSize: 11,
         color: colors.mutedText,
-    },
-    verifyButton: {
-        marginTop: 22,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 10,
-        height: 54,
-        borderRadius: 16,
-        backgroundColor: ACCENT_TINT_STRONG,
-        borderWidth: 1,
-        borderColor: ACCENT_BORDER,
-    },
-    verifyLabel: {
-        fontFamily: 'Manrope-SemiBold',
-        fontSize: 14,
-        color: colors.primaryCTA,
     },
 });

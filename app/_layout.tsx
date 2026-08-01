@@ -231,7 +231,21 @@ function AppContent() {
         <Stack.Screen name="onboarding" />
         <Stack.Screen name="welcome" />
         <Stack.Screen name="security" />
-        <Stack.Screen name="lock" />
+        {/*
+          Presented as a full-screen modal, NOT as a stack replacement. The
+          screen the user was on stays mounted underneath, so unlocking returns
+          them exactly where they were instead of remounting the app at the
+          default tab. Gestures/back are disabled so the lock can't be swiped
+          away.
+        */}
+        <Stack.Screen
+          name="lock"
+          options={{
+            presentation: 'fullScreenModal',
+            animation: 'fade',
+            gestureEnabled: false,
+          }}
+        />
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="send" />
         <Stack.Screen name="receive" />
@@ -436,7 +450,11 @@ export default function RootLayout() {
       case 'COMPLETED':
         // Standard app entry
         if (isLocked) {
-          if (!inLock) router.replace('/lock' as any);
+          // push, not replace: replace tears down the navigation stack, which
+          // is why returning from the background used to drop the user back at
+          // the default tab. Pushing a modal leaves everything underneath
+          // mounted and untouched.
+          if (!inLock) router.push('/lock' as any);
           return;
         }
 

@@ -38,8 +38,14 @@ export const StakingPoolAccordion: React.FC<StakingPoolAccordionProps> = ({
     onStakePress
 }) => {
     const [isExpanded, setIsExpanded] = useState(false);
-    const stakingData = useStakingPool(poolId, decimals ?? 9, { poolContractAddress });
-    const { apr, lockPeriod, tvlCompact, maxTvlCompact, activeStakersCount, isLoading } = stakingData;
+    // List rows read nothing that the event-log history scan produces, so skip
+    // it — it is the single most expensive thing this hook can do.
+    const stakingData = useStakingPool(poolId, decimals ?? 9, {
+        poolContractAddress,
+        skipHistoryScan: true,
+    });
+    const { apr, lockPeriod, tvlCompact, maxTvlCompact, activeStakersCount, isCoreLoading } = stakingData;
+    const isLoading = isCoreLoading;
 
     const aprNum = parseFloat(String(apr).replace(/[^\d.-]/g, ''));
     const aprCompact = Number.isFinite(aprNum)

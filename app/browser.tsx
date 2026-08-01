@@ -179,6 +179,7 @@ export default function BrowserScreen() {
     const [tabs, setTabs] = useState<BrowserTab[]>(() => [makeTab()]);
     const [activeTabId, setActiveTabId] = useState<string>(() => tabs[0].id);
     const [showSwitcher, setShowSwitcher] = useState(false);
+    const [confirmCloseAll, setConfirmCloseAll] = useState(false);
     const [history, setHistory] = useState<HistoryEntry[]>([]);
     const [searchFocused, setSearchFocused] = useState(false);
     // Tracks whether we've finished pulling persisted tabs out of
@@ -367,6 +368,19 @@ export default function BrowserScreen() {
             }
             return filtered;
         });
+    };
+
+    // Features that open in the in-app browser each spawn a tab, so these pile
+    // up fast. Closing them all leaves a single empty start page, same as every
+    // mobile browser — never zero tabs.
+    const closeAllTabs = () => {
+        webViewRefs.current.clear();
+        containerRefs.current.clear();
+        const t = makeTab();
+        setTabs([t]);
+        setActiveTabId(t.id);
+        setConfirmCloseAll(false);
+        setShowSwitcher(false);
     };
 
     const switchTab = (id: string) => {
@@ -706,14 +720,28 @@ export default function BrowserScreen() {
                 visible={showSwitcher}
                 animationType="fade"
                 transparent
-                onRequestClose={() => setShowSwitcher(false)}
+                onRequestClose={() => {
+                    // Android back dismisses the confirm first, then the switcher.
+                    if (confirmCloseAll) setConfirmCloseAll(false);
+                    else setShowSwitcher(false);
+                }}
             >
                 <View style={[styles.switcherBackdrop, { paddingTop: top + 12 }]}>
                     <View style={styles.switcherHeader}>
                         <Text style={styles.switcherTitle}>{tabs.length} {tabs.length === 1 ? 'Tab' : 'Tabs'}</Text>
-                        <TouchableOpacity onPress={() => setShowSwitcher(false)} hitSlop={8}>
-                            <Text style={styles.switcherDone}>Done</Text>
-                        </TouchableOpacity>
+                        <View style={styles.switcherHeaderActions}>
+                            <TouchableOpacity
+                                onPress={() => setConfirmCloseAll(true)}
+                                hitSlop={8}
+                                style={styles.switcherCloseAll}
+                            >
+                                <Ionicons name="trash-outline" size={14} color={colors.error} />
+                                <Text style={styles.switcherCloseAllLabel}>Close All</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={() => setShowSwitcher(false)} hitSlop={8}>
+                                <Text style={styles.switcherDone}>Done</Text>
+                            </TouchableOpacity>
+                        </View>
                     </View>
                     <ScrollView contentContainerStyle={styles.switcherGrid} showsVerticalScrollIndicator={false}>
                         {tabs.map((tab) => {
@@ -798,6 +826,46 @@ export default function BrowserScreen() {
                             <Text style={styles.switcherNewTabLabel}>New Tab</Text>
                         </TouchableOpacity>
                     </View>
+
+                    {/*
+                      Confirm step. Rendered inside the switcher modal instead of
+                      as a nested <Modal> — iOS only shows one modal at a time.
+                    */}
+                    {confirmCloseAll && (
+                        <View style={styles.confirmOverlay}>
+                            <TouchableOpacity
+                                style={StyleSheet.absoluteFill}
+                                activeOpacity={1}
+                                onPress={() => setConfirmCloseAll(false)}
+                            />
+                            <View style={styles.confirmCard}>
+                                <View style={styles.confirmIcon}>
+                                    <Ionicons name="trash-outline" size={24} color={colors.error} />
+                                </View>
+                                <Text style={styles.confirmTitle}>Close all tabs?</Text>
+                                <Text style={styles.confirmBody}>
+                                    This closes all {tabs.length} open {tabs.length === 1 ? 'tab' : 'tabs'} and
+                                    returns you to a fresh start page.
+                                </Text>
+                                <View style={styles.confirmActions}>
+                                    <TouchableOpacity
+                                        style={styles.confirmCancel}
+                                        activeOpacity={0.8}
+                                        onPress={() => setConfirmCloseAll(false)}
+                                    >
+                                        <Text style={styles.confirmCancelLabel}>Cancel</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                        style={styles.confirmDestructive}
+                                        activeOpacity={0.8}
+                                        onPress={closeAllTabs}
+                                    >
+                                        <Text style={styles.confirmDestructiveLabel}>Close All</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+                        </View>
+                    )}
                 </View>
             </Modal>
         </View>
@@ -1013,6 +1081,104 @@ const styles = StyleSheet.create({
         fontFamily: 'Manrope-SemiBold',
         fontSize: 14,
         color: colors.primaryCTA,
+    },
+    switcherHeaderActions: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 16,
+    },
+    switcherCloseAll: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 5,
+        paddingVertical: 6,
+        paddingHorizontal: 10,
+        borderRadius: 100,
+        borderWidth: 1,
+        borderColor: colors.bgStroke,
+        backgroundColor: colors.bgCards,
+    },
+    switcherCloseAllLabel: {
+        fontFamily: 'Manrope-SemiBold',
+        fontSize: 12,
+        color: colors.error,
+    },
+    confirmOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(0,0,0,0.75)',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: 24,
+    },
+    confirmCard: {
+        width: '100%',
+        maxWidth: 380,
+        backgroundColor: colors.bgSemi,
+        borderRadius: 24,
+        borderWidth: 1,
+        borderColor: colors.bgStroke,
+        paddingVertical: 28,
+        paddingHorizontal: 22,
+        alignItems: 'center',
+        gap: 12,
+    },
+    confirmIcon: {
+        width: 56,
+        height: 56,
+        borderRadius: 28,
+        backgroundColor: colors.bgCards,
+        borderWidth: 1,
+        borderColor: colors.bgStroke,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 4,
+    },
+    confirmTitle: {
+        fontFamily: 'Manrope-Bold',
+        fontSize: 20,
+        color: colors.titleText,
+        textAlign: 'center',
+    },
+    confirmBody: {
+        fontFamily: 'Manrope-Regular',
+        fontSize: 14,
+        lineHeight: 21,
+        color: colors.bodyText,
+        textAlign: 'center',
+    },
+    confirmActions: {
+        flexDirection: 'row',
+        gap: 10,
+        width: '100%',
+        marginTop: 12,
+    },
+    confirmCancel: {
+        flex: 1,
+        height: 52,
+        borderRadius: 100,
+        backgroundColor: colors.bgCards,
+        borderWidth: 1,
+        borderColor: colors.bgStroke,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    confirmCancelLabel: {
+        fontFamily: 'Manrope-SemiBold',
+        fontSize: 15,
+        color: colors.titleText,
+    },
+    confirmDestructive: {
+        flex: 1,
+        height: 52,
+        borderRadius: 100,
+        backgroundColor: colors.error,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    confirmDestructiveLabel: {
+        fontFamily: 'Manrope-Bold',
+        fontSize: 15,
+        color: colors.bg,
     },
     switcherGrid: {
         paddingHorizontal: 16,

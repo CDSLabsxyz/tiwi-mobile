@@ -22,6 +22,12 @@ import { fetchRoute } from '@/services/swap/core/platform/route-api';
 import { getEVMPublicClient } from '../utils/wallet-helpers';
 import { GasTokenType } from '@/services/swap/core/config/tax-config';
 import { useSwapStore } from '@/services/swap/core/platform/swap-store';
+import {
+  isFeeOnTransfer,
+  CHAIN_STABLE as SOURCE_STABLE,
+  MIN_CROSS_CHAIN_USD,
+  formatUnitsSafe,
+} from '@/services/swap/core/config/fee-on-transfer';
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
 const TIWI_DEX_DEPLOYED =
@@ -46,27 +52,9 @@ export function shouldTaxOnLeg2(opts: {
   return opts.sourceChain === 56 && opts.gasTokenBnb && !opts.tiwiDexDeployed;
 }
 
-// Fee-on-transfer (taxed) tokens that aggregators can't bridge directly. Keyed by
-// `${chainId}:${address_lowercased}`. Extend as needed.
-const FEE_ON_TRANSFER_TOKENS = new Set<string>([
-  '56:0xda1060158f7d593667cce0a15db346bb3ffb3596', // TWC on BSC
-]);
-
-function isFeeOnTransfer(chainId: number, address?: string): boolean {
-  if (!address) return false;
-  return FEE_ON_TRANSFER_TOKENS.has(`${chainId}:${address.toLowerCase()}`);
-}
-
-// The bridgeable stablecoin used as the leg-1 → leg-2 handoff per source chain.
-const SOURCE_STABLE: Record<number, { address: string; symbol: string; decimals: number }> = {
-  56: { address: '0x55d398326f99059fF775485246999027B3197955', symbol: 'USDT', decimals: 18 },
-  1: { address: '0xdAC17F958D2ee523a2206206994597C13D831ec7', symbol: 'USDT', decimals: 6 },
-  137: { address: '0xc2132D05D31c914a87C6611C10748AEb04B58e8F', symbol: 'USDT', decimals: 6 },
-  42161: { address: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831', symbol: 'USDC', decimals: 6 },
-  8453: { address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', symbol: 'USDC', decimals: 6 },
-  10: { address: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85', symbol: 'USDC', decimals: 6 },
-  43114: { address: '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E', symbol: 'USDC', decimals: 6 },
-};
+// The taxed-token registry and the per-chain handoff stable now live in
+// `config/fee-on-transfer`, shared with `CrossChainPostSwapExecutor` (the destination-side
+// mirror of this executor) so the two can never drift apart.
 
 const ERC20_BALANCE_ABI = [
   { inputs: [{ name: 'account', type: 'address' }], name: 'balanceOf', outputs: [{ type: 'uint256' }], stateMutability: 'view', type: 'function' },
@@ -103,7 +91,6 @@ export class CrossChainPreSwapExecutor implements SwapRouterExecutor {
       // Pre-flight: reject dust cross-chain swaps BEFORE any transaction. Bridges have
       // minimums + relayer fees that make sub-~$3 bridges refund — don't waste the user's
       // gas/signatures on a swap that can't complete on the destination.
-      const MIN_CROSS_CHAIN_USD = 3;
       const inputUSD = parseFloat((route.fromToken as any).amountUSD || '0');
       if (inputUSD > 0 && inputUSD < MIN_CROSS_CHAIN_USD) {
         const msg = `Amount too small for a cross-chain swap (~$${inputUSD.toFixed(2)}). Cross-chain bridges need at least ~$${MIN_CROSS_CHAIN_USD} — try a larger amount.`;
@@ -226,12 +213,4 @@ export class CrossChainPreSwapExecutor implements SwapRouterExecutor {
       return { success: false, txHash: allTxHashes[allTxHashes.length - 1] || '', txHashes: allTxHashes, error: error instanceof Error ? error : new Error(String(error)) };
     }
   }
-}
-
-// Minimal bigint → decimal string (avoids importing formatUnits type friction).
-function formatUnitsSafe(value: bigint, decimals: number): string {
-  const s = value.toString().padStart(decimals + 1, '0');
-  const whole = s.slice(0, s.length - decimals);
-  const frac = s.slice(s.length - decimals).replace(/0+$/, '');
-  return frac ? `${whole}.${frac}` : whole;
 }

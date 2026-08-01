@@ -1,26 +1,28 @@
 import { BannerCard } from '@/components/sections/Wallet/ClaimableRewardsCard';
+import { browserRoute, ECOSYSTEM_LINKS } from '@/constants/ecosystem-links';
 import { useRouter } from 'expo-router';
 import React from 'react';
 import { StyleSheet, Text } from 'react-native';
 
 /**
- * Stake Banner Component
- * Reusable implementation using the modular BannerCard.
+ * TiwiFlix Banner Component
+ * Sits under the Stake banner on home. TiwiFlix has no native screen yet, so
+ * this opens it in the in-app browser.
  */
-export const StakeBanner: React.FC = () => {
+export const TiwiFlixBanner: React.FC = () => {
     const router = useRouter();
 
     const handlePress = () => {
-        router.push('/earn' as any);
+        router.push(browserRoute(ECOSYSTEM_LINKS.tiwiflix) as any);
     };
 
     return (
         <BannerCard
-            icon={require('@/assets/home/stake_icon.svg')}
+            icon={require('@/assets/dapp-icons/tiwiflix.svg')}
             renderTitle={() => (
                 <Text style={styles.label}>
-                    <Text style={styles.labelMuted}>Stake to earn </Text>
-                    <Text style={styles.labelHighlight}>$TWC</Text>
+                    <Text style={styles.labelMuted}>Explore videos on </Text>
+                    <Text style={styles.labelHighlight}>TiwiFlix</Text>
                 </Text>
             )}
             onPress={handlePress}

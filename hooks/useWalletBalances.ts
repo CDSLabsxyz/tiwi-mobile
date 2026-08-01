@@ -1,4 +1,5 @@
 import { KNOWN_CHAIN_IDS, NATIVE_SYMBOL_CHAINS } from '@/constants/knownChains';
+import { isKnownWrappedNative } from '@/constants/wrappedNatives';
 import { api, type PortfolioAddresses } from '@/lib/mobile/api-client';
 import { fetchExtraNativeBalances } from '@/services/extraChainBalances';
 import { moralisService } from '@/services/moralisService';
@@ -6,6 +7,7 @@ import { notificationService } from '@/services/notificationService';
 import { ensureTokenLogos, getTokenLogo, prefetchTokenLogos } from '@/services/tokenLogoService';
 import { useFilterStore } from '@/store/filterStore';
 import { useWalletStore, type WalletGroup } from '@/store/walletStore';
+import { normalizeSolanaBalanceRow, SOLANA_NATIVE_ADDRESS } from '@/utils/solanaIdentity';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
@@ -56,8 +58,9 @@ const SACRED_SYMBOLS = [
     'BASE', 'ARB', 'OP', 'USDT', 'USDC', 'DAI', 'CAKE',
 ];
 // `native` is how the UTXO/Stacks/Bitcoin direct readers spell a native coin;
-// the EVM/Solana sources use the zero-address sentinel. Both are sacred.
-const SACRED_ADDRESSES = ['native', '0x0000000000000000000000000000000000000000', '0x0000000000000000000000000000000000001010', 'So11111111111111111111111111111111111111112'];
+// EVM uses the zero-address sentinel and Solana the System Program. All sacred.
+// (`So111…112` is WRAPPED SOL — a real, separate holding, kept sacred too.)
+const SACRED_ADDRESSES = ['native', '0x0000000000000000000000000000000000000000', '0x0000000000000000000000000000000000001010', SOLANA_NATIVE_ADDRESS, 'So11111111111111111111111111111111111111112'];
 const SPAM_KEYWORDS = ['.com', '.xyz', '.net', '.io', '.org', 'claim', 'airdrop', 'visit', 'free', 'reward', 'voucher', 'gift', 'win', 'bonus'];
 
 // Symbols that airdrop scammers commonly impersonate — stablecoins and
@@ -194,7 +197,9 @@ const tokenRowKey = (t: any) => `${t.chainId}-${String(t.address || '').toLowerC
 
 function isNativeAddress(address: string | undefined): boolean {
     const a = String(address || '').toLowerCase();
-    return !a || a === 'native' || a === '0x0000000000000000000000000000000000000000';
+    return !a || a === 'native'
+        || a === '0x0000000000000000000000000000000000000000'
+        || a === SOLANA_NATIVE_ADDRESS.toLowerCase();
 }
 
 /**
@@ -216,7 +221,13 @@ function applyStabilityGrace(tokens: any[], walletKey: string): any[] {
 
     let out = pricingWorked
         ? tokens.filter(
-            (t) => parseFloat(t.usdValue || '0') > 0 || isNativeAddress(t.address),
+            (t) => parseFloat(t.usdValue || '0') > 0
+                || isNativeAddress(t.address)
+                // A wrapped native (WBNB/WETH/WPOL/…) is the native coin by
+                // another name — never points junk. If the price registry has
+                // no quote for the wrapper on some long-tail chain, show the
+                // holding unpriced rather than deleting it.
+                || isKnownWrappedNative(t.chainId, t.address),
         )
         : tokens;
 
@@ -268,6 +279,13 @@ function filterToken(b: any): boolean {
     if (allowedChainsForNative && !allowedChainsForNative.includes(chainIdNum)) {
         return false;
     }
+
+    // A canonical wrapped native is authoritative by address — it IS the
+    // contract the impersonation guard below would check against. Must come
+    // first: WETH/WBNB/WAVAX/WMATIC are in IMPERSONATED_STABLES, and on any
+    // chain missing from OFFICIAL_STABLE_ADDRESSES the guard would mark the
+    // real wrapper "unchecked" and then drop it whenever it went unpriced.
+    if (isKnownWrappedNative(chainIdNum, addr)) return true;
 
     // Airdrop impersonation guard — a token claiming to be USDC/USDT/
     // DAI/etc. MUST be at the real contract address for its chain.
@@ -354,8 +372,11 @@ function normalizeToken(b: any) {
 
     return {
         ...b,
-        symbol: sym === 'WSOL' ? 'SOL' : b.symbol,
-        name: sym === 'WSOL' ? 'Solana' : (b.name || b.symbol || 'Unknown'),
+        // WSOL is the wrapped-SOL SPL token, not native SOL. Relabelling it "SOL"
+        // both mislabelled the holding and collided with native SOL on the swap
+        // sheet's chain+symbol dedupe key, hiding one of the two.
+        symbol: b.symbol,
+        name: b.name || b.symbol || 'Unknown',
         logoURI: getTokenLogo(b.symbol, b.chainId, b.address) || apiLogo,
         balanceFormatted: b.balanceFormatted || b.balance || '0',
         usdValue,
@@ -385,7 +406,9 @@ export function useWalletBalances() {
     // written by an older balance pipeline — otherwise the app opens showing a
     // stale, far thinner token list from disk. Bump it whenever the discovery
     // or filtering behaviour changes materially.
-    const cacheKey = `${activeAddress}-${activeGroupId}-v2`;
+    // v3: wrapped natives (WBNB/WETH/WPOL/…) are now read + kept, so every v2
+    // snapshot on disk is missing rows the pipeline would now return.
+    const cacheKey = `${activeAddress}-${activeGroupId}-v3`;
     const cached = cachedBalances[cacheKey];
 
     return useQuery({
@@ -486,10 +509,16 @@ export function useWalletBalances() {
                 }
 
                 // ── 4. Deduplicate ──
+                // Repair Solana identity FIRST: a lamport balance reported under
+                // the wrapped-SOL mint (older backend builds do this) would
+                // otherwise render as "WSOL" and share a dedupe key with a real
+                // WSOL token account.
+                rawBalances = rawBalances.map(normalizeSolanaBalanceRow);
+
                 const dedupedMap = new Map<string, any>();
                 rawBalances.forEach(b => {
                     if (!b) return;
-                    const isNative = ['native', '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee', '0x0000000000000000000000000000000000000000'].includes(b.address?.toLowerCase() || '');
+                    const isNative = ['native', '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee', '0x0000000000000000000000000000000000000000', SOLANA_NATIVE_ADDRESS.toLowerCase()].includes(b.address?.toLowerCase() || '');
                     const addr = isNative ? '0x0000000000000000000000000000000000000000' : b.address?.toLowerCase();
                     // Key on (chain, contract) ONLY. Including the symbol let two
                     // rows for the same contract survive when sources spelled the

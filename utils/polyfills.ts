@@ -1,7 +1,12 @@
 /**
  * React Native Polyfills for WalletConnect / Web3
- * Must be imported at the very top of the entry file (e.g., app/_layout.tsx)
+ * Must be imported at the very top of the entry file (see index.js)
  */
+
+// FIRST import in this file, deliberately: `@noble/hashes` and friends capture
+// `globalThis.crypto` at evaluation time, and WalletConnect's compat layer below
+// drags a large dependency tree in with it. See utils/install-crypto.ts.
+import '@/utils/install-crypto';
 
 import { Buffer } from 'buffer';
 import process from 'process';

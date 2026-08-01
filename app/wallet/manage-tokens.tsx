@@ -240,7 +240,9 @@ const NATIVE_TOKENS: any[] = [
     { chainId: 56, symbol: 'BNB', name: 'BNB', decimals: 18, address: EVM_NATIVE_SENTINEL, isNative: true, _primaryNative: true },
     { chainId: 137, symbol: 'POL', name: 'Polygon', decimals: 18, address: EVM_NATIVE_SENTINEL, isNative: true, _primaryNative: true },
     { chainId: 43114, symbol: 'AVAX', name: 'Avalanche', decimals: 18, address: EVM_NATIVE_SENTINEL, isNative: true, _primaryNative: true },
-    { chainId: 7565164, symbol: 'SOL', name: 'Solana', decimals: 9, address: 'So11111111111111111111111111111111111111112', isNative: true, _primaryNative: true },
+    // Solana's System Program, not the wrapped-SOL mint — `So111…112` is WSOL,
+    // a separate SPL holding that gets its own row when the user has one.
+    { chainId: 7565164, symbol: 'SOL', name: 'Solana', decimals: 9, address: '11111111111111111111111111111111', isNative: true, _primaryNative: true },
     { chainId: 728126428, symbol: 'TRX', name: 'TRON', decimals: 6, address: 'native', isNative: true, _primaryNative: true },
     { chainId: 1100, symbol: 'TON', name: 'Toncoin', decimals: 9, address: 'native', isNative: true, _primaryNative: true },
     { chainId: 118, symbol: 'ATOM', name: 'Cosmos Hub', decimals: 6, address: 'uatom', isNative: true, _primaryNative: true },
@@ -354,9 +356,18 @@ export default function ManageTokensScreen() {
                     const bal = match.balanceFormatted || '0';
                     const price = match.priceUSD || ct.priceUSD;
                     const usd = match.usdValue || (parseFloat(bal) * parseFloat(price || '0')).toFixed(2);
-                    if (bal !== ct.balanceFormatted || usd !== ct.usdValue || price !== ct.priceUSD) {
+                    // Self-heal the identity too. The balance row is matched on
+                    // (chain, address) so its symbol/name are authoritative for
+                    // this token; a stored entry whose metadata was resolved
+                    // from another chain's token of the same address would
+                    // otherwise keep the wrong name forever in AsyncStorage.
+                    const sym = match.symbol && match.symbol !== 'UNKNOWN' ? match.symbol : ct.symbol;
+                    const nm = match.name && match.name !== 'Unknown Token' ? match.name : ct.name;
+                    if (bal !== ct.balanceFormatted || usd !== ct.usdValue || price !== ct.priceUSD
+                        || sym !== ct.symbol || nm !== ct.name) {
                         updateTokenBalance(walletKey, ct.address, ct.chainId, {
                             balanceFormatted: bal, usdValue: usd, priceUSD: price,
+                            symbol: sym, name: nm,
                         });
                     }
                     continue;
@@ -738,8 +749,15 @@ export default function ManageTokensScreen() {
             Promise.all(priceProbeChains.map(async (cid) => {
                 try {
                     const info = await api.tokenInfo.get(cid, addr);
-                    if (info?.token) return { chainId: cid, info };
-                    return null;
+                    if (!info?.token) return null;
+                    // The metadata service resolves by address, and the same
+                    // address string is a live token on more than one chain
+                    // (Solana and Fogo both use `So111…112`). Only accept a hit
+                    // that actually reports the address we asked about, so a
+                    // neighbouring chain's token can't supply the name/symbol.
+                    const returned = String(info.token.address || '').toLowerCase();
+                    if (returned && returned !== addr.toLowerCase()) return null;
+                    return { chainId: cid, info };
                 } catch { return null; }
             })),
             api.tokens.list({ query: addr, limit: 10 }).catch(() => ({ tokens: [] } as any)),

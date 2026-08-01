@@ -41,12 +41,21 @@ function drpcUrl(chainId: number): string | undefined {
 }
 
 /**
- * BSC fallback endpoints — Alchemy first (paid, lowest latency for our key),
- * then well-known public providers. viem's `fallback` will rank these by
- * latency/health and rotate when one is degraded.
+ * BSC fallback endpoints, in preference order.
+ *
+ * The authenticated dRPC endpoint goes FIRST when a key is configured. This
+ * list previously started with the hardcoded Alchemy URL, which meant every
+ * BSC read led with a provider whose free-tier monthly quota is exhausted —
+ * it answers `429 Monthly capacity limit exceeded`, so viem burned a retry
+ * cycle on it before rotating, on every single call. Alchemy is now last so
+ * it is still available if the quota resets, without being on the hot path.
+ *
+ * `rpc.ankr.com/bsc` was removed: it now answers `-32000 Unauthorized: You
+ * must authenticate` with HTTP 200, which costs a full round trip before viem
+ * can classify it as a failure.
  */
 const BSC_RPC_URLS = [
-    RPC_CONFIG[56],
+    drpcUrl(56),
     'https://bsc-dataseed1.binance.org',
     'https://bsc-dataseed2.binance.org',
     'https://bsc-dataseed3.binance.org',
@@ -54,8 +63,8 @@ const BSC_RPC_URLS = [
     'https://bsc.publicnode.com',
     'https://bsc.drpc.org',
     'https://binance.llamarpc.com',
-    'https://rpc.ankr.com/bsc',
-];
+    RPC_CONFIG[56],
+].filter(Boolean) as string[];
 
 /**
  * Per-chain fallback endpoint lists — our Alchemy key first (lowest latency),
@@ -126,7 +135,10 @@ export const RPC_TRANSPORT_OPTIONS = {
  */
 function createFallbackTransport(urls: string[]): Transport {
     return fallback(
-        urls.filter(Boolean).map((url) => http(url, { timeout: 15000, retryCount: 1 })),
+        // 15s per endpoint meant a single unreachable provider stalled a read
+        // for 30s (timeout + one retry) before the next was tried. 6s is well
+        // clear of a healthy mobile round trip while failing over quickly.
+        urls.filter(Boolean).map((url) => http(url, { timeout: 6000, retryCount: 1 })),
         {
             rank: {
                 interval: 60_000,

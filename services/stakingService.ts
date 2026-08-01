@@ -3,7 +3,7 @@ import { MOCK_STAKING_POOLS, MOCK_USER_STAKES } from '@/constants/mockData';
 import { formatCompactNumber } from '@/utils/formatting';
 import { createPublicClient, formatUnits, http } from 'viem';
 import { bsc } from 'viem/chains';
-import { api, StakingPool as SDKStakingPool } from '@/lib/mobile/api-client';
+import { api, type MobilePool, StakingPool as SDKStakingPool } from '@/lib/mobile/api-client';
 import type { APIStakingPool, APIUserStake } from '@/services/apiClient';
 import { RPC_CONFIG, RPC_TRANSPORT_OPTIONS, createBscFallbackTransport } from '@/constants/rpc';
 
@@ -67,14 +67,102 @@ export interface UserStake {
 }
 
 class StakingService {
+    // `batch.multicall` collapses every concurrent readContract issued in the
+    // same tick into a single Multicall3 call. The Earn screen reads
+    // getPoolInfo once per pool (~19 pools), which was 19 separate RPC round
+    // trips; batched it is one.
     private bscClient = createPublicClient({
         chain: bsc,
         transport: createBscFallbackTransport(),
+        batch: { multicall: { wait: 16 } },
     });
 
     /** Cache of last successful global stats — used to avoid rendering a
      *  partial-failure result if even one pool's on-chain read fails. */
     private lastGoodStats: StakingStats | null = null;
+
+    /**
+     * Short-lived request coalescer. A single Earn load fans out into several
+     * calls that each want the same upstream data (the full stake list, the
+     * global stats crawl). Without this they run concurrently and duplicate
+     * every network request. Keyed calls share one in-flight promise, and the
+     * resolved value is reused for `ttlMs` so the 30s auto-refresh and a
+     * pull-to-refresh landing together don't double up either.
+     */
+    private inflight = new Map<string, { promise: Promise<any>; at: number }>();
+
+    private coalesce<T>(key: string, ttlMs: number, run: () => Promise<T>): Promise<T> {
+        const hit = this.inflight.get(key);
+        if (hit && Date.now() - hit.at < ttlMs) return hit.promise as Promise<T>;
+
+        const promise = run().catch((e) => {
+            // Never cache a failure — the next caller should retry.
+            this.inflight.delete(key);
+            throw e;
+        });
+        this.inflight.set(key, { promise, at: Date.now() });
+        return promise;
+    }
+
+    /** Full stake list (all pools, all wallets), fetched at most once per 15s. */
+    private getAllStakes(): Promise<any[]> {
+        return this.coalesce('all-stakes', 15_000, async () => {
+            try {
+                const resp = await api.staking.userStakes({ walletAddress: '' });
+                return (resp as any).stakes || [];
+            } catch {
+                return [];
+            }
+        });
+    }
+
+    /**
+     * poolId -> server-enriched on-chain snapshot.
+     *
+     * `/api/v1/mobile/staking/pools` already performs the getPoolInfo read for
+     * every pool server-side and returns the result inline. One ~0.8s request
+     * replaces the per-pool contract reads this service used to issue from the
+     * device. Falls back to an empty map on failure, which puts each caller
+     * back on its original direct-RPC path.
+     */
+    private getEnrichedPoolSnapshot(): Promise<Map<string, MobilePool>> {
+        return this.coalesce('enriched-pools', 15_000, async () => {
+            try {
+                const resp = await api.staking.poolsMobile();
+                const pools = resp.pools || [];
+                return new Map(pools.map((p) => [p.id, p]));
+            } catch (e) {
+                console.warn('[StakingService] Enriched pool snapshot unavailable:', e);
+                return new Map<string, MobilePool>();
+            }
+        });
+    }
+
+    /**
+     * Raw stake rows for one wallet. The Earn screen asks twice per load —
+     * once for Active Positions, once for My Stakes — with identical request
+     * params, so they share a single HTTP call.
+     */
+    private getWalletStakesRaw(walletAddress: string): Promise<any[]> {
+        return this.coalesce(`stakes:${walletAddress.toLowerCase()}`, 15_000, async () => {
+            const resp = await api.staking.userStakes({ walletAddress });
+            return (resp as any).stakes || [];
+        });
+    }
+
+    /** poolId -> unique staker count, derived from the shared stake snapshot. */
+    private async getStakerCountsByPool(): Promise<Map<string, number>> {
+        const stakes = await this.getAllStakes();
+        const wallets = new Map<string, Set<string>>();
+        for (const stake of stakes) {
+            const poolId = stake.poolId || stake.pool?.id;
+            const wallet = stake.userWallet?.toLowerCase();
+            if (!poolId || !wallet) continue;
+            if (!wallets.has(poolId)) wallets.set(poolId, new Set());
+            wallets.get(poolId)!.add(wallet);
+        }
+        return new Map([...wallets].map(([poolId, set]) => [poolId, set.size]));
+    }
 
     /**
      * Utility to calculate APR for a pool based on on-chain config
@@ -116,7 +204,18 @@ class StakingService {
                 let rewardDuration = 0;
                 let stakingTokenAddr: string | undefined;
 
-                if (hasV2) {
+                // Preferred path: the server already read this pool's
+                // getPoolInfo for us. Skips a device-side RPC round trip.
+                const enriched = (await this.getEnrichedPoolSnapshot()).get(pool.id);
+                const chain = enriched?.onChain;
+
+                if (chain) {
+                    poolReward = Number(chain.poolReward) || 0;
+                    rewardDuration = Number(chain.rewardDurationSeconds) || 0;
+                    maxTvl = Number(chain.maxTvl) || 0;
+                    endTime = Number(chain.endTime) || 0;
+                    totalStaked = Number(chain.totalStaked) || 0;
+                } else if (hasV2) {
                     // V2: getPoolInfo returns a 13-tuple, no args.
                     const info = await this.bscClient.readContract({
                         address: pool.poolContractAddress as `0x${string}`,
@@ -154,15 +253,14 @@ class StakingService {
                 const tvlForCalculation = maxTvl > 0 ? maxTvl : (totalStaked > 0 ? totalStaked : 1);
                 apyValue = this.calculateAPRFromPoolConfig(poolReward, tvlForCalculation, rewardDuration);
 
+                // Staker count comes from the shared all-stakes snapshot rather
+                // than one HTTP call per pool. Enriching 19 pools used to fire
+                // 19 identical-shaped requests; now they share one.
                 try {
-                    const response = await api.staking.userStakes({
-                        walletAddress: '',
-                        poolId: pool.id
-                    });
-                    const uniqueWallets = new Set((response.stakes || []).map((s: any) => s.userWallet?.toLowerCase())).size;
-                    activeStakers = uniqueWallets.toLocaleString();
+                    const byPool = await this.getStakerCountsByPool();
+                    activeStakers = (byPool.get(pool.id) ?? 0).toLocaleString();
                 } catch (e: any) {
-                    console.warn(`[StakingService] Failed to fetch stakers for pool ${pool.id}`, e.message);
+                    console.warn(`[StakingService] Failed to resolve stakers for pool ${pool.id}`, e.message);
                 }
             } catch (e: any) {
                 console.warn(`[StakingService] Enrichment failed for pool ${pool.id}:`, e.message);
@@ -192,6 +290,13 @@ class StakingService {
      * Fetches global staking statistics from BSC
      */
     async getGlobalStakingStats(): Promise<StakingStats> {
+        // The Earn screen asks for this twice per load (fetchInitialData and
+        // fetchGlobalStats both want it). Coalesced, the second caller reuses
+        // the first's promise instead of re-running the whole pool crawl.
+        return this.coalesce('global-stats', 15_000, () => this.computeGlobalStakingStats());
+    }
+
+    private async computeGlobalStakingStats(): Promise<StakingStats> {
         const empty: StakingStats = {
             overallTvl: '0',
             maxTvl: '0',
@@ -205,17 +310,15 @@ class StakingService {
             // Pull DB pools (all statuses) + all user stakes (any status).
             // Mirrors the super-app's page.tsx:357-370 — lets us compute
             // both active-only and all-time metrics from a single pass.
-            const [poolsResponseAll, stakesAllResp] = await Promise.all([
+            const [poolsResponseAll, allStakes] = await Promise.all([
                 (async () => {
                     try { return await api.staking.list(); } catch { return { pools: [] as any[] }; }
                 })(),
-                (async () => {
-                    try { return await api.staking.userStakes({ walletAddress: '' }); } catch { return { stakes: [] as any[] }; }
-                })(),
+                // Shared with mapPool's staker counts — one request, not N+1.
+                this.getAllStakes(),
             ]);
 
             const allPools = (poolsResponseAll as any).pools || [];
-            const allStakes = (stakesAllResp as any).stakes || [];
 
             // Pool status, TVL cap, and live staked are read DIRECTLY from
             // the pool contract (V2 pool-per-contract, or legacy factory).
@@ -233,7 +336,27 @@ class StakingService {
             // Stakers counts still come from the DB because there's no
             // efficient on-chain way to enumerate historical users.
             const nowSec = Math.floor(Date.now() / 1000);
+
+            // Fast path: the server-enriched snapshot carries every pool's
+            // on-chain status/maxTvl/totalStaked, so the whole crawl below
+            // collapses into one request. Verified to reproduce the same
+            // totals as the direct reads.
+            const snapshot = await this.getEnrichedPoolSnapshot();
+
             const onChainStats = await Promise.all(allPools.map(async (p: any) => {
+                const fromSnapshot = snapshot.get(p.id)?.onChain;
+                if (fromSnapshot) {
+                    const endTimeSec = Number(fromSnapshot.endTime) || 0;
+                    const notExpired = endTimeSec === 0 || nowSec < endTimeSec;
+                    return {
+                        ok: true as const,
+                        isActive: Boolean(fromSnapshot.active) && notExpired,
+                        maxTvlTok: Number(fromSnapshot.maxTvl) || 0,
+                        totalStakedTok: Number(fromSnapshot.totalStaked) || 0,
+                        tokenSymbol: (p.tokenSymbol || '').toUpperCase(),
+                    };
+                }
+
                 const hasV2 = !!p.poolContractAddress;
                 const hasLegacy = (p.chainId ?? 56) === 56 && p.poolId !== undefined && p.poolId !== null;
                 if (!hasV2 && !hasLegacy) {
@@ -367,8 +490,7 @@ class StakingService {
     async getUserStakes(walletAddress: string, status?: string): Promise<UserStake[]> {
         if (!walletAddress && !USE_MOCK_FALLBACK) return [];
         try {
-            const response = await api.staking.userStakes({ walletAddress });
-            let stakes = response.stakes || [];
+            let stakes = await this.getWalletStakesRaw(walletAddress);
 
             if (USE_MOCK_FALLBACK && stakes.length === 0) {
                 stakes = MOCK_USER_STAKES.filter((s: any) => !status || s.status === status);

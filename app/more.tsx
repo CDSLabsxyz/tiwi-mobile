@@ -39,7 +39,7 @@ const allActions: MoreAction[] = [
     },
     {
         id: 'liquidity',
-        label: 'Liquidity Pools',
+        label: 'Liq. Pools',
         icon: 'water-outline',
         route: '/pool',
         category: 'recommended',
@@ -73,6 +73,7 @@ const allActions: MoreAction[] = [
         icon: 'lock-closed-outline',
         route: browserRoute(ECOSYSTEM_LINKS.tiwilock),
         category: 'recommended',
+        disabled: true,
     },
     {
         id: 'campaign',
@@ -86,6 +87,13 @@ const allActions: MoreAction[] = [
         label: 'TiwiFlix',
         icon: require('../assets/dapp-icons/tiwiflix.svg'),
         route: browserRoute(ECOSYSTEM_LINKS.tiwiflix),
+        category: 'recommended',
+    },
+    {
+        id: 'extension',
+        label: 'Extension',
+        icon: 'extension-puzzle-outline',
+        route: '/extension-sync',
         category: 'recommended',
     },
     {
@@ -412,9 +420,13 @@ const styles = StyleSheet.create({
         width: 24,
         height: 24,
     },
+    // 12px, matching the home screen's secondary quick-action row. At 14px the
+    // longest labels ("Campaigns", "Multisend") overflow a 5-column grid and
+    // React Native breaks them mid-word — "Campaign" / "s" on two lines.
     actionLabel: {
         fontFamily: 'Manrope-Medium',
-        fontSize: 14,
+        fontSize: 12,
+        lineHeight: 16,
         textAlign: 'center',
     },
     noResultsContainer: {

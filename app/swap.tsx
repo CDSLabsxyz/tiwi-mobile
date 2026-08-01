@@ -35,8 +35,9 @@ import { securityGuard } from '@/services/securityGuard';
 import { executeSwap, fetchSwapQuote } from '@/services/swap';
 import { isNativeToken } from '@/services/swap/constants';
 import { BASIS_POINTS, GasTokenType, getTaxRate } from '@/services/swap/core/config/tax-config';
+import { listReadySecondLegs, completeSecondLeg } from '@/services/swap/core/executors/cross-chain-postswap-executor';
 import { isAddressChainCompatible } from '@/services/swap/core/utils/wallet-display';
-import { MORALIS_NATIVE_ADDRESS, NATIVE_TOKEN_ADDRESS } from '@/utils/wallet';
+import { isSameTokenAddress, MORALIS_NATIVE_ADDRESS, NATIVE_TOKEN_ADDRESS } from '@/utils/wallet';
 import { useLocaleStore } from '@/store/localeStore';
 import { useCustomTokenStore } from '@/store/customTokenStore';
 import { useSecurityStore } from '@/store/securityStore';
@@ -277,7 +278,7 @@ export default function SwapScreen() {
         if (fromToken) {
             const hidden = isTokenHidden(fromToken.address, fromToken.chainId);
             const walletToken = balanceData.tokens.find(
-                t => t.address.toLowerCase() === fromToken.address?.toLowerCase() && t.chainId === fromToken.chainId
+                t => isSameTokenAddress(t.address, fromToken.address) && t.chainId === fromToken.chainId
             );
             if (hidden) {
                 setFromToken({
@@ -297,7 +298,7 @@ export default function SwapScreen() {
         if (toToken) {
             const hidden = isTokenHidden(toToken.address, toToken.chainId);
             const walletToken = balanceData.tokens.find(
-                t => t.address.toLowerCase() === toToken.address?.toLowerCase() && t.chainId === toToken.chainId
+                t => isSameTokenAddress(t.address, toToken.address) && t.chainId === toToken.chainId
             );
             if (hidden) {
                 setToToken({
@@ -710,6 +711,55 @@ export default function SwapScreen() {
             setFromFiatAmount('$0.00');
         }
     }, [fromAmount, fromToken, region, currency]);
+
+    /**
+     * A cross-chain swap into a taxed token (TWC) runs in two legs: bridge to a stable on the
+     * destination chain, then swap that stable locally. The bridge is asynchronous, so if the
+     * app was closed or the wait timed out mid-swap, leg 2 is still owed. Offer to finish it
+     * rather than either losing it or popping an unexplained signature prompt on mount.
+     */
+    useEffect(() => {
+        if (!address) return;
+        let cancelled = false;
+
+        (async () => {
+            try {
+                const ready = await listReadySecondLegs();
+                if (cancelled || ready.length === 0) return;
+
+                const leg = ready[0];
+                Alert.alert(
+                    'Finish your swap',
+                    `${leg.amount} ${leg.record.stable.symbol} from your earlier swap has arrived. ` +
+                    `Finish converting it to ${leg.record.toToken.symbol}?`,
+                    [
+                        { text: 'Later', style: 'cancel' },
+                        {
+                            text: 'Finish',
+                            onPress: async () => {
+                                setIsLoadingSwap(true);
+                                try {
+                                    const result = await completeSecondLeg(leg, (s) => setSwapStage(s.message));
+                                    if (!result.success) throw result.error || new Error('Swap did not complete.');
+                                    queryClient.invalidateQueries({ queryKey: ['walletBalances'] });
+                                    setIsSuccessModalVisible(true);
+                                } catch (e: any) {
+                                    setSwapErrorMessage(cleanErrorMessage(e));
+                                } finally {
+                                    setIsLoadingSwap(false);
+                                    setSwapStage(null);
+                                }
+                            },
+                        },
+                    ],
+                );
+            } catch (e) {
+                console.warn('[Swap] Pending second-leg check failed:', e);
+            }
+        })();
+
+        return () => { cancelled = true; };
+    }, [address, queryClient]);
 
     const isInsufficientBalanceError = (error: any): boolean => {
         const msg = (error?.message || error?.reason || '').toLowerCase();

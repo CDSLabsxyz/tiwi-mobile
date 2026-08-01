@@ -220,12 +220,22 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
         const TWC_ADDRESS = '0xda1060158f7d593667cce0a15db346bb3ffb3596'.toLowerCase();
         const SOL_NATIVE = '11111111111111111111111111111111';
         const NATIVE_ADDRS = [NATIVE_TOKEN_ADDRESS, MORALIS_NATIVE_ADDRESS, SOL_NATIVE, 'native'];
+        // One identity per (chain, token) that treats every spelling of "the
+        // native coin" as the same asset — sources disagree ('native', 0x0…0,
+        // the System Program) and matching them literally left the wallet's
+        // native balance stranded from the list row it belongs to.
+        // `So111…112` is deliberately NOT a native spelling: that mint is
+        // WRAPPED SOL, a separate holding with its own row.
+        const identityKey = (chainId: number, address?: string) => {
+            const a = (address || '').toLowerCase();
+            return NATIVE_ADDRS.includes(a) ? `${chainId}-native` : `${chainId}-${a}`;
+        };
 
         // Curated priority symbols by chain per user request
         const CHAIN_PRIORITY: Record<number, string[]> = {
             56: ['BNB', 'USDT', 'USDC', 'WBNB', 'TWC', 'WKC', 'TWT', 'CAKE', 'BUSD'], // BSC
             1: ['ETH', 'USDT', 'USDC', 'WETH', 'WBTC', 'DAI', 'LINK', 'UNI'], // ETH
-            7565164: ['SOL', 'USDC', 'USDT', 'JUP', 'RAY', 'BONK'], // Solana
+            7565164: ['SOL', 'WSOL', 'USDC', 'USDT', 'JUP', 'RAY', 'BONK'], // Solana
             137: ['POL', 'USDT', 'USDC', 'WETH', 'DAI'], // Polygon
             42161: ['ETH', 'USDC', 'USDT', 'ARB'], // Arbitrum
             10: ['ETH', 'USDC', 'USDT', 'OP'], // Optimism
@@ -238,16 +248,56 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
             ? (response?.tokens || [])
             : (defaultResponse?.tokens || []);
 
+        // 1b. Solana identity fix, applied client-side so the sheet is correct
+        // regardless of which backend build is answering.
+        //
+        // So111…112 is the WRAPPED-SOL SPL mint, not native SOL — a wallet holding
+        // it reads as "WSOL" in every other Solana wallet. Older backends list it
+        // as "SOL", so: name that mint WSOL, and make sure native SOL is in the
+        // list. Once the backend serves both itself, both steps become no-ops —
+        // the relabel matches what it already sends, and the injected row dedupes
+        // away on the chain+symbol key below.
+        const SOLANA_CHAIN_ID = 7565164;
+        const WSOL_MINT = 'So11111111111111111111111111111111111111112';
+        const solanaRows = rawTokens.filter(t => t.chainId === SOLANA_CHAIN_ID);
+        const normalizedRaw = rawTokens.map(t =>
+            t.chainId === SOLANA_CHAIN_ID && t.address === WSOL_MINT
+                ? { ...t, symbol: 'WSOL', name: 'Wrapped SOL' }
+                : t
+        );
+        const wsolRow = solanaRows.find(t => t.address === WSOL_MINT);
+        const hasNativeSol = normalizedRaw.some(
+            t => t.chainId === SOLANA_CHAIN_ID && (t.symbol || '').toUpperCase() === 'SOL'
+        );
+        if (wsolRow && !hasNativeSol) {
+            // Borrow the wrapped row's price/logo/liquidity — same underlying asset.
+            // The address is Solana's System Program, NOT the EVM zero-address:
+            // it is what the swap engine recognises as native SOL, and what the
+            // balance pipeline carries a lamport balance under.
+            normalizedRaw.unshift({
+                ...wsolRow,
+                id: `${SOLANA_CHAIN_ID}-${SOL_NATIVE}`,
+                address: SOL_NATIVE,
+                symbol: 'SOL',
+                name: 'Solana',
+                decimals: 9,
+            });
+        }
+
         // 2. Map to unified objects
-        const mappedApiTokens = rawTokens.map(t => {
+        const mappedApiTokens = normalizedRaw.map(t => {
             const walletToken = balanceData?.tokens.find(
-                wt => wt.address.toLowerCase() === t.address.toLowerCase() && wt.chainId === t.chainId
+                wt => identityKey(wt.chainId, wt.address) === identityKey(t.chainId, t.address)
             );
             const chainInfo = chains?.find(c => c.id === t.chainId);
             const hasBalance = !!walletToken;
             const balanceNum = parseFloat(walletToken?.balanceFormatted || '0');
-            const priceNum = parseFloat(t.priceUSD || '0');
-            const totalUSD = balanceNum * priceNum;
+            // The catalogue row is not always priced (the token list and the
+            // portfolio use different price sources), and when it wasn't, a
+            // held balance rendered as "$0.00" — the wallet's own price and
+            // USD value are just as authoritative, so fall back to them.
+            const priceNum = parseFloat(t.priceUSD || '0') || parseFloat(walletToken?.priceUSD || '0');
+            const totalUSD = balanceNum * priceNum || parseFloat(walletToken?.usdValue || '0');
 
             return {
                 id: `${t.chainId}-${t.address}`,
@@ -264,7 +314,7 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
                 balanceFiat: totalUSD > 0 ? formatUSDPrice(totalUSD) : '$0.00',
                 isOwned: hasBalance,
                 usdValueNum: totalUSD,
-                priceUSD: t.priceUSD,
+                priceUSD: t.priceUSD || walletToken?.priceUSD,
                 _liquidity: parseFloat(t.liquidity?.toString() || '0'),
                 // Carried through to the swap quote as `liquidityUSD`.
                 liquidity: t.liquidity,
@@ -281,7 +331,7 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
             })
             .filter(wt => {
                 // Deduplicate with API results
-                return !mappedApiTokens.some(at => at.address.toLowerCase() === wt.address.toLowerCase() && at.chainId === wt.chainId);
+                return !mappedApiTokens.some(at => identityKey(at.chainId, at.address) === identityKey(wt.chainId, wt.address));
             })
             .map(wt => {
                 const chainInfo = chains?.find(c => c.id === wt.chainId);

@@ -6,6 +6,7 @@ import { TokenPoolStats } from '@/components/features/market/detail/TokenPoolSta
 import { TokenPriceChange } from '@/components/features/market/detail/TokenPriceChange';
 import { TokenTransactionsSummary } from '@/components/features/market/detail/TokenTransactionsSummary';
 import { TokenTransactions } from '@/components/features/market/detail/TokenTransactions';
+import { UnwrapButton } from '@/components/sections/Wallet/UnwrapButton';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { TIWILoader } from '@/components/ui/TIWILoader';
 import { colors } from '@/constants/colors';
@@ -149,6 +150,16 @@ export default function SpotMarketDetail() {
                     tokenSymbol={token.symbol}
                 />
 
+                {/* Unwrap → native. Renders only for wrapped natives you hold,
+                    and sits above the tabs so it's visible on either tab. */}
+                <UnwrapButton
+                    chainId={tokenInfo?.chainId || parsedChainId}
+                    address={effectiveAddress}
+                    symbol={token.symbol || symbol}
+                    logoURI={token.logoURI || token.logo}
+                    style={styles.unwrapSlot}
+                />
+
                 {/* Sub Tabs Toggle (Matches web transition between tabs) */}
                 <View style={styles.tabContainer}>
                     <TouchableOpacity
@@ -276,6 +287,10 @@ const styles = StyleSheet.create({
     },
     activeTabText: {
         color: colors.primaryCTA,
+    },
+    unwrapSlot: {
+        paddingHorizontal: 16,
+        marginTop: 12,
     },
     actionBar: {
         position: 'absolute',

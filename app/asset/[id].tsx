@@ -12,6 +12,7 @@ import {
 import { ReceiptViewerModal } from "@/components/sections/Send";
 import { TransactionReceipt } from "@/components/sections/Send/TransactionReceiptCard";
 import { AssetQuickActions } from "@/components/sections/Wallet/AssetQuickActions";
+import { UnwrapButton } from "@/components/sections/Wallet/UnwrapButton";
 import { WalletHeader } from "@/components/sections/Wallet/WalletHeader";
 import { CustomStatusBar } from "@/components/ui/custom-status-bar";
 import { colors } from "@/constants/colors";
@@ -77,7 +78,6 @@ export default function AssetDetailScreen() {
       address: params.address || "0x0000000000000000000000000000000000000000",
       decimals: params.decimals ? Number(params.decimals) : 18,
       activities: [],
-      chartData: { "1D": [], "1W": [], "1M": [], "1Y": [], "5Y": [], "All": [] },
     } as AssetDetailType;
   });
 
@@ -229,14 +229,17 @@ export default function AssetDetailScreen() {
       if (!asset) setIsLoading(true);
 
       try {
-        const data = await fetchAssetDetail(id);
+        // The chain is part of the token's identity — the same address is a
+        // different token on another chain, so a detail fetch without it can
+        // come back as somebody else's token (this is what renamed WSOL to
+        // Fogo's FOGO, which shares Solana's `So111…112` mint address).
+        const data = await fetchAssetDetail(id, params.chainId);
 
         let mergedResult: any = null;
         setAsset(prev => {
           const merged = prev ? {
             ...prev,
             activities: data.activities && data.activities.length > 0 ? data.activities : prev.activities,
-            chartData: data.chartData || prev.chartData
           } : data;
           mergedResult = merged;
           return merged;
@@ -358,16 +361,24 @@ export default function AssetDetailScreen() {
     } as any);
   };
 
+  // The chain travels with the asset id — without it the activities screen
+  // re-resolves the address against every chain and can land on another
+  // chain's token of the same address.
+  const assetQuery = (() => {
+    const parts: string[] = [];
+    if (tab) parts.push(`tab=${tab}`);
+    if (asset?.chainId != null) parts.push(`chainId=${asset.chainId}`);
+    return parts.length ? `?${parts.join("&")}` : "";
+  })();
+
   const handleActivitiesPress = () => {
     // Navigate to activities page for this asset (same as View All)
-    const tabParam = tab ? `?tab=${tab}` : "";
-    router.push(`/asset/${id}/activities${tabParam}` as any);
+    router.push(`/asset/${id}/activities${assetQuery}` as any);
   };
 
   const handleViewAllPress = () => {
     // Navigate to activities page for this asset
-    const tabParam = tab ? `?tab=${tab}` : "";
-    router.push(`/asset/${id}/activities${tabParam}` as any);
+    router.push(`/asset/${id}/activities${assetQuery}` as any);
   };
 
   if (isLoading || !asset) {
@@ -460,6 +471,15 @@ export default function AssetDetailScreen() {
               onActivitiesPress={handleActivitiesPress}
             />
           </View>
+
+          {/* Unwrap → native. Renders only for wrapped natives you hold. */}
+          <UnwrapButton
+            chainId={asset.chainId}
+            address={asset.address}
+            symbol={asset.symbol}
+            logoURI={typeof asset.logo === "string" ? asset.logo : undefined}
+            style={{ width: "100%" }}
+          />
 
           {/* Recent Activities */}
           <AssetDetailActivities

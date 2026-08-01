@@ -5,6 +5,7 @@
 
 import { TokenChart } from '@/components/features/market/detail/TokenChart';
 import { getChainName } from '@/utils/chain';
+import { UnwrapButton } from '@/components/sections/Wallet/UnwrapButton';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { TIWILoader } from '@/components/ui/TIWILoader';
 import { colors } from '@/constants/colors';
@@ -100,7 +101,12 @@ export default function MarketDetailScreen() {
                         <TouchableOpacity onPress={async () => {
                             const cid = chainId || '56';
                             const addr = token?.address || symbol;
-                            const url = `https://app.tiwiprotocol.xyz/token/${cid}/${addr}`;
+                            const params = new URLSearchParams({
+                                fromChainId: String(cid),
+                                fromTokenAddress: String(addr),
+                                fromSymbol: String(token?.symbol || symbol).toUpperCase(),
+                            });
+                            const url = `https://app.tiwiprotocol.xyz/swap?${params.toString()}`;
                             await Share.share({
                                 message: `Check out ${token?.symbol || symbol} on TIWI Protocol - the multichain DeFi super-app.\n\n${url}\n\nDownload TIWI Protocol to trade, swap, and earn across 10+ chains.`,
                                 url,
@@ -158,6 +164,15 @@ export default function MarketDetailScreen() {
                         tokenSymbol={token.symbol}
                     />
                 </View>
+
+                {/* Unwrap → native. Renders only for wrapped natives you hold. */}
+                <UnwrapButton
+                    chainId={token.chainId || chainId}
+                    address={token.address || address}
+                    symbol={token.symbol || symbol}
+                    logoURI={token.logoURI || token.logo}
+                    style={styles.unwrapSlot}
+                />
 
                 {/* Stats */}
                 <View style={styles.statsContainer}>
@@ -273,6 +288,7 @@ const styles = StyleSheet.create({
     priceChange: { fontFamily: 'Manrope-SemiBold', fontSize: 14 },
     timeframeLabel: { fontFamily: 'Manrope-Medium', fontSize: 12, color: colors.bodyText },
     chartWrapper: { width: '100%', height: 380, marginTop: 10 },
+    unwrapSlot: { paddingHorizontal: 16, marginTop: 14 },
     statsContainer: {
         flexDirection: 'row',
         justifyContent: 'space-between',

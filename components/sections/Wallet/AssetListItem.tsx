@@ -7,6 +7,7 @@
 import { Sparkline } from '@/components/ui/Sparkline';
 import { TokenPrice } from '@/components/ui/TokenPrice';
 import { colors } from '@/constants/colors';
+import { getWrappedNative, type WrappedNativeInfo } from '@/constants/wrappedNatives';
 import { useTranslation } from '@/hooks/useLocalization';
 import type { PortfolioItem } from '@/services/walletService';
 import { useWalletStore } from '@/store/walletStore';
@@ -24,6 +25,11 @@ interface AssetListItemProps {
         chainName?: string; // Add chainName from parent
     };
     onPress?: () => void;
+    /**
+     * Opens the unwrap sheet. When supplied, wrapped-native holdings
+     * (WBNB, WETH, WSOL, …) show an UNWRAP pill in place of the sparkline.
+     */
+    onUnwrapPress?: (wrapped: WrappedNativeInfo) => void;
 }
 
 /**
@@ -53,6 +59,7 @@ const generateSparklineData = (changeRaw: any) => {
 export const AssetListItem: React.FC<AssetListItemProps> = ({
     asset,
     onPress,
+    onUnwrapPress,
 }) => {
     const isBalanceHidden = useWalletStore((state) => state.isBalanceHidden);
     const { t } = useTranslation();
@@ -63,6 +70,15 @@ export const AssetListItem: React.FC<AssetListItemProps> = ({
     const chartColor = isPositive ? '#B1F128' : '#FB406E';
 
     const sparkData = useMemo(() => generateSparklineData(asset.change24h), [asset.change24h]);
+
+    // Wrapped natives (WBNB/WETH/WSOL/…) get a bold UNWRAP pill instead of the
+    // decorative sparkline — holding one is nearly always an unintended leftover.
+    const wrapped = useMemo(
+        () => getWrappedNative(asset.chainId, asset.address, asset.symbol),
+        [asset.chainId, asset.address, asset.symbol],
+    );
+    const hasBalance = parseFloat(String(asset.balanceFormatted || '0').replace(/,/g, '')) > 0;
+    const showUnwrap = !!wrapped && !!onUnwrapPress && hasBalance;
 
     // Get chain badge, if the token is on a non-Ethereum mainnet chain (unless Ethereum logo itself is wanted)
     const chainBadge = asset.chainId !== 1 ? asset.chainLogo : null;
@@ -119,15 +135,26 @@ export const AssetListItem: React.FC<AssetListItemProps> = ({
                 </View>
             </View>
 
-            {/* Center: Sparkline Price Chart */}
+            {/* Center: UNWRAP action for wrapped natives, else the sparkline */}
             <View style={styles.chartContainer}>
-                <Sparkline
-                    data={sparkData}
-                    color={chartColor}
-                    width={70}
-                    height={32}
-                    strokeWidth={1.5}
-                />
+                {showUnwrap ? (
+                    <TouchableOpacity
+                        activeOpacity={0.85}
+                        onPress={() => onUnwrapPress!(wrapped!)}
+                        hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+                        style={styles.unwrapPill}
+                    >
+                        <Text style={styles.unwrapPillText}>Unwrap</Text>
+                    </TouchableOpacity>
+                ) : (
+                    <Sparkline
+                        data={sparkData}
+                        color={chartColor}
+                        width={70}
+                        height={32}
+                        strokeWidth={1.5}
+                    />
+                )}
             </View>
 
             {/* Right: Balance + USD Value */}
@@ -260,6 +287,20 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         marginHorizontal: 12,
+    },
+    unwrapPill: {
+        width: 70,
+        height: 28,
+        borderRadius: 999,
+        backgroundColor: colors.primaryCTA,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    unwrapPillText: {
+        fontFamily: 'Manrope-ExtraBold',
+        fontSize: 13,
+        letterSpacing: -0.1,
+        color: '#010501',
     },
     rightSection: {
         flexDirection: 'column',

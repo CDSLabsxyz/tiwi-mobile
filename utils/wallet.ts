@@ -3,6 +3,12 @@
 
 export const NATIVE_TOKEN_ADDRESS = '0x0000000000000000000000000000000000000000';
 export const MORALIS_NATIVE_ADDRESS = '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+/**
+ * Native SOL — Solana's System Program, the address the routers and balance
+ * pipeline both carry a lamport balance under. NOT `So111…112`: that mint is
+ * WRAPPED SOL, a distinct SPL holding.
+ */
+export const SOLANA_NATIVE_ADDRESS = '11111111111111111111111111111111';
 
 /**
  * Truncates a wallet address for display
@@ -41,6 +47,17 @@ export const isNativeToken = (address: string | undefined | null): boolean => {
   return (
     lower === NATIVE_TOKEN_ADDRESS ||
     lower === MORALIS_NATIVE_ADDRESS ||
+    lower === SOLANA_NATIVE_ADDRESS ||
     lower === 'native'
   );
+};
+
+/**
+ * Do two rows describe the same holding? Sources spell a native coin several
+ * ways ('native', 0x0…0, Solana's System Program), so comparing addresses
+ * literally can strand a wallet balance from the list row it belongs to.
+ */
+export const isSameTokenAddress = (a?: string | null, b?: string | null): boolean => {
+  if (isNativeToken(a) || isNativeToken(b)) return isNativeToken(a) && isNativeToken(b);
+  return (a || '').toLowerCase() === (b || '').toLowerCase();
 };

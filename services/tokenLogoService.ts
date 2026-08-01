@@ -8,7 +8,11 @@
  *   4. TrustWallet GitHub — open-source fallback for EVM tokens
  *
  * The cache warms once on first call and is reused for the app lifetime.
+ *
+ * Wrapped natives (WBNB/WETH/WSOL/…) are special-cased to their native coin's
+ * icon — see `getTokenLogo`.
  */
+import { getKnownWrappedNative } from '@/constants/wrappedNatives';
 
 const COINGECKO_API_KEY = 'CG-H5hx3pVrExRw76mpSVmATxTq';
 const COINGECKO_BASE = 'https://api.coingecko.com/api/v3';
@@ -108,7 +112,10 @@ export function getDexScreenerLogo(chainId?: number, address?: string): string |
     const isNative = !address
         || address === 'native'
         || address === '0x0000000000000000000000000000000000000000'
-        || address === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+        || address === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
+        // Solana's System Program — native SOL. DexScreener has no pool for it,
+        // so the logo resolves through the wrapped mint below.
+        || address === '11111111111111111111111111111111';
 
     const tokenAddr = isNative ? NATIVE_TOKEN_ADDRESSES[chainId] : address;
     if (!tokenAddr) return undefined;
@@ -184,6 +191,26 @@ async function warmCache(): Promise<void> {
  * @param address Token contract address
  */
 export function getTokenLogo(symbol?: string, chainId?: number, address?: string): string | undefined {
+    // 0. Wrapped natives render as their native coin (WBNB → BNB icon), the way
+    //    every major wallet shows them. This has to run BEFORE the generic path:
+    //    DexScreener has no image for most wrappers (its WBNB path is a 404) yet
+    //    still *constructs* a URL for any slugged chain, which both shadows the
+    //    TrustWallet lookup below and renders as a letter avatar once the Image
+    //    errors. Returning undefined here is deliberate — it lets the caller fall
+    //    back to the provider/chain logo instead of a guessed 404.
+    const wrapped = getKnownWrappedNative(chainId, address);
+    if (wrapped) {
+        const nativeLogo = logoCache[wrapped.nativeSymbol.toUpperCase()];
+        if (nativeLogo) return nativeLogo;
+        // TrustWallet does index the wrappers, but ONLY at the checksummed
+        // address — pass the registry's, never the row's.
+        const tw = getTrustWalletLogo(chainId, wrapped.address);
+        if (tw) return tw;
+        // Non-EVM (WSOL): the wrapper IS the canonical DexScreener token for the
+        // native coin, so this is the very URL the native row already uses.
+        return wrapped.family !== 'evm' ? getDexScreenerLogo(chainId, wrapped.address) : undefined;
+    }
+
     // 1. Cached logo from CoinGecko / Koin Gallery
     if (symbol) {
         const cached = logoCache[symbol.toUpperCase()];

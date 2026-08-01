@@ -141,12 +141,22 @@ export const transactionService = {
             // straight SOL→wallet transfer doesn't get misrouted into the
             // SPL-not-supported branch.
             const SOL_MINT = 'So11111111111111111111111111111111111111112';
+            const SOL_SYSTEM_PROGRAM = '11111111111111111111111111111111';
             const tokenAddr = (params.tokenAddress || '').trim();
-            const isNativeSol = params.isNative
+            // A row explicitly labelled WSOL is the wrapped SPL token — a
+            // different holding from lamports. Treating the wrapped mint as
+            // native is only a concession to older sources that carried native
+            // SOL under it; never do it when the caller says WSOL, or a WSOL
+            // send would quietly move the user's native SOL instead.
+            const isWrapped = (params.symbol || '').toUpperCase() === 'WSOL';
+            const isNativeSol = !isWrapped && (
+                params.isNative
                 || !tokenAddr
                 || tokenAddr.toLowerCase() === 'native'
+                || tokenAddr === SOL_SYSTEM_PROGRAM
                 || tokenAddr === SOL_MINT
-                || (params.symbol || '').toUpperCase() === 'SOL';
+                || (params.symbol || '').toUpperCase() === 'SOL'
+            );
 
             if (!isNativeSol) {
                 // SPL token transfers need a serialized program instruction

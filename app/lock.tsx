@@ -46,6 +46,23 @@ export default function LockScreen() {
         return () => backHandler.remove();
     }, []);
 
+    /**
+     * Dismiss the lock without disturbing what's behind it.
+     *
+     * The lock is pushed as a full-screen modal over the live stack, so going
+     * back reveals the exact screen the user left. `replace('/(tabs)')` is only
+     * the cold-start fallback, when this is the first route and there is
+     * nothing underneath to return to.
+     */
+    const dismissLock = () => {
+        unlockApp();
+        if (router.canGoBack()) {
+            router.back();
+        } else {
+            router.replace('/(tabs)');
+        }
+    };
+
     // Detect biometric type and auto-trigger on mount
     useEffect(() => {
         if (!biometricEnabled) return;
@@ -103,8 +120,7 @@ export default function LockScreen() {
                 );
             }
 
-            unlockApp();
-            router.replace('/(tabs)');
+            dismissLock();
         } else {
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
             setIsError(true);
@@ -164,8 +180,7 @@ export default function LockScreen() {
                 }
 
                 setTimeout(() => {
-                    unlockApp();
-                    router.replace('/(tabs)');
+                    dismissLock();
                 }, 400);
             } else {
                 setFaceStatus('failed');

@@ -148,9 +148,11 @@ export default function EarnScreen() {
         try {
             // Fetch core data and global stats via store
             if (walletAddress) {
+                // fetchInitialData already pulls global stats — calling
+                // fetchGlobalStats() alongside it duplicated the whole
+                // per-pool on-chain crawl on every single load.
                 await Promise.all([
                     fetchInitialData(walletAddress),
-                    fetchGlobalStats(),
                     fetchHistoricalStakes(walletAddress),
                 ]);
                 // NOTE: the on-chain discoverPositions() crawler is intentionally
@@ -179,11 +181,12 @@ export default function EarnScreen() {
         setRefreshing(false);
     };
 
-    // Initial load fires once per wallet/tab change. Sub-tab switching is a
-    // pure UI filter on already-loaded state and must not retrigger fetches.
+    // Initial load fires once per wallet. Tab and sub-tab switching are pure
+    // UI filters over already-loaded state — `activeTab` was in this dep array
+    // and made every tab tap refetch the entire staking dataset.
     useEffect(() => {
         loadData();
-    }, [walletAddress, activeTab]);
+    }, [walletAddress]);
 
     // Auto-refresh only while the Earn screen is focused and the app is
     // in the foreground. Backgrounded or other-tab = no refresh.

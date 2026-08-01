@@ -29,8 +29,12 @@ export const ScreenHeader: React.FC<ScreenHeaderProps> = ({
         try {
             const cid = chainId || 56;
             const addr = tokenAddress || symbol.toUpperCase();
-            const tokenUrl = `https://app.tiwiprotocol.xyz/token/${cid}/${addr}`;
-            const deepLink = `tiwiprotocol://token/${cid}/${addr}`;
+            const params = new URLSearchParams({
+                fromChainId: String(cid),
+                fromTokenAddress: addr,
+                fromSymbol: symbol.toUpperCase(),
+            });
+            const tokenUrl = `https://app.tiwiprotocol.xyz/swap?${params.toString()}`;
 
             await Share.share({
                 message: `Check out ${symbol} on TIWI Protocol - the multichain DeFi super-app.\n\n${tokenUrl}\n\nDownload TIWI Protocol to trade, swap, and earn across 10+ chains.`,

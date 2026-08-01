@@ -5,9 +5,10 @@
  */
 
 import { colors } from "@/constants/colors";
+import { useAssetChart } from "@/hooks/useAssetChart";
 import type { AssetDetail, ChartTimePeriod } from "@/services/walletService";
 import React, { useMemo } from "react";
-import { Text, TouchableOpacity, useWindowDimensions, View } from "react-native";
+import { ActivityIndicator, Text, TouchableOpacity, useWindowDimensions, View } from "react-native";
 import Svg, { Defs, LinearGradient, Path, Stop } from "react-native-svg";
 
 interface PriceChartProps {
@@ -30,8 +31,16 @@ export const PriceChart: React.FC<PriceChartProps> = ({
   const { width: screenWidth } = useWindowDimensions();
   const CHART_WIDTH = screenWidth - 24; // Small margin on sides
 
-  const chartData = asset.chartData[timePeriod];
-  const isPositive = asset.change24h >= 0;
+  // Real traded history for this exact token, per selected window.
+  const { points: chartData, isLoading, changePercent } = useAssetChart(
+    asset.address,
+    asset.chainId,
+    timePeriod,
+  );
+
+  // Colour follows the window on screen, falling back to the 24h move while
+  // the series is still loading.
+  const isPositive = (changePercent ?? asset.change24h) >= 0;
   const chartColor = isPositive ? colors.success : colors.error;
 
   // Calculate chart path and area
@@ -97,38 +106,59 @@ export const PriceChart: React.FC<PriceChartProps> = ({
           position: "relative",
         }}
       >
-        <Svg width={CHART_WIDTH} height={CHART_HEIGHT}>
-          <Defs>
-            <LinearGradient id="chartGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-              <Stop
-                offset="0%"
-                stopColor={chartColor}
-                stopOpacity={0.3}
-              />
-              <Stop
-                offset="100%"
-                stopColor={chartColor}
-                stopOpacity={0}
-              />
-            </LinearGradient>
-          </Defs>
+        {path ? (
+          <Svg width={CHART_WIDTH} height={CHART_HEIGHT}>
+            <Defs>
+              <LinearGradient id="chartGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                <Stop
+                  offset="0%"
+                  stopColor={chartColor}
+                  stopOpacity={0.3}
+                />
+                <Stop
+                  offset="100%"
+                  stopColor={chartColor}
+                  stopOpacity={0}
+                />
+              </LinearGradient>
+            </Defs>
 
-          {/* Gradient Area */}
-          <Path
-            d={areaPath}
-            fill="url(#chartGradient)"
-          />
+            {/* Gradient Area */}
+            <Path
+              d={areaPath}
+              fill="url(#chartGradient)"
+            />
 
-          {/* Chart Line */}
-          <Path
-            d={path}
-            fill="none"
-            stroke={chartColor}
-            strokeWidth={2}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </Svg>
+            {/* Chart Line */}
+            <Path
+              d={path}
+              fill="none"
+              stroke={chartColor}
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </Svg>
+        ) : (
+          // No invented line: either we have traded prices for this window or
+          // we say we don't.
+          <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+            {isLoading ? (
+              <ActivityIndicator color={colors.primaryCTA} />
+            ) : (
+              <Text
+                style={{
+                  fontFamily: "Manrope-Regular",
+                  fontSize: 12,
+                  lineHeight: 16,
+                  color: "rgba(255, 255, 255, 0.4)",
+                }}
+              >
+                No price history for this period
+              </Text>
+            )}
+          </View>
+        )}
       </View>
 
       {/* Time Period Tabs */}

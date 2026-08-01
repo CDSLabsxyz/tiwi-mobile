@@ -42,19 +42,26 @@ const ChainIcons = {
 // there is immediately correct here — the old hand-written map covered 11 of
 // the wallet's networks and everything else fell back to the chain icon.
 
-import { getWalletNetwork } from '@/constants/walletNetworks';
+import { defaultNetworkIdForChain, getWalletNetwork, isNetworkOnChain } from '@/constants/walletNetworks';
 import { useNotifications } from '@/hooks/useNotifications';
-import { useWalletStore } from '@/store/walletStore';
+import { ChainType, useWalletStore } from '@/store/walletStore';
 import { useRouter } from 'expo-router';
 
-function getNetworkLabel(chain: string, networkId: string | null): string {
-    const network = getWalletNetwork(networkId);
+/**
+ * The network row to badge with. `activeNetworkId` is only honoured when it
+ * belongs to the active chain — a stale pair (a Solana wallet still carrying
+ * networkId 'ETH') falls back to the chain's own canonical network rather than
+ * badging a SOL address "ETH".
+ */
+function resolveNetwork(chain: ChainType, networkId: string | null) {
+    if (isNetworkOnChain(networkId, chain)) return getWalletNetwork(networkId);
+    return getWalletNetwork(defaultNetworkIdForChain(chain));
+}
+
+function getNetworkLabel(chain: ChainType, networkId: string | null): string {
+    const network = resolveNetwork(chain, networkId);
     if (network?.symbol) return network.symbol;
     if (network) return network.name.toUpperCase();
-    if (chain === 'SOLANA') return 'SOL';
-    if (chain === 'TRON') return 'TRX';
-    if (chain === 'TON') return 'TON';
-    if (chain === 'COSMOS') return 'ATOM';
     return chain;
 }
 
@@ -116,7 +123,7 @@ export const Header: React.FC<HeaderProps> = ({
                             <View style={styles.logoChainBadge}>
                                 <Image
                                     source={
-                                        getWalletNetwork(activeNetworkId)?.icon ||
+                                        resolveNetwork(activeChain, activeNetworkId)?.icon ||
                                         (ChainIcons as any)[activeChain]
                                     }
                                     style={styles.iconFull}

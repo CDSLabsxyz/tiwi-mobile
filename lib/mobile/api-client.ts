@@ -1135,7 +1135,10 @@ class ChartsModule {
             chainId: params.chainId,
             baseChainId: params.baseChainId,
             quoteChainId: params.quoteChainId,
-            resolution: params.resolution || '15',
+            // No default resolution — the server picks one to match `range`.
+            // Hard-coding 15m made a 1Y request ask for 15-minute bars, which
+            // the upstream caps long before it reaches a year.
+            resolution: params.resolution,
             range: params.range || '1D',
             from: params.from,
             to: params.to,

@@ -2,8 +2,9 @@
  * TransactionReceiptCard
  *
  * Shown on the send-success step. Displays Amount / Network / Sender /
- * Receiver / Date / Tx ID, and lets the user share or save the receipt
- * as a PNG via react-native-view-shot + expo-sharing.
+ * Receiver / Date / Tx ID, and lets the user save the receipt to their gallery,
+ * download it as a PDF, or share either format — the image is captured with
+ * react-native-view-shot, the PDF rendered by expo-print.
  */
 
 import { colors } from '@/constants/colors';
@@ -12,6 +13,7 @@ import * as Clipboard from 'expo-clipboard';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Haptics from 'expo-haptics';
 import { Image as ExpoImage } from 'expo-image';
+import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
 
 const TiwiLogo = require('@/assets/logo/tiwi-logo.svg');
@@ -28,7 +30,7 @@ try {
 }
 const isPdfAvailable = !!Print;
 import React, { useRef, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import ViewShot, { captureRef } from 'react-native-view-shot';
 
 export interface TransactionReceipt {
@@ -230,10 +232,14 @@ const formatDate = (iso: string) => {
     }
 };
 
+type ReceiptAction = 'saveImage' | 'downloadPdf' | 'sharePng' | 'sharePdf';
+
 export const TransactionReceiptCard: React.FC<Props> = ({ receipt, onDone }) => {
     const shotRef = useRef<ViewShot>(null);
     const [copiedField, setCopiedField] = useState<string | null>(null);
-    const [busy, setBusy] = useState(false);
+    const [busy, setBusy] = useState<ReceiptAction | null>(null);
+
+    const baseName = `tiwi-receipt-${receipt.txHash.slice(0, 10)}`;
 
     const copy = async (label: string, value: string) => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -242,85 +248,148 @@ export const TransactionReceiptCard: React.FC<Props> = ({ receipt, onDone }) => 
         setTimeout(() => setCopiedField(null), 1500);
     };
 
-    const handleSharePNG = async () => {
+    /** Captures the card as a PNG in the cache dir and returns its uri. */
+    const capturePng = async (): Promise<string> => {
+        const uri = await captureRef(shotRef as any, {
+            format: 'png',
+            quality: 1,
+            result: 'tmpfile',
+        });
+
+        const dest = `${FileSystem.cacheDirectory}${baseName}.png`;
+        try {
+            await FileSystem.copyAsync({ from: uri, to: dest });
+            return dest;
+        } catch {
+            // Fall back to the captured uri if copy fails
+            return uri;
+        }
+    };
+
+    /**
+     * Renders the receipt to a PDF in the cache dir and returns its uri.
+     * Builds a self-contained HTML doc styled with TIWI brand colors — we
+     * don't reuse the React tree, expo-print needs raw HTML/CSS.
+     */
+    const generatePdf = async (): Promise<string> => {
+        if (!Print) throw new Error('PDF export is not available in this build');
+
+        const { uri } = await Print.printToFileAsync({
+            html: buildReceiptHtml(receipt),
+            base64: false,
+            width: 612,   // 8.5" * 72dpi (US Letter)
+            height: 792,
+        });
+
+        const dest = `${FileSystem.cacheDirectory}${baseName}.pdf`;
+        try {
+            await FileSystem.copyAsync({ from: uri, to: dest });
+            return dest;
+        } catch {
+            // Fall back to the original uri if copy fails
+            return uri;
+        }
+    };
+
+    /** Wraps an action with the busy guard, haptics and error reporting. */
+    const run = async (action: ReceiptAction, fn: () => Promise<void>, failureTitle: string) => {
         if (busy) return;
-        setBusy(true);
+        setBusy(action);
         try {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            const uri = await captureRef(shotRef as any, {
-                format: 'png',
-                quality: 1,
-                result: 'tmpfile',
-            });
+            await fn();
+        } catch (e: any) {
+            console.warn(`[Receipt] ${action} failed:`, e);
+            Alert.alert(failureTitle, e?.message ?? 'Unknown error');
+        } finally {
+            setBusy(null);
+        }
+    };
 
-            const filename = `tiwi-receipt-${receipt.txHash.slice(0, 10)}.png`;
-            const dest = `${FileSystem.cacheDirectory}${filename}`;
-            try {
-                await FileSystem.copyAsync({ from: uri, to: dest });
-            } catch {
-                // Fall back to the captured uri if copy fails
+    /** Saves the receipt image straight to the device gallery. */
+    const handleSaveImage = () =>
+        run('saveImage', async () => {
+            const permission = await MediaLibrary.requestPermissionsAsync();
+            if (!permission.granted) {
+                Alert.alert(
+                    'Permission needed',
+                    'Allow photo library access to save the receipt to your gallery.'
+                );
+                return;
             }
 
-            const isAvailable = await Sharing.isAvailableAsync();
-            if (isAvailable) {
-                await Sharing.shareAsync(dest, {
+            const uri = await capturePng();
+            const asset = await MediaLibrary.createAssetAsync(uri);
+            try {
+                await MediaLibrary.createAlbumAsync('TIWI Receipts', asset, false);
+            } catch {
+                // Album creation can fail on restricted permissions — the asset
+                // is already in the gallery, so this isn't worth surfacing.
+            }
+            Alert.alert('Saved', 'Receipt saved to your gallery.');
+        }, 'Could not save receipt');
+
+    /**
+     * Downloads the PDF to a folder the user picks. Android exposes real
+     * filesystem writes through the Storage Access Framework; on iOS the
+     * document/"Save to Files" picker is only reachable via the share sheet.
+     */
+    const handleDownloadPdf = () =>
+        run('downloadPdf', async () => {
+            const uri = await generatePdf();
+
+            if (Platform.OS === 'android') {
+                const permission =
+                    await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
+                if (!permission.granted) return;
+
+                const base64 = await FileSystem.readAsStringAsync(uri, {
+                    encoding: FileSystem.EncodingType.Base64,
+                });
+                const target = await FileSystem.StorageAccessFramework.createFileAsync(
+                    permission.directoryUri,
+                    `${baseName}.pdf`,
+                    'application/pdf'
+                );
+                await FileSystem.writeAsStringAsync(target, base64, {
+                    encoding: FileSystem.EncodingType.Base64,
+                });
+                Alert.alert('Downloaded', `Saved as ${baseName}.pdf`);
+                return;
+            }
+
+            if (await Sharing.isAvailableAsync()) {
+                await Sharing.shareAsync(uri, {
+                    mimeType: 'application/pdf',
+                    dialogTitle: 'Save TIWI Receipt',
+                    UTI: 'com.adobe.pdf',
+                });
+            }
+        }, 'Could not download receipt');
+
+    const handleSharePNG = () =>
+        run('sharePng', async () => {
+            const uri = await capturePng();
+            if (await Sharing.isAvailableAsync()) {
+                await Sharing.shareAsync(uri, {
                     mimeType: 'image/png',
                     dialogTitle: 'TIWI Transaction Receipt',
                     UTI: 'public.png',
                 });
             }
-        } catch (e: any) {
-            console.warn('[Receipt] share PNG failed:', e);
-            Alert.alert('Could not share receipt', e?.message ?? 'Unknown error');
-        } finally {
-            setBusy(false);
-        }
-    };
+        }, 'Could not share receipt');
 
-    const handleSharePDF = async () => {
-        if (busy) return;
-        if (!Print) {
-            console.warn('[Receipt] expo-print not available in this build');
-            return;
-        }
-        setBusy(true);
-        try {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-
-            // Build a self-contained HTML doc styled with TIWI brand colors.
-            // We don't reuse the React tree — expo-print needs raw HTML/CSS.
-            const html = buildReceiptHtml(receipt);
-
-            const { uri } = await Print.printToFileAsync({
-                html,
-                base64: false,
-                width: 612,   // 8.5" * 72dpi (US Letter)
-                height: 792,
-            });
-
-            const filename = `tiwi-receipt-${receipt.txHash.slice(0, 10)}.pdf`;
-            const dest = `${FileSystem.cacheDirectory}${filename}`;
-            try {
-                await FileSystem.copyAsync({ from: uri, to: dest });
-            } catch {
-                // Fall back to the original uri if copy fails
-            }
-
-            const isAvailable = await Sharing.isAvailableAsync();
-            if (isAvailable) {
-                await Sharing.shareAsync(dest, {
+    const handleSharePDF = () =>
+        run('sharePdf', async () => {
+            const uri = await generatePdf();
+            if (await Sharing.isAvailableAsync()) {
+                await Sharing.shareAsync(uri, {
                     mimeType: 'application/pdf',
                     dialogTitle: 'TIWI Transaction Receipt',
                     UTI: 'com.adobe.pdf',
                 });
             }
-        } catch (e: any) {
-            console.warn('[Receipt] share PDF failed:', e);
-            Alert.alert('Could not share receipt', e?.message ?? 'Unknown error');
-        } finally {
-            setBusy(false);
-        }
-    };
+        }, 'Could not share receipt');
 
     return (
         <View style={styles.wrapper}>
@@ -430,28 +499,59 @@ export const TransactionReceiptCard: React.FC<Props> = ({ receipt, onDone }) => 
 
                 {/* Action buttons (NOT inside view-shot — we don't capture them) */}
                 <View style={styles.actions}>
+                    {/* Primary: keep a copy on the device */}
                     <View style={styles.shareRow}>
                         <TouchableOpacity
                             activeOpacity={0.8}
                             style={[styles.shareButtonHalf, busy && { opacity: 0.6 }]}
-                            onPress={handleSharePNG}
-                            disabled={busy}
+                            onPress={handleSaveImage}
+                            disabled={!!busy}
                         >
-                            <Ionicons name="share-outline" size={18} color={colors.bg} />
+                            <Ionicons name="image-outline" size={18} color={colors.bg} />
                             <Text style={styles.shareButtonText}>
-                                {busy ? 'Saving…' : (isPdfAvailable ? 'Share as PNG' : 'Share / Save Receipt')}
+                                {busy === 'saveImage' ? 'Saving…' : 'Save Image'}
                             </Text>
                         </TouchableOpacity>
                         {isPdfAvailable && (
                             <TouchableOpacity
                                 activeOpacity={0.8}
                                 style={[styles.shareButtonHalf, busy && { opacity: 0.6 }]}
-                                onPress={handleSharePDF}
-                                disabled={busy}
+                                onPress={handleDownloadPdf}
+                                disabled={!!busy}
                             >
-                                <Ionicons name="document-outline" size={18} color={colors.bg} />
+                                <Ionicons name="download-outline" size={18} color={colors.bg} />
                                 <Text style={styles.shareButtonText}>
-                                    {busy ? '…' : 'Share as PDF'}
+                                    {busy === 'downloadPdf' ? 'Downloading…' : 'Download PDF'}
+                                </Text>
+                            </TouchableOpacity>
+                        )}
+                    </View>
+
+                    {/* Secondary: hand it off to another app */}
+                    <View style={styles.shareRow}>
+                        <TouchableOpacity
+                            activeOpacity={0.8}
+                            style={[styles.secondaryButtonHalf, busy && { opacity: 0.6 }]}
+                            onPress={handleSharePNG}
+                            disabled={!!busy}
+                        >
+                            <Ionicons name="share-outline" size={18} color={colors.titleText} />
+                            <Text style={styles.secondaryButtonText}>
+                                {busy === 'sharePng'
+                                    ? 'Sharing…'
+                                    : (isPdfAvailable ? 'Share as PNG' : 'Share Receipt')}
+                            </Text>
+                        </TouchableOpacity>
+                        {isPdfAvailable && (
+                            <TouchableOpacity
+                                activeOpacity={0.8}
+                                style={[styles.secondaryButtonHalf, busy && { opacity: 0.6 }]}
+                                onPress={handleSharePDF}
+                                disabled={!!busy}
+                            >
+                                <Ionicons name="document-outline" size={18} color={colors.titleText} />
+                                <Text style={styles.secondaryButtonText}>
+                                    {busy === 'sharePdf' ? 'Sharing…' : 'Share as PDF'}
                                 </Text>
                             </TouchableOpacity>
                         )}
@@ -618,6 +718,19 @@ const styles = StyleSheet.create({
         gap: 8,
     },
     shareButtonText: { fontFamily: 'Manrope-Bold', fontSize: 15, color: colors.bg },
+    secondaryButtonHalf: {
+        flex: 1,
+        height: 50,
+        borderRadius: 100,
+        backgroundColor: colors.bgCards,
+        borderWidth: 1,
+        borderColor: colors.bgStroke,
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexDirection: 'row',
+        gap: 8,
+    },
+    secondaryButtonText: { fontFamily: 'Manrope-SemiBold', fontSize: 14, color: colors.titleText },
     doneButton: {
         height: 54,
         borderRadius: 100,

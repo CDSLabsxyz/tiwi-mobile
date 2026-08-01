@@ -155,6 +155,34 @@ export function getWalletNetwork(id: string | null | undefined): WalletNetwork |
     return id ? WALLET_NETWORKS.find(n => n.id === id) : undefined;
 }
 
+/**
+ * The network a wallet should land on for a given signing chain — the first
+ * listed row belonging to that chain that the wallet actually has an address
+ * for (Ethereum for EVM, Solana for SOLANA, Cosmos for COSMOS, …).
+ *
+ * Selecting a wallet used to hard-code `'ETH'` regardless of its chain, so an
+ * imported Solana or Cosmos wallet displayed its own address under an "ETH"
+ * badge and reported chain id 1 to the dApp browser.
+ */
+export function defaultNetworkIdForChain(
+    chain: ChainType,
+    addresses?: Partial<Record<AddressKey, string>>,
+): string | null {
+    const rows = WALLET_NETWORKS.filter(n => n.chain === chain);
+    if (rows.length === 0) return null;
+    const owned = addresses ? rows.find(n => !!addresses[n.addressKey]) : undefined;
+    return (owned ?? rows[0]).id;
+}
+
+/**
+ * True when a persisted `activeNetworkId` genuinely belongs to `activeChain`.
+ * Guards against state written before the two were kept in sync.
+ */
+export function isNetworkOnChain(networkId: string | null | undefined, chain: ChainType): boolean {
+    const network = getWalletNetwork(networkId);
+    return !!network && network.chain === chain;
+}
+
 /** EVM network id → EIP-155 chain id, for the dApp browser bridge. */
 export const EVM_NETWORK_CHAIN_IDS: Record<string, number> = Object.fromEntries(
     WALLET_NETWORKS.filter(n => n.chain === 'EVM' && n.chainId).map(n => [n.id, n.chainId!]),

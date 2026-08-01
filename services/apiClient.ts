@@ -1187,11 +1187,19 @@ class TiwiApiClient {
             const tokenAddr = token.address.toLowerCase();
             const isAddressMalformed = !token.address || token.address.length < 30 || token.address.includes('...');
 
-            // Try to find direct pairs first
-            let matchingPairs = pairs.filter((p: any) =>
-                p.baseToken.address.toLowerCase() === tokenAddr ||
-                p.quoteToken.address.toLowerCase() === tokenAddr
-            );
+            // Try to find direct pairs first. `/latest/dex/tokens/<address>` is
+            // address-scoped but NOT chain-scoped — the same address string is a
+            // live token on several chains (Solana and Fogo both use
+            // `So111…112`), so when we already know the chain we only accept
+            // that chain's pairs. Otherwise the first pair in the response,
+            // whichever chain it belongs to, supplied the price and chain id.
+            let matchingPairs = pairs.filter((p: any) => {
+                const isThisToken =
+                    p.baseToken.address.toLowerCase() === tokenAddr ||
+                    p.quoteToken.address.toLowerCase() === tokenAddr;
+                if (!isThisToken) return false;
+                return isSameChain(DEXSCREENER_CHAIN_MAP[p.chainId], token.chainId);
+            });
 
             // Stage 2: Fallback to Search (DexScreener + Tiwi Backend)
             if (matchingPairs.length === 0 || isAddressMalformed) {
@@ -1204,7 +1212,10 @@ class TiwiApiClient {
                         const searchData = await searchRes.json();
                         const searchPairs = searchData.pairs || [];
                         const bestMatches = searchPairs.filter((p: any) =>
+                            // Symbol search is cross-chain; a ticker match on the
+                            // wrong chain would rewrite this token's address.
                             p.baseToken.symbol.toLowerCase() === token.symbol.toLowerCase()
+                            && isSameChain(DEXSCREENER_CHAIN_MAP[p.chainId], token.chainId)
                         ).sort((a: any, b: any) => (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0));
 
                         if (bestMatches.length > 0) {
@@ -1253,7 +1264,10 @@ class TiwiApiClient {
             }
 
             const dsChainId = primaryPair.chainId;
-            const mappedChainId = DEXSCREENER_CHAIN_MAP[dsChainId] || token.chainId || 56;
+            // The token's own chain wins — the pair is already known to be on it,
+            // and DexScreener's slug map spells Solana with the other of its two
+            // ids, which would silently renumber the chain out from under callers.
+            const mappedChainId = token.chainId || DEXSCREENER_CHAIN_MAP[dsChainId] || 56;
 
             return {
                 ...token,
@@ -1338,6 +1352,29 @@ class TiwiApiClient {
         });
     }
 }
+
+/**
+ * Solana carries two numeric ids in this app (LiFi's 7565164 and the
+ * genesis-derived 1399811149); either can reach us depending on the source, and
+ * they mean the same chain.
+ */
+const CHAIN_ID_ALIASES: Record<number, number> = {
+    1399811149: 7565164,
+};
+const canonicalChainId = (id?: number): number | undefined =>
+    id === undefined ? undefined : (CHAIN_ID_ALIASES[id] ?? id);
+
+/**
+ * True when a DexScreener pair belongs to the token's chain. An unknown chain on
+ * either side means "can't tell" and is allowed through — only a KNOWN mismatch
+ * rejects, so this never removes coverage, it only blocks cross-chain mix-ups.
+ */
+export const isSameChain = (pairChainId?: number, tokenChainId?: number): boolean => {
+    const a = canonicalChainId(pairChainId);
+    const b = canonicalChainId(tokenChainId);
+    if (a === undefined || b === undefined) return true;
+    return a === b;
+};
 
 /**
  * Mapping DexScreener chain slugs to numeric chain IDs

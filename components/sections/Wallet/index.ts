@@ -12,6 +12,8 @@ export { NFTList } from './NFTList';
 export { NFTListItem } from './NFTListItem';
 export { QuickActions } from './QuickActions';
 export { TotalBalanceCard } from './TotalBalanceCard';
+export { UnwrapButton } from './UnwrapButton';
+export { UnwrapSheet } from './UnwrapSheet';
 export { WalletFilterSheet } from './WalletFilterSheet';
 export { WalletHeader } from './WalletHeader';
 

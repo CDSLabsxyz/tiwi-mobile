@@ -73,6 +73,14 @@
         }
       ],
       [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow $(PRODUCT_NAME) to access your photos.",
+          "savePhotosPermission": "Allow $(PRODUCT_NAME) to save transaction receipts and QR codes to your photos.",
+          "isAccessMediaLocationEnabled": false
+        }
+      ],
+      [
         "expo-build-properties",
         {
           "android": {

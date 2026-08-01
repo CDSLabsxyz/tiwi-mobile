@@ -33,12 +33,19 @@ export default function AssetActivitiesScreen() {
     const { top, bottom } = useSafeAreaInsets();
     const router = useRouter();
     const pathname = usePathname();
-    const { id, tab } = useLocalSearchParams<{ id: string; tab?: string }>();
+    const { id, tab, chainId } = useLocalSearchParams<{ id: string; tab?: string; chainId?: string }>();
 
     // State
+    // `currentAsset` is a global left behind by the last asset screen — only
+    // reuse it when it is THIS asset. Matching on address alone isn't enough:
+    // the same address is a different token on another chain.
     const { currentAsset } = useAssetStore();
-    const [asset, setAsset] = useState<AssetDetail | null>(currentAsset);
-    const [isAssetLoading, setIsAssetLoading] = useState(!currentAsset);
+    const isCurrentAssetThisOne = !!currentAsset
+        && (currentAsset.address?.toLowerCase() === id?.toLowerCase() || currentAsset.id === id)
+        && (!chainId || String(currentAsset.chainId) === String(chainId));
+    const seededAsset = isCurrentAssetThisOne ? currentAsset : null;
+    const [asset, setAsset] = useState<AssetDetail | null>(seededAsset);
+    const [isAssetLoading, setIsAssetLoading] = useState(!seededAsset);
 
     const { address: activeWalletAddress } = useWalletStore();
     const { data: chains } = useChains();
@@ -185,11 +192,11 @@ export default function AssetActivitiesScreen() {
     // Fetch asset detail ONLY if needed (direct link)
     useEffect(() => {
         const loadAsset = async () => {
-            if (!id || currentAsset) return;
+            if (!id) return;
 
             setIsAssetLoading(true);
             try {
-                const assetData = await fetchAssetDetail(id);
+                const assetData = await fetchAssetDetail(id, chainId);
                 setAsset(assetData);
             } catch (error) {
                 console.error("Failed to fetch asset:", error);
@@ -198,21 +205,26 @@ export default function AssetActivitiesScreen() {
             }
         };
 
-        if (!currentAsset) {
+        if (!seededAsset) {
             loadAsset();
         } else {
+            setAsset(seededAsset);
             setIsAssetLoading(false);
         }
-    }, [id, currentAsset]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [id, chainId, seededAsset]);
 
     // Handlers
     const handleBackPress = () => {
         if (router.canGoBack()) {
             router.back();
         } else {
-            // Navigate back to asset detail screen if no history
-            const tabParam = tab ? `?tab=${tab}` : "";
-            router.push(`/asset/${id}${tabParam}` as any);
+            // Navigate back to asset detail screen if no history — keep the
+            // chain so the detail screen resolves the same token.
+            const parts: string[] = [];
+            if (tab) parts.push(`tab=${tab}`);
+            if (chainId) parts.push(`chainId=${chainId}`);
+            router.push(`/asset/${id}${parts.length ? `?${parts.join("&")}` : ""}` as any);
         }
     };
 

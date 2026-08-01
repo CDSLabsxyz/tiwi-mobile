@@ -5,9 +5,11 @@ import {
     NFTList,
     QuickActions,
     TotalBalanceCard,
+    UnwrapSheet,
     WalletFilterSheet,
     type WalletTabKey,
 } from '@/components/sections/Wallet';
+import type { WrappedNativeInfo } from '@/constants/wrappedNatives';
 import { useCustomTokenStore, type CustomToken } from '@/store/customTokenStore';
 import { fetchEvmTokenBalance, fetchSolanaTokenBalance } from '@/services/customTokenBalance';
 import { api, ChainItem } from '@/lib/mobile/api-client';
@@ -232,6 +234,9 @@ export default function WalletScreen() {
         return applyFilters(nfts, { sortBy, tokenCategories, chains });
     }, [nfts, sortBy, tokenCategories, chains]);
 
+    // Wrapped-native holding currently being unwrapped, plus its logo for the sheet.
+    const [unwrapTarget, setUnwrapTarget] = useState<{ info: WrappedNativeInfo; logoURI?: string } | null>(null);
+
     // UI Handlers
     const handleToggleVisibility = () => toggleBalanceVisibility();
     const handleTodayPress = () => { };
@@ -392,6 +397,7 @@ export default function WalletScreen() {
                                             chainName: chainName
                                         }}
                                         onPress={() => handleAssetPress(token)}
+                                        onUnwrapPress={(info) => setUnwrapTarget({ info, logoURI: token.logoURI })}
                                     />
                                 );
                             })}
@@ -497,6 +503,14 @@ export default function WalletScreen() {
                     </View>
                 </View>
             </Modal>
+
+            {/* Unwrap wrapped-native → native (WBNB → BNB, WSOL → SOL, …) */}
+            <UnwrapSheet
+                visible={!!unwrapTarget}
+                info={unwrapTarget?.info ?? null}
+                logoURI={unwrapTarget?.logoURI}
+                onClose={() => setUnwrapTarget(null)}
+            />
 
             {/* Filter Modal */}
             <WalletFilterSheet

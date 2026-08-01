@@ -115,10 +115,17 @@ export function isNativeToken(tokenAddress: string, chainId: number): boolean {
     );
   }
 
-  // Solana native SOL
+  // Solana native SOL. Every spelling a source might hand us — including the
+  // app-wide zero-address sentinel and the bare 'native' marker. `So111…112`
+  // stays in the list because routers quote native SOL under the wrapped mint,
+  // but note that a BALANCE at that address is wrapped SOL, not native.
   if (isSolanaChain(chainId)) {
+    const a = (tokenAddress || '').toLowerCase();
     return (
-      tokenAddress === '11111111111111111111111111111111' ||
+      !a ||
+      a === 'native' ||
+      a === '11111111111111111111111111111111' ||
+      a === '0x0000000000000000000000000000000000000000' ||
       tokenAddress === 'So11111111111111111111111111111111111111112'
     );
   }

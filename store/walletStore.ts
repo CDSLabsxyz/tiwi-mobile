@@ -1,3 +1,4 @@
+import { defaultNetworkIdForChain, isNetworkOnChain, WALLET_NETWORKS } from '@/constants/walletNetworks';
 import { api } from '@/lib/mobile/api-client';
 import { deriveMultiChainAddressesFromMnemonic, getSecureMnemonic } from '@/services/walletCreationService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -138,10 +139,17 @@ export const useWalletStore = create<WalletState>()(
         const state = get();
         const finalName = name || 'Wallet 1';
 
+        // External connections are EVM; show the network they actually
+        // connected on rather than whatever the previous wallet left behind.
+        const connectedNetwork = chainId
+          ? WALLET_NETWORKS.find(n => n.chain === 'EVM' && n.chainId === chainId)
+          : undefined;
+
         set({
           address, // legacy
           activeAddress: address,
           activeChain: 'EVM',
+          activeNetworkId: connectedNetwork?.id ?? defaultNetworkIdForChain('EVM'),
           name: finalName,
           chainId: chainId ? chainId.toString() : null,
           isConnected,
@@ -209,6 +217,9 @@ export const useWalletStore = create<WalletState>()(
           activeGroupId: newGroup.id,
           activeAddress: primaryAddr || null,
           activeChain: newGroup.primaryChain,
+          // Without this the freshly imported wallet inherits the previous
+          // wallet's network id — a SOLANA import stamped 'ETH'.
+          activeNetworkId: defaultNetworkIdForChain(newGroup.primaryChain, newGroup.addresses),
           isConnected: true,
           // Legacy sync
           address: primaryAddr || null,
@@ -233,7 +244,10 @@ export const useWalletStore = create<WalletState>()(
             activeGroupId: groupId,
             activeAddress: mainAddr,
             activeChain: group.primaryChain,
-            activeNetworkId: 'ETH', // Reset to Ethereum on wallet switch
+            // Land on the wallet's OWN chain, not Ethereum. Hard-coding 'ETH'
+            // here badged Solana/Cosmos/Tron imports as "ETH" and made the
+            // dApp bridge announce chain id 1 for them.
+            activeNetworkId: defaultNetworkIdForChain(group.primaryChain, group.addresses),
             // Legacy sync
             address: mainAddr,
             name: group.name,
@@ -404,8 +418,23 @@ export const useWalletStore = create<WalletState>()(
     {
       name: 'tiwi-wallet-storage',
       storage: createJSONStorage(() => AsyncStorage),
-      onRehydrateStorage: (state) => {
-        return () => state?.setHasHydrated(true);
+      onRehydrateStorage: () => {
+        return (hydrated) => {
+          if (!hydrated) return;
+
+          // Repair state persisted before `activeNetworkId` was kept on the
+          // same chain as `activeChain` — existing installs already hold e.g.
+          // { activeChain: 'SOLANA', activeNetworkId: 'ETH' } and would keep
+          // rendering the wrong badge until the user switched networks.
+          if (!isNetworkOnChain(hydrated.activeNetworkId, hydrated.activeChain)) {
+            const group = hydrated.walletGroups.find(g => g.id === hydrated.activeGroupId);
+            useWalletStore.setState({
+              activeNetworkId: defaultNetworkIdForChain(hydrated.activeChain, group?.addresses),
+            });
+          }
+
+          hydrated.setHasHydrated(true);
+        };
       }
     }
   )

@@ -8,6 +8,7 @@ import type { ChainId } from "@/components/sections/Swap/ChainSelectSheet";
 import { api, WalletBalanceResponse } from "@/lib/mobile/api-client";
 import { moralisService } from "@/services/moralisService";
 import { useWalletStore } from "@/store/walletStore";
+import { normalizeSolanaBalanceRow } from "@/utils/solanaIdentity";
 import { formatTokenAmount } from "@/utils/formatting";
 
 // Simulate API delay
@@ -368,9 +369,6 @@ export interface AssetDetail {
   address: string;
   decimals: number;
   priceUSD: string;
-  chartData: {
-    [key in ChartTimePeriod]: ChartDataPoint[];
-  };
   activities: AssetActivity[];
 }
 
@@ -388,7 +386,20 @@ export interface AssetActivity {
 /**
  * Fetches all activities for an asset
  */
-export const getAllAssetActivities = async (assetId: string, symbolOverride?: string): Promise<AssetActivity[]> => {
+export const getAllAssetActivities = async (
+  assetId: string,
+  symbolOverride?: string,
+  chainIdFilter?: number | string,
+): Promise<AssetActivity[]> => {
+  // Ticker collisions across chains are the norm, so when we know the chain a
+  // transaction on another chain is never this asset's history.
+  const wantChain = Number(chainIdFilter);
+  const chainMatches = (tx: any) => {
+    if (!Number.isFinite(wantChain)) return true;
+    const txChain = Number(tx.chainId ?? tx.chain_id ?? NaN);
+    return !Number.isFinite(txChain) || txChain === wantChain;
+  };
+
   try {
     // Use the symbol override to avoid circular dependency with fetchAssetDetail
     const symbol = symbolOverride?.toUpperCase() || assetId.toUpperCase();
@@ -416,6 +427,8 @@ export const getAllAssetActivities = async (assetId: string, symbolOverride?: st
         const txSymbol = (tx.tokenSymbol || '').toUpperCase();
         const txAddress = (tx.tokenAddress || '').toLowerCase();
         const searchAddr = assetId.toLowerCase();
+
+        if (!chainMatches(tx)) return false;
 
         return txSymbol === symbol ||
           txAddress === searchAddr ||
@@ -450,6 +463,8 @@ export const getAllAssetActivities = async (assetId: string, symbolOverride?: st
           const txSymbol = (tx.tokenSymbol || '').toUpperCase();
           const txAddress = (tx.tokenAddress || '').toLowerCase();
           const searchAddr = assetId.toLowerCase();
+
+          if (!chainMatches(tx)) return false;
 
           return (symbol && txSymbol === symbol) ||
             txAddress === searchAddr ||
@@ -543,38 +558,70 @@ const getPortfolioData = async (): Promise<PortfolioItem[]> => {
   return mockPortfolio;
 };
 
-const generateChartData = (points: number, trend: 'up' | 'down', basePrice: number, variation: number): ChartDataPoint[] => {
-  const data: ChartDataPoint[] = [];
-  const now = Date.now();
-  const interval = 86400000 / points;
-
-  for (let i = 0; i < points; i++) {
-    const timestamp = now - (points - i) * interval;
-    const noise = (Math.random() - 0.5) * 0.05;
-    const trendValue = trend === 'up'
-      ? basePrice * (1 + (i / points) * variation + noise)
-      : basePrice * (1 - (i / points) * Math.abs(variation) + noise);
-
-    data.push({
-      timestamp,
-      value: Math.max(trendValue, basePrice * 0.5),
-    });
-  }
-
-  return data;
-};
 
 // Cache for fetchAssetDetail to prevent repeated API calls
 const assetDetailCache: Map<string, { data: AssetDetail; timestamp: number }> = new Map();
 const ASSET_DETAIL_CACHE_TTL = 30000; // 30 seconds
 
 /**
+ * Every balance the active wallet holds, across every ecosystem it has a
+ * derived address for — the same server route the wallet screen uses. Falls
+ * back to the single-address Nexxend read if the portfolio route is down.
+ */
+const fetchAllBalancesForActiveWallet = async (activeAddress: string): Promise<any[]> => {
+  const { activeGroupId, walletGroups } = useWalletStore.getState();
+  const group = walletGroups.find(g => g.id === activeGroupId);
+  const a = group?.addresses;
+
+  if (a) {
+    try {
+      const resp = await api.portfolio.get({
+        addresses: {
+          EVM: a.EVM && /^0x[a-fA-F0-9]{40}$/.test(a.EVM) ? a.EVM : undefined,
+          SOLANA: a.SOLANA || undefined,
+          TRON: a.TRON || undefined,
+          TON: a.TON || undefined,
+          COSMOS: a.COSMOS || undefined,
+          OSMOSIS: a.OSMOSIS || undefined,
+          SUI: a.SUI || undefined,
+          APTOS: a.APTOS || undefined,
+          BITCOIN: a.BITCOIN || undefined,
+          STARKNET: a.STARKNET || undefined,
+          LITECOIN: a.LITECOIN || undefined,
+          DOGECOIN: a.DOGECOIN || undefined,
+          BITCOINCASH: a.BITCOINCASH || undefined,
+          STACKS: a.STACKS || undefined,
+        },
+      });
+      if (Array.isArray(resp?.balances) && resp.balances.length > 0) {
+        return resp.balances.map(normalizeSolanaBalanceRow);
+      }
+    } catch (e: any) {
+      console.warn('[fetchAssetDetail] portfolio route failed, falling back:', e?.message);
+    }
+  }
+
+  const resp = await api.wallet.balances({ address: activeAddress }) as any;
+  const rows = Array.isArray(resp?.balances) ? resp.balances : (Array.isArray(resp) ? resp : []);
+  // Same on-device repair the wallet list does: older backends report a lamport
+  // balance under the wrapped-SOL mint.
+  return rows.map(normalizeSolanaBalanceRow);
+};
+
+/**
  * Fetches detailed asset information by ID
  * Returns asset-specific data based on the assetId
+ *
+ * `chainId` is REQUIRED to identify a token — an address alone does not. The
+ * same address string is a different token on different chains (forks share
+ * address spaces: Solana and Fogo both mint their wrapped native at
+ * `So111…112`), so matching a held balance on address alone returned whichever
+ * chain's row happened to come first in the response and renamed the asset.
  */
-export const fetchAssetDetail = async (assetId: string): Promise<AssetDetail> => {
-  // Check cache first
-  const cached = assetDetailCache.get(assetId);
+export const fetchAssetDetail = async (assetId: string, chainId?: number | string): Promise<AssetDetail> => {
+  // Cache per (asset, chain) for the same reason.
+  const cacheKey = `${assetId}::${chainId ?? 'any'}`;
+  const cached = assetDetailCache.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < ASSET_DETAIL_CACHE_TTL) {
     return cached.data;
   }
@@ -591,24 +638,41 @@ export const fetchAssetDetail = async (assetId: string): Promise<AssetDetail> =>
       // Use current address
       const activeAddress = useWalletStore.getState().address;
       if (activeAddress) {
-        // Parse address from chainId-address format if needed
-        const searchAddr = assetId.includes('-') ? assetId.split('-')[1].toLowerCase() : assetId.toLowerCase();
+        // Parse address from chainId-address format if needed. When the id
+        // carries the chain, it wins over the argument.
+        const hasChainPrefix = assetId.includes('-') && /^\d+$/.test(assetId.split('-')[0]);
+        const searchAddr = (hasChainPrefix ? assetId.split('-').slice(1).join('-') : assetId).toLowerCase();
+        const searchChain = hasChainPrefix ? Number(assetId.split('-')[0]) : Number(chainId);
 
-        // Fetch all balances to find this specific one (most robust way)
-        const resp = await api.wallet.balances({ address: activeAddress }) as any;
-        const balances = Array.isArray(resp?.balances) ? resp.balances : (Array.isArray(resp) ? resp : []);
+        // Fetch all balances to find this specific one. Go through the portfolio
+        // route with the wallet's FULL address set — `wallet.balances` takes a
+        // single address, and passing the EVM one meant no Solana/TON/TRON/…
+        // holding was ever found here (every non-EVM asset fell through to the
+        // fallback below).
+        const balances = await fetchAllBalancesForActiveWallet(activeAddress);
 
-        const realAsset = balances.find((b: any) =>
+        const addressMatches = (b: any) =>
           b.address?.toLowerCase() === searchAddr ||
-          (searchAddr === 'native' && (b.address?.toLowerCase() === '0x0000000000000000000000000000000000000000' || !b.address))
-        );
+          (searchAddr === 'native' && (b.address?.toLowerCase() === '0x0000000000000000000000000000000000000000' || !b.address));
+        // Some entry points route by SYMBOL, not address (the price-alert push
+        // deep link pushes `/asset/<SYMBOL>`). Those used to match nothing and
+        // land on the mock-ETH fallback, i.e. the alert opened the wrong token.
+        const symbolMatches = (b: any) =>
+          !!b.symbol && b.symbol.toUpperCase() === assetId.toUpperCase();
+        const chainMatches = (b: any) =>
+          !Number.isFinite(searchChain) || Number(b.chainId) === searchChain;
+
+        // Chain-scoped first; only fall back to a chain-agnostic match when the
+        // caller gave us no chain at all (legacy deep links).
+        const realAsset =
+          balances.find((b: any) => addressMatches(b) && chainMatches(b)) ||
+          balances.find((b: any) => symbolMatches(b) && chainMatches(b));
 
         if (realAsset) {
           const chg24h = parseFloat(realAsset.priceChange24h || '0');
           const isPositive = chg24h >= 0;
-          const activities = await getAllAssetActivities(assetId, realAsset.symbol);
+          const activities = await getAllAssetActivities(assetId, realAsset.symbol, realAsset.chainId);
           const price = parseFloat(realAsset.priceUSD || '0') || 1;
-          const variation = Math.abs(chg24h) / 100;
 
           const detail: AssetDetail = {
             id: assetId,
@@ -623,17 +687,9 @@ export const fetchAssetDetail = async (assetId: string): Promise<AssetDetail> =>
             chainId: realAsset.chainId as any,
             address: realAsset.address,
             decimals: realAsset.decimals || 18,
-            chartData: {
-              '1D': generateChartData(48, isPositive ? 'up' : 'down', price, variation),
-              '1W': generateChartData(70, isPositive ? 'up' : 'down', price, variation * 2),
-              '1M': generateChartData(100, isPositive ? 'up' : 'down', price, variation * 4),
-              '1Y': generateChartData(150, isPositive ? 'up' : 'down', price, variation * 10),
-              '5Y': generateChartData(200, isPositive ? 'up' : 'down', price, variation * 20),
-              'All': generateChartData(250, isPositive ? 'up' : 'down', price, variation * 30),
-            },
             activities: activities,
           };
-          assetDetailCache.set(assetId, { data: detail, timestamp: Date.now() });
+          assetDetailCache.set(cacheKey, { data: detail, timestamp: Date.now() });
           return detail;
         }
       }
@@ -641,28 +697,24 @@ export const fetchAssetDetail = async (assetId: string): Promise<AssetDetail> =>
       console.error("[fetchAssetDetail] Failed to fetch real asset detail:", e);
     }
 
-    // FINAL FALLBACK: Mock ETH
+    // FINAL FALLBACK: the balance lookup found nothing for this (chain, address).
+    // Return an EMPTY shell that keeps the requested identity — the old fallback
+    // claimed the asset was ETH at $1,800 with a fabricated chart, which then
+    // merged into whatever token the user was actually looking at.
+    const fallbackAddr = assetId.includes('-') ? assetId.split('-').slice(1).join('-') : assetId;
     return {
       id: assetId,
-      symbol: 'ETH',
-      name: 'Ethereum',
-      logo: 'https://www.figma.com/api/mcp/asset/142d5172-a920-40ef-a06c-8e381f587e81',
-      balance: '0.00',
+      symbol: '',
+      name: '',
+      logo: '',
+      balance: '0',
       usdValue: '$0.00',
       change24h: 0,
       change24hAmount: '0.00%',
-      priceUSD: '1800.00',
-      chainId: 'ethereum',
-      address: 'native',
+      priceUSD: '0',
+      chainId: (chainId as any) ?? ('ethereum' as any),
+      address: fallbackAddr,
       decimals: 18,
-      chartData: {
-        '1D': generateChartData(48, 'up', 1800, 0.02),
-        '1W': generateChartData(70, 'up', 1800, 0.05),
-        '1M': generateChartData(100, 'up', 1800, 0.1),
-        '1Y': generateChartData(150, 'up', 1800, 0.2),
-        '5Y': generateChartData(200, 'up', 1800, 0.5),
-        'All': generateChartData(250, 'up', 1800, 0.8),
-      },
       activities: [],
     };
   }
@@ -670,7 +722,6 @@ export const fetchAssetDetail = async (assetId: string): Promise<AssetDetail> =>
   // Use the portfolio asset data
   const isPositive = portfolioAsset.change24h > 0;
   const basePrice = parseFloat((portfolioAsset.usdValue || '0').replace(/[$,]/g, '')) || 10000;
-  const variation = Math.abs(portfolioAsset.change24h) / 100;
   const activities = await getAllAssetActivities(portfolioAsset.id, portfolioAsset.symbol);
 
   // Format change24h amount
@@ -691,14 +742,6 @@ export const fetchAssetDetail = async (assetId: string): Promise<AssetDetail> =>
     chainId: portfolioAsset.chainId, // Preserve chain information from portfolio
     address: portfolioAsset.address,
     decimals: portfolioAsset.decimals,
-    chartData: {
-      '1D': generateChartData(48, isPositive ? 'up' : 'down', basePrice, variation),
-      '1W': generateChartData(70, isPositive ? 'up' : 'down', basePrice, variation * 2),
-      '1M': generateChartData(100, isPositive ? 'up' : 'down', basePrice, variation * 4),
-      '1Y': generateChartData(150, isPositive ? 'up' : 'down', basePrice, variation * 10),
-      '5Y': generateChartData(200, isPositive ? 'up' : 'down', basePrice, variation * 20),
-      'All': generateChartData(250, isPositive ? 'up' : 'down', basePrice, variation * 30),
-    },
     activities,
   };
 };
