@@ -244,18 +244,6 @@ export default function HomeScreen() {
               <SpotlightSection
                 tokens={homeData.spotlight}
                 isLoading={isLoadingSpotlight}
-                onTokenPress={(token) => {
-                  const marketId = token.pair || token.symbol;
-                  router.push({
-                    pathname: `/market/spot/${marketId}` as any,
-                    params: {
-                      symbol: marketId,
-                      address: (token as any).address,
-                      chainId: (token as any).chainId || 56,
-                      provider: 'onchain'
-                    }
-                  });
-                }}
               />
             )}
             <MarketSection />

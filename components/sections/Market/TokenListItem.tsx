@@ -13,7 +13,8 @@ const TWC_ADDRESS_LOWER = '0xda1060158f7d593667cce0a15db346bb3ffb3596';
 
 interface TokenListItemProps {
     token: MarketAsset & { displaySymbol?: string; priceUSD?: string; marketCapRank?: number };
-    onPress: () => void;
+    /** Omitted where the row is display-only — the token detail screen was removed. */
+    onPress?: () => void;
 }
 
 export const TokenListItem = React.memo(({ token, onPress }: TokenListItemProps) => {
@@ -26,8 +27,9 @@ export const TokenListItem = React.memo(({ token, onPress }: TokenListItemProps)
 
     return (
         <TouchableOpacity
-            activeOpacity={0.8}
+            activeOpacity={onPress ? 0.8 : 1}
             onPress={onPress}
+            disabled={!onPress}
             style={styles.tokenItem}
         >
             {/* Left Side - Token Info */}

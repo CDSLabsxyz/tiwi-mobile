@@ -96,7 +96,7 @@ export async function fetchSwapQuote(
         throw new Error('Invalid amount');
     }
 
-    const { selectedGasTokenType, isAutoSlippage } = useSwapStore.getState();
+    const { selectedGasTokenType, isAutoSlippage, pinnedPoolAddress, preferredRouter } = useSwapStore.getState();
 
     // Addresses are only sent when they're valid on the relevant chain — a
     // 0x… "recipient" on a Solana route makes the backend quote for an address
@@ -159,6 +159,13 @@ export async function fetchSwapQuote(
         // Tiered gas-token tax only for BSC-internal swaps; cross-chain from BSC
         // uses the standard tier (the relayer can't handle cross-chain).
         gasTokenType: isBscOnlySwap(fromToken, toToken) ? selectedGasTokenType : GasTokenType.BNB,
+        // Deep-linked from a TIWI pool page: force the swap through that exact
+        // TiwiLiquidityPair instead of letting the aggregators pick a market.
+        // The backend re-checks that the pair really trades this token pair and
+        // falls back to normal routing if not, so this can only ever narrow.
+        ...(pinnedPoolAddress && preferredRouter
+            ? { poolAddress: pinnedPoolAddress, preferredRouter }
+            : {}),
     };
 
     const response: any = await api.route.get(routeReq, { signal: options?.signal });

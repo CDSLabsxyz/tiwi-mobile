@@ -26,7 +26,6 @@ import {
     createPublicClient,
     decodeEventLog,
     encodeFunctionData,
-    http,
     parseUnits,
     type Address,
     type Hash,
@@ -36,11 +35,19 @@ import { useAccount, useSendTransaction, useSwitchChain } from 'wagmi';
 import { api } from '@/lib/mobile/api-client';
 import { signerController } from '@/services/signer/SignerController';
 import { useWalletStore } from '@/store/walletStore';
-import { RPC_CONFIG, RPC_TRANSPORT_OPTIONS } from '@/constants/rpc';
+import { createTransportForChain } from '@/constants/rpc';
 
 const CHAIN_MAP: Record<number, any> = {
     1: mainnet, 56: bsc, 137: polygon, 42161: arbitrum, 8453: base, 10: optimism, 43114: avalanche,
 };
+
+/**
+ * Gas limit for a batched `createPool` — the one call we can't estimate, because
+ * it's broadcast before its approve has mined. A real BSC creation with a
+ * fee-on-transfer reward token (TWC) used 1,912,180, so this is ~1.8x headroom.
+ * Unused gas is refunded; only the wallet's BNB balance has to cover the limit.
+ */
+const CREATE_POOL_GAS_LIMIT = 3_500_000n;
 
 export const CHAIN_NAMES: Record<number, string> = {
     1: 'Ethereum', 56: 'BNB Smart Chain', 137: 'Polygon', 42161: 'Arbitrum',
@@ -123,10 +130,22 @@ export interface PayCreationFeeParams {
 
 export type CreatePoolStatus = 'idle' | 'building' | 'approving' | 'creating' | 'paying' | 'error';
 
+/**
+ * Two fixes for how long "Deploying & funding pool…" hung:
+ *  - `pollingInterval`. viem defaults to 4s between receipt polls, so on BSC
+ *    (sub-second blocks) each of the two txs sat idle for most of its wait. The
+ *    tx isn't slow; the polling was.
+ *  - Transport. This built a bare single-endpoint `http(RPC_CONFIG[chainId])`,
+ *    which has no failover — one 429 or timeout from that provider stalls every
+ *    poll until the wait gives up. The shared health-ranked fallback rotates.
+ */
 function publicClientFor(chainId: number) {
     const chain = CHAIN_MAP[chainId] || bsc;
-    const rpc = RPC_CONFIG?.[chainId];
-    return createPublicClient({ chain, transport: rpc ? http(rpc, RPC_TRANSPORT_OPTIONS) : http() });
+    return createPublicClient({
+        chain,
+        transport: createTransportForChain(chainId),
+        pollingInterval: 500,
+    });
 }
 
 export function useStakingDeployer() {
@@ -176,7 +195,7 @@ export function useStakingDeployer() {
         step: { to: string; data: string; value?: string; chainId: number; label?: string },
         signerAddress: Address,
         isLocal: boolean,
-        opts?: { skipAuthorize?: boolean },
+        opts?: { skipAuthorize?: boolean; nonce?: number; gasLimit?: bigint; wait?: boolean },
     ): Promise<{ hash: Hash; receipt: any }> => {
         let hash: Hash;
         if (isLocal) {
@@ -187,6 +206,8 @@ export function useStakingDeployer() {
                     data: step.data,
                     value: step.value || '0',
                     chainId: step.chainId,
+                    nonce: opts?.nonce,
+                    gasLimit: opts?.gasLimit ? String(opts.gasLimit) : undefined,
                 },
                 signerAddress,
                 { skipAuthorize: !!opts?.skipAuthorize },
@@ -206,8 +227,12 @@ export function useStakingDeployer() {
                 data: step.data as `0x${string}`,
                 value: BigInt(step.value || '0'),
                 chainId: step.chainId,
+                nonce: opts?.nonce,
+                gas: opts?.gasLimit,
             });
         }
+
+        if (opts?.wait === false) return { hash, receipt: null };
 
         const receipt = await publicClientFor(step.chainId).waitForTransactionReceipt({ hash });
         if (receipt?.status === 'reverted') {
@@ -242,6 +267,28 @@ export function useStakingDeployer() {
 
             const deployerAddress = String((meta as any)?.deployerAddress || '').toLowerCase();
 
+            // Broadcast the whole batch back-to-back under explicit sequential
+            // nonces and wait for the LAST receipt only. Waiting for the approve to
+            // mine before even signing the create added a full block-plus-poll to
+            // every first-time creation; nonce ordering already guarantees the
+            // approve executes first. Consequence: createPool can't be gas-estimated
+            // while the allowance is still short (the estimate reverts), so the
+            // batched create carries an explicit limit — see CREATE_POOL_GAS_LIMIT.
+            const batched = steps.length > 1;
+            let baseNonce: number | undefined;
+            if (batched) {
+                try {
+                    baseNonce = await publicClientFor(params.chainId).getTransactionCount({
+                        address: signerAddress,
+                        blockTag: 'pending',
+                    });
+                } catch (e) {
+                    // No nonce ⇒ fall back to the old one-at-a-time behaviour.
+                    console.warn('[useStakingDeployer] nonce read failed; sending steps serially', e);
+                }
+            }
+            const canBatch = batched && typeof baseNonce === 'number';
+
             let lastReceipt: any = null;
             let lastHash: Hash | null = null;
             for (let i = 0; i < steps.length; i++) {
@@ -250,7 +297,12 @@ export function useStakingDeployer() {
                 // One biometric prompt covers the batch — authorize on the final
                 // (create) step only.
                 const { hash, receipt } = await signAndSend(
-                    steps[i], signerAddress, isLocal, { skipAuthorize: !isCreateStep },
+                    steps[i], signerAddress, isLocal, {
+                        skipAuthorize: !isCreateStep,
+                        nonce: canBatch ? (baseNonce as number) + i : undefined,
+                        gasLimit: canBatch && isCreateStep ? CREATE_POOL_GAS_LIMIT : undefined,
+                        wait: isCreateStep,
+                    },
                 );
                 lastHash = hash;
                 lastReceipt = receipt;

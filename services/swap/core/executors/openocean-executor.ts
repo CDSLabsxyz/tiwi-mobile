@@ -91,7 +91,7 @@ export class OpenOceanExecutor implements SwapRouterExecutor {
       }
 
       if (allowance < neededWei) {
-        onStatusUpdate?.({ stage: 'approving', message: 'Approve token to continue...' });
+        onStatusUpdate?.({ stage: 'approving', message: 'Approving token...' });
         // Approve max/infinite so this (token, spender) pair is only ever signed once.
         // The swap still moves exactly `neededWei` (bounded by the pre-built swap calldata).
         const approveData = encodeFunctionData({
@@ -124,7 +124,7 @@ export class OpenOceanExecutor implements SwapRouterExecutor {
     }
 
     // ── Send the pre-built swap tx ──
-    onStatusUpdate?.({ stage: 'signing', message: 'Confirm swap in your wallet...' });
+    onStatusUpdate?.({ stage: 'signing', message: 'Confirming swap in your wallet...' });
     const hash = await walletClient.sendTransaction({
       to: tx.to as Address,
       data: tx.data as Hex,

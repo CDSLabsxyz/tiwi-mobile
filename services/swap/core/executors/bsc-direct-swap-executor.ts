@@ -366,7 +366,7 @@ export class BscDirectSwapExecutor implements SwapRouterExecutor {
       // This is 2 txs but user only sees one confirmation flow
       onStatusUpdate?.({
         stage: 'signing',
-        message: 'Confirm in wallet',
+        message: 'Confirming in wallet...',
       });
 
       // 5a. Tax transfer (use actualTax which accounts for balance-deducted scenarios).

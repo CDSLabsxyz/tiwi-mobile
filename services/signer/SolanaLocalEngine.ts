@@ -28,6 +28,23 @@ export class SolanaLocalEngine implements SignerEngine {
         this.connection = new Connection(rpcUrl, 'confirmed');
     }
 
+    /**
+     * The app's shared, probed Solana endpoint — the same one callers build
+     * transactions against. Broadcasting on this engine's own hardcoded
+     * `api.mainnet-beta.solana.com` while the caller fetched its blockhash from
+     * the configured (Helius) endpoint meant preflight ran on a node that had
+     * never seen that blockhash, which surfaces as a bare "Transaction
+     * simulation failed" with no logs. Falls back to the constructor endpoint.
+     */
+    private async getConnection(): Promise<Connection> {
+        try {
+            const { getSolanaConnection } = await import('@/services/swap/core/utils/wallet-helpers');
+            return await getSolanaConnection();
+        } catch {
+            return this.connection;
+        }
+    }
+
     private async authenticate() {
         const securityStore = useSecurityStore.getState();
         if (securityStore.isBiometricsEnabled) {
@@ -139,6 +156,34 @@ export class SolanaLocalEngine implements SignerEngine {
         }
     }
 
+    /**
+     * Broadcast, translating web3.js's `SendTransactionError` into something a
+     * user can act on. Its default message is just "Transaction simulation
+     * failed" with an empty log array whenever preflight fails *before* any
+     * program runs — an unfunded fee payer, an unknown blockhash — so pull the
+     * real reason out of `getLogs()` / the error cause instead of showing that.
+     */
+    private async sendRaw(connection: Connection, raw: Uint8Array): Promise<string> {
+        try {
+            return await connection.sendRawTransaction(raw);
+        } catch (error: any) {
+            let detail = '';
+            try {
+                const logs = await error?.getLogs?.(connection);
+                if (Array.isArray(logs) && logs.length) detail = logs[logs.length - 1];
+            } catch {
+                /* log fetch is best-effort */
+            }
+            const reason = String(error?.transactionError?.message || error?.message || '');
+            if (!detail && /debit an account|insufficient lamports|insufficient funds/i.test(reason)) {
+                detail = 'The wallet has no SOL to pay the network fee.';
+            } else if (!detail && /blockhash not found/i.test(reason)) {
+                detail = 'The transaction expired before it reached the network. Try again.';
+            }
+            throw new Error(detail ? `${reason || 'Transaction failed'} — ${detail}` : (reason || 'Transaction failed'));
+        }
+    }
+
     async sendTransaction(tx: TransactionRequest, address: string, options?: { skipAuthorize?: boolean }): Promise<ExecutionResult> {
         try {
             if (!options?.skipAuthorize) {
@@ -146,24 +191,28 @@ export class SolanaLocalEngine implements SignerEngine {
             }
 
             const keypair = await this.getKeypair(address);
+            const connection = await this.getConnection();
 
             // If tx.data contains a serialized transaction, sign and send it
             if (tx.data && tx.data.length > 10) {
                 const txBuffer = Buffer.from(tx.data, 'base64');
 
-                let signature: string;
+                // Parse first, THEN send. Wrapping the send in the same try as the
+                // versioned parse meant a failed broadcast fell through to the
+                // legacy branch and broadcast a second time — a double-send risk,
+                // and the second failure masked the first one's reason.
+                let raw: Uint8Array;
                 try {
-                    // Try Versioned transaction first
                     const vTx = VersionedTransaction.deserialize(txBuffer);
                     vTx.sign([keypair]);
-                    signature = await this.connection.sendRawTransaction(vTx.serialize());
+                    raw = vTx.serialize();
                 } catch {
-                    // Fallback to legacy
                     const legacyTx = Transaction.from(txBuffer);
                     legacyTx.sign(keypair);
-                    signature = await this.connection.sendRawTransaction(legacyTx.serialize());
+                    raw = legacyTx.serialize();
                 }
 
+                const signature = await this.sendRaw(connection, raw);
                 return { hash: signature, status: 'success' };
             }
 
@@ -177,12 +226,12 @@ export class SolanaLocalEngine implements SignerEngine {
                 })
             );
 
-            const { blockhash } = await this.connection.getLatestBlockhash();
+            const { blockhash } = await connection.getLatestBlockhash();
             transaction.recentBlockhash = blockhash;
             transaction.feePayer = keypair.publicKey;
             transaction.sign(keypair);
 
-            const signature = await this.connection.sendRawTransaction(transaction.serialize());
+            const signature = await this.sendRaw(connection, transaction.serialize());
             return { hash: signature, status: 'success' };
         } catch (error: any) {
             console.warn('[SolanaLocalEngine] Execution failed:', error.message);

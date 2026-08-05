@@ -83,13 +83,6 @@ const allActions: MoreAction[] = [
         category: 'recommended',
     },
     {
-        id: 'tiwiflix',
-        label: 'TiwiFlix',
-        icon: require('../assets/dapp-icons/tiwiflix.svg'),
-        route: browserRoute(ECOSYSTEM_LINKS.tiwiflix),
-        category: 'recommended',
-    },
-    {
         id: 'extension',
         label: 'Extension',
         icon: 'extension-puzzle-outline',

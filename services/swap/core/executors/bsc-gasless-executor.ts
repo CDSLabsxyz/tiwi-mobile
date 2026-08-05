@@ -521,7 +521,7 @@ export class BscGaslessExecutor implements SwapRouterExecutor {
       // 6. Request user signature (THIS IS FREE - no gas!)
       onStatusUpdate?.({
         stage: 'signing',
-        message: 'Confirm in wallet',
+        message: 'Confirming in wallet...',
       });
 
       const signature = await this.signSwapRequest(activeWallet, userAddress as Address, swapRequest, routerCalldata);

@@ -3,11 +3,13 @@
  *
  * One job, stated bluntly: turn a wrapped token back into the chain's native
  * coin. There is no destination picker — the output is always the native coin,
- * 1:1. Solana can only close the whole wSOL account, so the amount is locked to
- * the full balance there and the sheet says so.
+ * 1:1. Every chain takes a partial amount, including Solana: SPL has no partial
+ * unwrap, so the service expresses it as close-then-re-wrap in one transaction
+ * (see unwrapService) and the note under the amount says so.
  */
 
 import { colors } from '@/constants/colors';
+import { formatNumberInput, parseNumberInput } from '@/utils/formatting';
 import type { WrappedNativeInfo } from '@/constants/wrappedNatives';
 import { useUnwrap } from '@/hooks/useUnwrap';
 import { getTokenLogo } from '@/services/tokenLogoService';
@@ -162,14 +164,16 @@ export const UnwrapSheet: React.FC<UnwrapSheetProps> = ({ visible, info, logoURI
         }
     }, [visible, info?.address, reset]);
 
-    // Solana always unwraps everything — keep the field in sync with the balance.
+    // Solana defaults to the whole balance (the common case — close the account
+    // and be done), but the amount is editable like every other chain.
     useEffect(() => {
-        if (visible && isSolana) setAmount(balance.formatted);
+        if (visible && isSolana && !amount) setAmount(balance.formatted);
+        // Seeding only — re-running on `amount` would fight the user's typing.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [visible, isSolana, balance.formatted]);
 
     const amountWei = useMemo(() => {
         if (!info) return 0n;
-        if (isSolana) return balance.raw;
         const cleaned = amount.replace(/,/g, '').trim();
         if (!cleaned || Number.isNaN(Number(cleaned))) return 0n;
         try {
@@ -177,7 +181,7 @@ export const UnwrapSheet: React.FC<UnwrapSheetProps> = ({ visible, info, logoURI
         } catch {
             return 0n;
         }
-    }, [amount, info, isSolana, balance.raw]);
+    }, [amount, info]);
 
     const exceedsBalance = amountWei > balance.raw;
     const canSubmit = !!info && !!owner && amountWei > 0n && !exceedsBalance && !isPending;
@@ -217,7 +221,9 @@ export const UnwrapSheet: React.FC<UnwrapSheetProps> = ({ visible, info, logoURI
     if (!info) return null;
 
     const receiveAmount = amountWei > 0n ? trimAmount(formatUnits(amountWei, info.decimals)) : '0';
-    const amountFieldValue = isSolana ? trimAmount(balance.formatted) : amount;
+    const amountFieldValue = amount;
+    // A Solana partial unwrap re-wraps what's left, so the copy has to change.
+    const solanaPartial = isSolana && amountWei > 0n && amountWei < balance.raw;
     const explorerRoot = EXPLORERS[info.chainId];
     const explorerUrl = explorerRoot && txHash ? `${explorerRoot}${txHash}` : undefined;
     // The caller's logo can be missing or dead; fall back to the shared resolver,
@@ -316,42 +322,40 @@ export const UnwrapSheet: React.FC<UnwrapSheetProps> = ({ visible, info, logoURI
                                     // A full-precision "Max" on an 18-decimal token
                                     // is still long — step the size down so it fits
                                     // instead of running under the symbol.
-                                    style={[styles.input, amountFieldValue.length > 13 && styles.inputCompact]}
-                                    value={amountFieldValue}
+                                    // Measure the string that is actually rendered —
+                                    // grouping separators take up width too.
+                                    style={[styles.input, formatNumberInput(amountFieldValue).length > 13 && styles.inputCompact]}
+                                    value={formatNumberInput(amountFieldValue)}
                                     onChangeText={(t) => {
-                                        setAmount(t.replace(/[^0-9.]/g, ''));
+                                        setAmount(parseNumberInput(t));
                                         setActivePercent(null);
                                     }}
                                     placeholder="0"
                                     placeholderTextColor={colors.mutedText}
                                     keyboardType="decimal-pad"
-                                    editable={!isSolana && !isPending}
+                                    editable={!isPending}
                                 />
                                 <Text style={styles.symbolText}>{info.wrappedSymbol}</Text>
                             </View>
 
-                            {/* Solana can only close the whole account, so a
-                                partial split would be a lie there. */}
-                            {!isSolana && (
-                                <View style={styles.percentRow}>
-                                    {PERCENT_PRESETS.map((preset) => {
-                                        const active = activePercent === preset.value;
-                                        return (
-                                            <TouchableOpacity
-                                                key={preset.value}
-                                                style={[styles.percentChip, active && styles.percentChipActive]}
-                                                onPress={() => handlePercent(preset.value)}
-                                                disabled={isPending}
-                                                activeOpacity={0.85}
-                                            >
-                                                <Text style={[styles.percentText, active && styles.percentTextActive]}>
-                                                    {preset.label}
-                                                </Text>
-                                            </TouchableOpacity>
-                                        );
-                                    })}
-                                </View>
-                            )}
+                            <View style={styles.percentRow}>
+                                {PERCENT_PRESETS.map((preset) => {
+                                    const active = activePercent === preset.value;
+                                    return (
+                                        <TouchableOpacity
+                                            key={preset.value}
+                                            style={[styles.percentChip, active && styles.percentChipActive]}
+                                            onPress={() => handlePercent(preset.value)}
+                                            disabled={isPending}
+                                            activeOpacity={0.85}
+                                        >
+                                            <Text style={[styles.percentText, active && styles.percentTextActive]}>
+                                                {preset.label}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    );
+                                })}
+                            </View>
                         </View>
 
                         <View style={styles.arrowWrap}>
@@ -372,9 +376,11 @@ export const UnwrapSheet: React.FC<UnwrapSheetProps> = ({ visible, info, logoURI
                         </View>
 
                         <Text style={styles.note}>
-                            {isSolana
-                                ? `Solana unwraps the full balance — your entire ${info.wrappedSymbol} account is closed and returned as ${info.nativeSymbol}.`
-                                : `1 ${info.wrappedSymbol} = 1 ${info.nativeSymbol}. Only a network fee applies.`}
+                            {solanaPartial
+                                ? `1 ${info.wrappedSymbol} = 1 ${info.nativeSymbol}. Solana has no partial unwrap, so this closes your ${info.wrappedSymbol} account and re-wraps the remaining ${trimAmount(formatUnits(balance.raw - amountWei, info.decimals))} ${info.wrappedSymbol} in the same transaction. The account rent comes back and is paid straight in again — you only pay the network fee.`
+                                : isSolana
+                                    ? `1 ${info.wrappedSymbol} = 1 ${info.nativeSymbol}. Your entire ${info.wrappedSymbol} account is closed and returned as ${info.nativeSymbol}.`
+                                    : `1 ${info.wrappedSymbol} = 1 ${info.nativeSymbol}. Only a network fee applies.`}
                         </Text>
 
                         {(error || exceedsBalance) && (

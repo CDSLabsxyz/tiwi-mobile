@@ -593,7 +593,7 @@ export class MultiStepExecutor implements SwapRouterExecutor {
 
       onStatusUpdate?.({
         stage: 'signing',
-        message: 'Sign unwrap transaction...',
+        message: 'Signing unwrap transaction...',
       });
 
       const amountIn = BigInt(currentAmount);

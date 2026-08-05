@@ -13,8 +13,10 @@
  */
 import { type TokenOption } from '@/components/sections/Swap/TokenSelectSheet';
 import { UnifiedAssetSelectSheet } from '@/components/sections/Swap/UnifiedAssetSelectSheet';
+import { SwapKeyboard } from '@/components/sections/Swap/SwapKeyboard';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { colors } from '@/constants/colors';
+import { formatNumberInput, parseNumberInput } from '@/utils/formatting';
 import { Fonts } from '@/theme';
 import { RemoteIcon, resolveAssetUrl } from '@/components/liquidity/shared';
 import { bootstrapLiquidityAddresses, isLiquidityChainLive, LIQUIDITY_CHAIN_NAMES } from '@/constants/liquidity';
@@ -29,7 +31,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { type Address } from 'viem';
+import { formatUnits, parseUnits, type Address } from 'viem';
 
 const FEE_LEVELS = [
   { label: '0.01%', bps: 1 },
@@ -39,6 +41,16 @@ const FEE_LEVELS = [
 ];
 const RANGE_PRESETS = [10, 20, 50];
 const DEPOSIT_PERCENTS = [25, 50, 75, 100];
+
+/**
+ * A value the `numeric` columns will accept, or undefined. Anything the DB
+ * can't parse — "∞", "", a stray symbol — becomes undefined (→ NULL) rather
+ * than being posted and rejected.
+ */
+function finiteOrUndefined(value: string): string | undefined {
+  const n = parseFloat(value);
+  return Number.isFinite(n) ? String(n) : undefined;
+}
 
 /** Format a number as a plain decimal string — never scientific notation. */
 function toPlainDecimal(n: number): string {
@@ -99,6 +111,8 @@ export default function CreatePoolScreen() {
 
   const [priceLoading, setPriceLoading] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  /** Pool is live on-chain but its DB record didn't save — shown on stage 3. */
+  const [recordWarning, setRecordWarning] = useState<string | null>(null);
   const [result, setResult] = useState<{ pairAddress: string; lpTokens: string; tradable: boolean } | null>(null);
 
   // Deep-link prefill (once) + backend factory/router addresses.
@@ -131,12 +145,35 @@ export default function CreatePoolScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addingToExisting, params.pairAddress, tokenA?.address, tokenB?.address]);
 
-  const balanceOf = (t: WizToken | null): number => {
-    if (!t || !balancesData?.tokens) return 0;
-    const row = balancesData.tokens.find(
-      (x: any) => x.chainId === t.chainId && (x.address || '').toLowerCase() === t.address.toLowerCase(),
+  const balanceRowOf = (t: WizToken | null): any | undefined => {
+    if (!t || !balancesData?.tokens) return undefined;
+    return balancesData.tokens.find(
+      (x: any) => Number(x.chainId) === t.chainId && (x.address || '').toLowerCase() === t.address.toLowerCase(),
     );
+  };
+
+  /** Display only — a float can't hold an 18-significant-digit balance. */
+  const balanceOf = (t: WizToken | null): number => {
+    const row = balanceRowOf(t);
     return row ? parseFloat(row.balanceFormatted || row.balance || '0') : 0;
+  };
+
+  /**
+   * Exact on-chain balance in base units. Every amount that becomes a
+   * transferFrom MUST come from here, never from `balanceOf`: the API rounds
+   * `balanceFormatted` to ~16 significant digits, and parseUnits on that
+   * rounded value can land ABOVE the true balance (157127302.9869899 → …900
+   * vs a real …885). The transfer then reverts, and TWC reverts with no
+   * reason string, which surfaces as the useless "reverted with reason: 0x".
+   */
+  const rawBalanceOf = (t: WizToken | null): bigint | null => {
+    const raw = balanceRowOf(t)?.balance;
+    if (raw === undefined || raw === null || raw === '') return null;
+    try {
+      return BigInt(String(raw).split('.')[0]);
+    } catch {
+      return null;
+    }
   };
 
   const effectiveFeeBps = () => {
@@ -165,14 +202,50 @@ export default function CreatePoolScreen() {
 
   const setDepositPercent = (side: 'a' | 'b', pct: number) => {
     const t = side === 'a' ? tokenA : tokenB;
-    const bal = balanceOf(t);
-    const amt = ((bal * pct) / 100).toString();
+    // Take the percentage on the raw integer. Doing it in float and
+    // re-parsing rounds UP on long balances, so "Max" asked for a few base
+    // units more than the wallet held and every Max deposit reverted.
+    const raw = rawBalanceOf(t);
+    const amt = raw !== null
+      ? formatUnits((raw * BigInt(pct)) / 100n, t?.decimals ?? 18)
+      : ((balanceOf(t) * pct) / 100).toString();
     if (side === 'a') { setAmountA(amt); if (poolRatio > 0) setAmountB((parseFloat(amt) * poolRatio).toString()); }
     else { setAmountB(amt); if (poolRatio > 0) setAmountA((parseFloat(amt) / poolRatio).toString()); }
   };
 
   const onAmountA = (v: string) => { setAmountA(v); if (poolRatio > 0 && v) setAmountB((parseFloat(v) * poolRatio).toString()); };
   const onAmountB = (v: string) => { setAmountB(v); if (poolRatio > 0 && v) setAmountA((parseFloat(v) / poolRatio).toString()); };
+
+  // Deposit amounts use the app's own numpad (same as Swap / Send / Stake)
+  // instead of the OS keyboard, so the sheet's 25/50/75/Max pills and the
+  // 6-decimal cap apply here too. `keypadFor` doubles as the visibility flag.
+  const [keypadFor, setKeypadFor] = useState<'a' | 'b' | null>(null);
+  const scrollViewRef = React.useRef<ScrollView>(null);
+
+  // Lift the card clear of the sheet, exactly as the swap screen does.
+  useEffect(() => {
+    if (!keypadFor) return;
+    const timer = setTimeout(() => {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }, 50);
+    return () => clearTimeout(timer);
+  }, [keypadFor]);
+
+  const handleKeypadPress = (key: string) => {
+    if (!keypadFor) return;
+    const current = keypadFor === 'a' ? amountA : amountB;
+    const apply = keypadFor === 'a' ? onAmountA : onAmountB;
+
+    if (key === 'CLEAR') return apply('');
+    if (key === 'DELETE') return apply(current.slice(0, -1));
+    if (key === '.' && current.includes('.')) return;
+    if (key === '.' && !current) return apply('0.');
+    if (current.includes('.')) {
+      const [, dec] = current.split('.');
+      if (dec && dec.length >= 6) return;
+    }
+    apply(current + key);
+  };
 
   const setRangeFromPercent = (pct: number) => {
     setRangeMode('custom');
@@ -243,11 +316,32 @@ export default function CreatePoolScreen() {
 
   const handleCreate = async () => {
     setSubmitError(null);
+    setRecordWarning(null);
     if (!wallet) return setSubmitError('Connect a wallet first.');
     if (!tokenA || !tokenB) return setSubmitError('Select both tokens.');
     if (tokenA.chainId !== tokenB.chainId) return setSubmitError('Both tokens must be on the same chain.');
     const a = parseFloat(amountA); const b = parseFloat(amountB);
     if (!(a > 0) || !(b > 0)) return setSubmitError('Enter both deposit amounts.');
+
+    // Catch a shortfall here, in base units, rather than letting the router's
+    // transferFrom revert. Some tokens (TWC among them) revert with no reason
+    // string, which reaches the user as "Execution reverted with reason: 0x".
+    const shortfall = ([[tokenA, amountA], [tokenB, amountB]] as const)
+      .map(([t, amt]) => {
+        const raw = rawBalanceOf(t);
+        if (raw === null) return null;
+        try {
+          return parseUnits(amt, t.decimals ?? 18) > raw ? t : null;
+        } catch {
+          return null;
+        }
+      })
+      .find(Boolean);
+    if (shortfall) {
+      return setSubmitError(
+        `Not enough ${shortfall.symbol}. You have ${formatUnits(rawBalanceOf(shortfall)!, shortfall.decimals ?? 18)}.`,
+      );
+    }
 
     const feeBpsVal = effectiveFeeBps();
     const cid = tokenA.chainId;
@@ -267,6 +361,13 @@ export default function CreatePoolScreen() {
         pairAddress = res.pairAddress; factoryAddress = res.factoryAddress; lpTokens = res.lpTokens; txHash = res.txHash;
       }
 
+      // The pool is ALREADY deployed and seeded by this point, so a failure
+      // below must not read as "nothing happened" — that invites a retry that
+      // deploys a second pool and spends the tokens twice. Anything from here
+      // on is bookkeeping: it is caught, surfaced as a warning on the success
+      // screen, and never rethrown.
+      let recordFailure: string | null = null;
+
       const poolRes = await api.liquidity.createPool({
         creatorWallet: wallet,
         chainId: cid,
@@ -280,17 +381,28 @@ export default function CreatePoolScreen() {
         seedAmountA: amountA,
         seedAmountB: amountB,
         startingPrice: price,
-        minPrice: rangeMode === 'full' ? '0' : minPrice,
-        maxPrice: rangeMode === 'full' ? '∞' : maxPrice,
+        // min_price/max_price are numeric(38,18) and nullable. An unbounded
+        // side must be sent as undefined so the column stays NULL — posting
+        // the "∞" the UI shows was rejected outright ("invalid input syntax
+        // for type numeric") and failed every create. Note "custom" alone
+        // isn't enough of a guard: switching to the custom tab without
+        // editing leaves maxPrice at its "∞" default. Matches the web wizard.
+        minPrice: rangeMode === 'full' ? undefined : finiteOrUndefined(minPrice),
+        maxPrice: rangeMode === 'full' ? undefined : finiteOrUndefined(maxPrice),
         status: 'pending',
         tradable,
         source: 'tiwi',
+      }).catch((e: any) => {
+        recordFailure = e?.message || 'Could not save the pool record.';
+        return null;
       });
 
-      const poolId = poolRes.pool?.id;
+      const poolId = poolRes?.pool?.id;
       if (poolId) {
         await api.liquidity.createPosition({
           userWallet: wallet, poolId, amountA, amountB, lpTokens, poolShare: '0', status: 'pending',
+        }).catch((e: any) => {
+          recordFailure = e?.message || 'Could not save your position record.';
         });
       }
 
@@ -308,12 +420,24 @@ export default function CreatePoolScreen() {
           toTokenSymbol: tokenB.symbol,
           amount: amountA,
           amountFormatted: `${amountA} ${tokenA.symbol}`,
+          // The B-side amount, same as the web records — without it the
+          // activity row shows only half the deposit.
+          toAmountFormatted: amountB,
           routerName: pair,
           poolAddress: pairAddress,
           blockTimestamp: new Date().toISOString(),
         }).catch(() => { /* tracking is best-effort */ });
       }
 
+      // No tx means nothing was deployed (record-only chain), so a failed
+      // record leaves nothing behind — that IS a plain failure, and retrying
+      // is the right move. With a tx, the pool exists on-chain regardless.
+      if (recordFailure && !txHash) {
+        setSubmitError(recordFailure);
+        return;
+      }
+
+      setRecordWarning(recordFailure);
       setResult({ pairAddress: pairAddress || '', lpTokens, tradable });
       setStage(3);
     } catch (e: any) {
@@ -344,7 +468,12 @@ export default function CreatePoolScreen() {
         ))}
       </View>
 
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 48 }} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        ref={scrollViewRef}
+        // Extra runway while the numpad is up so the active card can clear it.
+        contentContainerStyle={{ padding: 16, paddingBottom: keypadFor ? 420 : 48 }}
+        keyboardShouldPersistTaps="handled"
+      >
         {stage === 1 && (
           <>
             <Text style={styles.sectionTitle}>Choose a Token Pair</Text>
@@ -430,8 +559,8 @@ export default function CreatePoolScreen() {
             <View style={styles.priceCard}>
               <TokenAvatar token={tokenA} size={28} />
               <TextInput
-                value={addingToExisting ? toPlainDecimal(parseFloat(startingPrice) || 0) : startingPrice}
-                onChangeText={(t) => setStartingPrice(t.replace(/[^0-9.]/g, ''))}
+                value={formatNumberInput(addingToExisting ? toPlainDecimal(parseFloat(startingPrice) || 0) : startingPrice)}
+                onChangeText={(t) => setStartingPrice(parseNumberInput(t))}
                 editable={!addingToExisting}
                 placeholder="0.0"
                 placeholderTextColor={colors.mutedText}
@@ -498,8 +627,8 @@ export default function CreatePoolScreen() {
 
             {/* Deposits */}
             <Text style={[styles.sectionTitle, { marginTop: 20 }]}>Deposit Amounts</Text>
-            <DepositCard token={tokenA} amount={amountA} onAmount={onAmountA} balance={balanceOf(tokenA)} priceUsd={priceOf(tokenA)} onPercent={(p) => setDepositPercent('a', p)} />
-            <DepositCard token={tokenB} amount={amountB} onAmount={onAmountB} balance={balanceOf(tokenB)} priceUsd={priceOf(tokenB)} onPercent={(p) => setDepositPercent('b', p)} />
+            <DepositCard token={tokenA} amount={amountA} balance={balanceOf(tokenA)} priceUsd={priceOf(tokenA)} onPercent={(p) => setDepositPercent('a', p)} onInputPress={() => setKeypadFor('a')} active={keypadFor === 'a'} />
+            <DepositCard token={tokenB} amount={amountB} balance={balanceOf(tokenB)} priceUsd={priceOf(tokenB)} onPercent={(p) => setDepositPercent('b', p)} onInputPress={() => setKeypadFor('b')} active={keypadFor === 'b'} />
 
             {submitError ? <Text style={styles.errorBanner}>{submitError}</Text> : null}
 
@@ -537,6 +666,22 @@ export default function CreatePoolScreen() {
                 </View>
               </View>
 
+              {/* Deployed, but not recorded. Say so plainly — the danger is a
+                  user reading "failed", running it again, and paying for a
+                  second identical pool. */}
+              {recordWarning ? (
+                <View style={styles.successWarn}>
+                  <Ionicons name="warning-outline" size={16} color="#E8A838" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.successWarnTitle}>Pool created — but not saved to your list</Text>
+                    <Text style={styles.successWarnDesc}>
+                      Your funds are deposited and the pool is live on-chain, so do NOT create it
+                      again. It just may not appear under Pools yet. {recordWarning}
+                    </Text>
+                  </View>
+                </View>
+              ) : null}
+
               <View style={styles.successMetrics}>
                 <SuccessMetric label="Pool Share" value="Pending review" />
                 <SuccessMetric label={`${tokenA?.symbol} Deposited`} value={`${amountA} ${tokenA?.symbol}`} />
@@ -547,7 +692,7 @@ export default function CreatePoolScreen() {
               <View style={styles.successBtns}>
                 <TouchableOpacity
                   style={styles.addMoreBtn}
-                  onPress={() => { setResult(null); setAmountA(''); setAmountB(''); setStage(1); }}
+                  onPress={() => { setResult(null); setRecordWarning(null); setAmountA(''); setAmountB(''); setStage(1); }}
                 >
                   <Text style={styles.addMoreText}>Add More Liquidity</Text>
                 </TouchableOpacity>
@@ -571,6 +716,14 @@ export default function CreatePoolScreen() {
         }
         onSelect={handleAssetSelect}
         onClose={() => setPicker(null)}
+      />
+
+      <SwapKeyboard
+        visible={keypadFor !== null}
+        onClose={() => setKeypadFor(null)}
+        onKeyPress={handleKeypadPress}
+        onPercentagePress={(p) => keypadFor && setDepositPercent(keypadFor, p)}
+        onMaxPress={() => keypadFor && setDepositPercent(keypadFor, 100)}
       />
     </View>
   );
@@ -609,8 +762,10 @@ function RangeCard({ label, value, unit, editable, onChange, onStep }: {
           <Ionicons name="remove" size={15} color={editable ? colors.titleText : colors.mutedText} />
         </TouchableOpacity>
         <TextInput
-          value={value}
-          onChangeText={(t) => onChange(t.replace(/[^0-9.]/g, ''))}
+          // "Max price" carries a literal "∞" on a full-range pool — grouping
+          // only applies to values that are actually numbers.
+          value={/\d/.test(value) ? formatNumberInput(value) : value}
+          onChangeText={(t) => onChange(parseNumberInput(t))}
           editable={editable}
           keyboardType="decimal-pad"
           style={styles.rangeInput}
@@ -625,15 +780,26 @@ function RangeCard({ label, value, unit, editable, onChange, onStep }: {
   );
 }
 
-function DepositCard({ token, amount, onAmount, balance, priceUsd, onPercent }: {
-  token: WizToken; amount: string; onAmount: (v: string) => void; balance: number; priceUsd: number; onPercent: (p: number) => void;
+function DepositCard({ token, amount, balance, priceUsd, onPercent, onInputPress, active }: {
+  token: WizToken; amount: string; balance: number; priceUsd: number; onPercent: (p: number) => void;
+  onInputPress: () => void; active: boolean;
 }) {
   const usd = (parseFloat(amount || '0') || 0) * (priceUsd || 0);
   return (
-    <View style={styles.depositCard}>
+    <View style={[styles.depositCard, active && styles.depositCardActive]}>
       <View style={styles.depositTopRow}>
         <Text style={styles.depositAmountLbl}>Amount</Text>
-        <TextInput value={amount} onChangeText={onAmount} placeholder="0.00" placeholderTextColor={colors.mutedText} keyboardType="decimal-pad" style={styles.depositInput} />
+        {/* Opens the in-app numpad rather than the OS keyboard — the value is
+            display-only here, every edit arrives through onKeyPress. */}
+        <TouchableOpacity activeOpacity={0.7} onPress={onInputPress} style={styles.depositInputBtn}>
+          <Text
+            style={[styles.depositInput, !amount && { color: colors.mutedText }]}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
+            {formatNumberInput(amount) || '0.00'}
+          </Text>
+        </TouchableOpacity>
       </View>
       <View style={styles.depositMidRow}>
         <View style={styles.depositTokenChip}>
@@ -730,9 +896,12 @@ const styles = StyleSheet.create({
   customRangeInput: { minWidth: 60, color: colors.titleText, fontSize: 16, fontFamily: Fonts.semibold, padding: 0 },
   customRangePct: { color: colors.mutedText, fontSize: 12, fontFamily: Fonts.medium },
   depositCard: { backgroundColor: colors.bgCards, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 14, marginTop: 12 },
+  // Which card the numpad is currently editing.
+  depositCardActive: { borderColor: colors.primaryCTA },
   depositTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   depositAmountLbl: { color: colors.mutedText, fontSize: 12, fontFamily: Fonts.medium },
-  depositInput: { color: colors.titleText, fontSize: 22, fontFamily: Fonts.bold, textAlign: 'right', flex: 1, padding: 0, marginLeft: 12 },
+  depositInputBtn: { flex: 1, marginLeft: 12 },
+  depositInput: { color: colors.titleText, fontSize: 22, fontFamily: Fonts.bold, textAlign: 'right', padding: 0 },
   depositMidRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 },
   depositTokenChip: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   depositSym: { color: colors.titleText, fontSize: 14, fontFamily: Fonts.semibold },
@@ -755,6 +924,9 @@ const styles = StyleSheet.create({
   successInfoIcon: { width: 24, height: 24, borderRadius: 12, backgroundColor: '#1D281D', alignItems: 'center', justifyContent: 'center', marginTop: 1 },
   successInfoTitle: { color: colors.titleText, fontSize: 14, fontFamily: Fonts.semibold },
   successInfoDesc: { color: colors.bodyText, fontSize: 13, fontFamily: Fonts.medium, marginTop: 6, lineHeight: 19 },
+  successWarn: { flexDirection: 'row', gap: 10, alignItems: 'flex-start', backgroundColor: 'rgba(232,168,56,0.10)', borderWidth: 1, borderColor: 'rgba(232,168,56,0.35)', borderRadius: 12, padding: 12, marginTop: 12 },
+  successWarnTitle: { color: '#E8A838', fontSize: 13, fontFamily: Fonts.bold },
+  successWarnDesc: { color: colors.bodyText, fontSize: 12, fontFamily: Fonts.medium, marginTop: 4, lineHeight: 18 },
   successMetrics: { width: '100%', marginTop: 28, gap: 16 },
   successMetricRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 16 },
   successMetricLabel: { color: colors.bodyText, fontSize: 13, fontFamily: Fonts.medium },

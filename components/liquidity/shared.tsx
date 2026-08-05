@@ -75,6 +75,37 @@ export function addLiquidityParams(pool: LiquidityPool): Record<string, string> 
   };
 }
 
+/**
+ * Params for the Swap screen, pre-filled with THIS pool's pair. Mirrors the
+ * web's `buildSwapHref`.
+ *
+ * When the pool is a real on-chain TIWI pair (`tradable` + a `pairAddress`) it
+ * also carries `poolAddress` + `preferredRouter: 'tiwi-pool'`, which forces the
+ * swap through that exact TiwiLiquidityPair instead of letting the aggregators
+ * choose a venue. The backend re-checks the pair actually trades these two
+ * tokens and falls back to normal routing otherwise, so pinning can only ever
+ * narrow the route. Registry-only / external pools just pre-fill the tokens.
+ */
+export function poolSwapParams(pool: LiquidityPool): Record<string, string> {
+  const params: Record<string, string> = {
+    fromTokenAddress: pool.tokenA.address,
+    fromChainId: String(pool.chainId),
+    fromSymbol: pool.tokenA.symbol || '',
+    fromLogo: pool.tokenA.logo || '',
+    fromDecimals: String(pool.tokenA.decimals ?? 18),
+    toTokenAddress: pool.tokenB.address,
+    toChainId: String(pool.chainId),
+    toSymbol: pool.tokenB.symbol || '',
+    toLogo: pool.tokenB.logo || '',
+    toDecimals: String(pool.tokenB.decimals ?? 18),
+  };
+  if (pool.tradable && pool.pairAddress) {
+    params.poolAddress = pool.pairAddress;
+    params.preferredRouter = 'tiwi-pool';
+  }
+  return params;
+}
+
 // ── Status badge ─────────────────────────────────────────────────────────────
 
 /** Position badge follows the POOL's admin status, mirroring the web effectiveStatus. */

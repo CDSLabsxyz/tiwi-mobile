@@ -4,7 +4,7 @@
  * Live reserves + status metrics (TVL / Fee APR / 24H+30D volume / fee level)
  * + a polling transactions table. Swap / Add Liquidity actions in the header.
  */
-import { addLiquidityParams, formatPct, formatUsd, PoolIdentity, ReserveBar, shortAddress, splitPair, StatusPill } from '@/components/liquidity/shared';
+import { addLiquidityParams, formatPct, formatUsd, PoolIdentity, poolSwapParams, ReserveBar, shortAddress, splitPair, StatusPill } from '@/components/liquidity/shared';
 import { PoolFeesCard } from '@/components/liquidity/PoolFeesCard';
 import { PoolHeaderTools } from '@/components/liquidity/PoolHeaderTools';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
@@ -125,7 +125,10 @@ export default function PoolDetailScreen() {
           <PoolIdentity pool={pool} size={34} />
         </View>
         <View style={styles.actionRow}>
-          <TouchableOpacity style={styles.swapBtn} onPress={() => router.push('/swap' as any)}>
+          <TouchableOpacity
+            style={styles.swapBtn}
+            onPress={() => router.push({ pathname: '/swap', params: poolSwapParams(pool) } as any)}
+          >
             <Ionicons name="swap-horizontal" size={16} color={colors.titleText} />
             <Text style={styles.swapBtnText}>Swap</Text>
           </TouchableOpacity>

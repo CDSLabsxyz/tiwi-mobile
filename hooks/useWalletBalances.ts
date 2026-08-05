@@ -193,14 +193,46 @@ const MISSING_GRACE_CYCLES = 3;  // consecutive absences before a token is gone
 const lastGoodTokens = new Map<string, any[]>();
 const missingStrikes = new Map<string, number>();
 
-const tokenRowKey = (t: any) => `${t.chainId}-${String(t.address || '').toLowerCase()}`;
+// Every spelling a source has used for "this chain's own coin". Sources
+// disagree — Nexxend says 'native', the direct RPC readers say the zero
+// address, Moralis says 0xeee…e — and the SAME holding can arrive under a
+// different one on each refetch, since dedupe keeps whichever row priced
+// higher and that flips with the price source.
+const NATIVE_ADDRESS_ALIASES = new Set([
+    '',
+    'native',
+    'null',
+    'undefined',
+    '0x0000000000000000000000000000000000000000',
+    '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+    SOLANA_NATIVE_ADDRESS.toLowerCase(),
+]);
+
+const CANONICAL_NATIVE_ADDRESS = '0x0000000000000000000000000000000000000000';
 
 function isNativeAddress(address: string | undefined): boolean {
-    const a = String(address || '').toLowerCase();
-    return !a || a === 'native'
-        || a === '0x0000000000000000000000000000000000000000'
-        || a === SOLANA_NATIVE_ADDRESS.toLowerCase();
+    return NATIVE_ADDRESS_ALIASES.has(String(address ?? '').trim().toLowerCase());
 }
+
+/**
+ * Identity of a holding for dedupe and cross-refetch matching. Native rows
+ * collapse onto one address so an alias change between fetches cannot make a
+ * coin look like two different tokens.
+ *
+ * Keys only — the row's own `address` is left untouched, because Solana's
+ * native row must keep its real mint for the send/swap paths.
+ */
+function canonicalAddress(address: string | undefined): string {
+    return isNativeAddress(address)
+        ? CANONICAL_NATIVE_ADDRESS
+        : String(address ?? '').toLowerCase();
+}
+
+// MUST use the canonical form: keying on the raw address let a native row
+// whose alias changed between refetches miss its own previous entry, so the
+// grace pass carried the old row forward *alongside* the new one — the wallet
+// then listed BNB twice, same balance, one row holding a stale price.
+const tokenRowKey = (t: any) => `${t.chainId}-${canonicalAddress(t.address)}`;
 
 /**
  * (1) Drop every unpriced non-native token. A holding we cannot put a dollar
@@ -518,14 +550,14 @@ export function useWalletBalances() {
                 const dedupedMap = new Map<string, any>();
                 rawBalances.forEach(b => {
                     if (!b) return;
-                    const isNative = ['native', '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee', '0x0000000000000000000000000000000000000000', SOLANA_NATIVE_ADDRESS.toLowerCase()].includes(b.address?.toLowerCase() || '');
-                    const addr = isNative ? '0x0000000000000000000000000000000000000000' : b.address?.toLowerCase();
                     // Key on (chain, contract) ONLY. Including the symbol let two
                     // rows for the same contract survive when sources spelled the
                     // name differently — they then rendered twice and collided on
                     // the list's `${chainId}-${address}` React key ("Encountered
                     // two children with the same key"). Same key the web app uses.
-                    const key = `${addr}-${b.chainId}`;
+                    // `canonicalAddress` is shared with tokenRowKey so a row keeps
+                    // one identity from dedupe through the cross-refetch grace.
+                    const key = tokenRowKey(b);
                     const existing = dedupedMap.get(key);
                     // Prefer the priced row when a duplicate does arrive.
                     if (!existing || parseFloat(b.usdValue || '0') > parseFloat(existing.usdValue || '0')) {

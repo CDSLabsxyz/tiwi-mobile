@@ -141,7 +141,7 @@ export class CetusExecutor implements SwapRouterExecutor {
         }
         digest = res.digest;
       } else {
-        onStatusUpdate?.({ stage: 'signing', message: 'Approve in your Sui wallet...' });
+        onStatusUpdate?.({ stage: 'signing', message: 'Confirming in your Sui wallet...' });
         const { getExternalSuiSigner } = await import('@/services/swap/core/platform/external-sui-wallet');
         const signer = await getExternalSuiSigner(suiAddress);
         digest = await (signer as any).signAndExecute(resolvedTx);

@@ -217,7 +217,7 @@ export class RubicExecutor implements SwapRouterExecutor {
             // Token approval is handled by the sendTransaction if allowance is insufficient
         }
 
-        onStatusUpdate?.({ stage: 'signing', message: 'Approve Now' });
+        onStatusUpdate?.({ stage: 'signing', message: 'Confirming in wallet...' });
 
         if (!walletClient) {
             throw new SwapExecutionError('Wallet client is required for execution', SwapErrorCode.WALLET_NOT_CONNECTED, 'rubic');
@@ -280,7 +280,7 @@ export class RubicExecutor implements SwapRouterExecutor {
                 );
             }
 
-            onStatusUpdate?.({ stage: 'signing', message: 'Approve Now' });
+            onStatusUpdate?.({ stage: 'signing', message: 'Confirming in wallet...' });
 
             try {
                 // Rubic API v2 might return different structure, e.g. trade.transaction containing raw data
@@ -355,7 +355,7 @@ export class RubicExecutor implements SwapRouterExecutor {
                 throw new Error('Rubic returned the Solana transaction in an unexpected format');
             }
 
-            onStatusUpdate?.({ stage: 'signing', message: 'Approve Now' });
+            onStatusUpdate?.({ stage: 'signing', message: 'Confirming in wallet...' });
 
             // Lenient base64 decode: strict atob() rejects URL-safe alphabet (-/_), whitespace, or
             // missing padding → "string to be decoded is not correctly encoded". Normalize first.
@@ -401,7 +401,7 @@ export class RubicExecutor implements SwapRouterExecutor {
                 throw new Error('TON transaction data missing');
             }
 
-            onStatusUpdate?.({ stage: 'signing', message: 'Approve Now' });
+            onStatusUpdate?.({ stage: 'signing', message: 'Confirming in wallet...' });
             const result = await tonConnectUI.sendTransaction(transaction);
             const hash = result.boc || 'transaction_sent';
 

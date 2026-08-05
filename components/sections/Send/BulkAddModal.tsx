@@ -8,7 +8,7 @@
 import { SendTokenSelectSheet } from "@/components/sections/Send/SendTokenSelectSheet";
 import type { TokenOption } from "@/components/sections/Swap/TokenSelectSheet";
 import { colors } from "@/constants/colors";
-import { formatTokenQuantity, getColorFromSeed } from "@/utils/formatting";
+import { formatNumberInput, formatTokenQuantity, getColorFromSeed, parseNumberInput } from "@/utils/formatting";
 import {
   isAddressForAnyChain,
   type MultiSendRow,
@@ -121,8 +121,8 @@ export const BulkAddModal: React.FC<BulkAddModalProps> = ({ visible, onClose, av
               <Text style={{ fontFamily: "Manrope-SemiBold", fontSize: 12, color: colors.bodyText }}>Amount per recipient</Text>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: colors.bg, borderRadius: 12, borderWidth: 1, borderColor: colors.bgStroke, paddingHorizontal: 12, paddingVertical: 8 }}>
                 <TextInput
-                  value={amount}
-                  onChangeText={(t) => { if (t === "" || /^\d*\.?\d*$/.test(t.replace(/,/g, ""))) setAmount(t.replace(/,/g, "")); }}
+                  value={formatNumberInput(amount)}
+                  onChangeText={(t) => setAmount(parseNumberInput(t))}
                   placeholder="Amount each"
                   placeholderTextColor={colors.bodyText}
                   keyboardType="decimal-pad"

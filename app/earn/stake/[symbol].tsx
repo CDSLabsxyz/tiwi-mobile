@@ -583,7 +583,7 @@ const StakeProcessingModal = ({
 
     const getSubText = () => {
         switch (status) {
-            case 'approving': return 'Please confirm the approval in your wallet to proceed.';
+            case 'approving': return 'The approval is being confirmed in your wallet.';
             case 'staking': return 'Your transaction is being processed on the blockchain.';
             case 'success': return `Successfully staked ${amount} ${symbol} to the pool.`;
             case 'error': return error || 'Something went wrong during the transaction.';

@@ -1,8 +1,9 @@
 import { colors } from '@/constants/colors';
-import { getColorFromSeed } from '@/utils/formatting';
+import { formatNumberInput, getColorFromSeed } from '@/utils/formatting';
 import { Image } from 'expo-image';
 import React, { useMemo } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { AmountSlider } from './AmountSlider';
 
 const WalletIcon = require('@/assets/home/wallet-03.svg');
 const ArrowDown01 = require('@/assets/home/arrow-down-01.svg');
@@ -43,6 +44,16 @@ interface SwapTokenCardProps {
      * the destination chain — so the label always says where the output lands.
      */
     recipientLabel?: string | null;
+    /**
+     * "From" card only: current amount as a percentage of balance, plus the
+     * setter. Supplying `onPercentChange` is what renders the drag slider — the
+     * web swap card's "Scroll or drag" control. The parent converts percent →
+     * amount so Max keeps its gas/fee reserve.
+     */
+    percentOfBalance?: number;
+    onPercentChange?: (percent: number) => void;
+    /** Greys the slider out — no token picked, or nothing to spend. */
+    sliderDisabled?: boolean;
 }
 
 /**
@@ -69,6 +80,9 @@ export const SwapTokenCard: React.FC<SwapTokenCardProps> = ({
     isStale = false,
     onRecipientPress,
     recipientLabel,
+    percentOfBalance = 0,
+    onPercentChange,
+    sliderDisabled = false,
 }) => {
     const isFrom = variant === 'from';
     const label = isFrom ? 'From' : 'To';
@@ -199,7 +213,9 @@ export const SwapTokenCard: React.FC<SwapTokenCardProps> = ({
                                 numberOfLines={1}
                                 ellipsizeMode="tail"
                             >
-                                {amount || '0.0'}
+                                {/* Grouped for readability. Only the "From" side needs it —
+                                    the "To" side is handed an already-formatted string. */}
+                                {formatNumberInput(amount) || '0.0'}
                             </Text>
                         </TouchableOpacity>
                     ) : (
@@ -226,6 +242,16 @@ export const SwapTokenCard: React.FC<SwapTokenCardProps> = ({
                     </View>
                 </View>
             </View>
+
+            {/* Drag-to-percentage, mirroring the web swap card. "From" only —
+                the "To" amount is quoted, not chosen. */}
+            {isFrom && !!onPercentChange && (
+                <AmountSlider
+                    value={percentOfBalance}
+                    onChange={onPercentChange}
+                    disabled={sliderDisabled || !tokenSelected}
+                />
+            )}
         </View>
     );
 };

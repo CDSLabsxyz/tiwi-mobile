@@ -12,13 +12,15 @@ import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { colors } from '@/constants/colors';
 import { useWalletStore } from '@/store/walletStore';
 import { useRouter } from 'expo-router';
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function CreatePoolScreen() {
     const { top } = useSafeAreaInsets();
     const router = useRouter();
+    // Handed to the form so it can lift the edited field above the numpad.
+    const scrollRef = useRef<ScrollView>(null);
     const { address, walletGroups, activeGroupId } = useWalletStore();
 
     // EVM-only flow — resolve the active group's EVM address.
@@ -40,11 +42,12 @@ export default function CreatePoolScreen() {
             </View>
 
             <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-                <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
+                <ScrollView ref={scrollRef} contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
                     <StakingPoolCreator
                         activeWalletAddress={evmAddress}
                         onConnectEvmWallet={() => useWalletStore.getState().setWalletModalVisible(true)}
                         onViewPools={() => router.replace('/earn?tab=my-pools' as any)}
+                        scrollRef={scrollRef}
                     />
                 </ScrollView>
             </KeyboardAvoidingView>

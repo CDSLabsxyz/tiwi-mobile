@@ -1,7 +1,6 @@
 import { MarketComingSoon, type ComingSoonMarket } from '@/components/features/market/MarketComingSoon';
 import { TokenListItem } from '@/components/sections/Market/TokenListItem';
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
-import { LoadingOverlay } from '@/components/ui/LoadingOverlay';
 import { Skeleton } from '@/components/ui/skeleton';
 import { colors } from '@/constants/colors';
 import { useEnrichedMarkets } from '@/hooks/useEnrichedMarkets';
@@ -12,7 +11,7 @@ import { api, MarketAsset, TokenItem } from '@/lib/mobile/api-client';
 import { useMarketStore } from '@/store/marketStore';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Dimensions, FlatList, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
@@ -81,7 +80,6 @@ const MarketListItemSkeleton = () => (
 
 export default function MarketScreen() {
     const { top, bottom } = useSafeAreaInsets();
-    const router = useRouter();
     const { t } = useTranslation();
     const params = useLocalSearchParams<{ category?: string }>();
 
@@ -96,7 +94,6 @@ export default function MarketScreen() {
     const [searchResults, setSearchResults] = useState<MarketAsset[]>([]);
     const [isSearching, setIsSearching] = useState(false);
     const [isSearchVisible, setIsSearchVisible] = useState(false);
-    const [isNavigating, setIsNavigating] = useState(false);
 
     const { favorites, toggleFavorite, isFavorite, getFavoriteTokens } = useMarketStore();
     // Live TWC data — used to enrich the fallback row with real price/24h change
@@ -505,31 +502,6 @@ export default function MarketScreen() {
             ? isAdminLoading
             : isPairsLoading;
 
-    // Prefetch detail data early for ultra-fast navigation
-    const handleTokenPress = useCallback(async (token: MarketAsset) => {
-        setIsNavigating(true);
-
-        const currentContext = marketType; // 'spot' or 'perp'
-        const route = currentContext === 'perp'
-            ? `/market/futures/${(token as any).displaySymbol || token.symbol}`
-            : `/market/spot/${(token as any).displaySymbol || token.symbol}`;
-
-        router.push({
-            pathname: route as any,
-            params: {
-                address: (token as any).contractAddress || (token as any).baseToken?.address || token.address,
-                chainId: token.chainId,
-                symbol: (token as any).displaySymbol || token.symbol,
-                provider: token.provider,
-                name: token.name,
-                marketType: currentContext
-            }
-        });
-
-        // Small delay to let the active opacity effect finish and navigation begin
-        setTimeout(() => setIsNavigating(false), 200);
-    }, [marketType, router]);
-
     const ITEM_HEIGHT = 52; // Fixed row height for getItemLayout
     const keyExtractor = useCallback((item: MarketAsset) => item.id || `${item.chainId}-${item.address}`, []);
     const getItemLayout = useCallback((_: any, index: number) => ({
@@ -538,13 +510,13 @@ export default function MarketScreen() {
         index,
     }), []);
 
+    // Display-only rows — the token detail screen was removed.
     const renderItem = useCallback(({ item }: { item: MarketAsset }) => (
         <TokenListItem
             key={item.id || `${item.chainId}-${item.address}`}
             token={item as any}
-            onPress={() => handleTokenPress(item)}
         />
-    ), [handleTokenPress]);
+    ), []);
 
     const handleSearchPress = () => {
         setIsSearchVisible(true);
@@ -641,12 +613,6 @@ export default function MarketScreen() {
                     }
                 />
                 )}
-
-                {/* <LoadingOverlay
-                    visible={isNavigating}
-                    mode="glass"
-                    onCancel={() => setIsNavigating(false)}
-                /> */}
             </View>
         );
     }
@@ -915,11 +881,6 @@ export default function MarketScreen() {
                 />
             )}
 
-            <LoadingOverlay
-                visible={isNavigating}
-                mode="glass"
-                onCancel={() => setIsNavigating(false)}
-            />
         </View>
     );
 }

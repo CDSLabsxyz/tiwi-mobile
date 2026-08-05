@@ -149,7 +149,7 @@ export class CrossChainOrchestratorExecutor implements SwapRouterExecutor {
       );
 
       // 4) One call: swapAndBridge. Explicit gas — nested calls under-estimate and revert.
-      onStatusUpdate?.({ stage: 'signing', message: 'Confirm the cross-chain swap in your wallet...' });
+      onStatusUpdate?.({ stage: 'signing', message: 'Confirming the cross-chain swap in your wallet...' });
       const data = encodeFunctionData({
         abi: ORCHESTRATOR_ABI,
         functionName: 'swapAndBridge',

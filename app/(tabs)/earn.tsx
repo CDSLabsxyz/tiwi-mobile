@@ -142,6 +142,8 @@ export default function EarnScreen() {
 
     const [isLoading, setIsLoading] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
+    // Handed to the pool-creation form so it can lift the edited field above the numpad.
+    const contentScrollRef = useRef<ScrollView>(null);
 
     // Fetch data from backend
     const fetchData = async () => {
@@ -253,6 +255,7 @@ export default function EarnScreen() {
 
             {/* Content */}
             <ScrollView
+                ref={contentScrollRef}
                 style={styles.scrollView}
                 contentContainerStyle={[
                     styles.scrollContent,
@@ -409,6 +412,7 @@ export default function EarnScreen() {
                                         activeWalletAddress={evmAddress}
                                         onConnectEvmWallet={() => useWalletStore.getState().setWalletModalVisible(true)}
                                         onViewPools={() => setStakingSubTab('my-pools')}
+                                        scrollRef={contentScrollRef}
                                     />
                                 ) : stakingSubTab === 'my-pools' ? (
                                     <MyPoolsView

@@ -11,14 +11,17 @@
  */
 
 import { colors } from '@/constants/colors';
-import { CHAIN_NAMES, useStakingDeployer } from '@/hooks/useStakingDeployer';
+import { CHAIN_NAMES, useStakingDeployer, type CreatePoolStatus } from '@/hooks/useStakingDeployer';
 import { useRequireBackup } from '@/hooks/useRequireBackup';
 import { api, type PoolFeeSettings } from '@/lib/mobile/api-client';
+import { useWalletBalances } from '@/hooks/useWalletBalances';
+import { formatNumberInput } from '@/utils/formatting';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import React, { useEffect, useMemo, useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, type LayoutChangeEvent } from 'react-native';
 import { isAddress, type Address } from 'viem';
+import { SwapKeyboard } from '../Swap/SwapKeyboard';
 import { TokenSelectSheet, type TokenOption } from '../Swap/TokenSelectSheet';
 
 const TWC_ICON = require('../../../assets/home/tiwicat.svg');
@@ -27,6 +30,8 @@ type RewardMode = 'same' | 'cross';
 type TokenSide = 'stake' | 'earn';
 type DurationUnit = 'days' | 'hours' | 'minutes';
 type CreationStep = 'idle' | 'creating' | 'saving' | 'paying';
+/** The six numeric "Pool settings" inputs, all driven by the in-app numpad. */
+type NumericField = 'reward' | 'duration' | 'maxTvl' | 'minStake' | 'maxStake' | 'minLock';
 
 const DURATION_UNIT_SECONDS: Record<DurationUnit, number> = { days: 86400, hours: 3600, minutes: 60 };
 
@@ -65,6 +70,9 @@ interface Props {
     activeWalletAddress?: string | null;
     onConnectEvmWallet?: () => void;
     onViewPools?: () => void;
+    /** The enclosing ScrollView. Given one, the form lifts the Pool settings
+     *  block above the numpad when it opens (the form itself renders no scroller). */
+    scrollRef?: React.RefObject<ScrollView | null>;
 }
 
 const isEvmAddress = (v?: string | null) => /^0x[a-fA-F0-9]{40}$/.test(v || '');
@@ -82,7 +90,7 @@ function toPoolToken(t: TokenOption): PoolToken {
     };
 }
 
-export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, onViewPools }: Props) {
+export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, onViewPools, scrollRef }: Props) {
     const [rewardMode, setRewardMode] = useState<RewardMode>('same');
     const [poolName, setPoolName] = useState('');
     const [stakeToken, setStakeToken] = useState<PoolToken>(DEFAULT_STAKE_TOKEN);
@@ -104,8 +112,20 @@ export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, on
     const [notice, setNotice] = useState<string | null>(null);
     const [blockingError, setBlockingError] = useState<string | null>(null);
     const [feeSettings, setFeeSettings] = useState<PoolFeeSettings | null>(null);
+    // Pool settings are typed on the app's own numpad (the Swap / Send / Pool-create
+    // sheet) instead of the OS keyboard. `keypadField` names the field being edited
+    // and doubles as the sheet's visibility flag.
+    const [keypadField, setKeypadField] = useState<NumericField | null>(null);
+    const settingsRef = useRef<View>(null);
+    // Name availability, fetched when the preview opens so the submit path can
+    // reuse the in-flight promise rather than starting the round trip cold.
+    const nameCheck = useRef<{ name: string; promise: Promise<any> } | null>(null);
+    // Each card's y within the settings grid, filled in by its onLayout — the
+    // grid wraps into rows, so the third row is ~2 card-heights down.
+    const fieldOffsets = useRef<Partial<Record<NumericField, number>>>({});
 
-    const { createPool, payCreationFee } = useStakingDeployer();
+    const { createPool, payCreationFee, status: deployStatus } = useStakingDeployer();
+    const { data: balanceData } = useWalletBalances();
     const { requireBackup, BackupRequiredModal } = useRequireBackup();
 
     // Load the admin-set creation-fee config.
@@ -117,6 +137,35 @@ export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, on
         return () => { cancelled = true; };
     }, []);
 
+    // Lift the field being edited to the top of the viewport when the numpad
+    // opens, so it can't sit behind the sheet — the bottom row (Max stake / Min
+    // lock) otherwise stays hidden even with the whole block scrolled up.
+    // Mirrors swap.tsx's scroll-on-open, but measured: the grid's position
+    // differs between this form's two hosts, and each row needs its own offset.
+    useEffect(() => {
+        if (!keypadField) return;
+        const scroller = scrollRef?.current;
+        const grid = settingsRef.current;
+        const row = fieldOffsets.current[keypadField];
+        if (!scroller || !grid) return;
+
+        const timer = setTimeout(() => {
+            const inner = (scroller as any).getInnerViewRef?.() ?? (scroller as any).getInnerViewNode?.();
+            if (!inner) return;
+            try {
+                grid.measureLayout(
+                    inner,
+                    (_x: number, gridY: number) =>
+                        scroller.scrollTo({ y: Math.max(gridY + (row ?? 0) - 12, 0), animated: true }),
+                    () => { /* measurement is best-effort */ },
+                );
+            } catch {
+                /* older/newer arch mismatch — leave the scroll position alone */
+            }
+        }, 50);
+        return () => clearTimeout(timer);
+    }, [keypadField, scrollRef]);
+
     const feeActive =
         !!feeSettings?.creationFeeEnabled &&
         feeSettings.creationFeeAmount > 0 &&
@@ -125,6 +174,19 @@ export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, on
 
     const evmReady = isEvmAddress(activeWalletAddress);
     const activeEarnToken = rewardMode === 'same' ? stakeToken : earnToken;
+
+    // Wallet balance of the reward token — the only figure on this form that is a
+    // share of something the user holds, so it's what the numpad's %/Max act on.
+    const rewardTokenBalance = useMemo(() => {
+        const rows = (balanceData as any)?.tokens;
+        if (!Array.isArray(rows)) return '';
+        const row = rows.find(
+            (t: any) =>
+                t.chainId === activeEarnToken.chainId &&
+                String(t.address || '').toLowerCase() === activeEarnToken.address.toLowerCase(),
+        );
+        return String(row?.balanceFormatted || '').replace(/,/g, '');
+    }, [balanceData, activeEarnToken.chainId, activeEarnToken.address]);
     const pairLabel = `${stakeToken.symbol} → ${activeEarnToken.symbol}`;
     const network = chainName(stakeToken.chainId);
     const isSubmitting = creationStep !== 'idle';
@@ -143,6 +205,15 @@ export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, on
         if (tokenModalSide === 'stake') setStakeToken(pt);
         else if (tokenModalSide === 'earn') setEarnToken(pt);
         setTokenModalSide(null);
+    };
+
+    /** Warm the name-availability check while the user reads the preview. */
+    const primeNameCheck = () => {
+        const name = poolName.trim();
+        if (!name || nameCheck.current?.name === name) return;
+        const promise = api.staking.checkPoolName(name);
+        promise.catch(() => { /* submit path re-reads it and falls back */ });
+        nameCheck.current = { name, promise };
     };
 
     const handleSwapTokens = () => {
@@ -194,8 +265,12 @@ export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, on
 
         try {
             // 0. Reserve the name — reject collisions BEFORE deploying on-chain.
+            //    Usually already in flight from when the preview opened, so this
+            //    resolves immediately instead of costing a round trip here.
             try {
-                const nameRes = await api.staking.checkPoolName(trimmedName);
+                const nameRes = await (nameCheck.current?.name === trimmedName
+                    ? nameCheck.current.promise
+                    : api.staking.checkPoolName(trimmedName));
                 if (nameRes?.available === false) {
                     setCreateError('That pool name is already taken. Pick a different name.');
                     return;
@@ -220,55 +295,52 @@ export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, on
             const deployer = deployResult.deployerAddress;
 
             // 2. Persist pool metadata as 'inactive' (hidden until admin approves).
+            //    Kicked off here but awaited AFTER the fee tx is broadcast: the DB
+            //    write and the fee transfer don't depend on each other, so running
+            //    them in series just added a round trip to the user's wait.
             setCreationStep('saving');
             let savedPoolId: string | undefined;
-            try {
-                const poolJson = await api.staking.createPoolRecord({
-                    name: trimmedName,
-                    chainId,
-                    chainName: network,
-                    tokenAddress: stakeToken.address,
-                    tokenSymbol: stakeToken.symbol,
-                    tokenName: stakeToken.name,
-                    tokenLogo: typeof stakeToken.icon === 'string' ? stakeToken.icon : undefined,
-                    decimals: stakingDecimals,
-                    minStakingPeriod: minStakePeriodValue > 0 ? `${minStakePeriodValue} days` : undefined,
-                    minStakeAmount: minStakeValue,
-                    maxStakeAmount: maxStakeValue > 0 ? maxStakeValue : undefined,
-                    stakeModificationFee,
-                    timeBoost,
-                    timeBoostConfig: timeBoost ? {} : undefined,
-                    maxTvl: maxTvlValue,
-                    poolReward: poolRewardValue,
-                    rewardDurationSeconds,
-                    poolContractAddress: deployResult.poolAddress,
-                    factoryAddress: deployer,
-                    status: 'inactive',
-                });
-                savedPoolId = poolJson?.pool?.id;
+            const savePool = api.staking.createPoolRecord({
+                name: trimmedName,
+                chainId,
+                chainName: network,
+                tokenAddress: stakeToken.address,
+                tokenSymbol: stakeToken.symbol,
+                tokenName: stakeToken.name,
+                tokenLogo: typeof stakeToken.icon === 'string' ? stakeToken.icon : undefined,
+                decimals: stakingDecimals,
+                minStakingPeriod: minStakePeriodValue > 0 ? `${minStakePeriodValue} days` : undefined,
+                minStakeAmount: minStakeValue,
+                maxStakeAmount: maxStakeValue > 0 ? maxStakeValue : undefined,
+                stakeModificationFee,
+                timeBoost,
+                timeBoostConfig: timeBoost ? {} : undefined,
+                maxTvl: maxTvlValue,
+                poolReward: poolRewardValue,
+                rewardDurationSeconds,
+                poolContractAddress: deployResult.poolAddress,
+                factoryAddress: deployer,
+                status: 'inactive',
+            });
+            // Don't let an unawaited rejection escape while the fee tx runs.
+            savePool.catch(() => { /* surfaced where it's awaited below */ });
 
-                // Record the deployment in the activities board — shows as
-                // "Created staking pool" in Activities. Best-effort; never blocks.
-                if (activeWalletAddress) {
-                    void api.wallet.logTransaction({
-                        walletAddress: activeWalletAddress,
-                        transactionHash: deployResult.txHash,
-                        chainId,
-                        type: 'CreateStakingPool',
-                        fromTokenAddress: activeEarnToken.address,
-                        fromTokenSymbol: activeEarnToken.symbol,
-                        amount: String(poolRewardValue),
-                        amountFormatted: `${poolRewardValue} ${activeEarnToken.symbol}`,
-                        routerName: 'Tiwi Staking',
-                        poolAddress: deployResult.poolAddress,
-                        blockTimestamp: new Date().toISOString(),
-                    }).catch(() => { /* tracking is best-effort */ });
-                }
-            } catch (e: any) {
-                throw new Error(
-                    `Pool deployed at ${deployResult.poolAddress} but saving it failed: ${e?.message || 'unknown error'}. ` +
-                    `Contact support with this address.`,
-                );
+            // Record the deployment in the activities board — shows as
+            // "Created staking pool" in Activities. Best-effort; never blocks.
+            if (activeWalletAddress) {
+                void api.wallet.logTransaction({
+                    walletAddress: activeWalletAddress,
+                    transactionHash: deployResult.txHash,
+                    chainId,
+                    type: 'CreateStakingPool',
+                    fromTokenAddress: activeEarnToken.address,
+                    fromTokenSymbol: activeEarnToken.symbol,
+                    amount: String(poolRewardValue),
+                    amountFormatted: `${poolRewardValue} ${activeEarnToken.symbol}`,
+                    routerName: 'Tiwi Staking',
+                    poolAddress: deployResult.poolAddress,
+                    blockTimestamp: new Date().toISOString(),
+                }).catch(() => { /* tracking is best-effort */ });
             }
 
             // 3. Charge the admin-set creation fee (deploy-first, but MANDATORY).
@@ -289,6 +361,17 @@ export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, on
                     feePaymentError = e?.message || 'The fee payment was rejected.';
                     console.warn('[StakingPoolCreator] creation fee payment failed', e);
                 }
+            }
+
+            // 3b. Collect the pool-metadata write started in step 2.
+            try {
+                const poolJson = await savePool;
+                savedPoolId = poolJson?.pool?.id;
+            } catch (e: any) {
+                throw new Error(
+                    `Pool deployed at ${deployResult.poolAddress} but saving it failed: ${e?.message || 'unknown error'}. ` +
+                    `Contact support with this address.`,
+                );
             }
 
             // 4. Record ownership → admin approval queue + creator's "My Pools".
@@ -368,6 +451,43 @@ export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, on
         }
     };
 
+    const numericFields: Record<NumericField, { value: string; set: (v: string) => void }> = {
+        reward: { value: rewardAmount, set: setRewardAmount },
+        duration: { value: durationDays, set: setDurationDays },
+        maxTvl: { value: maxTvl, set: setMaxTvl },
+        minStake: { value: minStake, set: setMinStake },
+        maxStake: { value: maxStake, set: setMaxStake },
+        minLock: { value: minStakePeriod, set: setMinStakePeriod },
+    };
+
+    // Numpad edits the raw digits; the field grouped-formats them for display.
+    // Same key semantics as the swap / pool-create sheets, long-press CLEAR included.
+    const handleKeypadPress = (key: string) => {
+        if (!keypadField) return;
+        const { value: current, set } = numericFields[keypadField];
+
+        if (key === 'CLEAR') return set('');
+        if (key === 'DELETE') return set(current.slice(0, -1));
+        if (key === '.') {
+            if (current.includes('.')) return;
+            return set(current ? `${current}.` : '0.');
+        }
+        const [, decimals] = current.split('.');
+        if (decimals && decimals.length >= 6) return;
+        set(current + key);
+    };
+
+    // %/Max only appear on Reward pool (see rewardTokenBalance). Max reuses the
+    // balance string verbatim so a float round-trip can't shave the last digits.
+    const rewardBalanceNum = parseNumber(rewardTokenBalance);
+    const handlePercentagePress = (percent: number) => {
+        if (keypadField !== 'reward' || rewardBalanceNum <= 0) return;
+        if (percent >= 100) return setRewardAmount(rewardTokenBalance);
+        const amount = (rewardBalanceNum * percent) / 100;
+        const fixed = amount.toFixed(6);
+        setRewardAmount(fixed.includes('.') ? fixed.replace(/0+$/, '').replace(/\.$/, '') : fixed);
+    };
+
     return (
         <View style={styles.wrap}>
             {notice ? (
@@ -428,13 +548,29 @@ export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, on
 
                 {/* Pool settings */}
                 <FormBlock title="Pool settings">
-                    <View style={styles.grid}>
-                        <Field label="Reward pool" value={rewardAmount} onChange={setRewardAmount} placeholder="0" suffix={activeEarnToken.symbol} />
-                        <DurationField value={durationDays} onChange={setDurationDays} unit={durationUnit} onUnitChange={setDurationUnit} />
-                        <Field label="Max TVL" value={maxTvl} onChange={setMaxTvl} placeholder="0" suffix={stakeToken.symbol} />
-                        <Field label="Min stake" value={minStake} onChange={setMinStake} placeholder="0" suffix={stakeToken.symbol} />
-                        <Field label="Max stake" value={maxStake} onChange={setMaxStake} placeholder="0" suffix={stakeToken.symbol} />
-                        <Field label="Min lock" value={minStakePeriod} onChange={setMinStakePeriod} placeholder="0" suffix="days" />
+                    <View ref={settingsRef} collapsable={false} style={styles.grid}>
+                        <Field
+                            label="Reward pool"
+                            value={rewardAmount}
+                            placeholder="0"
+                            suffix={activeEarnToken.symbol}
+                            hint={rewardBalanceNum > 0 ? `Balance ${formatNumberInput(rewardTokenBalance)}` : undefined}
+                            active={keypadField === 'reward'}
+                            onPress={() => setKeypadField('reward')}
+                            onLayout={(e) => { fieldOffsets.current.reward = e.nativeEvent.layout.y; }}
+                        />
+                        <DurationField
+                            value={durationDays}
+                            unit={durationUnit}
+                            onUnitChange={setDurationUnit}
+                            active={keypadField === 'duration'}
+                            onPress={() => setKeypadField('duration')}
+                            onLayout={(e) => { fieldOffsets.current.duration = e.nativeEvent.layout.y; }}
+                        />
+                        <Field label="Max TVL" value={maxTvl} placeholder="0" suffix={stakeToken.symbol} active={keypadField === 'maxTvl'} onPress={() => setKeypadField('maxTvl')} onLayout={(e) => { fieldOffsets.current.maxTvl = e.nativeEvent.layout.y; }} />
+                        <Field label="Min stake" value={minStake} placeholder="0" suffix={stakeToken.symbol} active={keypadField === 'minStake'} onPress={() => setKeypadField('minStake')} onLayout={(e) => { fieldOffsets.current.minStake = e.nativeEvent.layout.y; }} />
+                        <Field label="Max stake" value={maxStake} placeholder="0" suffix={stakeToken.symbol} active={keypadField === 'maxStake'} onPress={() => setKeypadField('maxStake')} onLayout={(e) => { fieldOffsets.current.maxStake = e.nativeEvent.layout.y; }} />
+                        <Field label="Min lock" value={minStakePeriod} placeholder="0" suffix="days" active={keypadField === 'minLock'} onPress={() => setKeypadField('minLock')} onLayout={(e) => { fieldOffsets.current.minLock = e.nativeEvent.layout.y; }} />
                     </View>
                 </FormBlock>
 
@@ -457,7 +593,7 @@ export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, on
                 </FormBlock>
 
                 <View style={{ paddingHorizontal: 16, paddingVertical: 18 }}>
-                    <TouchableOpacity style={styles.previewBtn} onPress={() => setPreviewOpen(true)}>
+                    <TouchableOpacity style={styles.previewBtn} onPress={() => { primeNameCheck(); setPreviewOpen(true); }}>
                         <Text style={styles.previewBtnText}>Preview pool</Text>
                     </TouchableOpacity>
                 </View>
@@ -508,6 +644,7 @@ export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, on
                 walletAddress={activeWalletAddress}
                 evmReady={evmReady}
                 creationStep={creationStep}
+                deployStatus={deployStatus}
                 createError={createError}
                 onSubmit={handleCreatePool}
             />
@@ -519,6 +656,21 @@ export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, on
                 selectedTokenId={tokenModalSide === 'earn' ? `${earnToken.chainId}-${earnToken.address}` : `${stakeToken.chainId}-${stakeToken.address}`}
                 onClose={() => setTokenModalSide(null)}
                 onSelect={handleSelectToken}
+            />
+
+            {/* Room to scroll the edited field clear of the numpad sheet. */}
+            {keypadField ? <View style={{ height: 420 }} /> : null}
+
+            {/* In-app numpad. The %/Max pills only make sense on Reward pool
+                (a share of the wallet's reward-token balance) — the other five
+                are pool config, so the pills are hidden there. */}
+            <SwapKeyboard
+                visible={keypadField !== null}
+                showQuickActions={keypadField === 'reward' && rewardBalanceNum > 0}
+                onKeyPress={handleKeypadPress}
+                onPercentagePress={handlePercentagePress}
+                onMaxPress={() => handlePercentagePress(100)}
+                onClose={() => setKeypadField(null)}
             />
 
             {BackupRequiredModal}
@@ -534,15 +686,19 @@ function PoolPreviewModal(props: {
     minStake: string; maxStake: string; minStakePeriod: string;
     stakeModificationFee: boolean; timeBoost: boolean; feeLabel: string;
     walletAddress?: string | null; evmReady: boolean; creationStep: CreationStep;
+    deployStatus?: CreatePoolStatus;
     createError: string | null; onSubmit: () => void;
 }) {
     const { open, onClose, stakeToken, earnToken, pairLabel, network, estimatedApr, rewardAmount, durationDays,
         durationUnit, maxTvl, minStake, maxStake, minStakePeriod, stakeModificationFee, timeBoost, feeLabel,
-        walletAddress, evmReady, creationStep, createError, onSubmit } = props;
+        walletAddress, evmReady, creationStep, deployStatus, createError, onSubmit } = props;
     const isSubmitting = creationStep !== 'idle';
     const isFree = feeLabel === 'Free';
+    // 'creating' covers a two-tx batch (approve, then deploy). Naming the tx in
+    // flight makes the wait legible instead of one label stuck for both.
     const submitLabel =
-        creationStep === 'creating' ? 'Deploying & funding pool…'
+        creationStep === 'creating'
+            ? (deployStatus === 'approving' ? `Approving ${earnToken.symbol}…` : 'Deploying & funding pool…')
             : creationStep === 'saving' ? 'Saving pool…'
                 : creationStep === 'paying' ? 'Charging fee…'
                     : !evmReady ? 'Connect EVM wallet'
@@ -676,39 +832,31 @@ function TokenIcon({ token, size = 34 }: { token: PoolToken; size?: number }) {
     );
 }
 
-function Field({ label, value, suffix, placeholder, onChange }: { label: string; value: string; suffix: string; placeholder?: string; onChange: (v: string) => void }) {
+function Field({ label, value, suffix, placeholder, hint, active, onPress, onLayout }: { label: string; value: string; suffix: string; placeholder?: string; hint?: string; active: boolean; onPress: () => void; onLayout?: (e: LayoutChangeEvent) => void }) {
     return (
-        <View style={styles.field}>
+        <TouchableOpacity activeOpacity={0.85} onPress={onPress} onLayout={onLayout} style={[styles.field, active && styles.fieldActive]}>
             <Text style={styles.fieldLabel}>{label}</Text>
             <View style={styles.fieldRow}>
-                <TextInput
-                    value={value}
-                    onChangeText={onChange}
-                    keyboardType="decimal-pad"
-                    placeholder={placeholder}
-                    placeholderTextColor="#4f594f"
-                    style={styles.fieldInput}
-                />
+                {/* Grouped for readability; state keeps the raw digits. */}
+                <Text numberOfLines={1} style={[styles.fieldInput, !value && styles.fieldPlaceholder]}>
+                    {value ? formatNumberInput(value) : placeholder ?? '0'}
+                </Text>
                 <Text style={[styles.fieldSuffix, { color: value ? colors.primaryCTA : '#4f594f' }]}>{suffix}</Text>
             </View>
-        </View>
+            {hint ? <Text numberOfLines={1} style={styles.fieldHint}>{hint}</Text> : null}
+        </TouchableOpacity>
     );
 }
 
-function DurationField({ value, onChange, unit, onUnitChange }: { value: string; onChange: (v: string) => void; unit: DurationUnit; onUnitChange: (u: DurationUnit) => void }) {
+function DurationField({ value, unit, onUnitChange, active, onPress, onLayout }: { value: string; unit: DurationUnit; onUnitChange: (u: DurationUnit) => void; active: boolean; onPress: () => void; onLayout?: (e: LayoutChangeEvent) => void }) {
     const units: DurationUnit[] = ['days', 'hours', 'minutes'];
     return (
-        <View style={styles.field}>
+        <TouchableOpacity activeOpacity={0.85} onPress={onPress} onLayout={onLayout} style={[styles.field, active && styles.fieldActive]}>
             <Text style={styles.fieldLabel}>Duration</Text>
             <View style={styles.fieldRow}>
-                <TextInput
-                    value={value}
-                    onChangeText={onChange}
-                    keyboardType="decimal-pad"
-                    placeholder="30"
-                    placeholderTextColor="#4f594f"
-                    style={styles.fieldInput}
-                />
+                <Text numberOfLines={1} style={[styles.fieldInput, !value && styles.fieldPlaceholder]}>
+                    {value ? formatNumberInput(value) : '30'}
+                </Text>
                 <TouchableOpacity
                     style={styles.unitChip}
                     onPress={() => onUnitChange(units[(units.indexOf(unit) + 1) % units.length])}
@@ -717,7 +865,7 @@ function DurationField({ value, onChange, unit, onUnitChange }: { value: string;
                     <Ionicons name="chevron-down" size={12} color={colors.primaryCTA} />
                 </TouchableOpacity>
             </View>
-        </View>
+        </TouchableOpacity>
     );
 }
 
@@ -789,7 +937,11 @@ const styles = StyleSheet.create({
     field: { width: '47.5%', flexGrow: 1, borderRadius: 18, borderWidth: 1, borderColor: '#1f321d', backgroundColor: 'rgba(7,16,7,0.8)', padding: 14 },
     fieldLabel: { color: '#8F9891', fontFamily: 'Manrope-Medium', fontSize: 12 },
     fieldRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
-    fieldInput: { flex: 1, color: '#fff', fontFamily: 'Manrope-SemiBold', fontSize: 18, padding: 0 },
+    fieldActive: { borderColor: 'rgba(177,241,40,0.45)' },
+    // minHeight holds the card at the height the TextInput used to give it.
+    fieldInput: { flex: 1, color: '#fff', fontFamily: 'Manrope-SemiBold', fontSize: 18, lineHeight: 24, minHeight: 24, padding: 0 },
+    fieldPlaceholder: { color: '#4f594f', fontFamily: 'Manrope-Regular' },
+    fieldHint: { color: '#8F9891', fontFamily: 'Manrope-Regular', fontSize: 10, marginTop: 4 },
     fieldSuffix: { fontFamily: 'Manrope-SemiBold', fontSize: 12 },
     unitChip: { flexDirection: 'row', alignItems: 'center', gap: 3, borderRadius: 999, borderWidth: 1, borderColor: '#263226', backgroundColor: '#0b120a', paddingHorizontal: 8, paddingVertical: 4 },
     unitChipText: { color: colors.primaryCTA, fontFamily: 'Manrope-SemiBold', fontSize: 12 },

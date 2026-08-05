@@ -98,7 +98,7 @@ export class AcrossExecutor implements SwapRouterExecutor {
 
             onStatusUpdate?.({
                 stage: 'signing',
-                message: 'Confirm in wallet',
+                message: 'Confirming in wallet...',
                 progress: 50
             });
 

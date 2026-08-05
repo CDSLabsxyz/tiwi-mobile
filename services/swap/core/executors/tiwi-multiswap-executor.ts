@@ -158,7 +158,7 @@ export class TiwiMultiSwapExecutor implements SwapRouterExecutor {
       );
 
       // 2) Build + send executeMultiSwap (user signs, pays gas)
-      onStatusUpdate?.({ stage: 'signing', message: 'Confirm the swap in your wallet...' });
+      onStatusUpdate?.({ stage: 'signing', message: 'Confirming the swap in your wallet...' });
       const data = encodeFunctionData({
         abi: MULTISWAP_ABI,
         functionName: 'executeMultiSwap',

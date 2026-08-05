@@ -335,6 +335,48 @@ export function formatSmartUSD(value: number | string, symbol: string = '$'): st
 }
 
 /**
+ * Strip grouping separators (and any other stray character) back to the bare
+ * numeric string a parser expects. The inverse of `formatNumberInput`.
+ *
+ * Amount fields keep their RAW value in state and only format on the way to
+ * the screen, so nothing downstream — parseUnits, BigInt, validation — ever
+ * sees a comma. Run this on every keystroke before calling the setter.
+ */
+export function parseNumberInput(value: string | number | null | undefined): string {
+    if (value === null || value === undefined) return '';
+    const cleaned = String(value).replace(/[^0-9.]/g, '');
+    const firstDot = cleaned.indexOf('.');
+    // Keep the first decimal point, drop any others the keypad let through.
+    if (firstDot === -1) return cleaned;
+    return cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, '');
+}
+
+/**
+ * Thousands separators for a LIVE numeric input — safe to apply on every
+ * keystroke because it never disturbs what the user is mid-way through
+ * typing: a trailing "." survives ("1,234." stays), so does an empty decimal
+ * tail, and the fraction is never grouped ("0.123456" not "0.123,456").
+ *
+ * Long token amounts are the reason this exists — "12888888888" is unreadable
+ * where "12,888,888,888" is not.
+ */
+export function formatNumberInput(value: string | number | null | undefined): string {
+    const raw = parseNumberInput(value);
+    if (!raw) return '';
+
+    const dot = raw.indexOf('.');
+    const intPart = dot === -1 ? raw : raw.slice(0, dot);
+    const fracPart = dot === -1 ? undefined : raw.slice(dot + 1);
+
+    // "00000000" should read "0", not "00,000,000" — collapse leading zeros
+    // but keep a lone "0" so "0.5" can still be typed.
+    const normalizedInt = intPart.replace(/^0+(?=\d)/, '');
+    const grouped = normalizedInt.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+
+    return fracPart === undefined ? grouped : `${grouped}.${fracPart}`;
+}
+
+/**
  * Convert amount to smallest unit (wei, etc.)
  * Ported from reference transfer.ts to ensure robust precision management
  */

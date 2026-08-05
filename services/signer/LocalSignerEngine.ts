@@ -157,28 +157,46 @@ export class LocalSignerEngine implements SignerEngine {
                 txArgs.data = tx.data as `0x${string}`;
             }
 
+            // Caller-supplied nonce + gas limit (both already on TransactionRequest,
+            // previously ignored here). A caller that queues several txs at once
+            // must own the nonce, and a tx that only becomes valid after an earlier
+            // queued tx lands can't be estimated — it must carry its own limit.
+            if (typeof tx.nonce === 'number') txArgs.nonce = tx.nonce;
+            const presetGas = tx.gasLimit ? BigInt(tx.gasLimit) : undefined;
+            if (presetGas) txArgs.gas = presetGas;
+
             // Standard Engineering Safety: Silent gas buffering for high reliability
             // We apply a 20% price premium and 30% limit buffer.
             try {
                 const publicClient = await this.getPublicClient(Number(tx.chainId) || 1);
 
-                // 1. Gas Price Buffer (20% above network base)
-                const networkPrice = await publicClient.getGasPrice();
-                txArgs.gasPrice = (networkPrice * 120n) / 100n;
+                // Price and limit are independent reads — awaiting them in series
+                // doubled the pre-flight latency of every signed tx. allSettled (not
+                // all) keeps the old behaviour where one failing read still lets the
+                // other apply.
+                const [priceResult, gasResult] = await Promise.allSettled([
+                    // 1. Gas Price Buffer (20% above network base)
+                    publicClient.getGasPrice(),
+                    // 2. Gas Limit Buffer. Simple native transfers are always 21,000
+                    //    gas — we use 21,000 so it stays a 'Transfer' on explorers.
+                    //    A preset limit skips the estimate entirely.
+                    presetGas || isNative
+                        ? Promise.resolve(presetGas ?? 21000n)
+                        : publicClient.estimateGas({
+                            account: walletClient.account!,
+                            to: txArgs.to,
+                            data: txArgs.data,
+                            value: txArgs.value,
+                        }),
+                ]);
 
-                // 2. Gas Limit Buffer
-                if (isNative) {
-                    // Simple native transfers are always 21,000 gas. 
-                    // We use 21,000 with a buffer to ensure it stays a 'Transfer' on explorers.
-                    txArgs.gas = 21000n;
+                if (priceResult.status === 'fulfilled') {
+                    txArgs.gasPrice = (priceResult.value * 120n) / 100n;
+                }
+                if (gasResult.status === 'fulfilled') {
+                    txArgs.gas = presetGas || isNative ? gasResult.value : (gasResult.value * 130n) / 100n;
                 } else {
-                    const estimate = await publicClient.estimateGas({
-                        account: walletClient.account!,
-                        to: txArgs.to,
-                        data: txArgs.data,
-                        value: txArgs.value,
-                    });
-                    txArgs.gas = (estimate * 130n) / 100n;
+                    console.warn('[SmartSigner] Estimation failed:', gasResult.reason?.message || gasResult.reason);
                 }
             } catch (estError: any) {
                 console.warn("[SmartSigner] Estimation failed:", estError?.message || estError);

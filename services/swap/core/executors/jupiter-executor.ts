@@ -235,7 +235,7 @@ export class JupiterExecutor implements SwapRouterExecutor {
       // 3. Sign transaction
       onStatusUpdate?.({
         stage: 'signing',
-        message: 'Approve Now',
+        message: 'Confirming in wallet...',
       });
 
       const signedTransaction = await wallet.signTransaction(transaction);
@@ -466,7 +466,7 @@ export class JupiterExecutor implements SwapRouterExecutor {
       transaction.partialSign(...signers);
     }
 
-    onStatusUpdate?.({ stage: 'signing', message: 'Approve Now' });
+    onStatusUpdate?.({ stage: 'signing', message: 'Confirming in wallet...' });
     const signedTx = await wallet.signTransaction(transaction);
 
     onStatusUpdate?.({ stage: 'submitting', message: 'Submitting...' });

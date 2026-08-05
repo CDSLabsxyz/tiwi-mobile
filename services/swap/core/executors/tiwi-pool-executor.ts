@@ -251,7 +251,7 @@ export class TiwiPoolExecutor implements SwapRouterExecutor {
         } catch { /* best-effort; falls back to expectedOut below */ }
       }
 
-      onStatusUpdate?.({ stage: 'signing', message: 'Approve Now' });
+      onStatusUpdate?.({ stage: 'signing', message: 'Confirming in wallet...' });
 
       // Gas estimate with a safe fallback.
       let gasLimit: bigint | undefined;

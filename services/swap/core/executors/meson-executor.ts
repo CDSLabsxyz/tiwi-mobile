@@ -81,7 +81,7 @@ export class MesonExecutor implements SwapRouterExecutor {
       if (!encoded) throw new Error('Meson returned no encoded swap');
 
       // 3) Sign the Meson initiator signature = personal_sign(encoded + fromAddress).
-      onStatusUpdate?.({ stage: 'signing', message: 'Sign to authorize the bridge...' });
+      onStatusUpdate?.({ stage: 'signing', message: 'Signing to authorize the bridge...' });
       const signData = (encoded + user.slice(2).toLowerCase()) as Hex;
       const signature = await wallet.signMessage({
         account: wallet.account ?? user,

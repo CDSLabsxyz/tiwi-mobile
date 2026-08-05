@@ -98,7 +98,7 @@ export class SquidExecutor implements SwapRouterExecutor {
             console.log(`[SquidExecutor] Tax of ${taxAmount} collected`);
         }
 
-        onStatusUpdate?.({ stage: 'signing', message: 'Approve Now' });
+        onStatusUpdate?.({ stage: 'signing', message: 'Confirming in wallet...' });
 
         // Squid EVM transaction data
         const txData = trade.transaction || trade.tx;
@@ -136,7 +136,7 @@ export class SquidExecutor implements SwapRouterExecutor {
             const keplr = await getCosmosWallet();
             const chainId = route.fromToken.chainId === 118 ? 'cosmoshub-4' : (trade.fromChain?.providerId || 'cosmoshub-4');
 
-            onStatusUpdate?.({ stage: 'signing', message: 'Please sign the Cosmos transaction...' });
+            onStatusUpdate?.({ stage: 'signing', message: 'Signing the Cosmos transaction...' });
 
             // Get offline signer from Keplr/Leap
             const offlineSigner = (window as any).getOfflineSigner(chainId);

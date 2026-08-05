@@ -67,6 +67,20 @@ export default function SwapScreen() {
         chainId?: string;
         logo?: string;
         priceUSD?: string;
+        // Pool-page deep link: a full pair plus (optionally) the pool to route
+        // through. Mirrors the web's buildSwapHref.
+        fromTokenAddress?: string;
+        fromChainId?: string;
+        fromSymbol?: string;
+        fromLogo?: string;
+        fromDecimals?: string;
+        toTokenAddress?: string;
+        toChainId?: string;
+        toSymbol?: string;
+        toLogo?: string;
+        toDecimals?: string;
+        poolAddress?: string;
+        preferredRouter?: string;
     }>();
 
     // Prefetch top chain tokens
@@ -88,6 +102,7 @@ export default function SwapScreen() {
         setToChain,
         setFromToken,
         setToToken,
+        setPinnedPool,
         setFromAmount,
         setToAmount,
         setToFiatAmount,
@@ -117,6 +132,8 @@ export default function SwapScreen() {
     } = useSwapStore();
 
     const [fromFiatAmount, setFromFiatAmount] = useState('$0.00');
+    /** The input amount the current quote was fetched for — see the From-fiat effect. */
+    const [quotedFromAmount, setQuotedFromAmount] = useState('');
     const queryClient = useQueryClient();
 
     const { currency, region } = useLocaleStore();
@@ -318,8 +335,11 @@ export default function SwapScreen() {
 
     // 2. Fetch Prices Updates (BNB & TWC) silently in background
     useEffect(() => {
-        // Skip default price updates if we're pre-populating from params
+        // Skip default price updates if we're pre-populating from params.
+        // Both deep-link shapes must be covered: this effect is declared BEFORE
+        // them, so on mount it still sees the default BNB/TWC pair.
         if (hasParams && !paramsAppliedRef.current) return;
+        if (hasPairParams && !pairParamsAppliedRef.current) return;
 
         const updatePrices = async () => {
             try {
@@ -348,22 +368,31 @@ export default function SwapScreen() {
                     // very first quote a user sees (the default BNB→TWC pair)
                     // pays for a server-side DexScreener lookup — seconds, not
                     // milliseconds. This response already contains it.
-                    if (isDefaultBnb && bnbRes.tokens?.[0]) {
+                    // Re-read the CURRENT selection before writing. `fromToken`
+                    // in this closure is whatever was selected when the effect
+                    // ran; a deep link (or the user) can change it while the
+                    // fetch is in flight, and merging the stale value would put
+                    // the default BNB/TWC pair back on screen.
+                    const live = useSwapStore.getState();
+                    const stillDefaultBnb = live.fromToken?.address === "0x0000000000000000000000000000000000000000";
+                    const stillDefaultTwc = live.toToken?.address === "0xDA1060158F7D593667CCE0A15DB346BB3FfB3596";
+
+                    if (isDefaultBnb && stillDefaultBnb && bnbRes.tokens?.[0]) {
                         const bnb = bnbRes.tokens[0];
                         setFromToken({
-                            ...fromToken!,
+                            ...live.fromToken!,
                             priceUSD: bnb.priceUSD,
-                            liquidity: bnb.liquidity ?? fromToken!.liquidity,
-                            tvl: bnb.marketCap ? `$${formatCompactNumber(bnb.marketCap)}` : fromToken!.tvl,
+                            liquidity: bnb.liquidity ?? live.fromToken!.liquidity,
+                            tvl: bnb.marketCap ? `$${formatCompactNumber(bnb.marketCap)}` : live.fromToken!.tvl,
                         });
                     }
-                    if (isDefaultTwc && twcRes.tokens?.[0]) {
+                    if (isDefaultTwc && stillDefaultTwc && twcRes.tokens?.[0]) {
                         const twc = twcRes.tokens[0];
                         setToToken({
-                            ...toToken!,
+                            ...live.toToken!,
                             priceUSD: twc.priceUSD,
-                            liquidity: twc.liquidity ?? toToken!.liquidity,
-                            tvl: twc.marketCap ? `$${formatCompactNumber(twc.marketCap)}` : toToken!.tvl,
+                            liquidity: twc.liquidity ?? live.toToken!.liquidity,
+                            tvl: twc.marketCap ? `$${formatCompactNumber(twc.marketCap)}` : live.toToken!.tvl,
                         });
                     }
                 }
@@ -375,8 +404,90 @@ export default function SwapScreen() {
         updatePrices();
     }, [chains, fromChain?.id, toChain?.id]);
 
-    // 2. Pre-populate from params if coming from asset detail
-    const hasParams = !!(params.symbol && params.chainId);
+    // 2a. Pre-populate BOTH sides when deep-linked from a liquidity pool page.
+    // Same params the web's buildSwapHref emits. When the pool is a real
+    // on-chain TIWI pair it also carries poolAddress + preferredRouter, which
+    // pins routing to that pair for as long as the user leaves the pair alone.
+    const hasPairParams = !!(params.fromTokenAddress && params.toTokenAddress && params.fromChainId);
+    const pairParamsAppliedRef = React.useRef(false);
+
+    useEffect(() => {
+        if (!hasPairParams || !chains || pairParamsAppliedRef.current) return;
+
+        const fromChainId = Number(params.fromChainId);
+        const toChainId = Number(params.toChainId || params.fromChainId);
+        const srcChain = chains.find((c: any) => Number(c.id) === fromChainId);
+        const dstChain = chains.find((c: any) => Number(c.id) === toChainId);
+        if (!srcChain || !dstChain) return;
+
+        pairParamsAppliedRef.current = true;
+
+        const toChainOption = (c: any) => ({ id: c.id, name: c.name, icon: c.logoURI });
+        const seed = (addr: string, sym: string, logo: string | undefined, dec: string | undefined, cid: number) => ({
+            id: `${cid}-${addr}`,
+            symbol: sym,
+            name: sym,
+            icon: logo,
+            address: addr,
+            chainId: cid,
+            decimals: dec ? Number(dec) : 18,
+            balanceToken: '0.00',
+            balanceFiat: '$0.00',
+            priceUSD: '0',
+        }) as any;
+
+        setFromChain(toChainOption(srcChain));
+        setToChain(toChainOption(dstChain));
+        // setFromToken/setToToken clear any pool pin, so pin AFTER seeding.
+        setFromToken(seed(params.fromTokenAddress!, params.fromSymbol || '', params.fromLogo, params.fromDecimals, fromChainId));
+        setToToken(seed(params.toTokenAddress!, params.toSymbol || '', params.toLogo, params.toDecimals, toChainId));
+
+        if (params.poolAddress && params.preferredRouter) {
+            setPinnedPool(params.poolAddress, params.preferredRouter);
+        }
+
+        // The link carries no liquidity and only the pool's stored decimals.
+        // Enrich both sides from the token list for the same reasons as the
+        // single-token path below (quote latency + correct amount scaling).
+        const enrich = async (addr: string, cid: number, apply: (real: any) => void) => {
+            try {
+                const res = await api.tokens.list({ address: addr, chains: [cid], limit: 1 });
+                const real = res?.tokens?.[0];
+                if (real) apply(real);
+            } catch (e) {
+                console.warn('[SwapScreen] Pool deep-link enrich failed:', e);
+            }
+        };
+        // Merge onto the LIVE token, and only while it is still the one this
+        // link asked for — the user may have picked something else meanwhile.
+        const stillSelected = (side: 'from' | 'to', addr: string) => {
+            const t = side === 'from' ? useSwapStore.getState().fromToken : useSwapStore.getState().toToken;
+            return t && (t.address || '').toLowerCase() === addr.toLowerCase() ? t : null;
+        };
+        void enrich(params.fromTokenAddress!, fromChainId, (real) => {
+            const live = stillSelected('from', params.fromTokenAddress!);
+            if (!live) return;
+            setFromToken({
+                ...live,
+                decimals: real.decimals ?? live.decimals,
+                liquidity: real.liquidity,
+                priceUSD: real.priceUSD || live.priceUSD || '0',
+            } as any);
+        });
+        void enrich(params.toTokenAddress!, toChainId, (real) => {
+            const live = stillSelected('to', params.toTokenAddress!);
+            if (!live) return;
+            setToToken({
+                ...live,
+                decimals: real.decimals ?? live.decimals,
+                liquidity: real.liquidity,
+                priceUSD: real.priceUSD || live.priceUSD || '0',
+            } as any);
+        });
+    }, [hasPairParams, chains]);
+
+    // 2b. Pre-populate from params if coming from asset detail
+    const hasParams = !hasPairParams && !!(params.symbol && params.chainId);
     const paramsAppliedRef = React.useRef(false);
 
     useEffect(() => {
@@ -562,6 +673,31 @@ export default function SwapScreen() {
         setFromAmount(val.toFixed(6).replace(/\.?0+$/, ''));
     };
 
+    /**
+     * Where the drag slider's knob sits: the typed amount as a share of balance.
+     * Max lands a hair under 100% on chains where the protocol fee is reserved
+     * out of the balance (see handlePercentagePress), so treat "within a
+     * rounding whisker of the reservable max" as a full 100 — otherwise the knob
+     * would stick at 99% right after tapping Max.
+     */
+    const fromHasBalance = useMemo(
+        () => parseBalanceToken(fromToken?.balanceToken || '0') > 0,
+        [fromToken?.balanceToken],
+    );
+
+    const fromPercentOfBalance = useMemo(() => {
+        const maxBal = parseBalanceToken(fromToken?.balanceToken || '0');
+        const current = parseFloat(fromAmount || '0');
+        if (!(maxBal > 0) || !(current > 0)) return 0;
+        const pct = (current / maxBal) * 100;
+        return pct >= 99.5 ? 100 : Math.min(100, Math.max(0, pct));
+    }, [fromAmount, fromToken?.balanceToken]);
+
+    const handleSliderChange = (percent: number) => {
+        if (percent <= 0) { setFromAmount(''); return; }
+        handlePercentagePress(percent);
+    };
+
 
     const handleSwapDirection = () => {
         swapDirection();
@@ -581,8 +717,11 @@ export default function SwapScreen() {
         // Duplicate-request guard (ported from useSwapQuote). The pair MUST be
         // part of the key — otherwise changing one token while keeping the same
         // amount produces an identical key, the fetch is skipped, and the
-        // previous pair's quote stays on screen.
-        const quoteKey = `${fromAmount}-${fromToken.chainId}:${fromToken.address}->${toToken.chainId}:${toToken.address}-${slippage}`;
+        // previous pair's quote stays on screen. The pinned pool belongs in the
+        // key too: arriving from a pool page onto an already-quoted pair must
+        // re-quote, since the route is now forced through that pair.
+        const pinnedPool = useSwapStore.getState().pinnedPoolAddress || '';
+        const quoteKey = `${fromAmount}-${fromToken.chainId}:${fromToken.address}->${toToken.chainId}:${toToken.address}-${slippage}-${pinnedPool}`;
         if (!isRefresh && quoteKey === lastQuoteKeyRef.current) {
             return;
         }
@@ -633,6 +772,7 @@ export default function SwapScreen() {
 
             if (fetchedQuote) {
                 setSwapQuote(fetchedQuote);
+                setQuotedFromAmount(fromAmount);
                 setLastFetchTime(Date.now());
                 setToAmount(fetchedQuote.toAmount);
                 setIsStale(false);
@@ -698,19 +838,38 @@ export default function SwapScreen() {
         return () => clearInterval(interval);
     }, [swapQuote, isLoadingQuote, isRefreshing, isLoadingSwap, fromAmount, fromToken, toToken, slippage, updateQuote]);
 
-    // Update From Fiat whenever amount or token changes
+    // Update From Fiat whenever amount or token changes.
+    //
+    // Prefer the route's own `fromAmountUSD` — the same figure the "To" side
+    // already uses, and what the web card shows (app/swap/page.tsx's
+    // fromTokenUSD). A local `amount × priceUSD` multiply comes from the balance
+    // store's price feed, which is a DIFFERENT source than the router's, so on a
+    // taxed token in a thin pool (TWC) the two disagree and the From value reads
+    // wrong while the quoted To value reads right. The multiply stays as the
+    // fallback for when there's no quote yet, or the amount has been edited
+    // since — an in-flight quote's USD belongs to the previous amount.
     useEffect(() => {
-        if (!fromAmount || !fromToken?.priceUSD || parseFloat(fromAmount) === 0) {
+        const amountNum = parseFloat(fromAmount || '0');
+        if (!fromAmount || !(amountNum > 0)) {
             setFromFiatAmount('$0.00');
             return;
         }
         try {
-            const usdValue = parseFloat(fromAmount) * parseFloat(fromToken.priceUSD);
+            const routeFromUsd = parseFloat(swapQuote?.fromAmountUSD || '0');
+            if (quotedFromAmount === fromAmount && routeFromUsd > 0) {
+                setFromFiatAmount(formatFiatValue(routeFromUsd, region, currency));
+                return;
+            }
+            if (!fromToken?.priceUSD) {
+                setFromFiatAmount('$0.00');
+                return;
+            }
+            const usdValue = amountNum * parseFloat(fromToken.priceUSD);
             setFromFiatAmount(formatFiatValue(usdValue, region, currency));
         } catch (e) {
             setFromFiatAmount('$0.00');
         }
-    }, [fromAmount, fromToken, region, currency]);
+    }, [fromAmount, fromToken, region, currency, swapQuote, quotedFromAmount]);
 
     /**
      * A cross-chain swap into a taxed token (TWC) runs in two legs: bridge to a stable on the
@@ -934,8 +1093,18 @@ export default function SwapScreen() {
                     toTokenSymbol: toToken.symbol,
                     amount: swapFromAmount,
                     amountFormatted: `${swapFromAmount} ${fromToken.symbol}`,
+                    // The OUTPUT amount. Without it `to_amount_formatted` stays
+                    // empty and a pool's Transactions table renders "0.8968 USDT
+                    // → TWC" with no number on the receiving side. Prefer the
+                    // quote's own figure over the on-screen value, which may have
+                    // been re-formatted for display.
+                    toAmountFormatted: swapQuote?.toAmount || toAmount || undefined,
                     usdValue: parseFloat(fromFiatAmount.replace(/[^0-9.]/g, '') || '0'),
-                    routerName: swapQuote?.router || 'relay'
+                    routerName: swapQuote?.router || 'relay',
+                    // Tag the TIWI liquidity pool this swap traded against, so it shows
+                    // in that pool's Transactions table and counts toward its volume.
+                    // Without this, pool swaps made on mobile were invisible to the pool.
+                    poolAddress: (swapQuote as any)?.raw?.pairAddress || undefined,
                 });
             } catch (err) {
                 console.warn('[Swap] Backend logging failed:', err);
@@ -1161,6 +1330,9 @@ export default function SwapScreen() {
                                 onTokenPress={() => handleOpenAssetSheet('from', 'chains')}
                                 onMaxPress={() => handlePercentagePress(100)}
                                 onInputPress={() => setIsKeyboardVisible(true)}
+                                percentOfBalance={fromPercentOfBalance}
+                                onPercentChange={handleSliderChange}
+                                sliderDisabled={!fromHasBalance}
                             />
 
                             <View style={styles.toCardWrapper}>

@@ -79,7 +79,7 @@ export class TONExecutor implements SwapRouterExecutor {
                 throw new SwapExecutionError('TON transaction data missing', SwapErrorCode.INVALID_ROUTE, 'ton');
             }
 
-            onStatusUpdate?.({ stage: 'signing', message: 'Approve Now' });
+            onStatusUpdate?.({ stage: 'signing', message: 'Confirming in wallet...' });
             const result = await tonConnectUI.sendTransaction(trade.transaction);
             const hash = result.boc || 'transaction_sent';
             onStatusUpdate?.({ stage: 'completed', message: 'Success', txHash: hash });
@@ -123,7 +123,7 @@ export class TONExecutor implements SwapRouterExecutor {
             throw new SwapExecutionError('Invalid swap amount', SwapErrorCode.INVALID_ROUTE, 'ton');
         }
 
-        onStatusUpdate?.({ stage: 'signing', message: 'Approve Now' });
+        onStatusUpdate?.({ stage: 'signing', message: 'Confirming in wallet...' });
 
         const { TonClient, WalletContractV4, internal: internalMessage, SendMode } = await import('@ton/ton');
         const { DEX, pTON } = await import('@ston-fi/sdk');

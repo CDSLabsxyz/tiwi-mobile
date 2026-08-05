@@ -216,7 +216,7 @@ export class TiwiCctpExecutor implements SwapRouterExecutor {
       if (usdcAmount <= BigInt(0)) return { success: false, txHash: '', error: new Error('Source swap produced no USDC') };
 
       // Burn: deposit_for_burn to the EVM destination domain; relayer mints on dest.
-      onStatusUpdate?.({ stage: 'signing', message: 'Step 2/2: Confirm the cross-chain burn in your wallet...' });
+      onStatusUpdate?.({ stage: 'signing', message: 'Step 2/2: Confirming the cross-chain burn in your wallet...' });
       const mintRecipientBytes32 = encodeRecipientBytes32(dst.vm, mintRecipient);
       const { srcTxHash } = await svmDepositForBurnWithWallet(connection, wallet, {
         amount: usdcAmount,

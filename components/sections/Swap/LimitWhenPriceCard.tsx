@@ -1,4 +1,5 @@
 import { colors } from '@/constants/colors';
+import { formatNumberInput } from '@/utils/formatting';
 import { Image } from 'expo-image';
 import React, { useMemo } from 'react';
 import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
@@ -88,7 +89,7 @@ export const LimitWhenPriceCard: React.FC<LimitWhenPriceCardProps> = ({
                     </View>
 
                     <TextInput
-                        value={amount}
+                        value={formatNumberInput(amount)}
                         onChangeText={handleAmountChange}
                         keyboardType="decimal-pad"
                         inputMode="decimal"

@@ -35,7 +35,7 @@ export const evmCctpSourceAdapter: CctpSourceAdapter = {
     );
 
     // depositForBurn — burns USDC here; Circle mints it to mintRecipient (the relayer) on dest.
-    onStatusUpdate?.({ stage: 'signing', message: 'Confirm the cross-chain transfer in your wallet...' });
+    onStatusUpdate?.({ stage: 'signing', message: 'Confirming the cross-chain transfer in your wallet...' });
     const data = encodeFunctionData({
       abi: TOKEN_MESSENGER_V2_ABI,
       functionName: 'depositForBurn',

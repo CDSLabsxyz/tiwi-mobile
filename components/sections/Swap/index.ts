@@ -1,3 +1,4 @@
+export * from './AmountSlider';
 export * from './BscGasSelector';
 export * from './RecipientAddressSheet';
 export * from './ChainSelectorCard';

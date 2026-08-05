@@ -320,6 +320,28 @@ class StakingService {
 
             const allPools = (poolsResponseAll as any).pools || [];
 
+            // Duplicate `staking_pools` rows can point at the SAME on-chain
+            // contract — pool creation has written repeat rows for a single
+            // deployment (e.g. 0x771b…07c7 carries 8 rows created seconds
+            // apart), which made the POOL COUNTS report 8 pools that don't
+            // exist. Mark one representative row per contract; only those
+            // feed activePoolsCount/inactivePoolsCount. The TVL and staked
+            // sums deliberately stay over every row so those totals match
+            // the web earn page.
+            const dedupeKey = (p: any): string => {
+                if (p.poolContractAddress) return `addr:${String(p.poolContractAddress).toLowerCase()}`;
+                if (p.poolId !== undefined && p.poolId !== null) return `legacy:${p.chainId ?? 56}:${p.poolId}`;
+                return `row:${p.id}`;
+            };
+            const seenPools = new Set<string>();
+            const countableRowIds = new Set<string>();
+            for (const p of allPools) {
+                const key = dedupeKey(p);
+                if (seenPools.has(key)) continue;
+                seenPools.add(key);
+                countableRowIds.add(p.id);
+            }
+
             // Pool status, TVL cap, and live staked are read DIRECTLY from
             // the pool contract (V2 pool-per-contract, or legacy factory).
             // The DB's `status` and `maxTvl` columns drift — admins can pause
@@ -337,6 +359,17 @@ class StakingService {
             // efficient on-chain way to enumerate historical users.
             const nowSec = Math.floor(Date.now() / 1000);
 
+            // A pool counts as active only when BOTH signals agree, matching
+            // the web earn page (app/earn/page.tsx isActiveStakingPool):
+            //   • DB `status` — the operator's editorial switch. Pools like
+            //     "Test pool - Don't Engage" run on-chain but are flipped to
+            //     `inactive` so they stay hidden. On-chain state alone counted
+            //     them as active and made this card disagree with the web.
+            //   • on-chain `active` + `endTime` — the mechanical state, which
+            //     catches the many pools the DB still calls `active` long
+            //     after their reward period ended.
+            const isListed = (p: any) => (p.status || 'active') === 'active';
+
             // Fast path: the server-enriched snapshot carries every pool's
             // on-chain status/maxTvl/totalStaked, so the whole crawl below
             // collapses into one request. Verified to reproduce the same
@@ -350,7 +383,8 @@ class StakingService {
                     const notExpired = endTimeSec === 0 || nowSec < endTimeSec;
                     return {
                         ok: true as const,
-                        isActive: Boolean(fromSnapshot.active) && notExpired,
+                        counts: countableRowIds.has(p.id),
+                        isActive: isListed(p) && Boolean(fromSnapshot.active) && notExpired,
                         maxTvlTok: Number(fromSnapshot.maxTvl) || 0,
                         totalStakedTok: Number(fromSnapshot.totalStaked) || 0,
                         tokenSymbol: (p.tokenSymbol || '').toUpperCase(),
@@ -360,9 +394,11 @@ class StakingService {
                 const hasV2 = !!p.poolContractAddress;
                 const hasLegacy = (p.chainId ?? 56) === 56 && p.poolId !== undefined && p.poolId !== null;
                 if (!hasV2 && !hasLegacy) {
+                    // No contract to read — the DB switch is all we have.
                     return {
                         ok: true as const,
-                        isActive: p.status === 'active',
+                        counts: countableRowIds.has(p.id),
+                        isActive: isListed(p),
                         maxTvlTok: 0,
                         totalStakedTok: 0,
                         tokenSymbol: (p.tokenSymbol || '').toUpperCase(),
@@ -405,7 +441,8 @@ class StakingService {
                     const notExpired = endTimeSec === 0 || nowSec < endTimeSec;
                     return {
                         ok: true as const,
-                        isActive: active && notExpired,
+                        counts: countableRowIds.has(p.id),
+                        isActive: isListed(p) && active && notExpired,
                         maxTvlTok,
                         totalStakedTok,
                         tokenSymbol,
@@ -427,8 +464,11 @@ class StakingService {
             const resolvedStats = onChainStats.filter(
                 (s): s is Extract<typeof s, { ok: true }> => s.ok,
             );
-            const activeCount = resolvedStats.filter((s) => s.isActive).length;
-            const inactiveCount = Math.max(0, resolvedStats.length - activeCount);
+            // Counts: one entry per distinct pool contract. Sums: every row,
+            // so Overall TVL / Total Staked stay identical to the web page.
+            const countableStats = resolvedStats.filter((s) => s.counts);
+            const activeCount = countableStats.filter((s) => s.isActive).length;
+            const inactiveCount = Math.max(0, countableStats.length - activeCount);
             const overallTvlSum = resolvedStats.reduce((sum, s) => sum + s.maxTvlTok, 0);
             const twcStaked = resolvedStats.reduce((sum, s) => (
                 s.tokenSymbol === 'TWC' ? sum + s.totalStakedTok : sum

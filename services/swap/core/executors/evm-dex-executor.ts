@@ -949,7 +949,7 @@ export abstract class EVMDEXExecutor {
       // Frontend-side gas estimation can reject valid swaps with stale allowance/liquidity state.
       onStatusUpdate?.({
         stage: 'signing',
-        message: 'Approve Now',
+        message: 'Confirming in wallet...',
       });
 
       // Ensure account is available (TypeScript type guard)

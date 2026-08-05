@@ -7,9 +7,12 @@ import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from '
 interface SwapKeyboardProps {
     visible: boolean;
     onKeyPress: (key: string) => void;
-    onPercentagePress: (percentage: number) => void;
-    onMaxPress: () => void;
+    /** 25/50/75/Max pills. Hide them (showQuickActions={false}) for inputs that
+     *  are a config figure rather than a share of a balance. */
+    onPercentagePress?: (percentage: number) => void;
+    onMaxPress?: () => void;
     onClose: () => void;
+    showQuickActions?: boolean;
 }
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -20,6 +23,7 @@ export const SwapKeyboard: React.FC<SwapKeyboardProps> = ({
     onPercentagePress,
     onMaxPress,
     onClose,
+    showQuickActions = true,
 }) => {
     const translateY = useSharedValue(SCREEN_HEIGHT);
 
@@ -60,22 +64,24 @@ export const SwapKeyboard: React.FC<SwapKeyboardProps> = ({
                 onPress={onClose}
             />
 
-            <Animated.View style={[styles.container, animatedStyle]}>
+            <Animated.View style={[styles.container, !showQuickActions && styles.containerNoActions, animatedStyle]}>
                 {/* Header Actions Row */}
-                <View style={styles.actionRow}>
-                    <TouchableOpacity style={styles.actionPill} onPress={() => onPercentagePress(25)}>
-                        <Text style={styles.actionText}>25%</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.actionPill} onPress={() => onPercentagePress(50)}>
-                        <Text style={styles.actionText}>50%</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.actionPill} onPress={() => onPercentagePress(75)}>
-                        <Text style={styles.actionText}>75%</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={[styles.actionPill, styles.maxPill]} onPress={onMaxPress}>
-                        <Text style={styles.maxText}>Max</Text>
-                    </TouchableOpacity>
-                </View>
+                {showQuickActions && (
+                    <View style={styles.actionRow}>
+                        <TouchableOpacity style={styles.actionPill} onPress={() => onPercentagePress?.(25)}>
+                            <Text style={styles.actionText}>25%</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.actionPill} onPress={() => onPercentagePress?.(50)}>
+                            <Text style={styles.actionText}>50%</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.actionPill} onPress={() => onPercentagePress?.(75)}>
+                            <Text style={styles.actionText}>75%</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.actionPill, styles.maxPill]} onPress={() => onMaxPress?.()}>
+                            <Text style={styles.maxText}>Max</Text>
+                        </TouchableOpacity>
+                    </View>
+                )}
 
                 {/* Numpad Grid */}
                 <View style={styles.grid}>
@@ -139,6 +145,9 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.3,
         shadowRadius: 10,
         elevation: 20,
+    },
+    containerNoActions: {
+        paddingTop: 24,
     },
     actionRow: {
         flexDirection: 'row',

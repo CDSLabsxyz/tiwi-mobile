@@ -520,7 +520,7 @@ export class BscRelayerExecutor implements SwapRouterExecutor {
       // 4. Build the relayer transaction
       onStatusUpdate?.({
         stage: 'signing',
-        message: 'Please sign the swap transaction...',
+        message: 'Signing the swap transaction...',
       });
 
       // Normalize token addresses (convert native BNB to WBNB)

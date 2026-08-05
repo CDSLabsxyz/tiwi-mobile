@@ -92,6 +92,8 @@ export default function PositionsScreen() {
             toTokenSymbol: pool?.tokenB?.symbol,
             amount: p.onChain?.redeemableA ?? p.amountA ?? '0',
             amountFormatted: `${p.onChain?.redeemableA ?? p.amountA ?? '0'} ${pool?.tokenA?.symbol ?? ''}`.trim(),
+            // The B-side amount, same as the web records.
+            toAmountFormatted: p.onChain?.redeemableB ?? p.amountB ?? undefined,
             routerName: pool?.pair,
             poolAddress: pool?.pairAddress,
             blockTimestamp: new Date().toISOString(),

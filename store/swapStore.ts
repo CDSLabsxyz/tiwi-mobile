@@ -97,6 +97,17 @@ interface SwapState {
   /** The actual BEP-20 the relayer deducts gas in (OTHER_BSC tier only). */
   selectedGasToken: TokenOption | null;
 
+  /**
+   * "Swap through THIS liquidity pool" — set only by the deep link from a TIWI
+   * pool page's Swap button, and cleared the moment either side of the pair
+   * changes. `pinnedPoolAddress` is the TiwiLiquidityPair; `preferredRouter`
+   * is 'tiwi-pool'. Both ride along on the route request, where the backend
+   * forces that pair (and falls back to normal routing if it can't serve it).
+   */
+  pinnedPoolAddress: string | null;
+  preferredRouter: string | null;
+  setPinnedPool: (poolAddress: string | null, preferredRouter?: string | null) => void;
+
   // Actions - Form
   setActiveTab: (tab: SwapTabKey) => void;
   setFromAmount: (amount: string) => void;
@@ -139,6 +150,20 @@ interface SwapState {
   hasValidQuote: () => boolean;
 }
 
+/** Same (chainId, address) = the same token, whatever else was refreshed. */
+const isSameToken = (a: TokenOption | null, b: TokenOption | null): boolean =>
+  !!a && !!b &&
+  Number(a.chainId) === Number(b.chainId) &&
+  (a.address || '').toLowerCase() === (b.address || '').toLowerCase();
+
+/** Drop a pool pin when the pair really changed; keep it on a refresh. */
+const clearPinIfPairChanged = (
+  current: TokenOption | null,
+  next: TokenOption | null,
+  patch: Partial<SwapState>,
+): Partial<SwapState> =>
+  isSameToken(current, next) ? patch : { ...patch, pinnedPoolAddress: null, preferredRouter: null };
+
 /**
  * Swap store - centralizes all swap-related state management
  */
@@ -170,6 +195,8 @@ export const useSwapStore = create<SwapState>((set, get) => ({
   // BNB = the standard 0.25% tier; the user pays their own gas unless they
   // explicitly pick a token for the relayer to deduct from.
   selectedGasTokenType: GasTokenType.BNB,
+  pinnedPoolAddress: null,
+  preferredRouter: null,
   selectedGasToken: null,
 
   // Actions - Form
@@ -177,9 +204,15 @@ export const useSwapStore = create<SwapState>((set, get) => ({
   setFromAmount: (amount) => set({ fromAmount: amount }),
   setToAmount: (amount) => set({ toAmount: amount }),
   setFromChain: (chain) => set({ fromChain: chain }),
-  setFromToken: (token) => set({ fromToken: token }),
+  // Swapping in a DIFFERENT token invalidates a pool pin — the pinned pair
+  // may not trade the new pair at all, and routing through it anyway would
+  // quote the wrong market. Re-setting the SAME token (the deep link enriches
+  // decimals/liquidity right after seeding) must keep the pin.
+  setFromToken: (token) => set(clearPinIfPairChanged(get().fromToken, token, { fromToken: token })),
   setToChain: (chain) => set({ toChain: chain }),
-  setToToken: (token) => set({ toToken: token }),
+  setToToken: (token) => set(clearPinIfPairChanged(get().toToken, token, { toToken: token })),
+  setPinnedPool: (pinnedPoolAddress, preferredRouter = 'tiwi-pool') =>
+    set({ pinnedPoolAddress, preferredRouter: pinnedPoolAddress ? preferredRouter : null }),
 
   // Actions - Limit order
   setWhenPrice: (price) => set({ whenPrice: price }),
@@ -248,6 +281,8 @@ export const useSwapStore = create<SwapState>((set, get) => ({
     gasPaymentToken: null,
     selectedGasTokenType: GasTokenType.BNB,
     selectedGasToken: null,
+    pinnedPoolAddress: null,
+    preferredRouter: null,
   }),
 
   // Computed selectors

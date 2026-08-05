@@ -1,4 +1,5 @@
 import { colors } from '@/constants/colors';
+import { formatNumberInput, parseNumberInput } from '@/utils/formatting';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import React, { useRef, useState } from 'react';
@@ -135,8 +136,8 @@ export const PerpTradeForm: React.FC<PerpTradeFormProps> = ({ symbol, availableB
                         style={styles.rawInput}
                         placeholder="Price"
                         placeholderTextColor={colors.mutedText}
-                        value={price}
-                        onChangeText={setPrice}
+                        value={formatNumberInput(price)}
+                        onChangeText={(t) => setPrice(parseNumberInput(t))}
                         keyboardType="numeric"
                     />
                 )}
@@ -149,8 +150,8 @@ export const PerpTradeForm: React.FC<PerpTradeFormProps> = ({ symbol, availableB
                     style={styles.rawInput}
                     placeholder="Order Value"
                     placeholderTextColor={colors.mutedText}
-                    value={amount}
-                    onChangeText={setAmount}
+                    value={formatNumberInput(amount)}
+                    onChangeText={(t) => setAmount(parseNumberInput(t))}
                     keyboardType="numeric"
                 />
                 <View style={styles.unitWithIcon}>

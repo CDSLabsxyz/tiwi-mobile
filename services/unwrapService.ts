@@ -5,8 +5,11 @@
  *           mis-registered address in constants/wrappedNatives.ts fails loudly
  *           instead of burning gas.
  * Solana  : closing the wSOL associated token account returns its lamports to the
- *           owner. SPL has no partial-unwrap primitive, so Solana always unwraps
- *           the full balance — the UI states this explicitly.
+ *           owner. SPL has no partial-unwrap instruction, so a partial amount is
+ *           expressed as one atomic transaction: close the account (everything
+ *           becomes SOL), recreate it, and re-wrap the remainder with
+ *           `syncNative`. The account rent is returned by the close and paid
+ *           straight back into the new account, so it nets out to the fee.
  *
  * Signing goes through `signerController`, the same seam the liquidity hub and
  * send flow use, so hardware/biometric policy is applied consistently.
@@ -99,7 +102,7 @@ export async function fetchWrappedBalance(
 
 export interface UnwrapResult {
   hash: string;
-  /** Base units actually unwrapped (Solana always unwraps the full balance). */
+  /** Base units actually unwrapped. */
   amount: bigint;
 }
 
@@ -110,7 +113,6 @@ export interface UnwrapResult {
 export async function unwrapToNative(params: {
   info: WrappedNativeInfo;
   owner: string;
-  /** Ignored on Solana, which can only unwrap the full account balance. */
   amount: bigint;
 }): Promise<UnwrapResult> {
   const { info, owner } = params;
@@ -118,7 +120,7 @@ export async function unwrapToNative(params: {
   if (params.amount <= 0n) throw new Error('Enter an amount to unwrap.');
 
   const result = info.family === 'solana'
-    ? await unwrapSolana(info, owner)
+    ? await unwrapSolana(info, owner, params.amount)
     : await unwrapEvm(info, owner, params.amount);
 
   // Best-effort activity log — never let a logging failure mask a good tx.
@@ -194,25 +196,68 @@ async function unwrapEvm(
   return { hash: res.hash, amount };
 }
 
-async function unwrapSolana(info: WrappedNativeInfo, owner: string): Promise<UnwrapResult> {
-  const { PublicKey, Transaction } = await import('@solana/web3.js');
-  const { createCloseAccountInstruction, getAssociatedTokenAddressSync, NATIVE_MINT } =
-    await import('@solana/spl-token');
+async function unwrapSolana(
+  info: WrappedNativeInfo,
+  owner: string,
+  requested: bigint,
+): Promise<UnwrapResult> {
+  const { PublicKey, SystemProgram, Transaction } = await import('@solana/web3.js');
+  const {
+    createAssociatedTokenAccountInstruction,
+    createCloseAccountInstruction,
+    createSyncNativeInstruction,
+    getAssociatedTokenAddressSync,
+    NATIVE_MINT,
+  } = await import('@solana/spl-token');
   const { getSolanaConnection } = await import('@/services/swap/core/utils/wallet-helpers');
 
   const connection = await getSolanaConnection();
   const ownerKey = new PublicKey(owner);
   const ata = getAssociatedTokenAddressSync(NATIVE_MINT, ownerKey, true);
 
-  const account = await connection.getTokenAccountBalance(ata).catch(() => null);
-  const amount = BigInt(account?.value?.amount ?? '0');
-  if (amount <= 0n) throw new Error('No WSOL balance to unwrap.');
+  const [account, lamports] = await Promise.all([
+    connection.getTokenAccountBalance(ata).catch(() => null),
+    connection.getBalance(ownerKey).catch(() => null),
+  ]);
+  const balance = BigInt(account?.value?.amount ?? '0');
+  if (balance <= 0n) throw new Error('No WSOL balance to unwrap.');
+  if (requested > balance) throw new Error('Amount exceeds your WSOL balance.');
+
+  // Closing the account still costs a network fee, and the fee payer is the
+  // owner — a wallet holding only WSOL and zero SOL can't pay it. Preflight
+  // would fail with a bare "simulation failed", so say what's actually wrong.
+  if (lamports !== null && lamports < 5_000) {
+    throw new Error(
+      'Not enough SOL to pay the network fee. Closing the WSOL account costs about 0.000005 SOL — ' +
+      'send a small amount of SOL to this wallet, then unwrap.',
+    );
+  }
+
+  const amount = requested > 0n ? requested : balance;
+  const remainder = balance - amount;
 
   const tx = new Transaction().add(
     // Closing the account credits its full lamport balance (rent + wrapped
     // SOL) back to the owner — this is how wSOL is unwrapped.
     createCloseAccountInstruction(ata, ownerKey, ownerKey),
   );
+
+  // Partial unwrap: SPL has no "withdraw part of a wrapped balance", so put the
+  // remainder back. Recreating the ATA costs the same rent the close just
+  // returned, and `syncNative` is what makes the transferred lamports show up as
+  // a token balance. All in one transaction, so it can't half-apply.
+  if (remainder > 0n) {
+    tx.add(
+      createAssociatedTokenAccountInstruction(ownerKey, ata, ownerKey, NATIVE_MINT),
+      SystemProgram.transfer({
+        fromPubkey: ownerKey,
+        toPubkey: ata,
+        lamports: remainder,
+      }),
+      createSyncNativeInstruction(ata),
+    );
+  }
+
   tx.feePayer = ownerKey;
   const { blockhash } = await connection.getLatestBlockhash();
   tx.recentBlockhash = blockhash;

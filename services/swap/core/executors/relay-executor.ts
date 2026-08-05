@@ -211,7 +211,7 @@ export class RelayExecutor implements SwapRouterExecutor {
 
                         if (currentAllowance < fromAmountWei) {
                             console.log(`[RelayExecutor] 🔓 Approving ${spenderAddress} for token ${fromTokenAddress}`);
-                            onStatusUpdate?.({ stage: 'approving', message: 'Approve Relay to use your tokens...' });
+                            onStatusUpdate?.({ stage: 'approving', message: 'Approving Relay to use your tokens...' });
 
                             // Approve max uint256 for better compatibility with Relay multicall
                             const approveTx = await approveToken(activeWallet, fromTokenAddress, spenderAddress, maxApproval);
@@ -279,7 +279,7 @@ export class RelayExecutor implements SwapRouterExecutor {
 
                 onStatusUpdate?.({
                     stage: 'signing',
-                    message: 'Confirm in wallet',
+                    message: 'Confirming in wallet...',
                     progress: (i / steps.length) * 100
                 });
 
@@ -470,7 +470,7 @@ export class RelayExecutor implements SwapRouterExecutor {
 
                 onStatusUpdate?.({
                     stage: 'signing',
-                    message: 'Confirm in wallet',
+                    message: 'Confirming in wallet...',
                     progress: (i / steps.length) * 100
                 });
 
@@ -573,7 +573,7 @@ export class RelayExecutor implements SwapRouterExecutor {
 
                     onStatusUpdate?.({
                         stage: 'signing',
-                        message: 'Confirm in wallet'
+                        message: 'Confirming in wallet...'
                     });
 
                     console.log('[RelayExecutor] Requesting wallet signature...');

@@ -408,7 +408,7 @@ export class LiFiExecutor implements SwapRouterExecutor {
               message = 'Preparing...';
             } else if (status === 'ACTION_REQUIRED' || status === 'MESSAGE_REQUIRED') {
               stage = 'signing';
-              message = 'Confirm in wallet';
+              message = 'Confirming in wallet...';
             } else if (status === 'DONE') {
               stage = 'completed';
               message = 'Success';

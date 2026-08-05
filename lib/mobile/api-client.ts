@@ -710,6 +710,10 @@ class WalletModule {
         toTokenSymbol?: string;
         amount: string;
         amountFormatted: string;
+        /** Output amount, human-readable. Lands in `to_amount_formatted`, which
+         *  is what a pool's Transactions table renders as the "→ TOKEN" side —
+         *  omit it and the row shows an arrow with no number. */
+        toAmountFormatted?: string;
         usdValue?: number;
         routerName?: string;
         blockNumber?: number;

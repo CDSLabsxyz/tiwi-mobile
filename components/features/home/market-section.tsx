@@ -420,16 +420,6 @@ export const MarketSection: React.FC<MarketSectionProps> = ({
                             priceUSD: token.price?.toString(),
                             marketCapRank: (token as any).rank
                         }}
-                        onPress={() => {
-                            router.push({
-                                pathname: `/market/spot/${token.symbol.toLowerCase()}` as any,
-                                params: {
-                                    address: token.address,
-                                    chainId: token.chainId,
-                                    symbol: token.symbol
-                                }
-                            });
-                        }}
                     />
                 ))}
 

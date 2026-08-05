@@ -78,8 +78,9 @@ export const SpotlightSection: React.FC<SpotlightSectionProps> = ({
                 {tokens.map((token) => (
                     <TouchableOpacity
                         key={token.id}
-                        activeOpacity={0.7}
-                        onPress={() => onTokenPress?.(token)}
+                        activeOpacity={onTokenPress ? 0.7 : 1}
+                        onPress={onTokenPress ? () => onTokenPress(token) : undefined}
+                        disabled={!onTokenPress}
                     >
                         <View style={styles.card}>
                             <Image

@@ -11,7 +11,7 @@ import { SendTokenSelectSheet } from "@/components/sections/Send/SendTokenSelect
 import { WhitelistSelectSheet } from "@/components/sections/Send/WhitelistSelectSheet";
 import type { TokenOption } from "@/components/sections/Swap/TokenSelectSheet";
 import { colors } from "@/constants/colors";
-import { formatTokenQuantity, getColorFromSeed } from "@/utils/formatting";
+import { formatNumberInput, formatTokenQuantity, getColorFromSeed, parseNumberInput } from "@/utils/formatting";
 import {
   createEmptyMultiSendRow,
   isRowValid,
@@ -125,10 +125,8 @@ export function MultiSendRowItem({
       {/* Amount + token */}
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: colors.bgSemi, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, minHeight: 56 }}>
         <TextInput
-          value={row.amount}
-          onChangeText={(t) => {
-            if (t === "" || /^\d*\.?\d*$/.test(t.replace(/,/g, ""))) onPatch({ amount: t.replace(/,/g, "") });
-          }}
+          value={formatNumberInput(row.amount)}
+          onChangeText={(t) => onPatch({ amount: parseNumberInput(t) })}
           placeholder="Amount"
           placeholderTextColor={colors.bodyText}
           keyboardType="decimal-pad"

@@ -282,7 +282,7 @@ export class BscNativeSwapExecutor implements SwapRouterExecutor {
       // 4. Send tax to revenue wallet
       onStatusUpdate?.({
         stage: 'signing',
-        message: 'Confirm in wallet',
+        message: 'Confirming in wallet...',
       });
 
       const taxTxHash = await activeWallet.sendTransaction({
