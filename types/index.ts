@@ -19,6 +19,11 @@ export interface SpotlightToken {
   logo: string | any;
   change24h: number;
   pair?: string;
+  /** Carried through so tapping a chip can open the token in swap. */
+  name?: string;
+  address?: string;
+  chainId?: number;
+  priceUSD?: string;
 }
 
 export interface StatCard {

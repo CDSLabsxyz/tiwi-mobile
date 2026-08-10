@@ -29,8 +29,13 @@ interface Props {
     stakedAmount?: number;
     /** Whether the position is finished (withdrawn / completed / pool ended). */
     hasEnded?: boolean;
-    /** Token symbol suffix for the Withdrawn value. */
+    /** Token symbol suffix for the Withdrawn value (the STAKING token). */
     tokenSymbol?: string;
+    /**
+     * Symbol for the CLAIMED / PENDING values — the pool's REWARD token, which
+     * is a different asset from `tokenSymbol` on a "stake A, earn B" pool.
+     */
+    rewardSymbol?: string;
 }
 
 function formatFull(num: number, maxDecimals = 6): string {
@@ -49,7 +54,9 @@ export const RewardsSummaryPanel: React.FC<Props> = ({
     stakedAmount = 0,
     hasEnded = false,
     tokenSymbol,
+    rewardSymbol,
 }) => {
+    const rewardSuffix = rewardSymbol ? ` ${rewardSymbol}` : '';
     const claimedDisplay = hasEnded ? totalClaimed + rewardsEarned : totalClaimed;
     return (
         <View style={styles.container}>
@@ -58,7 +65,7 @@ export const RewardsSummaryPanel: React.FC<Props> = ({
                 <View style={styles.cell}>
                     <Text style={styles.label}>CLAIMED</Text>
                     <Text style={styles.valueGreen} numberOfLines={1}>
-                        {formatFull(claimedDisplay)}
+                        {`${formatFull(claimedDisplay)}${rewardSuffix}`}
                     </Text>
                 </View>
                 {hasEnded ? (
@@ -72,7 +79,7 @@ export const RewardsSummaryPanel: React.FC<Props> = ({
                     <View style={styles.cell}>
                         <Text style={styles.label}>PENDING</Text>
                         <Text style={styles.valueYellow} numberOfLines={1}>
-                            {formatFull(pending)}
+                            {`${formatFull(pending)}${rewardSuffix}`}
                         </Text>
                     </View>
                 )}

@@ -3,6 +3,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { colors } from '@/constants/colors';
 import { useEnrichedMarkets } from '@/hooks/useEnrichedMarkets';
 import { useTranslation } from '@/hooks/useLocalization';
+import { useOpenTokenInSwap } from '@/hooks/useOpenTokenInSwap';
 import { useTWCToken } from '@/hooks/useTWCToken';
 import { api, MarketAsset, TokenItem } from '@/lib/mobile/api-client';
 import { useMarketStore } from '@/store/marketStore';
@@ -72,6 +73,7 @@ export const MarketSection: React.FC<MarketSectionProps> = ({
     const router = useRouter();
     const { t } = useTranslation();
     const queryClient = useQueryClient();
+    const openTokenInSwap = useOpenTokenInSwap();
     const [activeTab, setActiveTab] = useState<string>('explore');
     const { favorites, isFavorite, getFavoriteTokens } = useMarketStore();
     // Live TWC data — used to enrich the fallback with real price/24h change
@@ -420,6 +422,16 @@ export const MarketSection: React.FC<MarketSectionProps> = ({
                             priceUSD: token.price?.toString(),
                             marketCapRank: (token as any).rank
                         }}
+                        onPress={() =>
+                            openTokenInSwap(token as any, {
+                                infoSource:
+                                    activeTab === 'listing'
+                                        ? 'listing'
+                                        : activeTab === 'spotlight'
+                                            ? 'spotlight'
+                                            : undefined,
+                            })
+                        }
                     />
                 ))}
 

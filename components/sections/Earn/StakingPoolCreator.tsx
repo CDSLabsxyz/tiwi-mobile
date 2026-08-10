@@ -103,8 +103,6 @@ export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, on
     const [minStake, setMinStake] = useState('');
     const [maxStake, setMaxStake] = useState('');
     const [minStakePeriod, setMinStakePeriod] = useState('');
-    const [stakeModificationFee, setStakeModificationFee] = useState(false);
-    const [timeBoost, setTimeBoost] = useState(false);
     const [createdPools, setCreatedPools] = useState<CreatedPool[]>([]);
     const [previewOpen, setPreviewOpen] = useState(false);
     const [creationStep, setCreationStep] = useState<CreationStep>('idle');
@@ -312,9 +310,12 @@ export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, on
                 minStakingPeriod: minStakePeriodValue > 0 ? `${minStakePeriodValue} days` : undefined,
                 minStakeAmount: minStakeValue,
                 maxStakeAmount: maxStakeValue > 0 ? maxStakeValue : undefined,
-                stakeModificationFee,
-                timeBoost,
-                timeBoostConfig: timeBoost ? {} : undefined,
+                // The Options toggles were removed from the form; both
+                // features are off for every pool created here. Sent
+                // explicitly rather than omitted so rows keep the same shape
+                // as the ones written before the toggles went away.
+                stakeModificationFee: false,
+                timeBoost: false,
                 maxTvl: maxTvlValue,
                 poolReward: poolRewardValue,
                 rewardDurationSeconds,
@@ -399,9 +400,8 @@ export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, on
                         maxTvl: maxTvlValue,
                         poolReward: poolRewardValue,
                         rewardDurationSeconds,
-                        stakeModificationFee,
-                        timeBoost,
-                        timeBoostConfig: timeBoost ? {} : undefined,
+                        stakeModificationFee: false,
+                        timeBoost: false,
                     });
                 } catch (e: any) {
                     ownershipError = e?.message || 'network error';
@@ -574,24 +574,6 @@ export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, on
                     </View>
                 </FormBlock>
 
-                {/* Options */}
-                <FormBlock title="Options" hint="Fine-tune how stakers interact with the pool.">
-                    <View style={{ gap: 8 }}>
-                        <ToggleRow
-                            title="Stake modification fee"
-                            hint="Charge a fee when stakers change an existing position."
-                            active={stakeModificationFee}
-                            onToggle={() => setStakeModificationFee((v) => !v)}
-                        />
-                        <ToggleRow
-                            title="Time boost"
-                            hint="Reward longer lock-ups with boosted yield."
-                            active={timeBoost}
-                            onToggle={() => setTimeBoost((v) => !v)}
-                        />
-                    </View>
-                </FormBlock>
-
                 <View style={{ paddingHorizontal: 16, paddingVertical: 18 }}>
                     <TouchableOpacity style={styles.previewBtn} onPress={() => { primeNameCheck(); setPreviewOpen(true); }}>
                         <Text style={styles.previewBtnText}>Preview pool</Text>
@@ -638,8 +620,6 @@ export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, on
                 minStake={minStake}
                 maxStake={maxStake}
                 minStakePeriod={minStakePeriod}
-                stakeModificationFee={stakeModificationFee}
-                timeBoost={timeBoost}
                 feeLabel={feeActive && feeSettings ? `${feeSettings.creationFeeAmount} ${feeSettings.creationFeeTokenSymbol || 'tokens'}` : 'Free'}
                 walletAddress={activeWalletAddress}
                 evmReady={evmReady}
@@ -649,13 +629,17 @@ export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, on
                 onSubmit={handleCreatePool}
             />
 
-            {/* Token selector — earn token in cross mode is constrained to the stake chain */}
+            {/* Token selector — earn token in cross mode is constrained to the
+                stake chain. `walletOnly` limits both sides to tokens the
+                creator actually holds: the reward pool is funded out of their
+                own balance, so a token they don't hold is a dead end. */}
             <TokenSelectSheet
                 visible={!!tokenModalSide}
                 chainId={tokenModalSide === 'earn' && rewardMode === 'cross' ? stakeToken.chainId : null}
                 selectedTokenId={tokenModalSide === 'earn' ? `${earnToken.chainId}-${earnToken.address}` : `${stakeToken.chainId}-${stakeToken.address}`}
                 onClose={() => setTokenModalSide(null)}
                 onSelect={handleSelectToken}
+                walletOnly
             />
 
             {/* Room to scroll the edited field clear of the numpad sheet. */}
@@ -684,13 +668,13 @@ function PoolPreviewModal(props: {
     stakeToken: PoolToken; earnToken: PoolToken; pairLabel: string; network: string; estimatedApr: number;
     rewardAmount: string; durationDays: string; durationUnit: DurationUnit; maxTvl: string;
     minStake: string; maxStake: string; minStakePeriod: string;
-    stakeModificationFee: boolean; timeBoost: boolean; feeLabel: string;
+    feeLabel: string;
     walletAddress?: string | null; evmReady: boolean; creationStep: CreationStep;
     deployStatus?: CreatePoolStatus;
     createError: string | null; onSubmit: () => void;
 }) {
     const { open, onClose, stakeToken, earnToken, pairLabel, network, estimatedApr, rewardAmount, durationDays,
-        durationUnit, maxTvl, minStake, maxStake, minStakePeriod, stakeModificationFee, timeBoost, feeLabel,
+        durationUnit, maxTvl, minStake, maxStake, minStakePeriod, feeLabel,
         walletAddress, evmReady, creationStep, deployStatus, createError, onSubmit } = props;
     const isSubmitting = creationStep !== 'idle';
     const isFree = feeLabel === 'Free';
@@ -737,8 +721,6 @@ function PoolPreviewModal(props: {
                                 <SummaryRow label="Min stake" value={`${minStake || '0'} ${stakeToken.symbol}`} />
                                 <SummaryRow label="Max stake" value={maxStake ? `${maxStake} ${stakeToken.symbol}` : 'No cap'} />
                                 <SummaryRow label="Min lock" value={minStakePeriod ? `${minStakePeriod} days` : 'None'} />
-                                <SummaryRow label="Stake mod. fee" value={stakeModificationFee ? 'On' : 'Off'} />
-                                <SummaryRow label="Time boost" value={timeBoost ? 'On' : 'Off'} />
                             </View>
                         </View>
 
@@ -869,20 +851,6 @@ function DurationField({ value, unit, onUnitChange, active, onPress, onLayout }:
     );
 }
 
-function ToggleRow({ title, hint, active, onToggle }: { title: string; hint: string; active: boolean; onToggle: () => void }) {
-    return (
-        <View style={styles.toggleRow}>
-            <View style={{ flex: 1, marginRight: 10 }}>
-                <Text style={styles.toggleTitle}>{title}</Text>
-                <Text style={styles.toggleHint}>{hint}</Text>
-            </View>
-            <TouchableOpacity onPress={onToggle} style={[styles.switch, { backgroundColor: active ? colors.primaryCTA : '#1D281D' }]}>
-                <View style={[styles.switchKnob, { transform: [{ translateX: active ? 22 : 2 }] }]} />
-            </TouchableOpacity>
-        </View>
-    );
-}
-
 function StatusChip({ status }: { status: 'paid' | 'unpaid' }) {
     const paid = status === 'paid';
     return (
@@ -946,11 +914,6 @@ const styles = StyleSheet.create({
     unitChip: { flexDirection: 'row', alignItems: 'center', gap: 3, borderRadius: 999, borderWidth: 1, borderColor: '#263226', backgroundColor: '#0b120a', paddingHorizontal: 8, paddingVertical: 4 },
     unitChipText: { color: colors.primaryCTA, fontFamily: 'Manrope-SemiBold', fontSize: 12 },
 
-    toggleRow: { flexDirection: 'row', alignItems: 'center', borderRadius: 18, borderWidth: 1, borderColor: '#1f321d', backgroundColor: 'rgba(7,16,7,0.8)', paddingHorizontal: 14, paddingVertical: 12 },
-    toggleTitle: { color: '#fff', fontFamily: 'Manrope-SemiBold', fontSize: 14 },
-    toggleHint: { color: '#8F9891', fontFamily: 'Manrope-Medium', fontSize: 12, marginTop: 2, lineHeight: 16 },
-    switch: { width: 44, height: 24, borderRadius: 12, justifyContent: 'center' },
-    switchKnob: { width: 18, height: 18, borderRadius: 9, backgroundColor: '#fff' },
 
     previewBtn: { height: 52, borderRadius: 999, backgroundColor: colors.primaryCTA, alignItems: 'center', justifyContent: 'center' },
     previewBtnText: { color: '#010501', fontFamily: 'Manrope-SemiBold', fontSize: 16 },

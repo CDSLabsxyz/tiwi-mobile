@@ -5,6 +5,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { colors } from '@/constants/colors';
 import { useEnrichedMarkets } from '@/hooks/useEnrichedMarkets';
 import { useTranslation } from '@/hooks/useLocalization';
+import { useOpenTokenInSwap } from '@/hooks/useOpenTokenInSwap';
 import { useTWCToken } from '@/hooks/useTWCToken';
 import { MarketCategory } from '@/hooks/useMarketPairs';
 import { api, MarketAsset, TokenItem } from '@/lib/mobile/api-client';
@@ -90,11 +91,15 @@ export default function MarketScreen() {
     const [activeSubTab, setActiveSubTab] = useState<string>(
         (params.category as any) || 'explore'
     );
+    // Only the curated tabs carry admin About/Links through to the swap screen
+    const curatedSource: 'listing' | 'spotlight' | undefined =
+        activeSubTab === 'listing' ? 'listing' : activeSubTab === 'spotlight' ? 'spotlight' : undefined;
     const [searchQuery, setSearchQuery] = useState('');
     const [searchResults, setSearchResults] = useState<MarketAsset[]>([]);
     const [isSearching, setIsSearching] = useState(false);
     const [isSearchVisible, setIsSearchVisible] = useState(false);
 
+    const openTokenInSwap = useOpenTokenInSwap();
     const { favorites, toggleFavorite, isFavorite, getFavoriteTokens } = useMarketStore();
     // Live TWC data — used to enrich the fallback row with real price/24h change
     // when TWC isn't in the upstream market list.
@@ -510,13 +515,14 @@ export default function MarketScreen() {
         index,
     }), []);
 
-    // Display-only rows — the token detail screen was removed.
+    // Tapping a row starts a swap with that token on the "From" side.
     const renderItem = useCallback(({ item }: { item: MarketAsset }) => (
         <TokenListItem
             key={item.id || `${item.chainId}-${item.address}`}
             token={item as any}
+            onPress={() => openTokenInSwap(item as any, { infoSource: curatedSource })}
         />
-    ), []);
+    ), [openTokenInSwap, curatedSource]);
 
     const handleSearchPress = () => {
         setIsSearchVisible(true);

@@ -8,9 +8,8 @@
 import type { SwapExecutionParams, SwapExecutionResult, SwapExecutionStatus, SwapRouterExecutor } from './types';
 import type { RouterRoute } from '@/services/swap/core/router-types';
 import { TiwiProtocolDEXExecutor } from './executors/tiwi-protocol-dex-executor';
-import { BscGaslessExecutor } from './executors/bsc-gasless-executor';
+import { BscRelayerPlanExecutor } from './executors/bsc-relayer-plan-executor';
 import { BscDirectSwapExecutor } from './executors/bsc-direct-swap-executor';
-import { BscRelayerExecutor } from './executors/bsc-relayer-executor';
 import { BscNativeSwapExecutor } from './executors/bsc-native-swap-executor';
 import { OpenOceanExecutor } from './executors/openocean-executor';
 import { LiFiExecutor } from './executors/lifi-executor';
@@ -35,6 +34,7 @@ import { MayanSuiExecutor } from './executors/mayan-sui-executor';
 import { SkipExecutor } from './executors/skip-executor';
 import { TiwiPoolExecutor } from './executors/tiwi-pool-executor';
 import { SwapExecutionError, SwapErrorCode } from './types';
+import { alignRouteTokensWithParams } from './utils/route-token-identity';
 
 // BLACKLISTED contracts — never allow TIWI Protocol users to interact with these
 const BLACKLISTED_CONTRACTS = new Set([
@@ -55,7 +55,7 @@ export class SwapExecutor {
     // Initialize all router executors
     // TiwiProtocolDEX is HIGHEST PRIORITY — single-signature swaps on BSC.
     // Falls through to old executors if contract not deployed (address = 0x0).
-    // BscGaslessExecutor is the V2.1 fallback (needs 2-3 signatures).
+    // BscRelayerPlanExecutor is the relayer path; the server plans it.
     // MultiStepExecutor should be last as it handles universal routes.
     this.executors = [
       // Deep-linked "swap through this liquidity pool" (router:'tiwi-pool'). Settles
@@ -63,9 +63,17 @@ export class SwapExecutor {
       // First so it never gets shadowed by a same-chain aggregator executor.
       new TiwiPoolExecutor(),
       new TiwiProtocolDEXExecutor(), // SINGLE SIGN: TiwiProtocolDEX contract (approve once, swap forever)
-      new BscGaslessExecutor(), // V2.1 fallback: gasless but needs gas token approval
-      new BscDirectSwapExecutor(), // BNB gas selected: user pays own gas
-      new BscRelayerExecutor(), // V1 fallback
+      // The relayer path, planned server-side (/api/v1/relayer/swap/plan).
+      //
+      // This replaces BscGaslessExecutor and BscRelayerExecutor, both of which
+      // are still on disk but are NO LONGER REGISTERED — they were hand-ported
+      // copies of the web executor and had drifted onto the dead V2 relayer
+      // contract (0xfCa2E4…, superseded by V2.1 0x6011D1b2…) and onto the
+      // non-fee-on-transfer PancakeSwap functions, which revert with
+      // "Pancake: K" on a self-taxing token like TWC. Do not re-register them;
+      // fix the server plan instead.
+      new BscRelayerPlanExecutor(),
+      new BscDirectSwapExecutor(), // BNB gas selected, or the relayer API is down: user pays own gas
       new BscNativeSwapExecutor(), // Native BNB → Token swaps with 0.25% tax
       // Cross-chain INTO a taxed token (e.g. TWC): bridge to a stable on the destination
       // chain, then swap that stable → taxed token locally with our FoT-safe BSC executors.
@@ -128,7 +136,12 @@ export class SwapExecutor {
    * @returns Swap execution result
    */
   async execute(params: SwapExecutionParams): Promise<SwapExecutionResult> {
-    const { route } = params;
+    // Executors select on route.fromToken but spend params.fromToken. Universal /
+    // multi-hop routes come back labelled with the WRAPPED native (routing swaps
+    // BNB → WBNB to find a pair), which sends a native-in swap to an ERC20 executor.
+    // Re-label the route with the user's actual tokens before selecting.
+    const route = alignRouteTokensWithParams(params);
+    params = { ...params, route };
 
     // SECURITY: Check for blacklisted contracts in route data
     const routeAddresses = [
@@ -302,23 +315,33 @@ export class SwapExecutor {
       return true;
     }
 
-    // BscGasless: fall through on relayer/network issues
-    if (executor instanceof BscGaslessExecutor) {
+    // BscRelayerPlan: fall through to BscDirect on anything that means "the plan
+    // API didn't work", so an outage there degrades to a user-pays-gas swap
+    // instead of failing. NOT on an on-chain revert or a refusal the user must
+    // act on (insufficient balance, outstanding drip) — retrying those on
+    // another executor charges them twice or fails again more slowly.
+    if (executor instanceof BscRelayerPlanExecutor) {
+      if (
+        lowerMessage.includes('reverted on-chain') ||
+        lowerMessage.includes('insufficient') ||
+        lowerMessage.includes('unsettled') ||
+        lowerMessage.includes('already have sponsored gas')
+      ) {
+        return false;
+      }
       return (
         lowerMessage.includes('failed to fetch') ||
         lowerMessage.includes('network') ||
         lowerMessage.includes('rpc') ||
         lowerMessage.includes('timeout') ||
         lowerMessage.includes('relayer') ||
-        lowerMessage.includes('gasless-swap') ||
-        lowerMessage.includes('backend') ||
-        lowerMessage.includes('execution reverted') ||
-        lowerMessage.includes('no valid swap path')
+        lowerMessage.includes('plan') ||
+        lowerMessage.includes('http 5')
       );
     }
 
-    // BscDirect/BscRelayer: fall through on execution reverts and network errors
-    if (executor instanceof BscDirectSwapExecutor || executor instanceof BscRelayerExecutor) {
+    // BscDirect: fall through on execution reverts and network errors
+    if (executor instanceof BscDirectSwapExecutor) {
       return (
         lowerMessage.includes('execution reverted') ||
         lowerMessage.includes('failed to fetch') ||

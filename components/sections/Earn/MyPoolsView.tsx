@@ -10,6 +10,7 @@ import { colors } from '@/constants/colors';
 import { useStakingDeployer } from '@/hooks/useStakingDeployer';
 import { useRequireBackup } from '@/hooks/useRequireBackup';
 import { api, type PoolFeeSettings, type UserStakingPool } from '@/lib/mobile/api-client';
+import { readPoolStatusClient, type PoolStatusOnChain } from '@/lib/mobile/pool-onchain';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
@@ -17,6 +18,23 @@ import { Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import type { Address } from 'viem';
 
 const SECONDS_PER_YEAR = 31_536_000;
+
+type PoolLifecycle = 'live' | 'paused' | 'ended' | 'unknown';
+
+/**
+ * Fallback lifecycle from DB fields, for the moment before the on-chain read
+ * lands (or when it fails). The contract's `startTime` is set at funding, a beat
+ * after `created_at` — close enough to decide "ended", not close enough to
+ * render a countdown from.
+ */
+function lifecycleFromDb(pool: UserStakingPool): PoolLifecycle {
+    const duration = pool.pool?.rewardDurationSeconds ?? pool.settings?.rewardDurationSeconds;
+    const createdAt = pool.pool?.createdAt || pool.createdAt;
+    if (!duration || !createdAt) return 'unknown';
+    const start = new Date(createdAt).getTime();
+    if (Number.isNaN(start)) return 'unknown';
+    return Date.now() >= start + duration * 1000 ? 'ended' : 'live';
+}
 
 const EXPLORERS: Record<number, string> = {
     1: 'https://etherscan.io',
@@ -34,6 +52,25 @@ function aprText(p: UserStakingPool['pool']): string | null {
     if (!p?.poolReward || !p.maxTvl || !p.rewardDurationSeconds) return null;
     const apr = (p.poolReward / (p.maxTvl * p.rewardDurationSeconds)) * SECONDS_PER_YEAR * 100;
     return Number.isFinite(apr) ? `${apr.toFixed(2)}%` : null;
+}
+
+/**
+ * Human duration for a reward window. Pools are routinely created with windows
+ * measured in hours or minutes, and flooring those to days rendered them all
+ * as a flat "0 days".
+ */
+function durationText(seconds?: number): string {
+    if (!seconds || seconds <= 0) return '—';
+    if (seconds >= 86400) {
+        const days = seconds / 86400;
+        return `${Number.isInteger(days) ? days : days.toFixed(1)} ${days === 1 ? 'day' : 'days'}`;
+    }
+    if (seconds >= 3600) {
+        const hours = seconds / 3600;
+        return `${Number.isInteger(hours) ? hours : hours.toFixed(1)} ${hours === 1 ? 'hour' : 'hours'}`;
+    }
+    const minutes = Math.max(1, Math.round(seconds / 60));
+    return `${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`;
 }
 
 interface Props {
@@ -119,8 +156,29 @@ export function MyPoolsView({ activeWalletAddress, onConnectEvmWallet, onCreateP
     );
 }
 
-function StatusBadge({ pool }: { pool: UserStakingPool }) {
+/**
+ * An approved pool is only "Live" while its reward window is open and it hasn't
+ * been paused. Once `endTime` passes nobody can stake and no rewards accrue —
+ * badging that as Live told creators their expired pool was still running.
+ */
+function StatusBadge({ pool, lifecycle }: { pool: UserStakingPool; lifecycle: PoolLifecycle }) {
     if (pool.approvalStatus === 'approved') {
+        if (lifecycle === 'ended') {
+            return (
+                <View style={[styles.badge, { backgroundColor: '#1a1a1a' }]}>
+                    <Ionicons name="shield-checkmark" size={13} color="#8F9891" />
+                    <Text style={[styles.badgeText, { color: '#8F9891' }]}>Verified · Ended</Text>
+                </View>
+            );
+        }
+        if (lifecycle === 'paused') {
+            return (
+                <View style={[styles.badge, { backgroundColor: '#201a08' }]}>
+                    <Ionicons name="shield-checkmark" size={13} color="#facc15" />
+                    <Text style={[styles.badgeText, { color: '#facc15' }]}>Verified · Paused</Text>
+                </View>
+            );
+        }
         return (
             <View style={[styles.badge, { backgroundColor: '#063D05' }]}>
                 <Ionicons name="shield-checkmark" size={13} color={colors.primaryCTA} />
@@ -160,8 +218,23 @@ function MyPoolRow({ pool, walletAddress, feeSettings, onChanged }: {
     const [isWithdrawing, setIsWithdrawing] = useState(false);
     const [isPayingFee, setIsPayingFee] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [chainStatus, setChainStatus] = useState<PoolStatusOnChain | null>(null);
     const { payCreationFee, emergencyWithdrawRewards } = useStakingDeployer();
     const { requireBackup, BackupRequiredModal } = useRequireBackup();
+
+    // `endTime` lives on the contract, not in `staking_pools`, so the badge has
+    // to read it. Only approved pools are worth the call — the rest can't be live.
+    useEffect(() => {
+        let cancelled = false;
+        if (pool.approvalStatus !== 'approved' || !isEvmAddr(pool.poolContractAddress)) return;
+        readPoolStatusClient({ chainId: pool.chainId, poolAddress: pool.poolContractAddress })
+            .then((status) => { if (!cancelled) setChainStatus(status); });
+        return () => { cancelled = true; };
+    }, [pool.approvalStatus, pool.poolContractAddress, pool.chainId]);
+
+    const lifecycle: PoolLifecycle = chainStatus
+        ? chainStatus.ended ? 'ended' : chainStatus.active ? 'live' : 'paused'
+        : lifecycleFromDb(pool);
 
     const canWithdraw = pool.approvalStatus === 'rejected' && !pool.fundsWithdrawn;
     const feeUnpaid =
@@ -170,11 +243,19 @@ function MyPoolRow({ pool, walletAddress, feeSettings, onChanged }: {
         isEvmAddr(feeSettings.creationFeeTokenAddress) &&
         isEvmAddr(feeSettings.creationFeeTreasuryAddress) &&
         !pool.creationFeeTxHash;
-    const canPayFee = pool.approvalStatus === 'pending' && feeUnpaid;
+    // An outstanding fee stays payable for as long as the pool is live —
+    // gating this to 'pending' left an already-approved pool with no way to
+    // settle it. A rejected pool is the one case where we stop asking: it's
+    // being nullified.
+    const canPayFee = feeUnpaid && pool.approvalStatus !== 'rejected';
     const explorer = EXPLORERS[pool.chainId];
     const apr = aprText(pool.pool);
     const title = pool.poolName || pool.pool?.name || pool.pool?.tokenSymbol || 'Untitled pool';
-    const sym = pool.pool?.tokenSymbol ?? '';
+    // Reward figures are denominated in the EARN token, TVL in the STAKE
+    // token. Labelling both with the staking symbol reported a
+    // "stake TWC, earn USDT" pool as paying out TWC.
+    const stakeSymbol = pool.settings?.tokenSymbol || pool.pool?.tokenSymbol || '';
+    const rewardSymbol = pool.settings?.rewardTokenSymbol || stakeSymbol;
 
     const handleWithdraw = async () => {
         setError(null);
@@ -209,12 +290,23 @@ function MyPoolRow({ pool, walletAddress, feeSettings, onChanged }: {
                 decimals: feeSettings.creationFeeTokenDecimals,
                 walletAddress: walletAddress as Address,
             });
-            await api.staking.patchUserPool({
-                id: pool.id,
-                creationFeeTxHash: hash,
-                creationFeeAmount: feeSettings.creationFeeAmount,
-                creationFeeToken: feeSettings.creationFeeTokenSymbol || feeSettings.creationFeeTokenAddress,
-            });
+            try {
+                await api.staking.patchUserPool({
+                    id: pool.id,
+                    creationFeeTxHash: hash,
+                    creationFeeAmount: feeSettings.creationFeeAmount,
+                    creationFeeToken: feeSettings.creationFeeTokenSymbol || feeSettings.creationFeeTokenAddress,
+                });
+            } catch (patchErr: any) {
+                // The server re-verifies the hash on-chain before storing it,
+                // so a rejection means the pool is genuinely still unpaid. Say
+                // so — and surface the hash — rather than refreshing into a
+                // misleading "paid" state.
+                throw new Error(
+                    patchErr?.message
+                    || `The fee was sent (tx ${hash}) but recording it failed. Try again, or contact support with this hash.`,
+                );
+            }
             onChanged();
         } catch (e: any) {
             setError(e?.message || 'Fee payment failed. Please try again.');
@@ -229,10 +321,21 @@ function MyPoolRow({ pool, walletAddress, feeSettings, onChanged }: {
                 <View style={{ flex: 1, marginRight: 8 }}>
                     <Text style={styles.rowTitle} numberOfLines={1}>{title}</Text>
                     <Text style={styles.rowSub} numberOfLines={1}>
-                        {sym ? `${sym} · ` : ''}{pool.pool?.chainName || `chain ${pool.chainId}`}
+                        {stakeSymbol
+                            ? `${rewardSymbol && rewardSymbol !== stakeSymbol ? `${stakeSymbol} → ${rewardSymbol}` : stakeSymbol} · `
+                            : ''}
+                        {pool.pool?.chainName || `chain ${pool.chainId}`}
                     </Text>
                 </View>
-                <StatusBadge pool={pool} />
+                {/* An unpaid fee is the one thing the creator has to act on, so
+                    it reads from the collapsed row — no expanding to find it. */}
+                {canPayFee ? (
+                    <View style={[styles.badge, { backgroundColor: '#201a08', marginRight: 6 }]}>
+                        <Ionicons name="wallet" size={13} color="#facc15" />
+                        <Text style={[styles.badgeText, { color: '#facc15' }]}>Fee unpaid</Text>
+                    </View>
+                ) : null}
+                <StatusBadge pool={pool} lifecycle={lifecycle} />
                 <Ionicons name="chevron-down" size={16} color="#8F9891" style={{ marginLeft: 6, transform: [{ rotate: expanded ? '180deg' : '0deg' }] }} />
             </TouchableOpacity>
 
@@ -240,9 +343,9 @@ function MyPoolRow({ pool, walletAddress, feeSettings, onChanged }: {
                 <View style={styles.rowBody}>
                     <View style={styles.infoGrid}>
                         <Info label="APR" value={apr || '—'} />
-                        <Info label="Reward pool" value={pool.pool?.poolReward != null ? `${pool.pool.poolReward} ${sym}` : '—'} />
-                        <Info label="Max TVL" value={pool.pool?.maxTvl != null ? `${pool.pool.maxTvl} ${sym}` : '—'} />
-                        <Info label="Duration" value={pool.pool?.rewardDurationSeconds ? `${Math.round(pool.pool.rewardDurationSeconds / 86400)} days` : '—'} />
+                        <Info label="Reward pool" value={pool.pool?.poolReward != null ? `${pool.pool.poolReward} ${rewardSymbol}`.trim() : '—'} />
+                        <Info label="Max TVL" value={pool.pool?.maxTvl != null ? `${pool.pool.maxTvl} ${stakeSymbol}`.trim() : '—'} />
+                        <Info label="Duration" value={durationText(pool.pool?.rewardDurationSeconds)} />
                     </View>
 
                     <View style={styles.addrRow}>
@@ -260,7 +363,18 @@ function MyPoolRow({ pool, walletAddress, feeSettings, onChanged }: {
                     {pool.approvalStatus === 'approved' ? (
                         <TouchableOpacity
                             style={styles.manageBtn}
-                            onPress={() => router.push(`/earn/stake/${encodeURIComponent(pool.stakingPoolId)}` as any)}
+                            // The creator-facing management screen, not the
+                            // staker-facing stake screen. Matches the web's
+                            // /earn/pool/manage?id=<stakingPoolId>.
+                            //
+                            // `name` is passed along because the mobile
+                            // staking route doesn't project the pool's name —
+                            // without it the header falls back to the bare
+                            // token symbol, and this row already knows it.
+                            onPress={() => router.push({
+                                pathname: '/earn/pool/[id]',
+                                params: { id: pool.stakingPoolId, name: title },
+                            } as any)}
                         >
                             <Ionicons name="settings-outline" size={15} color={colors.primaryCTA} />
                             <Text style={styles.manageBtnText}>Manage pool</Text>
@@ -276,7 +390,12 @@ function MyPoolRow({ pool, walletAddress, feeSettings, onChanged }: {
                     {canPayFee && feeSettings ? (
                         <View style={styles.pendingNote}>
                             <Text style={styles.pendingNoteText}>
-                                Creation fee not paid. Pay the <Text style={{ color: '#fff', fontFamily: 'Manrope-SemiBold' }}>{feeSettings.creationFeeAmount} {feeSettings.creationFeeTokenSymbol || 'token'}</Text> fee so an admin can review and approve this pool.
+                                Creation fee not paid. Pay the{' '}
+                                <Text style={{ color: '#fff', fontFamily: 'Manrope-SemiBold' }}>
+                                    {feeSettings.creationFeeAmount} {feeSettings.creationFeeTokenSymbol || 'token'}
+                                </Text>
+                                {' '}fee to settle this pool
+                                {pool.approvalStatus === 'pending' ? ' so an admin can review and approve it' : ''}.
                             </Text>
                             {error ? <Text style={styles.errText}>{error}</Text> : null}
                             <TouchableOpacity style={[styles.payBtn, isPayingFee && { opacity: 0.6 }]} onPress={handlePayFee} disabled={isPayingFee}>

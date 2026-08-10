@@ -45,6 +45,9 @@ import { useSwapStore } from '@/store/swapStore';
 import { useWalletStore } from '@/store/walletStore';
 import { formatCompactNumber, formatFiatValue, formatTokenAmount } from '@/utils/formatting';
 import { useRequireBackup } from '@/hooks/useRequireBackup';
+import { useTokenDetail } from '@/hooks/useTokenDetail';
+import TokenOverviewCard from '@/components/sections/Swap/TokenOverviewCard';
+import { resolveMarketToken } from '@/utils/market-token-resolver';
 import { useLocalSearchParams, usePathname, useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -81,6 +84,18 @@ export default function SwapScreen() {
         toDecimals?: string;
         poolAddress?: string;
         preferredRouter?: string;
+        /**
+         * Set by the Market / Spotlight lists. Those rows come from the
+         * aggregate market feed, where `address` is a provider slug
+         * ("bitcoin") and `chainId` is always 1 — not something the engine can
+         * quote. `1` means "look this asset up before seeding it".
+         */
+        needsResolve?: string;
+        /**
+         * 'listing' | 'spotlight' — set only when the row was tapped from a
+         * curated tab. Gates the admin-authored token overview below the CTA.
+         */
+        infoSource?: string;
     }>();
 
     // Prefetch top chain tokens
@@ -129,6 +144,7 @@ export default function SwapScreen() {
         setSelectedGasTokenType,
         selectedGasToken,
         setSelectedGasToken,
+        resetSwapState,
     } = useSwapStore();
 
     const [fromFiatAmount, setFromFiatAmount] = useState('$0.00');
@@ -340,6 +356,7 @@ export default function SwapScreen() {
         // them, so on mount it still sees the default BNB/TWC pair.
         if (hasParams && !paramsAppliedRef.current) return;
         if (hasPairParams && !pairParamsAppliedRef.current) return;
+        if (needsResolve && !resolveAppliedRef.current) return;
 
         const updatePrices = async () => {
             try {
@@ -353,9 +370,17 @@ export default function SwapScreen() {
                     if (real) setToChain({ ...toChain, icon: real.logoURI });
                 }
 
-                // Silently update token info if it's our defaults
-                const isDefaultBnb = fromToken?.address === "0x0000000000000000000000000000000000000000";
-                const isDefaultTwc = toToken?.address === "0xDA1060158F7D593667CCE0A15DB346BB3FfB3596";
+                // Silently update token info if it's our defaults.
+                // The chain has to match too: every native coin is spelled with
+                // the zero address, so an address-only test would stamp BNB's
+                // price onto SOL, AVAX, TRX… whenever one of those is the
+                // selected "From" token.
+                const isDefaultBnb =
+                    fromToken?.address === "0x0000000000000000000000000000000000000000" &&
+                    Number(fromToken?.chainId) === 56;
+                const isDefaultTwc =
+                    toToken?.address?.toLowerCase() === "0xda1060158f7d593667cce0a15db346bb3ffb3596" &&
+                    Number(toToken?.chainId) === 56;
 
                 if (isDefaultBnb || isDefaultTwc) {
                     const [bnbRes, twcRes] = await Promise.all([
@@ -374,8 +399,12 @@ export default function SwapScreen() {
                     // fetch is in flight, and merging the stale value would put
                     // the default BNB/TWC pair back on screen.
                     const live = useSwapStore.getState();
-                    const stillDefaultBnb = live.fromToken?.address === "0x0000000000000000000000000000000000000000";
-                    const stillDefaultTwc = live.toToken?.address === "0xDA1060158F7D593667CCE0A15DB346BB3FfB3596";
+                    const stillDefaultBnb =
+                        live.fromToken?.address === "0x0000000000000000000000000000000000000000" &&
+                        Number(live.fromToken?.chainId) === 56;
+                    const stillDefaultTwc =
+                        live.toToken?.address?.toLowerCase() === "0xda1060158f7d593667cce0a15db346bb3ffb3596" &&
+                        Number(live.toToken?.chainId) === 56;
 
                     if (isDefaultBnb && stillDefaultBnb && bnbRes.tokens?.[0]) {
                         const bnb = bnbRes.tokens[0];
@@ -486,8 +515,158 @@ export default function SwapScreen() {
         });
     }, [hasPairParams, chains]);
 
-    // 2b. Pre-populate from params if coming from asset detail
-    const hasParams = !hasPairParams && !!(params.symbol && params.chainId);
+    // 2b. Pre-populate from a Market / Spotlight row.
+    //
+    // Those rows describe an *asset* (BTC, XRP), not a token: the aggregate
+    // market feed reports `address` as the provider's slug and `chainId` as 1
+    // for everything. So the row is seeded straight away — the user sees what
+    // they tapped, immediately — while `resolveMarketToken` finds the real
+    // (chain, contract) behind it. Resolution takes a round-trip or two, but
+    // the "To" side is deliberately cleared here, so no quote can fire before
+    // the real token has landed.
+    const needsResolve = !hasPairParams && params.needsResolve === '1' && !!params.symbol;
+
+    // Reads /api/v1/token-info, which merges the admin `about`/`links` from the
+    // Listing / Spotlight tables (and falls back to them when the market
+    // providers can't resolve the token at all).
+    const { data: tokenOverview, isLoading: isTokenOverviewLoading } = useTokenDetail({
+        address: fromToken?.address,
+        chainId: fromToken?.chainId,
+        symbol: fromToken?.symbol,
+        enabled: !!fromToken?.address && !!fromToken?.chainId,
+    });
+
+    /**
+     * The overview shows whenever this token's (chainId, address) matches a
+     * Listing or Spotlight row — wherever it was opened from. The API only
+     * returns `about`/`links` for curated rows, so their presence IS the match;
+     * the `infoSource` route param is no longer what decides it.
+     */
+    const showTokenOverview = Boolean(
+        (tokenOverview?.about || '').trim() || tokenOverview?.links?.length,
+    );
+
+    const resolveAppliedRef = React.useRef(false);
+    const [isResolvingMarketToken, setIsResolvingMarketToken] = useState(false);
+    /** Measured height of the pinned CTA footer — reserved as scroll padding. */
+    const [footerHeight, setFooterHeight] = useState(0);
+    /**
+     * Tied to unmount, not to the effect. The effect re-runs whenever the chain
+     * registry refetches, and a per-run cleanup flag would abandon an in-flight
+     * resolution — leaving the From card stuck on the unresolved seed.
+     */
+    const resolveCancelledRef = React.useRef(false);
+    useEffect(() => () => { resolveCancelledRef.current = true; }, []);
+
+    useEffect(() => {
+        if (!needsResolve || !chains || resolveAppliedRef.current) return;
+        resolveAppliedRef.current = true;
+
+        const symbol = params.symbol!;
+        const seeded = {
+            id: params.assetId || symbol,
+            symbol,
+            name: params.name || symbol,
+            icon: params.logo,
+            // No address yet — deliberately. An unresolved row must never look
+            // routable to the quote/balance code.
+            address: '',
+            chainId: 0,
+            decimals: 18,
+            balanceToken: '0.00',
+            balanceFiat: '$0.00',
+            priceUSD: params.priceUSD || '0',
+        } as any;
+
+        setFromChain(null);
+        setFromToken(seeded);
+        setToChain(null);
+        setToToken(null);
+        setIsResolvingMarketToken(true);
+
+        resolveMarketToken(
+            {
+                symbol,
+                name: params.name,
+                address: params.assetId,
+                chainId: params.chainId ? Number(params.chainId) : undefined,
+                priceUSD: params.priceUSD,
+                logo: params.logo,
+            },
+            { chains },
+        )
+            .then((resolved) => {
+                if (resolveCancelledRef.current) return;
+
+                if (!resolved) {
+                    // No on-chain representation we can route (XMR-style assets
+                    // and most tokenised funds). Say so rather than leaving a
+                    // token that fails at quote time.
+                    resetSwapState();
+                    Alert.alert(
+                        'Not available to swap',
+                        `${symbol} isn't tradable on any chain we route yet. Pick another token to get started.`,
+                    );
+                    return;
+                }
+
+                const chain = chains.find((c: any) => Number(c.id) === resolved.chainId);
+                if (!chain) {
+                    resetSwapState();
+                    Alert.alert(
+                        'Not available to swap',
+                        `${symbol} lives on a chain this app doesn't support yet.`,
+                    );
+                    return;
+                }
+
+                const applied = {
+                    ...seeded,
+                    id: `${resolved.chainId}-${resolved.address}`,
+                    symbol: resolved.symbol,
+                    name: resolved.name,
+                    icon: resolved.logoURI || params.logo,
+                    address: resolved.address,
+                    chainId: resolved.chainId,
+                    decimals: resolved.decimals ?? 18,
+                    priceUSD: resolved.priceUSD || seeded.priceUSD,
+                    liquidity: resolved.liquidity,
+                } as any;
+
+                setFromChain({ id: chain.id, name: chain.name, icon: chain.logoURI });
+                setFromToken(applied);
+
+                // The index's search results don't always carry decimals, and
+                // the 18 above is only a placeholder — a wrong value mis-scales
+                // the amount, so the quote would be for the wrong size entirely.
+                // The by-address lookup is a different server path and usually
+                // has them.
+                if (resolved.decimals == null) {
+                    api.tokens
+                        .list({ address: resolved.address, chains: [resolved.chainId], limit: 1 })
+                        .then((res) => {
+                            const real = res?.tokens?.[0];
+                            if (resolveCancelledRef.current || real?.decimals == null) return;
+                            const live = useSwapStore.getState().fromToken;
+                            if (!live || (live.address || '').toLowerCase() !== resolved.address.toLowerCase()) return;
+                            setFromToken({ ...live, decimals: real.decimals } as any);
+                        })
+                        .catch(() => {});
+                }
+            })
+            .catch((e) => {
+                if (resolveCancelledRef.current) return;
+                console.warn('[SwapScreen] Market token resolve failed:', e);
+                resetSwapState();
+                Alert.alert('Something went wrong', `Couldn't look up ${symbol}. Please try again.`);
+            })
+            .finally(() => {
+                if (!resolveCancelledRef.current) setIsResolvingMarketToken(false);
+            });
+    }, [needsResolve, chains]);
+
+    // 2c. Pre-populate from params if coming from asset detail
+    const hasParams = !hasPairParams && !needsResolve && !!(params.symbol && params.chainId);
     const paramsAppliedRef = React.useRef(false);
 
     useEffect(() => {
@@ -1301,7 +1480,11 @@ export default function SwapScreen() {
                     style={styles.flex1}
                     contentContainerStyle={[
                         styles.scrollContent,
-                        { paddingBottom: isKeyboardVisible ? 400 : ((bottom || 16) + 32) }
+                        {
+                            paddingBottom: isKeyboardVisible
+                                ? 400
+                                : (footerHeight || (bottom || 16) + 88) + 24,
+                        }
                     ]}
                     showsVerticalScrollIndicator={false}
                 >
@@ -1320,7 +1503,11 @@ export default function SwapScreen() {
                                 variant="from"
                                 tokenSelected={!!fromToken}
                                 tokenSymbol={fromToken?.symbol}
-                                tokenChain={fromChain?.name || 'Select Chain'}
+                                tokenChain={
+                                    isResolvingMarketToken
+                                        ? 'Finding best chain…'
+                                        : (fromChain?.name || 'Select Chain')
+                                }
                                 tokenIcon={fromToken?.icon}
                                 chainBadgeIcon={fromChain?.icon}
                                 amount={fromAmount}
@@ -1434,18 +1621,45 @@ export default function SwapScreen() {
 
                         <View style={styles.spacerLarge} />
 
-                        <SwapConfirmButton
-                            disabled={!isFormValid() || !swapQuote || isLoadingSwap || isRefreshing || isLoadingQuote}
-                            loading={isLoadingSwap}
-                            onPress={handleConfirmSwap}
-                            isRefreshing={isRefreshing}
-                            isStale={isStale}
-                            activeTab={activeTab}
-                            hasValidQuote={hasValidQuote()}
-                            title={isBridge ? 'Bridge' : 'Swap'}
-                        />
+                        {showTokenOverview && (
+                            <TokenOverviewCard
+                                about={tokenOverview?.about}
+                                links={tokenOverview?.links}
+                                socials={tokenOverview?.socials}
+                                symbol={fromToken?.symbol}
+                                name={tokenOverview?.name || fromToken?.name}
+                                logo={tokenOverview?.logoURI || params.logo}
+                                address={fromToken?.address}
+                                chainId={fromToken?.chainId}
+                                isLoading={isTokenOverviewLoading}
+                            />
+                        )}
                     </View>
                 </ScrollView>
+
+                {/* CTA pinned to the bottom of the screen — the content above
+                    scrolls behind it. Rendered before SwapKeyboard so the custom
+                    keypad still overlays it when open. */}
+                <View
+                    style={[
+                        styles.ctaFooter,
+                        // Match the top inset to the bottom one so the button sits
+                        // centred in the bar rather than hugging its top edge.
+                        { paddingTop: (bottom || 16), paddingBottom: (bottom || 16) },
+                    ]}
+                    onLayout={(e) => setFooterHeight(e.nativeEvent.layout.height)}
+                >
+                    <SwapConfirmButton
+                        disabled={!isFormValid() || !swapQuote || isLoadingSwap || isRefreshing || isLoadingQuote}
+                        loading={isLoadingSwap}
+                        onPress={handleConfirmSwap}
+                        isRefreshing={isRefreshing}
+                        isStale={isStale}
+                        activeTab={activeTab}
+                        hasValidQuote={hasValidQuote()}
+                        title={isBridge ? 'Bridge' : 'Swap'}
+                    />
+                </View>
 
                 <SwapKeyboard
                     visible={isKeyboardVisible}
@@ -1479,6 +1693,17 @@ const styles = StyleSheet.create({
     },
     spacerLarge: {
         marginTop: 32,
+    },
+    ctaFooter: {
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        bottom: 0,
+        paddingHorizontal: 20,
+        alignItems: 'center',
+        backgroundColor: colors.bg,
+        borderTopWidth: 1,
+        borderTopColor: colors.bgStroke,
     },
     sectionLabelWrapper: {
         width: '100%',

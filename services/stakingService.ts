@@ -17,6 +17,21 @@ const BSC_FACTORY_ADDRESS = '0x8505c412Ba61e5B260686a260C5213905DAAa130';
 
 const SECONDS_PER_YEAR = 31536000;
 
+/**
+ * Byte-for-byte copy of the web Earn page's local `formatCompact`
+ * (tiwi-user-app/app/earn/page.tsx). Deliberately NOT `formatCompactNumber`
+ * from @/utils/formatting — that one trims trailing zeros ("40T", not
+ * "40.00T"), so it would drift from the web on round numbers. Any change to
+ * the suffix ladder or the decimal count has to land on both sides together.
+ */
+const formatWebCompact = (n: number): string => {
+    if (n >= 1e12) return (n / 1e12).toFixed(2) + 'T';
+    if (n >= 1e9) return (n / 1e9).toFixed(2) + 'B';
+    if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';
+    if (n >= 1e3) return (n / 1e3).toFixed(2) + 'K';
+    return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
+
 export interface StakingStats {
     overallTvl: string;
     maxTvl: string;
@@ -150,11 +165,21 @@ class StakingService {
         });
     }
 
-    /** poolId -> unique staker count, derived from the shared stake snapshot. */
+    /**
+     * poolId -> unique ACTIVE staker count, derived from the shared stake
+     * snapshot.
+     *
+     * Active-only is the web's definition: its pool card reads
+     * `/api/v1/user-stakes?status=active&poolId=…` and counts distinct
+     * wallets in the response. Counting every status instead (what this did)
+     * inflated the number by wallets that had already fully withdrawn — 62
+     * on mobile against the web's 60 for Diamond Hands Club Staking Pool 1.
+     */
     private async getStakerCountsByPool(): Promise<Map<string, number>> {
         const stakes = await this.getAllStakes();
         const wallets = new Map<string, Set<string>>();
         for (const stake of stakes) {
+            if (stake.status !== 'active') continue;
             const poolId = stake.poolId || stake.pool?.id;
             const wallet = stake.userWallet?.toLowerCase();
             if (!poolId || !wallet) continue;
@@ -287,16 +312,34 @@ class StakingService {
     }
 
     /**
-     * Fetches global staking statistics from BSC
+     * The six numbers on the Earn screen's stats card, computed exactly the
+     * way the web Earn page computes them. See computeGlobalStakingStats.
      */
     async getGlobalStakingStats(): Promise<StakingStats> {
         // The Earn screen asks for this twice per load (fetchInitialData and
         // fetchGlobalStats both want it). Coalesced, the second caller reuses
-        // the first's promise instead of re-running the whole pool crawl.
+        // the first's promise instead of re-issuing both requests.
         return this.coalesce('global-stats', 15_000, () => this.computeGlobalStakingStats());
     }
 
     private async computeGlobalStakingStats(): Promise<StakingStats> {
+        // ─────────────────────────────────────────────────────────────────
+        // PARITY CONTRACT: this is a line-for-line port of the web app's
+        // tiwi-user-app/app/earn/page.tsx → fetchGlobalStakingStats().
+        // The web Earn page is the source of truth for these six numbers,
+        // so the inputs (the same two endpoints), the math, and the compact
+        // formatter must all stay identical to it. Do not "improve" this
+        // with on-chain reads or row de-duplication — both were tried here
+        // and both made the mobile card disagree with the web:
+        //   • on-chain `totalStaked` reports what is staked RIGHT NOW, but
+        //     TOTAL TWC STAKED is the lifetime peak summed off `user_stakes`
+        //     (rows aren't decremented on unstake). That gap read as
+        //     10.63T on mobile vs 36.22T on the web.
+        //   • de-duplicating pool rows that share one contract address
+        //     dropped the pool counts from 41 to 33 inactive.
+        // If a number here looks wrong, fix it on the web page first and
+        // port the change back — never diverge locally.
+        // ─────────────────────────────────────────────────────────────────
         const empty: StakingStats = {
             overallTvl: '0',
             maxTvl: '0',
@@ -307,191 +350,83 @@ class StakingService {
             allTimeStakersCount: '0',
         };
         try {
-            // Pull DB pools (all statuses) + all user stakes (any status).
-            // Mirrors the super-app's page.tsx:357-370 — lets us compute
-            // both active-only and all-time metrics from a single pass.
-            const [poolsResponseAll, allStakes] = await Promise.all([
+            // Both feeds degrade independently, exactly like the web's
+            // Promise.allSettled — one endpoint failing must not blank the
+            // stats the other one can still produce.
+            const [allPools, allStakes] = await Promise.all([
                 (async () => {
-                    try { return await api.staking.list(); } catch { return { pools: [] as any[] }; }
+                    try {
+                        // No status filter: inactivePoolsCount needs every row.
+                        return ((await api.staking.list()) as any).pools || [];
+                    } catch (e) {
+                        console.warn('[StakingService] staking-pools fetch failed for global stats:', e);
+                        return [] as any[];
+                    }
                 })(),
-                // Shared with mapPool's staker counts — one request, not N+1.
+                // No wallet/status filter: all-time stakers and the TWC total
+                // are computed across every row. Shared with mapPool's staker
+                // counts — one request, not N+1.
                 this.getAllStakes(),
             ]);
 
-            const allPools = (poolsResponseAll as any).pools || [];
-
-            // Duplicate `staking_pools` rows can point at the SAME on-chain
-            // contract — pool creation has written repeat rows for a single
-            // deployment (e.g. 0x771b…07c7 carries 8 rows created seconds
-            // apart), which made the POOL COUNTS report 8 pools that don't
-            // exist. Mark one representative row per contract; only those
-            // feed activePoolsCount/inactivePoolsCount. The TVL and staked
-            // sums deliberately stay over every row so those totals match
-            // the web earn page.
-            const dedupeKey = (p: any): string => {
-                if (p.poolContractAddress) return `addr:${String(p.poolContractAddress).toLowerCase()}`;
-                if (p.poolId !== undefined && p.poolId !== null) return `legacy:${p.chainId ?? 56}:${p.poolId}`;
-                return `row:${p.id}`;
+            // A pool is inactive when the operator flipped its DB status OR
+            // its reward window (createdAt + rewardDurationSeconds) elapsed.
+            // Mirrors the web's isExpiredStakingPool/isActiveStakingPool.
+            const isExpired = (p: any): boolean => {
+                if (!p.rewardDurationSeconds || !p.createdAt) return false;
+                const createdAtMs = new Date(p.createdAt).getTime();
+                if (Number.isNaN(createdAtMs)) return false;
+                return Date.now() > createdAtMs + p.rewardDurationSeconds * 1000;
             };
-            const seenPools = new Set<string>();
-            const countableRowIds = new Set<string>();
-            for (const p of allPools) {
-                const key = dedupeKey(p);
-                if (seenPools.has(key)) continue;
-                seenPools.add(key);
-                countableRowIds.add(p.id);
-            }
+            const isActive = (p: any): boolean => (p.status || 'active') === 'active' && !isExpired(p);
+            const activePools = allPools.filter(isActive);
 
-            // Pool status, TVL cap, and live staked are read DIRECTLY from
-            // the pool contract (V2 pool-per-contract, or legacy factory).
-            // The DB's `status` and `maxTvl` columns drift — admins can pause
-            // a pool on-chain without touching the DB, and endTime is set at
-            // deployment and may not be persisted. On-chain is ground truth.
-            //
-            // The bscClient now uses a multi-provider fallback transport
-            // (Alchemy + Binance dataseed + publicnode + drpc + ankr), and
-            // we treat a partial RPC failure as all-or-nothing — if any pool
-            // doesn't resolve we return the last good snapshot rather than
-            // emit a half-complete total (the prior behaviour was the cause
-            // of the 12M ↔ 122.1M ↔ 5T flicker on the dashboard).
-            //
-            // Stakers counts still come from the DB because there's no
-            // efficient on-chain way to enumerate historical users.
-            const nowSec = Math.floor(Date.now() / 1000);
-
-            // A pool counts as active only when BOTH signals agree, matching
-            // the web earn page (app/earn/page.tsx isActiveStakingPool):
-            //   • DB `status` — the operator's editorial switch. Pools like
-            //     "Test pool - Don't Engage" run on-chain but are flipped to
-            //     `inactive` so they stay hidden. On-chain state alone counted
-            //     them as active and made this card disagree with the web.
-            //   • on-chain `active` + `endTime` — the mechanical state, which
-            //     catches the many pools the DB still calls `active` long
-            //     after their reward period ended.
-            const isListed = (p: any) => (p.status || 'active') === 'active';
-
-            // Fast path: the server-enriched snapshot carries every pool's
-            // on-chain status/maxTvl/totalStaked, so the whole crawl below
-            // collapses into one request. Verified to reproduce the same
-            // totals as the direct reads.
-            const snapshot = await this.getEnrichedPoolSnapshot();
-
-            const onChainStats = await Promise.all(allPools.map(async (p: any) => {
-                const fromSnapshot = snapshot.get(p.id)?.onChain;
-                if (fromSnapshot) {
-                    const endTimeSec = Number(fromSnapshot.endTime) || 0;
-                    const notExpired = endTimeSec === 0 || nowSec < endTimeSec;
-                    return {
-                        ok: true as const,
-                        counts: countableRowIds.has(p.id),
-                        isActive: isListed(p) && Boolean(fromSnapshot.active) && notExpired,
-                        maxTvlTok: Number(fromSnapshot.maxTvl) || 0,
-                        totalStakedTok: Number(fromSnapshot.totalStaked) || 0,
-                        tokenSymbol: (p.tokenSymbol || '').toUpperCase(),
-                    };
-                }
-
-                const hasV2 = !!p.poolContractAddress;
-                const hasLegacy = (p.chainId ?? 56) === 56 && p.poolId !== undefined && p.poolId !== null;
-                if (!hasV2 && !hasLegacy) {
-                    // No contract to read — the DB switch is all we have.
-                    return {
-                        ok: true as const,
-                        counts: countableRowIds.has(p.id),
-                        isActive: isListed(p),
-                        maxTvlTok: 0,
-                        totalStakedTok: 0,
-                        tokenSymbol: (p.tokenSymbol || '').toUpperCase(),
-                    };
-                }
-                try {
-                    let active = false;
-                    let endTimeSec = 0;
-                    let maxTvlTok = 0;
-                    let totalStakedTok = 0;
-                    let tokenSymbol = (p.tokenSymbol || '').toUpperCase();
-                    if (hasV2) {
-                        const info = await this.bscClient.readContract({
-                            address: p.poolContractAddress as `0x${string}`,
-                            abi: STAKING_POOL_V2_ABI,
-                            functionName: 'getPoolInfo',
-                        }) as any;
-                        const stakingTokenAddr: string | undefined = info?.[0];
-                        const decimals = p.decimals || (stakingTokenAddr?.toLowerCase() === TWC_ADDRESS_BSC.toLowerCase() ? 9 : 18);
-                        maxTvlTok = Number(formatUnits(info[5] ?? 0n, decimals));
-                        endTimeSec = Number(info[8] ?? 0n);
-                        active = Boolean(info[9]);
-                        totalStakedTok = Number(formatUnits(info[10] ?? 0n, decimals));
-                    } else {
-                        const poolInfo = await this.bscClient.readContract({
-                            address: BSC_FACTORY_ADDRESS as `0x${string}`,
-                            abi: STAKING_FACTORY_ABI,
-                            functionName: 'getPoolInfo',
-                            args: [BigInt(p.poolId!)],
-                        }) as any;
-                        const config = poolInfo?.[0];
-                        const state = poolInfo?.[1];
-                        const stakingTokenAddr: string | undefined = config?.stakingToken;
-                        const decimals = p.decimals || (stakingTokenAddr?.toLowerCase() === TWC_ADDRESS_BSC.toLowerCase() ? 9 : 18);
-                        maxTvlTok = Number(formatUnits(config?.maxTvl ?? 0n, decimals));
-                        endTimeSec = Number(config?.endTime ?? state?.endTime ?? 0);
-                        active = Boolean(config?.active ?? state?.active ?? false);
-                        totalStakedTok = Number(formatUnits(state?.totalStaked ?? 0n, decimals));
-                    }
-                    const notExpired = endTimeSec === 0 || nowSec < endTimeSec;
-                    return {
-                        ok: true as const,
-                        counts: countableRowIds.has(p.id),
-                        isActive: isListed(p) && active && notExpired,
-                        maxTvlTok,
-                        totalStakedTok,
-                        tokenSymbol,
-                    };
-                } catch (e) {
-                    console.warn(`[StakingService] Pool ${p.id} on-chain status read failed across all RPC fallbacks:`, e);
-                    return { ok: false as const };
-                }
-            }));
-
-            // All-or-nothing: if any pool didn't resolve, keep the previous
-            // snapshot rather than publish a partial total. This is what kills
-            // the dashboard flicker.
-            if (onChainStats.some((s) => !s.ok) && this.lastGoodStats) {
-                console.warn('[StakingService] Partial RPC failure — returning last good stats');
-                return this.lastGoodStats;
-            }
-
-            const resolvedStats = onChainStats.filter(
-                (s): s is Extract<typeof s, { ok: true }> => s.ok,
+            // Overall TVL = sum of every pool's configured maxTvl cap.
+            const overallTvlSum = allPools.reduce(
+                (sum: number, pool: any) => sum + (Number(pool.maxTvl) || 0),
+                0,
             );
-            // Counts: one entry per distinct pool contract. Sums: every row,
-            // so Overall TVL / Total Staked stay identical to the web page.
-            const countableStats = resolvedStats.filter((s) => s.counts);
-            const activeCount = countableStats.filter((s) => s.isActive).length;
-            const inactiveCount = Math.max(0, countableStats.length - activeCount);
-            const overallTvlSum = resolvedStats.reduce((sum, s) => sum + s.maxTvlTok, 0);
-            const twcStaked = resolvedStats.reduce((sum, s) => (
-                s.tokenSymbol === 'TWC' ? sum + s.totalStakedTok : sum
-            ), 0);
 
+            // Total TWC Staked = cumulative PEAK of TWC ever committed. Rows
+            // hold staked_amount as a lifetime peak (partial and full unstakes
+            // don't decrement it), so this sums across every status.
+            let twcStaked = 0;
             const activeWallets = new Set<string>();
+            // All-time stakers = any wallet on any user_stakes row, including
+            // wallets that have fully exited.
             const allTimeWallets = new Set<string>();
+
             for (const stake of allStakes) {
-                const wallet = stake.userWallet?.toLowerCase();
-                if (!wallet) continue;
-                allTimeWallets.add(wallet);
-                if (stake.status === 'active') activeWallets.add(wallet);
+                const amount = Number(stake.stakedAmount || 0);
+                if (stake.pool?.tokenSymbol?.toUpperCase() === 'TWC') {
+                    twcStaked += amount;
+                }
+                if (stake.userWallet) {
+                    allTimeWallets.add(stake.userWallet.toLowerCase());
+                }
+                if (stake.status === 'active' && stake.userWallet) {
+                    activeWallets.add(stake.userWallet.toLowerCase());
+                }
             }
 
             const stats: StakingStats = {
-                overallTvl: formatCompactNumber(overallTvlSum, { decimals: 2 }),
-                maxTvl: formatCompactNumber(overallTvlSum, { decimals: 2 }),
-                totalTwcStaked: formatCompactNumber(twcStaked, { decimals: 2 }),
-                activePoolsCount: activeCount,
-                inactivePoolsCount: inactiveCount,
+                overallTvl: formatWebCompact(overallTvlSum),
+                maxTvl: formatWebCompact(overallTvlSum),
+                totalTwcStaked: formatWebCompact(twcStaked),
+                activePoolsCount: activePools.length,
+                inactivePoolsCount: allPools.length - activePools.length,
                 activeStakersCount: activeWallets.size.toLocaleString(),
                 allTimeStakersCount: allTimeWallets.size.toLocaleString(),
             };
+
+            // Both feeds down (airplane mode, backend outage) — the numbers
+            // would all be 0, which reads as "everything reset". Keep the last
+            // good snapshot instead. The web has no equivalent because a
+            // desktop reload is cheap; a phone losing signal mid-poll is not.
+            if (allPools.length === 0 && allStakes.length === 0 && this.lastGoodStats) {
+                return this.lastGoodStats;
+            }
+
             this.lastGoodStats = stats;
             return stats;
         } catch (error) {

@@ -95,6 +95,17 @@ const POOL_EMERGENCY_WITHDRAW_ABI = [
     },
 ] as const;
 
+/** `TiwiStakingPool.setActive(bool)` — owner-only pause / resume. */
+const POOL_SET_ACTIVE_ABI = [
+    {
+        name: 'setActive',
+        type: 'function',
+        stateMutability: 'nonpayable',
+        inputs: [{ name: '_active', type: 'bool' }],
+        outputs: [],
+    },
+] as const;
+
 export interface CreatePoolParams {
     chainId: number;
     stakingToken: Address;
@@ -379,10 +390,38 @@ export function useStakingDeployer() {
         return hash;
     }, [resolveSigner, signAndSend]);
 
+    /**
+     * Pause / resume a pool the caller owns. Mirrors the web's
+     * `usePoolStaking().setActive` — a paused pool stops accepting deposits
+     * while existing positions keep their accrued rewards.
+     */
+    const setPoolActive = useCallback(async (params: {
+        chainId: number; poolAddress: Address; active: boolean; walletAddress?: Address;
+    }): Promise<Hash> => {
+        const { signerAddress, isLocal } = resolveSigner(params.walletAddress);
+        const data = encodeFunctionData({
+            abi: POOL_SET_ACTIVE_ABI,
+            functionName: 'setActive',
+            args: [params.active],
+        });
+        const { hash } = await signAndSend(
+            {
+                to: params.poolAddress,
+                data,
+                value: '0',
+                chainId: params.chainId,
+                label: params.active ? 'resume pool' : 'pause pool',
+            },
+            signerAddress, isLocal,
+        );
+        return hash;
+    }, [resolveSigner, signAndSend]);
+
     return {
         createPool,
         payCreationFee,
         emergencyWithdrawRewards,
+        setPoolActive,
         reset,
         status,
         error,

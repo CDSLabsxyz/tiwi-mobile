@@ -36,6 +36,10 @@ export function useTokenDetail({ address, chainId, symbol, enabled = true }: Use
                             verified: true,
                             logoURI: detail.token.logo,
                             description: detail.token.description || '',
+                            // Admin-curated copy + ordered links from the Listing /
+                            // Spotlight tables, merged in by /api/v1/token-info
+                            about: (detail.token as any).about || '',
+                            links: (detail.token as any).links || [],
                             socials: {
                                 twitter: detail.token.twitter,
                                 telegram: detail.token.telegram,

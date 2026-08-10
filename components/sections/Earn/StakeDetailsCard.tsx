@@ -66,6 +66,11 @@ export const StakeDetailsCard: React.FC<Props> = ({ stake, isExpanded, onToggle,
     });
     const { showToast } = useToastStore();
 
+    // Rewards are paid in the pool's REWARD token. For "stake A, earn A" this
+    // is the staking symbol and nothing changes; for "stake TWC, earn USDT"
+    // labelling pending/claimed/earning-rate with `symbol` named the wrong asset.
+    const rewardSymbol = pooled.rewardTokenSymbol || symbol;
+
     const [liveRewards, setLiveRewards] = useState<number>(0);
     const [now, setNow] = useState<number>(Date.now());
     const [isClaimModalVisible, setIsClaimModalVisible] = useState(false);
@@ -360,7 +365,7 @@ export const StakeDetailsCard: React.FC<Props> = ({ stake, isExpanded, onToggle,
 
                     <View style={styles.statsGrid}>
                         <StatTile icon="link-outline" label="Staked Amount" value={`${formatFull(displayStaked)}`} suffix={symbol} />
-                        <StatTile icon="trending-up-outline" label="Pending Rewards" value={formatFull(displayPending, 6)} suffix={symbol} valueColor="#b1f128" />
+                        <StatTile icon="trending-up-outline" label="Pending Rewards" value={formatFull(displayPending, 6)} suffix={rewardSymbol} valueColor="#b1f128" />
                         <StatTile icon="lock-closed-outline" label={effectiveStatus === 'active' ? 'Reward Duration' : 'Duration'} value={countdown.totalLabel} />
                         <StatTile icon="calendar-outline" label="Started" value={startedLabel} />
                     </View>
@@ -372,12 +377,13 @@ export const StakeDetailsCard: React.FC<Props> = ({ stake, isExpanded, onToggle,
                         stakedAmount={withdrawnPrincipal}
                         hasEnded={hasEnded}
                         tokenSymbol={symbol}
+                        rewardSymbol={rewardSymbol}
                     />
 
                     {pooled.earningRate > 0 && effectiveStatus === 'active' && (
                         <View style={styles.earningRateRow}>
                             <Text style={styles.earningRateLabel}>Earning Rate</Text>
-                            <Text style={styles.earningRateValue}>+{pooled.earningRate.toFixed(8)} {symbol}/sec</Text>
+                            <Text style={styles.earningRateValue}>+{pooled.earningRate.toFixed(8)} {rewardSymbol}/sec</Text>
                         </View>
                     )}
 
@@ -394,7 +400,7 @@ export const StakeDetailsCard: React.FC<Props> = ({ stake, isExpanded, onToggle,
                                 </Text>
                                 {displayPending > 0 && (
                                     <Text style={styles.claimButtonSub}>
-                                        ≈ {formatCompactNumber(displayPending, { decimals: 4 } as any)} {symbol}
+                                        ≈ {formatCompactNumber(displayPending, { decimals: 4 } as any)} {rewardSymbol}
                                     </Text>
                                 )}
                             </TouchableOpacity>
@@ -418,7 +424,7 @@ export const StakeDetailsCard: React.FC<Props> = ({ stake, isExpanded, onToggle,
                 onClose={() => setIsClaimModalVisible(false)}
                 kind="claim"
                 maxAmount={displayPending}
-                tokenSymbol={symbol}
+                tokenSymbol={rewardSymbol}
                 isProcessing={isProcessing}
                 onConfirm={onClaimConfirm}
             />

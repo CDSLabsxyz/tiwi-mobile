@@ -1,6 +1,7 @@
 import { Skeleton } from '@/components/ui/skeleton';
 import { colors } from '@/constants/colors';
 import { useTranslation } from '@/hooks/useLocalization';
+import { useOpenTokenInSwap } from '@/hooks/useOpenTokenInSwap';
 import { SpotlightToken } from '@/types';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
@@ -10,6 +11,7 @@ import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-nati
 interface SpotlightSectionProps {
     tokens: SpotlightToken[];
     isLoading?: boolean;
+    /** Overrides the default behaviour, which is to open the token in swap. */
     onTokenPress?: (token: SpotlightToken) => void;
 }
 
@@ -25,6 +27,7 @@ export const SpotlightSection: React.FC<SpotlightSectionProps> = ({
 }) => {
     const { t } = useTranslation();
     const router = useRouter();
+    const openTokenInSwap = useOpenTokenInSwap();
 
     if (isLoading) {
         return (
@@ -78,9 +81,8 @@ export const SpotlightSection: React.FC<SpotlightSectionProps> = ({
                 {tokens.map((token) => (
                     <TouchableOpacity
                         key={token.id}
-                        activeOpacity={onTokenPress ? 0.7 : 1}
-                        onPress={onTokenPress ? () => onTokenPress(token) : undefined}
-                        disabled={!onTokenPress}
+                        activeOpacity={0.7}
+                        onPress={() => (onTokenPress ? onTokenPress(token) : openTokenInSwap(token, { infoSource: 'spotlight' }))}
                     >
                         <View style={styles.card}>
                             <Image

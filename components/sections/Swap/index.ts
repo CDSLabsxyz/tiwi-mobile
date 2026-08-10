@@ -19,3 +19,4 @@ export * from './SwapTokenCard';
 export * from './TokenSelectSheet';
 export * from './UnifiedAssetSelectSheet';
 export * from './SwapKeyboard';
+export { default as TokenOverviewCard } from './TokenOverviewCard';

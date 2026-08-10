@@ -143,6 +143,12 @@ export default function HomeScreen() {
         symbol: t.symbol,
         logo: t.logo || 'https://www.figma.com/api/mcp/asset/3cea74db-4833-4e82-a07c-0e5e220b5a54',
         change24h: t.change24h || 0,
+        // Kept so a tap can open the chip's token in swap — spotlight entries
+        // are admin-curated and carry a real chain + contract.
+        name: t.name,
+        address: t.address,
+        chainId: t.chainId,
+        priceUSD: t.priceUSD,
       })),
       stats: [
         {

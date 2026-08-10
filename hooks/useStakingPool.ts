@@ -29,6 +29,16 @@ export interface OnChainPoolStats {
     onChainTotalDepositedFormatted: string;
     allowance: bigint | null;
     stakingToken: `0x${string}` | null;
+    /**
+     * Reward-token identity. `pendingRewards`, `poolReward` and the claimed
+     * totals are denominated in THIS token, not the staking token — they differ
+     * on a "stake A, earn B" pool. Screens must label reward figures with
+     * `rewardTokenSymbol`, not the staking symbol.
+     */
+    rewardToken: `0x${string}` | null;
+    rewardTokenSymbol: string | null;
+    rewardTokenDecimals: number;
+    isCrossTokenPool: boolean;
     apr: string;
     tvlUsd: string;
     tvlCompact: string;
@@ -55,6 +65,12 @@ export interface OnChainPoolStats {
     poolReward: number;
     tvl: number;
 }
+
+// `ERC20_ABI` in constants/abis only carries approve/allowance/balanceOf.
+const ERC20_METADATA_ABI = [
+    { inputs: [], name: 'decimals', outputs: [{ type: 'uint8' }], stateMutability: 'view', type: 'function' },
+    { inputs: [], name: 'symbol', outputs: [{ type: 'string' }], stateMutability: 'view', type: 'function' },
+] as const;
 
 const STAKING_CHAIN_ID = 56; // BSC Mainnet
 const SECONDS_PER_YEAR_NUM = 31536000;
@@ -239,6 +255,57 @@ export function useStakingPool(
         return { poolConfig: cfg, poolState: st, stakingToken: cfg?.stakingToken as `0x${string}` | undefined };
     }, [poolInfo, isV2]);
 
+    // --- REWARD TOKEN IDENTITY ---
+    // A pool has two tokens: `stakingToken` (deposits, maxTvl, totalStaked,
+    // userInfo.amount) and `rewardToken` (poolReward, rewardBalance,
+    // pendingReward). They're the same asset for "stake A, earn A" — for
+    // "stake A, earn B" every reward figure below must be formatted with the
+    // REWARD token's decimals. Reading a 1 USDT (18dp) reward pool at TWC's 9dp
+    // shows 1,000,000,000, and that number propagates into the APR, the live
+    // earning rate, and the claimed amount PATCHed back to the DB.
+    const rewardTokenAddress = useMemo(() => {
+        const addr = (poolConfig as any)?.rewardToken ?? (poolConfig as any)?.[2];
+        return typeof addr === 'string' && /^0x[a-fA-F0-9]{40}$/.test(addr) ? (addr as `0x${string}`) : undefined;
+    }, [poolConfig]);
+
+    const { data: rewardTokenInfo } = useQuery({
+        queryKey: ['staking', 'rewardToken', rewardTokenAddress, stakingToken, decimals],
+        queryFn: async () => {
+            // Same token → nothing to read, and no chance of a failed metadata
+            // call downgrading a working pool.
+            if (!rewardTokenAddress || !stakingToken
+                || rewardTokenAddress.toLowerCase() === stakingToken.toLowerCase()) {
+                return { decimals, symbol: null as string | null, isCrossToken: false };
+            }
+            const [d, sym] = await Promise.all([
+                bscReadClient.readContract({
+                    address: rewardTokenAddress,
+                    abi: ERC20_METADATA_ABI,
+                    functionName: 'decimals',
+                }).catch(() => undefined),
+                bscReadClient.readContract({
+                    address: rewardTokenAddress,
+                    abi: ERC20_METADATA_ABI,
+                    functionName: 'symbol',
+                }).catch(() => undefined),
+            ]);
+            return {
+                // Fall back to the staking decimals on a failed read — that's
+                // the pre-existing behaviour, never worse than before.
+                decimals: Number.isFinite(Number(d)) ? Number(d) : decimals,
+                symbol: (sym as string | undefined) || null,
+                isCrossToken: true,
+            };
+        },
+        enabled: !isMock && !!rewardTokenAddress,
+        // Decimals and symbol are immutable.
+        staleTime: Infinity,
+        gcTime: Infinity,
+    });
+
+    /** Decimals to format any REWARD-denominated figure with. */
+    const rewardDecimals = rewardTokenInfo?.decimals ?? decimals;
+
     const {
         data: userInfo,
         isLoading: isUserLoading,
@@ -287,13 +354,18 @@ export function useStakingPool(
     // staker list, and reconstructing it from Deposit logs would require
     // scanning the full pool history each render. The DB is the practical
     // source of truth here, mirroring how the web app's pool list resolves it.
+    //
+    // `status: 'active'` is load-bearing for web parity: the web's
+    // staking-card.tsx queries `?status=active&poolId=…`. Without the filter
+    // this also counted wallets that had fully withdrawn, so the card read 62
+    // where the web read 60.
     const { data: stakersCountData } = useQuery({
         queryKey: ['staking', 'stakersCount', String(poolId ?? '')],
         queryFn: async () => {
             if (poolId === undefined || poolId === null) return 0;
             const uuid = await apiClient.resolvePoolUuid(poolId as number | string);
             if (!uuid) return 0;
-            const stakes = await apiClient.getUserStakes(undefined, undefined, uuid);
+            const stakes = await apiClient.getUserStakes(undefined, 'active', uuid);
             const unique = new Set(
                 (stakes || [])
                     .map((s: any) => s?.userWallet?.toLowerCase?.())
@@ -711,7 +783,10 @@ export function useStakingPool(
             throw new Error('No rewards available to claim');
         }
         const claimedWei = (prePending as bigint) * BigInt(pct) / 100n;
-        const claimedAmount = formatUnits(claimedWei, decimals);
+        // Pending is a REWARD amount — formatting it with the staking decimals
+        // wrote a 1e9-inflated figure into `user_stakes.total_claimed` on a
+        // cross-token pool.
+        const claimedAmount = formatUnits(claimedWei, rewardDecimals);
         showToast('Confirm Claim in Wallet...', 'pending');
         const isFull = pct === 100;
         return await executeWrite(
@@ -729,7 +804,7 @@ export function useStakingPool(
                     args: isFull ? [numericPoolId!] : [numericPoolId!, BigInt(pct)],
                 },
             'Claim', claimedAmount, { claimedAmount });
-    }, [isV2, v2Address, factoryAddress, numericPoolId, decimals, executeWrite, ensureCorrectChain, showToast, userInfo]);
+    }, [isV2, v2Address, factoryAddress, numericPoolId, rewardDecimals, executeWrite, ensureCorrectChain, showToast, userInfo]);
 
     /**
      * Max unstake with auto-harvest. Fires claim() first (harvests pending
@@ -748,7 +823,7 @@ export function useStakingPool(
         // rewards_earned so it doesn't inflate the "Claimed" counter.
         if (prePending > 0n) {
             showToast('Harvesting rewards...', 'pending');
-            const harvestedOnExit = formatUnits(prePending as bigint, decimals);
+            const harvestedOnExit = formatUnits(prePending as bigint, rewardDecimals);
             try {
                 await executeWrite(
                     isV2
@@ -776,7 +851,7 @@ export function useStakingPool(
         // Unstake PATCH records both stakedAmount=0/status=withdrawn AND
         // the harvested amount as rewards_earned.
         const amountStr = formatUnits(preUserStaked as bigint, decimals);
-        const harvestedOnExit = prePending > 0n ? formatUnits(prePending as bigint, decimals) : undefined;
+        const harvestedOnExit = prePending > 0n ? formatUnits(prePending as bigint, rewardDecimals) : undefined;
         showToast('Confirm Unstake in Wallet...', 'pending');
         return await executeWrite(
             isV2
@@ -793,7 +868,7 @@ export function useStakingPool(
                     args: [numericPoolId!, preUserStaked],
                 },
             'Unstake', amountStr, { remainingStaked: '0', harvestedOnExit });
-    }, [isV2, v2Address, factoryAddress, numericPoolId, decimals, executeWrite, ensureCorrectChain, showToast, userInfo]);
+    }, [isV2, v2Address, factoryAddress, numericPoolId, decimals, rewardDecimals, executeWrite, ensureCorrectChain, showToast, userInfo]);
 
     const approve = useCallback(async (amount?: string) => {
         await ensureCorrectChain();
@@ -830,6 +905,10 @@ export function useStakingPool(
                 onChainTotalDepositedFormatted: '0',
                 allowance: BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'),
                 stakingToken: null,
+                rewardToken: null,
+                rewardTokenSymbol: null,
+                rewardTokenDecimals: decimals,
+                isCrossTokenPool: false,
                 apr: '12.45%',
                 tvlUsd: '$1.4M',
                 tvlCompact: '1.4M',
@@ -872,7 +951,8 @@ export function useStakingPool(
         if (poolConfig && poolState) {
             // Support both array and object responses for robustness
             rewardDurationSeconds = Number(poolConfig[5] ?? poolConfig.rewardDurationSeconds ?? 0n);
-            poolRewardNum = Number(formatUnits(poolConfig[4] ?? poolConfig.poolReward ?? 0n, decimals));
+            // poolReward is in the REWARD token; maxTvl/totalStaked in the STAKING token.
+            poolRewardNum = Number(formatUnits(poolConfig[4] ?? poolConfig.poolReward ?? 0n, rewardDecimals));
             const maxTvl = Number(formatUnits(poolConfig[6] ?? poolConfig.maxTvl ?? 0n, decimals));
 
             maxTvlCompact = formatCompactNumber(maxTvl, {});
@@ -945,13 +1025,17 @@ export function useStakingPool(
             userStaked,
             userStakedFormatted: formatUnits(userStaked, decimals),
             pendingRewards,
-            pendingRewardsFormatted: formatUnits(pendingRewards, decimals),
+            pendingRewardsFormatted: formatUnits(pendingRewards, rewardDecimals),
             onChainClaimedTotal,
-            onChainClaimedFormatted: formatUnits(onChainClaimedTotal, decimals),
+            onChainClaimedFormatted: formatUnits(onChainClaimedTotal, rewardDecimals),
             onChainTotalDeposited,
             onChainTotalDepositedFormatted: formatUnits(onChainTotalDeposited, decimals),
             allowance: (allowance as bigint) || 0n,
             stakingToken: (stakingToken as `0x${string}`) || null,
+            rewardToken: rewardTokenAddress || (stakingToken as `0x${string}`) || null,
+            rewardTokenSymbol: rewardTokenInfo?.symbol || null,
+            rewardTokenDecimals: rewardDecimals,
+            isCrossTokenPool: !!rewardTokenInfo?.isCrossToken,
             apr: aprValue,
             tvlUsd,
             tvlCompact: totalStakedCompact,
@@ -982,7 +1066,7 @@ export function useStakingPool(
             poolReward: poolRewardNum,
             tvl: totalStakedNum
         };
-    }, [isMock, poolConfig, poolState, userInfo, allowance, stakingToken, isPoolLoading, isUserLoading, isAllowanceLoading, isTransactionPending, decimals, refetchAll, priceData, onChainClaimedTotal, onChainTotalDeposited, stakersCountData]);
+    }, [isMock, poolConfig, poolState, userInfo, allowance, stakingToken, rewardTokenAddress, rewardTokenInfo, rewardDecimals, isPoolLoading, isUserLoading, isAllowanceLoading, isTransactionPending, decimals, refetchAll, priceData, onChainClaimedTotal, onChainTotalDeposited, stakersCountData]);
 
     return {
         ...stats,

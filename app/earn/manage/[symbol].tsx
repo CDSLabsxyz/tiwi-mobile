@@ -131,6 +131,12 @@ export default function ManageStakeScreen() {
         rewardDurationSeconds
     } = stakingData;
 
+    // Rewards are paid in the pool's REWARD token, which is only the same asset
+    // as the staking token for a "stake A, earn A" pool. Labelling pending
+    // rewards / earning rate / the claim amount with `symbol` reported a pool
+    // that pays USDT as paying TWC.
+    const rewardSymbol = stakingData.rewardTokenSymbol || symbol || 'TWC';
+
     // Real-time Mining & Countdown Logic
     useEffect(() => {
         if (stakingData.pendingRewards === null) return;
@@ -445,7 +451,7 @@ export default function ManageStakeScreen() {
                                 <Ionicons name="trending-up-outline" size={16} color="#C4F440" />
                                 <Text style={styles.gridLabel}>Pending Rewards</Text>
                             </View>
-                            <Text style={styles.gridValue}>{displayedRewards} <Text style={styles.gridSymbol}>{symbol}</Text></Text>
+                            <Text style={styles.gridValue}>{displayedRewards} <Text style={styles.gridSymbol}>{rewardSymbol}</Text></Text>
                         </View>
                         <View style={styles.gridItem}>
                             <View style={styles.gridLabelRow}>
@@ -472,12 +478,13 @@ export default function ManageStakeScreen() {
                     <RewardsSummaryPanel
                         pending={liveRewards}
                         totalClaimed={parseFloat(userStake?.totalClaimed || '0')}
+                        rewardSymbol={rewardSymbol}
                     />
 
                     {/* Earning Rate Banner */}
                     <View style={styles.earningRateBanner}>
                         <Text style={styles.earningRateLabel}>Earning Rate</Text>
-                        <Text style={styles.earningRateValue}>+{effectiveStats.earningRate.toFixed(8)} {symbol}/sec</Text>
+                        <Text style={styles.earningRateValue}>+{effectiveStats.earningRate.toFixed(8)} {rewardSymbol}/sec</Text>
                     </View>
 
                     <View style={styles.actionButtonsRow}>
@@ -487,7 +494,7 @@ export default function ManageStakeScreen() {
                             style={[styles.claimButtonLarge, (isTransactionPending || liveRewards <= 0) && { opacity: 0.5 }]}
                         >
                             <Text style={styles.claimButtonTextLarge}>Claim</Text>
-                            <Text style={styles.claimSubtext}>≈ {formatCompactNumber(liveRewards)} {symbol}</Text>
+                            <Text style={styles.claimSubtext}>≈ {formatCompactNumber(liveRewards)} {rewardSymbol}</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
                             onPress={() => setIsUnstakeModalVisible(true)}
@@ -576,7 +583,7 @@ export default function ManageStakeScreen() {
                 onClose={() => setIsClaimModalVisible(false)}
                 kind="claim"
                 maxAmount={liveRewards}
-                tokenSymbol={symbol || 'TWC'}
+                tokenSymbol={rewardSymbol}
                 isProcessing={isTransactionPending}
                 onConfirm={onClaimModalConfirm}
             />

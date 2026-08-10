@@ -83,6 +83,38 @@ export interface TokenItem {
     transactionCount?: number;
     circulatingSupply?: number;
     totalSupply?: number;
+    /**
+     * Whether the indexer considers the token verified. NOT a trust signal on
+     * its own — the index marks junk like "01" and "100¥" verified while
+     * leaving BNB/USDT/USDC unverified. Treat it as one input to the spam
+     * filter, never as a standalone allow/deny.
+     */
+    verified?: boolean;
+    isHoneypot?: boolean;
+}
+
+/**
+ * An entry from the admin-curated swap default list
+ * (`/api/v1/swap-default-tokens`). This is the same list the web token
+ * selector browses — roughly 5 headline tokens per chain, TWC pinned at
+ * rank 1. `address: null` / the "PLACEHOLDER" sentinel marks a coming-soon
+ * stub that renders but can't be routed.
+ */
+export interface SwapDefaultToken {
+    id?: string;
+    symbol: string;
+    name: string;
+    address: string | null;
+    logo: string | null;
+    rank: number;
+    chainId: number | null;
+    decimals: number | null;
+    category?: 'swap';
+}
+
+export interface SwapDefaultTokensResponse {
+    tokens: SwapDefaultToken[];
+    total: number;
 }
 
 export interface TokensResponse {
@@ -285,20 +317,36 @@ export interface StakingPoolsResponse {
 // the mobile client doesn't need any BigInt handling for rendering.
 
 export interface MobilePoolOnChain {
+    /** In the REWARD token — NOT the staking token. See `rewardTokenDecimals`. */
     poolReward: string;
     rewardDurationSeconds: number;
+    /** In the STAKING token. */
     maxTvl: string;
     rewardPerSecond: string;
+    /** In the STAKING token. */
     totalStaked: string;
+    /** In the REWARD token. */
     rewardBalance: string;
     startTime: number;   // unix seconds
     endTime: number;     // unix seconds
     active: boolean;
     funded: boolean;
+    // Reward-token identity. Optional because a backend deployed before the
+    // reward-token fix doesn't send them — callers must fall back to the
+    // staking token, which is what every pool did before cross-token existed.
+    stakingToken?: string;
+    rewardToken?: string;
+    rewardTokenSymbol?: string;
+    rewardTokenDecimals?: number;
+    /** True for a "stake A, earn B" pool. */
+    isCrossToken?: boolean;
 }
 
 export interface MobilePool {
     id: string;
+    /** Admin-set pool name. Optional — the mobile staking route doesn't
+     *  currently project it, so callers must fall back to `tokenSymbol`. */
+    name?: string;
     chainId: number;
     chainName: string;
     tokenAddress: string;
@@ -320,11 +368,17 @@ export interface MobilePool {
 }
 
 export interface MobilePositionOnChain {
-    stakedAmount: string;         // human units
-    pendingReward: string;        // human units
+    stakedAmount: string;         // human units, STAKING token
+    pendingReward: string;        // human units, REWARD token
     stakeTime: number;            // unix seconds
-    userRewardPerSecond: string;  // human units / sec
+    userRewardPerSecond: string;  // REWARD tokens / sec
     poolEndTime: number;          // unix seconds
+    // Reward-token identity — `pendingReward` is denominated in it, not the
+    // staking token. Optional: absent from a pre-fix backend.
+    rewardToken?: string;
+    rewardTokenSymbol?: string;
+    rewardTokenDecimals?: number;
+    isCrossToken?: boolean;
 }
 
 export interface MobilePosition {
@@ -400,6 +454,24 @@ export interface UserStakingPool {
     creationFeeAmount?: number;
     creationFeeToken?: string;
     createdAt: string;
+    /**
+     * Snapshot of the figures the creator chose, mirrored onto the ownership
+     * row. `rewardTokenSymbol` is the ONLY place the earn token is recorded
+     * for a cross-token pool ("stake TWC, earn USDT") — `staking_pools` only
+     * carries the staking token — so reward figures must be labelled from
+     * here, not from `pool.tokenSymbol`.
+     */
+    settings?: {
+        tokenSymbol?: string;
+        rewardTokenSymbol?: string;
+        poolType?: 'same' | 'cross';
+        minStakingPeriod?: string;
+        minStakeAmount?: number;
+        maxStakeAmount?: number;
+        maxTvl?: number;
+        poolReward?: number;
+        rewardDurationSeconds?: number;
+    };
     pool: {
         id: string;
         name?: string;
@@ -510,6 +582,20 @@ class TokensModule {
         if (params?.source) flat.source = params.source;
         if (params?.marketType) flat.marketType = params.marketType;
         return apiFetch(this.base, '/api/v1/tokens', options?.signal ? { signal: options.signal } : undefined, flat);
+    }
+
+    /**
+     * GET /api/v1/swap-default-tokens
+     * The admin-curated token list that backs the token selector's browse
+     * mode. `/api/v1/tokens` is a raw index and returns spam; this is the
+     * allow-list the web selector shows when the user isn't searching.
+     */
+    swapDefaults(options?: { signal?: AbortSignal }): Promise<SwapDefaultTokensResponse> {
+        return apiFetch(
+            this.base,
+            '/api/v1/swap-default-tokens',
+            options?.signal ? { signal: options.signal } : undefined,
+        );
     }
 }
 

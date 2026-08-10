@@ -241,6 +241,16 @@ export class BscDirectSwapExecutor implements SwapRouterExecutor {
     });
 
     try {
+      // Native BNB has no ERC20 interface — every step below (balanceOf, allowance,
+      // transfer, swapExactTokensFor*) would be called against the zero address.
+      // BscNativeSwapExecutor owns this case; getting here means the route was
+      // labelled with WBNB while the user is actually spending BNB.
+      if (isNativeToken(fromToken.address)) {
+        throw new Error(
+          'Native BNB cannot be swapped through the direct (ERC20) path — expected the native BNB executor.'
+        );
+      }
+
       const fromDecimals = fromToken.decimals || 18;
       const inputAmountWei = parseUnits(fromAmount, fromDecimals);
 

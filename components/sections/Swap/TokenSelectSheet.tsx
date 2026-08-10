@@ -1,12 +1,15 @@
 import { TIWILoader } from '@/components/ui/TIWILoader';
 import { colors } from '@/constants/colors';
 import { useChains } from '@/hooks/useChains';
+import { useSwapDefaultTokens } from '@/hooks/useSwapDefaultTokens';
 import { useTokens } from '@/hooks/useTokens';
 import { useWalletBalances } from '@/hooks/useWalletBalances';
+import type { ChainItem } from '@/lib/mobile/api-client';
 import { useCustomTokenStore } from '@/store/customTokenStore';
 import { useWalletStore } from '@/store/walletStore';
-import { formatTokenQuantity, formatUSDPrice, getColorFromSeed } from '@/utils/formatting';
-import { MORALIS_NATIVE_ADDRESS, NATIVE_TOKEN_ADDRESS, truncateAddress } from '@/utils/wallet';
+import { getColorFromSeed } from '@/utils/formatting';
+import { buildTokenOptions, type TokenOption } from '@/utils/token-list';
+import { truncateAddress } from '@/utils/wallet';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import React, { useState } from 'react';
@@ -16,23 +19,7 @@ import { SelectionBottomSheet } from './SelectionBottomSheet';
 
 const CheckmarkIcon = require('@/assets/swap/checkmark-circle-01.svg');
 
-export interface TokenOption {
-    id: string;
-    symbol: string;
-    name: string;
-    icon: any;
-    chainIcon?: any;
-    tvl: string;
-    balanceFiat: string;
-    balanceToken: string;
-    address: string;
-    chainId: number;
-    decimals: number;
-    priceUSD?: string;
-    /** Pair liquidity in USD — forwarded to the route API to skip a slow
-     *  server-side DexScreener lookup on every quote. */
-    liquidity?: number;
-}
+export type { TokenOption };
 
 interface TokenSelectSheetProps {
     visible: boolean;
@@ -40,10 +27,20 @@ interface TokenSelectSheetProps {
     selectedTokenId?: string | null;
     onClose: () => void;
     onSelect: (token: TokenOption) => void;
+    /**
+     * Restrict the list to tokens the wallet actually holds. See
+     * {@link buildTokenOptions} — set by the staking pool creator, where a
+     * token the user doesn't hold can't fund a pool.
+     */
+    walletOnly?: boolean;
 }
 
 /**
- * Token selection bottom sheet with real-time search support and wallet balances
+ * Token selection bottom sheet with real-time search and wallet balances.
+ *
+ * The list itself is composed by {@link buildTokenOptions}, which ports the
+ * web selector's browse/search split — see that file for why the raw
+ * `/api/v1/tokens` index can't be browsed directly.
  */
 export const TokenSelectSheet: React.FC<TokenSelectSheetProps> = ({
     visible,
@@ -51,24 +48,30 @@ export const TokenSelectSheet: React.FC<TokenSelectSheetProps> = ({
     selectedTokenId,
     onClose,
     onSelect,
+    walletOnly = false,
 }) => {
     const [searchQuery, setSearchQuery] = useState('');
-    const { data: balanceData } = useWalletBalances();
+    const { data: balanceData, isLoading: isLoadingBalances } = useWalletBalances();
     const { data: chains } = useChains();
-    const { data: response, isLoading } = useTokens({
+    // In walletOnly mode neither the curated list nor the raw index
+    // contributes a row, so don't pay for either request.
+    const { data: swapDefaults } = useSwapDefaultTokens({ enabled: !walletOnly });
+    const { data: response, isLoading: isLoadingTokens } = useTokens({
         query: searchQuery,
         // Ensure chainId is a number for filtering
         chains: typeof chainId === 'number' ? [chainId] : undefined,
+        enabled: !walletOnly,
     });
     const tokens = response?.tokens;
+    const isLoading = walletOnly ? isLoadingBalances : isLoadingTokens;
 
     // Per-wallet hidden-token sets — anything the user toggled off in
-    // Manage Tokens must also disappear from the swap selector until re-enabled.
+    // Manage Tokens must also disappear from the selector until re-enabled.
     const { activeGroupId, address } = useWalletStore();
     const walletKey = activeGroupId || address || 'default';
     const hiddenWalletTokens = useCustomTokenStore(s => s.hiddenWalletTokens);
     const customTokens = useCustomTokenStore(s => s.tokensByWallet);
-    const hiddenKeySet = React.useMemo(() => {
+    const hiddenKeys = React.useMemo(() => {
         const set = new Set<string>();
         (hiddenWalletTokens[walletKey] || []).forEach(r => {
             set.add(`${r.chainId}-${r.address.toLowerCase()}`);
@@ -79,119 +82,26 @@ export const TokenSelectSheet: React.FC<TokenSelectSheetProps> = ({
         return set;
     }, [hiddenWalletTokens, customTokens, walletKey]);
 
-    const options: TokenOption[] = React.useMemo(() => {
-        if (!tokens) return [];
+    const chainIconFor = React.useCallback((cid?: number) => {
+        // `logo` isn't on ChainItem but some backend responses carry it —
+        // keep the fallback the previous implementation relied on.
+        const info = chains?.find((c: ChainItem) => c.id === cid) as
+            | (ChainItem & { logo?: string })
+            | undefined;
+        return info?.logoURI || info?.logo;
+    }, [chains]);
 
-        const TWC_ADDRESS = '0xda1060158f7d593667cce0a15db346bb3ffb3596'.toLowerCase();
-        const NATIVE_ADDRS = [NATIVE_TOKEN_ADDRESS, MORALIS_NATIVE_ADDRESS];
-
-        // Filtering: Smart Heuristic Scam Filter
-        const filteredTokens = tokens.filter(t => {
-            const isOnChain = (typeof chainId === 'number') ? t.chainId === chainId : true;
-            if (!isOnChain) return false;
-
-            // Respect the Manage Tokens hidden list
-            if (hiddenKeySet.has(`${t.chainId}-${(t.address || '').toLowerCase()}`)) return false;
-
-            const name = t.name?.toLowerCase() || '';
-            const symbol = t.symbol?.toLowerCase() || '';
-            const address = t.address?.toLowerCase() || '';
-
-            const isTWC = address.toLowerCase() === TWC_ADDRESS;
-
-            // Get native symbol from chains data
-            const chInfo = chains?.find(c => c.id === t.chainId);
-            const nativeSym = chInfo?.nativeCurrency?.symbol?.toLowerCase();
-            const isNativeToken = NATIVE_ADDRS.includes(address.toLowerCase()) || (nativeSym && symbol === nativeSym);
-
-            // CRITICAL: Always allow Native Tokens (BNB, ETH, etc) and TWC through
-            if (isNativeToken || isTWC) return true;
-
-            // 1. Pump.fun Filter
-            if (address.endsWith('pump') || name.includes('pump.fun')) return false;
-
-            // 2. Chinese/Spam Script Filter (Scanner garbage)
-            const isChinese = /[\u4e00-\u9fa5]/.test(name) || /[\u4e00-\u9fa5]/.test(symbol);
-            if (isChinese) return false;
-
-            // 3. Phishing/Ad Keywords
-            const spamKeywords = ['.com', '.xyz', '.net', 'claim', 'airdrop', 'visit', 'free', 'reward', 'voucher'];
-            if (spamKeywords.some(k => name.includes(k) || symbol.includes(k))) return false;
-
-            // 4. Impersonation Filter: Escape fake "BSC", "ETH", "USDT" etc.
-            const coreNames = ['ethereum', 'usdt', 'usdc', 'weth', 'bnb', 'solana', 'wrapped bnb', 'bitcoin', 'tether', 'bsc', 'binance'];
-            const isFakeCore = !t.verified && coreNames.some(cn => name === cn || symbol === cn);
-            if (isFakeCore) return false;
-
-            return true;
-        });
-
-        const mapped = filteredTokens.map(t => {
-            // Find if this token has a balance in our wallet
-            const walletToken = balanceData?.tokens.find(
-                wt => wt.address.toLowerCase() === t.address.toLowerCase() && wt.chainId === t.chainId
-            );
-
-            // Find chain logo for the badge
-            const chainInfo = chains?.find(c => c.id === t.chainId);
-            const chainIcon = chainInfo?.logoURI || chainInfo?.logo;
-
-            const hasBal = !!walletToken;
-            const balNum = parseFloat(walletToken?.balanceFormatted || '0');
-            const prcNum = parseFloat(t.priceUSD || '0');
-            const totUSD = balNum * prcNum;
-
-            return {
-                id: `${t.chainId}-${t.address}`,
-                symbol: t.symbol,
-                name: t.name,
-                icon: t.logoURI,
-                chainIcon: chainIcon,
-                tvl: t.liquidity ? `$${t.liquidity.toLocaleString()}` : 'N/A',
-                liquidity: t.liquidity,
-                balanceFiat: totUSD > 0 ? formatUSDPrice(totUSD) : '$0.00',
-                balanceToken: hasBal ? `${formatTokenQuantity(walletToken.balanceFormatted)} ${t.symbol}` : `0 ${t.symbol}`,
-                address: t.address,
-                chainId: t.chainId,
-                decimals: t.decimals,
-                priceUSD: t.priceUSD,
-                isOwned: hasBal,
-                usdValueNum: totUSD,
-            };
-        });
-
-        // Sorting Logic: Native -> TWC -> Owned -> Others
-        return mapped.sort((a, b) => {
-            const chainInfo = chains?.find(c => c.id === a.chainId);
-            const nativeSymbol = chainInfo?.nativeCurrency?.symbol;
-
-            // 1. Native Token is absolute priority (#1)
-            const isANative = NATIVE_ADDRS.includes(a.address.toLowerCase()) ||
-                (nativeSymbol && a.symbol.toUpperCase() === nativeSymbol.toUpperCase());
-            const isBNative = NATIVE_ADDRS.includes(b.address.toLowerCase()) ||
-                (nativeSymbol && b.symbol.toUpperCase() === nativeSymbol.toUpperCase());
-
-            if (isANative && !isBNative) return -1;
-            if (!isANative && isBNative) return 1;
-
-            // 2. TWC Protocol Token (#2)
-            const isATWC = a.address.toLowerCase() === TWC_ADDRESS;
-            const isBTWC = b.address.toLowerCase() === TWC_ADDRESS;
-            if (isATWC && !isBTWC) return -1;
-            if (!isATWC && isBTWC) return 1;
-
-            // 3. Owned tokens (balance > 0)
-            if (a.isOwned && !b.isOwned) return -1;
-            if (!a.isOwned && b.isOwned) return 1;
-
-            if (a.isOwned && b.isOwned) {
-                return b.usdValueNum - a.usdValueNum;
-            }
-
-            return 0;
-        });
-    }, [tokens, balanceData, chains, hiddenKeySet, chainId]);
-
+    const options: TokenOption[] = React.useMemo(() => buildTokenOptions({
+        apiTokens: tokens || [],
+        curated: swapDefaults || [],
+        held: balanceData?.tokens || [],
+        imported: customTokens[walletKey] || [],
+        hiddenKeys,
+        chainIconFor,
+        chainId: typeof chainId === 'number' ? chainId : null,
+        searchQuery,
+        walletOnly,
+    }), [tokens, swapDefaults, balanceData, customTokens, walletKey, hiddenKeys, chainIconFor, chainId, searchQuery, walletOnly]);
     return (
         <SelectionBottomSheet
             visible={visible}
@@ -215,6 +125,23 @@ export const TokenSelectSheet: React.FC<TokenSelectSheetProps> = ({
                 {isLoading ? (
                     <View style={styles.loaderContainer}>
                         <TIWILoader size={60} />
+                    </View>
+                ) : options.length === 0 ? (
+                    // walletOnly narrows hard — an empty list is a normal
+                    // outcome (no balances at all, or none on the chain the
+                    // earn side is pinned to). Say so instead of rendering a
+                    // blank sheet that reads as a failed load.
+                    <View style={styles.emptyContainer}>
+                        <Text style={styles.emptyTitle}>
+                            {searchQuery.trim() ? 'No matching tokens' : 'No tokens in this wallet'}
+                        </Text>
+                        <Text style={styles.emptyBody}>
+                            {searchQuery.trim()
+                                ? 'Nothing in your wallet matches that name or address.'
+                                : walletOnly
+                                    ? 'Fund this wallet with the token you want to use, then try again.'
+                                    : 'No tokens available for this network.'}
+                        </Text>
                     </View>
                 ) : (
                     <ScrollView
@@ -312,6 +239,25 @@ const styles = StyleSheet.create({
         height: 200,
         justifyContent: 'center',
         alignItems: 'center',
+    },
+    emptyContainer: {
+        paddingHorizontal: 32,
+        paddingTop: 48,
+        alignItems: 'center',
+        gap: 8,
+    },
+    emptyTitle: {
+        fontFamily: 'Manrope-SemiBold',
+        fontSize: 15,
+        color: colors.titleText,
+        textAlign: 'center',
+    },
+    emptyBody: {
+        fontFamily: 'Manrope-Medium',
+        fontSize: 13,
+        color: colors.mutedText,
+        textAlign: 'center',
+        lineHeight: 18,
     },
     container: {
         flex: 1,

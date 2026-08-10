@@ -17,6 +17,15 @@ import Animated, {
 
 const ArrowDown01 = require('@/assets/home/arrow-down-01.svg');
 
+/** Inset of the rows inside the card, top + bottom. */
+const CARD_VERTICAL_PADDING = 24;
+/**
+ * Height to open to if the rows haven't reported a layout yet — three rows at
+ * ~14px plus their gaps. Only a first-frame fallback; the real height is
+ * measured. Never open to 0, or the details would be invisible.
+ */
+const MIN_EXPANDED_HEIGHT = 54;
+
 interface SwapDetailsCardProps {
     gasFee?: string;
     /** Router(s) the winning route uses — e.g. ["Relay"], ["Pancakeswap"]. */
@@ -79,6 +88,8 @@ export const SwapDetailsCard: React.FC<SwapDetailsCardProps> = ({
     const rotation = useSharedValue(0);
     const height = useSharedValue(0);
     const pulseOpacity = useSharedValue(0.3);
+    /** Natural height of the rows, measured on layout — see `contentStyle`. */
+    const contentHeight = useSharedValue(0);
     const isAutoSlippage = useSwapStore((s) => s.isAutoSlippage);
     const selectedGasTokenType = useSwapStore((s) => s.selectedGasTokenType);
 
@@ -114,12 +125,16 @@ export const SwapDetailsCard: React.FC<SwapDetailsCardProps> = ({
     }));
 
     const contentStyle = useAnimatedStyle(() => {
-        const expandedHeight = 180; // Increased significantly to ensure "Updating in Xs" and all rows are visible
-        const collapsedHeight = 0;
-        const animatedHeight = interpolate(height.value, [0, 1], [collapsedHeight, expandedHeight], Extrapolate.CLAMP);
+        // Expand to what the rows actually measure. The card renders between
+        // three and five rows depending on whether there's a route and a
+        // freshness timestamp, so any fixed height leaves dead space under the
+        // last row in the common case.
+        const measured = Math.max(contentHeight.value, MIN_EXPANDED_HEIGHT);
+        const expandedHeight = measured + CARD_VERTICAL_PADDING;
+        const animatedHeight = interpolate(height.value, [0, 1], [0, expandedHeight], Extrapolate.CLAMP);
         const opacity = interpolate(height.value, [0, 0.3, 1], [0, 0, 1], Extrapolate.CLAMP);
         return {
-            height: animatedHeight + 12,
+            height: animatedHeight,
             opacity: opacity,
             overflow: 'hidden',
         };
@@ -149,7 +164,12 @@ export const SwapDetailsCard: React.FC<SwapDetailsCardProps> = ({
             </TouchableOpacity>
 
             <Animated.View style={[styles.card, contentStyle]}>
-                <View style={styles.detailsContent}>
+                <View
+                    style={styles.detailsContent}
+                    onLayout={(e) => {
+                        contentHeight.value = e.nativeEvent.layout.height;
+                    }}
+                >
                     {/* Freshness Indicator */}
                     {!isLoading && (
                         <RefreshIndicator
@@ -240,9 +260,20 @@ const styles = StyleSheet.create({
         width: '100%',
         backgroundColor: colors.bgStroke,
         borderRadius: 12,
-        padding: 12,
     },
+    /**
+     * Absolutely positioned on purpose. The card's height is animated, and a
+     * child in normal flow gets measured against that animated height — so
+     * `onLayout` reports the collapsed height and the card sizes itself to a
+     * fraction of its own content. Out of flow, the rows lay out at their
+     * natural height no matter what the card is currently doing, which is what
+     * makes the measurement trustworthy. The card's padding lives here now.
+     */
     detailsContent: {
+        position: 'absolute',
+        top: 12,
+        left: 12,
+        right: 12,
         gap: 6,
     },
     detailRow: {
