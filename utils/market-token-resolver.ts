@@ -1,4 +1,5 @@
 import { api, type SwapDefaultToken, type TokenItem } from '@/lib/mobile/api-client';
+import { registerAdminTokenLogoOverrides, resolveTokenLogo } from '@/utils/admin-token-logos';
 
 /**
  * Market rows → swappable tokens.
@@ -144,6 +145,7 @@ async function getCuratedTokens(signal?: AbortSignal): Promise<SwapDefaultToken[
         .swapDefaults({ signal })
         .then((resp) => {
             const tokens = resp.tokens || [];
+            registerAdminTokenLogoOverrides(tokens);
             curatedCache = { tokens, expiry: Date.now() + CURATED_TTL_MS };
             return tokens;
         })
@@ -303,7 +305,7 @@ export async function resolveMarketToken(
             address: normalizeAddress(ownAddress),
             symbol: token.symbol,
             name: token.name || token.symbol,
-            logoURI: token.logoURI || token.logo || undefined,
+            logoURI: resolveTokenLogo(token),
             priceUSD: token.priceUSD != null ? String(token.priceUSD) : token.price != null ? String(token.price) : undefined,
         };
     }
@@ -341,7 +343,7 @@ export async function resolveMarketToken(
                 symbol: t.symbol,
                 name: t.name,
                 decimals: t.decimals,
-                logoURI: t.logo,
+                logoURI: resolveTokenLogo(t),
             },
             target,
             ctx,
@@ -376,7 +378,12 @@ export async function resolveMarketToken(
         symbol: best.symbol,
         name: best.name,
         decimals: best.decimals ?? twin?.decimals,
-        logoURI: best.logoURI || twin?.logoURI || token.logoURI || token.logo || undefined,
+        logoURI: resolveTokenLogo({
+            address: best.address,
+            chainId: best.chainId,
+            logoURI: best.logoURI || twin?.logoURI || token.logoURI,
+            logo: token.logo,
+        }),
         priceUSD: best.priceUSD ?? twin?.priceUSD,
         liquidity: best.liquidity ?? twin?.liquidity,
     };

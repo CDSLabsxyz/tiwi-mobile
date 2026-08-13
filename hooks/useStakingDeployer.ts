@@ -26,11 +26,13 @@ import {
     createPublicClient,
     decodeEventLog,
     encodeFunctionData,
+    formatEther,
+    formatUnits,
     parseUnits,
     type Address,
     type Hash,
 } from 'viem';
-import { bsc, mainnet, polygon, arbitrum, base, optimism, avalanche } from 'viem/chains';
+import { bsc, mainnet, polygon, arbitrum, base, optimism, avalanche, coreDao, sei } from 'viem/chains';
 import { useAccount, useSendTransaction, useSwitchChain } from 'wagmi';
 import { api } from '@/lib/mobile/api-client';
 import { signerController } from '@/services/signer/SignerController';
@@ -38,7 +40,8 @@ import { useWalletStore } from '@/store/walletStore';
 import { createTransportForChain } from '@/constants/rpc';
 
 const CHAIN_MAP: Record<number, any> = {
-    1: mainnet, 56: bsc, 137: polygon, 42161: arbitrum, 8453: base, 10: optimism, 43114: avalanche,
+    1: mainnet, 56: bsc, 137: polygon, 42161: arbitrum, 8453: base, 10: optimism,
+    43114: avalanche, 1116: coreDao, 1329: sei,
 };
 
 /**
@@ -48,10 +51,26 @@ const CHAIN_MAP: Record<number, any> = {
  * Unused gas is refunded; only the wallet's BNB balance has to cover the limit.
  */
 const CREATE_POOL_GAS_LIMIT = 3_500_000n;
+const APPROVAL_GAS_LIMIT_ESTIMATE = 150_000n;
+const ERC20_TRANSFER_GAS_LIMIT_ESTIMATE = 120_000n;
+const GAS_PRICE_BUFFER_BPS = 120n;
+const RECEIPT_TIMEOUT_MS = 120_000;
 
 export const CHAIN_NAMES: Record<number, string> = {
     1: 'Ethereum', 56: 'BNB Smart Chain', 137: 'Polygon', 42161: 'Arbitrum',
-    8453: 'Base', 10: 'Optimism', 43114: 'Avalanche',
+    8453: 'Base', 10: 'Optimism', 43114: 'Avalanche', 1116: 'Core', 1329: 'Sei EVM',
+};
+
+const NATIVE_GAS_SYMBOLS: Record<number, string> = {
+    1: 'ETH',
+    56: 'BNB',
+    137: 'POL',
+    42161: 'ETH',
+    8453: 'ETH',
+    10: 'ETH',
+    43114: 'AVAX',
+    1116: 'CORE',
+    1329: 'SEI',
 };
 
 // Minimal ABI fragment to decode the pool address out of the createPool receipt.
@@ -74,6 +93,20 @@ const POOL_DEPLOYED_EVENT_ABI = [
 
 const ERC20_TRANSFER_ABI = [
     {
+        name: 'decimals',
+        type: 'function',
+        stateMutability: 'view',
+        inputs: [],
+        outputs: [{ name: '', type: 'uint8' }],
+    },
+    {
+        name: 'balanceOf',
+        type: 'function',
+        stateMutability: 'view',
+        inputs: [{ name: 'account', type: 'address' }],
+        outputs: [{ name: '', type: 'uint256' }],
+    },
+    {
         name: 'transfer',
         type: 'function',
         stateMutability: 'nonpayable',
@@ -91,6 +124,16 @@ const POOL_EMERGENCY_WITHDRAW_ABI = [
         type: 'function',
         stateMutability: 'nonpayable',
         inputs: [{ name: 'to', type: 'address' }],
+        outputs: [],
+    },
+] as const;
+
+const POOL_REMAINING_REWARDS_ABI = [
+    {
+        name: 'withdrawRemainingRewards',
+        type: 'function',
+        stateMutability: 'nonpayable',
+        inputs: [{ name: '_to', type: 'address' }],
         outputs: [],
     },
 ] as const;
@@ -136,6 +179,7 @@ export interface PayCreationFeeParams {
     /** Fee amount, human units. */
     amount: string;
     decimals: number;
+    tokenSymbol?: string;
     walletAddress?: Address;
 }
 
@@ -157,6 +201,81 @@ function publicClientFor(chainId: number) {
         transport: createTransportForChain(chainId),
         pollingInterval: 500,
     });
+}
+
+function nativeGasSymbol(chainId: number) {
+    return NATIVE_GAS_SYMBOLS[chainId] || 'native gas';
+}
+
+function formatGasAmount(wei: bigint): string {
+    const value = Number(formatEther(wei));
+    if (!Number.isFinite(value)) return formatEther(wei);
+    return value.toLocaleString('en-US', { maximumFractionDigits: 6 });
+}
+
+function formatTokenAmount(raw: bigint, decimals: number): string {
+    const value = Number(formatUnits(raw, decimals));
+    if (!Number.isFinite(value)) return formatUnits(raw, decimals);
+    return value.toLocaleString('en-US', { maximumFractionDigits: 6 });
+}
+
+function errorMessage(e: any): string {
+    return e?.shortMessage || e?.message || String(e || '');
+}
+
+function friendlyTxError(e: any, chainId: number): string {
+    const message = errorMessage(e);
+    const lower = message.toLowerCase();
+    const chainName = CHAIN_NAMES[chainId] || `chain ${chainId}`;
+    const gasSymbol = nativeGasSymbol(chainId);
+
+    if (
+        lower.includes('insufficient funds') ||
+        lower.includes('exceeds the balance') ||
+        lower.includes('total cost') && lower.includes('balance')
+    ) {
+        return `Not enough ${gasSymbol} on ${chainName} to pay gas. Add ${gasSymbol} to this wallet on ${chainName}, then try creating the pool again.`;
+    }
+
+    if (
+        lower.includes('http request failed') ||
+        lower.includes('network request failed') ||
+        lower.includes('failed to fetch') ||
+        lower.includes('timeout')
+    ) {
+        return `Network/RPC failed while sending the transaction on ${chainName}. Please try again in a moment.`;
+    }
+
+    return message || 'Failed to create pool';
+}
+
+async function assertNativeGasBudget(args: {
+    chainId: number;
+    signerAddress: Address;
+    gasLimit: bigint;
+    actionLabel: string;
+}) {
+    const { chainId, signerAddress, gasLimit, actionLabel } = args;
+    try {
+        const client = publicClientFor(chainId);
+        const [balance, gasPrice] = await Promise.all([
+            client.getBalance({ address: signerAddress }),
+            client.getGasPrice(),
+        ]);
+        const bufferedGasPrice = (gasPrice * GAS_PRICE_BUFFER_BPS) / 100n;
+        const required = gasLimit * bufferedGasPrice;
+        if (balance >= required) return;
+
+        const gasSymbol = nativeGasSymbol(chainId);
+        const chainName = CHAIN_NAMES[chainId] || `chain ${chainId}`;
+        throw new Error(
+            `Not enough ${gasSymbol} on ${chainName} to ${actionLabel}. ` +
+            `You have ${formatGasAmount(balance)} ${gasSymbol}; this needs about ${formatGasAmount(required)} ${gasSymbol} for gas.`,
+        );
+    } catch (e: any) {
+        if (errorMessage(e).startsWith('Not enough ')) throw e;
+        console.warn('[useStakingDeployer] gas preflight skipped:', errorMessage(e));
+    }
 }
 
 export function useStakingDeployer() {
@@ -245,9 +364,18 @@ export function useStakingDeployer() {
 
         if (opts?.wait === false) return { hash, receipt: null };
 
-        const receipt = await publicClientFor(step.chainId).waitForTransactionReceipt({ hash });
-        if (receipt?.status === 'reverted') {
-            throw new Error(`Transaction reverted${step.label ? ` (${step.label})` : ''}`);
+        let receipt: any;
+        try {
+            receipt = await publicClientFor(step.chainId).waitForTransactionReceipt({
+                hash,
+                timeout: RECEIPT_TIMEOUT_MS,
+            });
+            if (receipt?.status === 'reverted') {
+                throw new Error(`Transaction reverted${step.label ? ` (${step.label})` : ''}`);
+            }
+        } catch (e: any) {
+            const label = step.label ? `${step.label} transaction` : 'Transaction';
+            throw new Error(`${label} was sent (${hash}), but confirmation failed: ${friendlyTxError(e, step.chainId)}`);
         }
         return { hash, receipt };
     }, [sendTransactionAsync, switchChainAsync]);
@@ -277,6 +405,12 @@ export function useStakingDeployer() {
             if (!steps?.length) throw new Error('Server returned no transaction steps');
 
             const deployerAddress = String((meta as any)?.deployerAddress || '').toLowerCase();
+            await assertNativeGasBudget({
+                chainId: params.chainId,
+                signerAddress,
+                gasLimit: CREATE_POOL_GAS_LIMIT + (APPROVAL_GAS_LIMIT_ESTIMATE * BigInt(Math.max(steps.length - 1, 0))),
+                actionLabel: 'approve and create this staking pool',
+            });
 
             // Broadcast the whole batch back-to-back under explicit sequential
             // nonces and wait for the LAST receipt only. Waiting for the approve to
@@ -309,10 +443,10 @@ export function useStakingDeployer() {
                 // (create) step only.
                 const { hash, receipt } = await signAndSend(
                     steps[i], signerAddress, isLocal, {
-                        skipAuthorize: !isCreateStep,
+                        skipAuthorize: canBatch && !isCreateStep,
                         nonce: canBatch ? (baseNonce as number) + i : undefined,
                         gasLimit: canBatch && isCreateStep ? CREATE_POOL_GAS_LIMIT : undefined,
-                        wait: isCreateStep,
+                        wait: canBatch ? isCreateStep : true,
                     },
                 );
                 lastHash = hash;
@@ -344,7 +478,7 @@ export function useStakingDeployer() {
                 deployerAddress: ((meta as any)?.deployerAddress as Address) || undefined,
             };
         } catch (e: any) {
-            const message = e?.message?.includes('User rejected') ? 'Transaction rejected' : (e?.message || 'Failed to create pool');
+            const message = e?.message?.includes('User rejected') ? 'Transaction rejected' : friendlyTxError(e, params.chainId);
             setError(message);
             setStatus('error');
             throw new Error(message);
@@ -354,13 +488,56 @@ export function useStakingDeployer() {
     /** Pay the admin-set creation fee: ERC20 transfer(treasury, amount). */
     const payCreationFee = useCallback(async (params: PayCreationFeeParams): Promise<Hash> => {
         const { signerAddress, isLocal } = resolveSigner(params.walletAddress);
-        const data = encodeFunctionData({
-            abi: ERC20_TRANSFER_ABI,
-            functionName: 'transfer',
-            args: [params.treasury, parseUnits(params.amount, params.decimals)],
-        });
         setStatus('paying');
         try {
+            const client = publicClientFor(params.chainId);
+            let decimals = Number(params.decimals);
+            if (!Number.isFinite(decimals)) decimals = 18;
+
+            try {
+                const onChainDecimals = await client.readContract({
+                    address: params.tokenAddress,
+                    abi: ERC20_TRANSFER_ABI,
+                    functionName: 'decimals',
+                });
+                const parsed = Number(onChainDecimals);
+                if (Number.isFinite(parsed)) decimals = parsed;
+            } catch (e) {
+                console.warn('[useStakingDeployer] fee token decimals read failed, using configured value', e);
+            }
+
+            const amountWei = parseUnits(params.amount, decimals);
+            try {
+                const balance = await client.readContract({
+                    address: params.tokenAddress,
+                    abi: ERC20_TRANSFER_ABI,
+                    functionName: 'balanceOf',
+                    args: [signerAddress],
+                });
+                if (BigInt(balance as bigint) < amountWei) {
+                    const symbol = params.tokenSymbol || 'tokens';
+                    throw new Error(
+                        `Not enough ${symbol} to pay the creation fee on ${CHAIN_NAMES[params.chainId] || `chain ${params.chainId}`}. ` +
+                        `You have ${formatTokenAmount(BigInt(balance as bigint), decimals)} and the fee is ${params.amount} ${symbol}.`,
+                    );
+                }
+            } catch (e: any) {
+                if (errorMessage(e).startsWith('Not enough ')) throw e;
+                console.warn('[useStakingDeployer] fee balance pre-check failed, attempting transfer anyway', e);
+            }
+
+            const data = encodeFunctionData({
+                abi: ERC20_TRANSFER_ABI,
+                functionName: 'transfer',
+                args: [params.treasury, amountWei],
+            });
+
+            await assertNativeGasBudget({
+                chainId: params.chainId,
+                signerAddress,
+                gasLimit: ERC20_TRANSFER_GAS_LIMIT_ESTIMATE,
+                actionLabel: 'pay the creation fee',
+            });
             const { hash } = await signAndSend(
                 { to: params.tokenAddress, data, value: '0', chainId: params.chainId, label: 'creation fee' },
                 signerAddress, isLocal,
@@ -369,7 +546,7 @@ export function useStakingDeployer() {
             return hash;
         } catch (e: any) {
             setStatus('error');
-            throw new Error(e?.message?.includes('User rejected') ? 'Fee payment rejected' : (e?.message || 'Fee payment failed'));
+            throw new Error(e?.message?.includes('User rejected') ? 'Fee payment rejected' : friendlyTxError(e, params.chainId));
         }
     }, [resolveSigner, signAndSend]);
 
@@ -385,6 +562,23 @@ export function useStakingDeployer() {
         });
         const { hash } = await signAndSend(
             { to: params.poolAddress, data, value: '0', chainId: params.chainId, label: 'withdraw rewards' },
+            signerAddress, isLocal,
+        );
+        return hash;
+    }, [resolveSigner, signAndSend]);
+
+    /** Withdraw only creator surplus after expiry; user claims remain reserved. */
+    const withdrawRemainingRewards = useCallback(async (params: {
+        chainId: number; poolAddress: Address; walletAddress?: Address;
+    }): Promise<Hash> => {
+        const { signerAddress, isLocal } = resolveSigner(params.walletAddress);
+        const data = encodeFunctionData({
+            abi: POOL_REMAINING_REWARDS_ABI,
+            functionName: 'withdrawRemainingRewards',
+            args: [signerAddress],
+        });
+        const { hash } = await signAndSend(
+            { to: params.poolAddress, data, value: '0', chainId: params.chainId, label: 'withdraw remaining rewards' },
             signerAddress, isLocal,
         );
         return hash;
@@ -421,6 +615,7 @@ export function useStakingDeployer() {
         createPool,
         payCreationFee,
         emergencyWithdrawRewards,
+        withdrawRemainingRewards,
         setPoolActive,
         reset,
         status,

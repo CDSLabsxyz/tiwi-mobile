@@ -40,7 +40,7 @@ interface CustomTokenState {
      * from an authoritative chain-scoped source instead of staying wrong
      * forever in AsyncStorage.
      */
-    updateTokenBalance: (walletId: string, address: string, chainId: number, updates: { balanceFormatted?: string; usdValue?: string; priceUSD?: string; symbol?: string; name?: string; logoURI?: string }) => void;
+    updateTokenBalance: (walletId: string, address: string, chainId: number, updates: { balanceFormatted?: string; usdValue?: string; priceUSD?: string; symbol?: string; name?: string; logoURI?: string; decimals?: number }) => void;
     toggleTokenHidden: (walletId: string, address: string, chainId: number) => void;
     toggleWalletTokenHidden: (walletId: string, address: string, chainId: number) => void;
     isWalletTokenHidden: (walletId: string, address: string, chainId: number) => boolean;
@@ -151,7 +151,8 @@ export const useCustomTokenStore = create<CustomTokenState>()(
                                t.priceUSD !== prev.priceUSD ||
                                t.symbol !== prev.symbol ||
                                t.name !== prev.name ||
-                               t.logoURI !== prev.logoURI;
+                               t.logoURI !== prev.logoURI ||
+                               t.decimals !== prev.decimals;
                     });
                     if (!hasChanged) return state;
                     return {

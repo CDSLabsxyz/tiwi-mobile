@@ -5,6 +5,7 @@ import { useChains } from '@/hooks/useChains';
 import { useTokens } from '@/hooks/useTokens';
 import { useWalletBalances } from '@/hooks/useWalletBalances';
 import { formatTokenQuantity, formatUSDPrice, getColorFromSeed } from '@/utils/formatting';
+import { resolveTokenLogo } from '@/utils/admin-token-logos';
 import { Ionicons } from '@expo/vector-icons';
 import { Image as ExpoImage } from 'expo-image';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -100,7 +101,7 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
     useEffect(() => {
         if (visible) {
             if (initialStep === 'tokens' && initialChainId) {
-                const chain = chains?.find(c => c.id === initialChainId);
+                const chain = chains?.find((c: any) => c.id === initialChainId);
                 if (chain) {
                     setSelectedChain({
                         id: chain.id,
@@ -158,7 +159,7 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
     const filteredChains = useMemo(() => {
         if (!chains) return [];
 
-        const mapped = chains.map(c => ({
+        const mapped = chains.map((c: any) => ({
             id: c.id,
             name: c.name,
             icon: c.logoURI || (c as any).logo || require('@/assets/home/chains/ethereum.svg'),
@@ -166,15 +167,15 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
             inWallet: walletHasChain(c.id),
         }));
 
-        const searched = mapped.filter(c =>
+        const searched = mapped.filter((c: any) =>
             c.name.toLowerCase().includes(chainSearchQuery.toLowerCase()) ||
             c.symbol?.toLowerCase().includes(chainSearchQuery.toLowerCase())
         );
 
         // Wallet chains first, each group keeping the registry's own order.
         return [
-            ...searched.filter(c => c.inWallet),
-            ...searched.filter(c => !c.inWallet),
+            ...searched.filter((c: any) => c.inWallet),
+            ...searched.filter((c: any) => !c.inWallet),
         ];
     }, [chains, chainSearchQuery, walletHasChain]);
 
@@ -186,7 +187,7 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
         // "All Networks" means all of them. This used to drop every chain the
         // wallet had no address for, which on a non-EVM wallet was nearly the
         // whole list — so the token search came back empty.
-        return chains?.map(c => c.id) || [];
+        return chains?.map((c: any) => c.id) || [];
     }, [selectedChain, chains]);
 
     const isSearching = debouncedQuery.length > 0;
@@ -256,7 +257,7 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
         // as "SOL", so: name that mint WSOL, and make sure native SOL is in the
         // list. Once the backend serves both itself, both steps become no-ops —
         // the relabel matches what it already sends, and the injected row dedupes
-        // away on the chain+symbol key below.
+        // away on the native identity key below.
         const SOLANA_CHAIN_ID = 7565164;
         const WSOL_MINT = 'So11111111111111111111111111111111111111112';
         const solanaRows = rawTokens.filter(t => t.chainId === SOLANA_CHAIN_ID);
@@ -289,7 +290,7 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
             const walletToken = balanceData?.tokens.find(
                 wt => identityKey(wt.chainId, wt.address) === identityKey(t.chainId, t.address)
             );
-            const chainInfo = chains?.find(c => c.id === t.chainId);
+            const chainInfo = chains?.find((c: any) => c.id === t.chainId);
             const hasBalance = !!walletToken;
             const balanceNum = parseFloat(walletToken?.balanceFormatted || '0');
             // The catalogue row is not always priced (the token list and the
@@ -298,12 +299,18 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
             // USD value are just as authoritative, so fall back to them.
             const priceNum = parseFloat(t.priceUSD || '0') || parseFloat(walletToken?.priceUSD || '0');
             const totalUSD = balanceNum * priceNum || parseFloat(walletToken?.usdValue || '0');
+            const icon = resolveTokenLogo({
+                address: t.address,
+                chainId: t.chainId,
+                logoURI: t.logoURI || walletToken?.logoURI,
+                logo: (t as any).logo,
+            });
 
             return {
                 id: `${t.chainId}-${t.address}`,
                 symbol: t.symbol,
                 name: (t.symbol === 'TWC' || t.symbol === 'TIWICAT') ? 'TIWICAT' : t.name,
-                icon: t.logoURI || (t as any).logo,
+                icon,
                 chainIcon: chainInfo?.logoURI,
                 address: t.address,
                 chainId: t.chainId,
@@ -334,14 +341,19 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
                 return !mappedApiTokens.some(at => identityKey(at.chainId, at.address) === identityKey(wt.chainId, wt.address));
             })
             .map(wt => {
-                const chainInfo = chains?.find(c => c.id === wt.chainId);
+                const chainInfo = chains?.find((c: any) => c.id === wt.chainId);
                 const usdVal = parseFloat(wt.usdValue || '0');
                 const isNative = NATIVE_ADDRS.includes(wt.address.toLowerCase()) || (chainInfo?.nativeCurrency?.symbol === wt.symbol);
+                const icon = resolveTokenLogo({
+                    address: wt.address,
+                    chainId: wt.chainId,
+                    logoURI: wt.logoURI,
+                });
                 return {
                     id: `${wt.chainId}-${wt.address}`,
                     symbol: wt.symbol,
                     name: (wt.symbol === 'TWC' || wt.symbol === 'TIWICAT') ? 'TIWICAT' : wt.name,
-                    icon: wt.logoURI,
+                    icon,
                     chainIcon: chainInfo?.logoURI,
                     address: wt.address,
                     chainId: wt.chainId,
@@ -367,14 +379,19 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
                 !ownedTokensOnChain.some(at => at.address.toLowerCase() === ct.address.toLowerCase() && at.chainId === ct.chainId)
             )
             .map(ct => {
-                const chainInfo = chains?.find(c => c.id === ct.chainId);
+                const chainInfo = chains?.find((c: any) => c.id === ct.chainId);
                 const bal = parseFloat(ct.balanceFormatted || '0');
                 const usdVal = parseFloat(ct.usdValue || '0');
+                const icon = resolveTokenLogo({
+                    address: ct.address,
+                    chainId: ct.chainId,
+                    logoURI: ct.logoURI,
+                });
                 return {
                     id: `${ct.chainId}-${ct.address}`,
                     symbol: ct.symbol,
                     name: ct.name,
-                    icon: ct.logoURI,
+                    icon,
                     chainIcon: chainInfo?.logoURI,
                     address: ct.address,
                     chainId: ct.chainId,
@@ -431,19 +448,15 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
             return true;
         });
 
-        // 5. Deduplicate by chain+symbol
+        // 5. Deduplicate by chain+contract identity.
         //
+        // Never collapse by symbol: users can hold two unrelated BSC contracts
+        // both named CROSS, and picking the wrong one strands the real balance.
         // The winner is chosen as before (owned beats unowned, then deeper
-        // liquidity), but `liquidity` is MERGED across the variants instead of
-        // being dropped. Only the API-sourced entry carries a real liquidity
-        // figure — wallet-balance and custom-token entries have none — so the
-        // old "owned replaces unowned" swap silently discarded it for exactly
-        // the tokens users swap most (the ones they hold). That number is sent
-        // to the route API as `liquidityUSD`; without it every quote for a held
-        // token pays for a server-side DexScreener lookup (seconds, not ms).
+        // liquidity), but only among rows that describe the same contract.
         const seen = new Map<string, any>();
         filtered.forEach(t => {
-            const key = `${t.chainId}-${t.symbol.toUpperCase()}`;
+            const key = identityKey(t.chainId, t.address);
             const existing = seen.get(key);
 
             const bestLiquidity = Math.max(
@@ -457,7 +470,13 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
                     ? t
                     : existing;
 
-            seen.set(key, { ...winner, liquidity: bestLiquidity, _liquidity: bestLiquidityRank });
+            const bestIcon = resolveTokenLogo({
+                address: winner.address,
+                chainId: winner.chainId,
+                logoURI: typeof winner.icon === 'string' ? winner.icon : undefined,
+            }) || winner.icon || existing?.icon || t.icon;
+
+            seen.set(key, { ...winner, icon: bestIcon, liquidity: bestLiquidity, _liquidity: bestLiquidityRank });
         });
 
         // 6. Final Sort: Ownership, Native priority, Solana ecosystem priority, then market metrics
@@ -540,7 +559,7 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
             // Find the actual chain for this token if we are in "All Networks" mode
             let targetChain = selectedChain;
             if (selectedChain.id === 'all' && chains) {
-                const actualChain = chains.find(c => c.id === token.chainId);
+                const actualChain = chains.find((c: any) => c.id === token.chainId);
                 if (actualChain) {
                     targetChain = {
                         id: actualChain.id,
@@ -613,6 +632,9 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
         const isActive = token.id === selectedTokenId;
         const [logoError, setLogoError] = useState(false);
         const handleLogoError = useCallback(() => setLogoError(true), []);
+        useEffect(() => {
+            setLogoError(false);
+        }, [token.icon]);
 
         const logoSource = token.icon && !logoError ? token.icon : null;
 

@@ -20,6 +20,7 @@ import { formatCompactNumber } from '@/utils/formatting';
 import AntDesign from '@expo/vector-icons/AntDesign';
 import { Image } from 'expo-image';
 import { useRequireBackup } from '@/hooks/useRequireBackup';
+import { isSameTokenAddress } from '@/utils/wallet';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
@@ -43,6 +44,40 @@ const TWCIcon = require('../../../assets/home/tiwicat.svg');
 type StakeType = 'Flexible' | 'Fixed';
 type AccountType = 'Account';
 type TransactionStatus = 'idle' | 'approving' | 'staking' | 'success' | 'error';
+
+const formatStakeAmount = (value: number): string => {
+    if (!Number.isFinite(value) || value <= 0) return '0';
+    const abs = Math.abs(value);
+    if (abs >= 1000) return formatCompactNumber(value, { decimals: 2 });
+    return value.toLocaleString('en-US', {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: abs < 1 ? 6 : 2,
+    });
+};
+
+const formatStakeInputAmount = (value: number): string => {
+    if (!Number.isFinite(value) || value <= 0) return '';
+    return value.toLocaleString('en-US', {
+        useGrouping: false,
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 8,
+    });
+};
+
+const stripTokenSuffix = (value: string, symbol: string): string => (
+    value.replace(new RegExp(`\\s+${symbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'), '').trim()
+);
+
+const isZeroLimitLabel = (value?: string | null): boolean => (
+    !!value && /^0(?:\.0+)?\s*-\s*0(?:\.0+)?(?:\s+\S+)?$/i.test(value.trim())
+);
+
+const parseStakeAmount = (value?: string | number | null): number => {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+    if (!value) return 0;
+    const parsed = Number(value.replace(/,/g, ''));
+    return Number.isFinite(parsed) ? parsed : 0;
+};
 
 export default function StakeScreen() {
     const { top, bottom } = useSafeAreaInsets();
@@ -87,11 +122,18 @@ export default function StakeScreen() {
     // Staking is scoped to the active wallet — no account selector / multi-
     // wallet balance fan-out. Use the resolved token symbol from the loaded
     // pool, since the route param itself is a UUID for new links.
-    const userTokenBalance = React.useMemo(() => {
-        if (!balanceData?.tokens || !displaySymbol) return '0';
-        const token = balanceData.tokens.find(t => t.symbol.toLowerCase() === displaySymbol.toLowerCase());
-        return token?.balanceFormatted || '0';
-    }, [balanceData, displaySymbol]);
+    const selectedWalletToken = React.useMemo(() => {
+        if (!balanceData?.tokens || !displaySymbol) return null;
+        const poolTokenAddress = pool?.tokenAddress;
+        const poolChainId = pool?.chainId;
+        return poolTokenAddress && poolChainId
+            ? balanceData.tokens.find(t =>
+                Number(t.chainId) === Number(poolChainId) &&
+                isSameTokenAddress(t.address, poolTokenAddress)
+            )
+            : balanceData.tokens.find(t => t.symbol.toLowerCase() === displaySymbol.toLowerCase());
+    }, [balanceData, displaySymbol, pool?.chainId, pool?.tokenAddress]);
+    const userTokenBalance = selectedWalletToken?.balanceFormatted || '0';
 
     useEffect(() => {
         const loadPool = async () => {
@@ -144,16 +186,12 @@ export default function StakeScreen() {
     // poller reads against the correct spender these two always agree.
     const currentAllowance = polledAllowance > 0n ? polledAllowance : initialAllowance;
 
-    const totalBalanceNumeric = React.useMemo(() => {
-        const walletBal = parseFloat(userTokenBalance) || 0;
-        const vaultBal = parseFloat(stakingData.userStakedFormatted || '0') || 0;
-        return (walletBal + vaultBal).toString();
-    }, [userTokenBalance, stakingData.userStakedFormatted]);
-
-    // TWC market price — used to render a USD value under the balance and
-    // under the remaining-limit line (mirrors staking-detail-view on web).
+    // Prefer the exact wallet row's token price. The TWC market pair is only a
+    // fallback for legacy TWC pools; using it for CROSS/other tokens shows a
+    // wrong USD value beside an otherwise-correct balance.
     const { data: priceData } = useMarketPrice('TWC-USDT', 56);
-    const priceUSD = priceData?.priceUSD || 0;
+    const walletPriceUSD = parseFloat(selectedWalletToken?.priceUSD || '0') || 0;
+    const priceUSD = walletPriceUSD || (displaySymbol.toUpperCase() === 'TWC' ? priceData?.priceUSD || 0 : 0);
 
     // The per-wallet cap is consumed by lifetime *deposits*, not current
     // balance — unstaking never frees headroom. Example: cap 50k, user
@@ -162,7 +200,8 @@ export default function StakeScreen() {
     // `onChainTotalDeposited` sums the user's Deposit events for this pool;
     // we fall back to currentStaked (via max) if the reader hasn't populated
     // yet so we never over-report available headroom.
-    const adminMaxStake = pool?.maxStakeAmount ?? undefined;
+    const configuredMaxStake = Number(pool?.maxStakeAmount ?? 0);
+    const adminMaxStake = Number.isFinite(configuredMaxStake) && configuredMaxStake > 0 ? configuredMaxStake : undefined;
     const userStakedNum = parseFloat(stakingData.userStakedFormatted || '0') || 0;
     const totalDepositedNum = parseFloat((stakingData as any).onChainTotalDepositedFormatted || '0') || 0;
     const consumedLimit = Math.max(userStakedNum, totalDepositedNum);
@@ -172,6 +211,13 @@ export default function StakeScreen() {
     const isAtWalletLimit = remainingStakeLimit !== undefined && remainingStakeLimit <= 0;
 
     const selectedBalanceNum = parseFloat(userTokenBalance) || 0;
+    const maxInputAmount = Math.max(
+        0,
+        Math.min(
+            selectedBalanceNum,
+            remainingStakeLimit !== undefined ? remainingStakeLimit : Number.POSITIVE_INFINITY,
+        ),
+    );
     const balanceUsd = priceUSD > 0 ? selectedBalanceNum * priceUSD : 0;
 
     const { isConnected: isWagmiConnected } = useAccount();
@@ -180,7 +226,7 @@ export default function StakeScreen() {
     const needsApproval = React.useMemo(() => {
         if (!amount || isNaN(parseFloat(amount))) return false;
         try {
-            const amountWei = parseUnits(amount, 9); // Use 9 decimals for TWC
+            const amountWei = parseUnits(amount, poolDecimals);
             const isNeeded = (currentAllowance || 0n) < amountWei;
 
             // Start polling if we might need approval
@@ -194,28 +240,49 @@ export default function StakeScreen() {
         } catch (e) {
             return false;
         }
-    }, [amount, currentAllowance, startPolling, stopPolling]);
+    }, [amount, currentAllowance, poolDecimals, startPolling, stopPolling]);
 
     const isOutOfRange = React.useMemo(() => {
         if (!amount || !pool) return false;
         const val = parseFloat(amount);
         const min = pool.minStakeAmount || 0;
-        const max = pool.maxStakeAmount || Infinity;
-        return val < min || val > max;
-    }, [amount, pool]);
+        const max = remainingStakeLimit !== undefined ? remainingStakeLimit : (pool.maxStakeAmount || Infinity);
+        return val < min || val > max || val > selectedBalanceNum;
+    }, [amount, pool, remainingStakeLimit, selectedBalanceNum]);
+
+    const limitsValue = React.useMemo(() => {
+        const min = Number(pool?.minStakeAmount ?? 0);
+        const max = Number(pool?.maxStakeAmount ?? 0);
+        if (Number.isFinite(max) && max > 0) {
+            return `${formatStakeAmount(Number.isFinite(min) ? min : 0)}-${formatStakeAmount(max)}`;
+        }
+
+        const dbLimits = pool?.displayLimits && pool.displayLimits !== 'N/A'
+            ? stripTokenSuffix(stripTokenSuffix(pool.displayLimits, displaySymbol), 'TWC')
+            : '';
+        if (dbLimits && !isZeroLimitLabel(dbLimits)) return dbLimits;
+
+        const hookLimits = stakingData.limitsFormatted && stakingData.limitsFormatted !== 'N/A'
+            ? stripTokenSuffix(stripTokenSuffix(stakingData.limitsFormatted, displaySymbol), 'TWC')
+            : '';
+        if (hookLimits && !isZeroLimitLabel(hookLimits)) {
+            return hookLimits;
+        }
+
+        return 'No limit';
+    }, [pool?.minStakeAmount, pool?.maxStakeAmount, pool?.displayLimits, displaySymbol, stakingData.limitsFormatted]);
+    const rangeLabel = limitsValue === 'No limit' ? limitsValue : `${limitsValue} ${displaySymbol}`;
 
     // Stats based on real pool data
     const stats = {
         tvl: `${stakingData.tvlCompact} / ${stakingData.maxTvlCompact}`,
         apr: stakingData.apr || pool?.displayApy || 'N/A',
-        totalStaked: stakingData.totalStakedCompact || '0 TWC',
+        totalStaked: formatStakeAmount(parseStakeAmount((stakingData as any).tvl ?? stakingData.totalStakedFormatted)),
         // Fallback to pool object (database) if on-chain is N/A or empty
         lockPeriod: stakingData.lockPeriod && stakingData.lockPeriod !== 'N/A' && stakingData.lockPeriod !== 'No Lock'
             ? stakingData.lockPeriod
             : (pool?.minStakingPeriod || 'No Lock'),
-        limits: stakingData.limitsFormatted && stakingData.limitsFormatted !== 'N/A' && stakingData.limitsFormatted !== '0-0 TWC'
-            ? stakingData.limitsFormatted
-            : (pool?.displayLimits || 'N/A'),
+        limits: limitsValue,
     };
 
     const handleConfirm = async () => {
@@ -270,8 +337,9 @@ export default function StakeScreen() {
     };
 
     const handleMax = () => {
-        setAmount(totalBalanceNumeric);
-        setSelection({ start: totalBalanceNumeric.length, end: totalBalanceNumeric.length });
+        const nextAmount = formatStakeInputAmount(maxInputAmount);
+        setAmount(nextAmount);
+        setSelection({ start: nextAmount.length, end: nextAmount.length });
     };
 
     const handleKeyPress = (value: string) => {
@@ -298,26 +366,8 @@ export default function StakeScreen() {
     };
 
     const handlePercentage = (percent: number) => {
-        // Base calculation on the pool's max limit as requested
-        const maxLimit = pool?.maxStakeAmount || 0;
-        const balance = parseFloat(userTokenBalance) || 0;
-
-        let targetAmount = 0;
-        if (maxLimit > 0) {
-            // "100% is 50k, 50% is 25k" implies calculation from max limit
-            targetAmount = (maxLimit * percent) / 100;
-
-            // Safety: Don't suggest more than the user actually has
-            if (targetAmount > balance) {
-                targetAmount = balance;
-            }
-        } else {
-            // Fallback to balance if no limit defined
-            targetAmount = (balance * percent) / 100;
-        }
-
-        // Format to avoid long decimals if calculation results in them
-        const finalAmountString = targetAmount % 1 === 0 ? targetAmount.toString() : targetAmount.toFixed(2);
+        const targetAmount = (maxInputAmount * percent) / 100;
+        const finalAmountString = formatStakeInputAmount(targetAmount);
         setAmount(finalAmountString);
         setSelection({ start: finalAmountString.length, end: finalAmountString.length });
     };
@@ -448,7 +498,7 @@ export default function StakeScreen() {
                             styles.rangeText,
                             isOutOfRange && amount.length > 0 && { color: '#FF4D4D' }
                         ]}>
-                            Range: {stats.limits}
+                            Range: {rangeLabel}
                         </Text>
                     </View>
 

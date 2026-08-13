@@ -21,8 +21,17 @@ import { colors } from '@/constants/colors';
 import { useRequireBackup } from '@/hooks/useRequireBackup';
 import { useStakingDeployer } from '@/hooks/useStakingDeployer';
 import { api, type MobilePool, type MobilePoolOnChain } from '@/lib/mobile/api-client';
-import { readPoolInfoClient, readStakerOnChain } from '@/lib/mobile/pool-onchain';
+import {
+    readPoolInfoClient,
+    readPoolRewardWithdrawalClient,
+    readStakerOnChain,
+} from '@/lib/mobile/pool-onchain';
 import { useWalletStore } from '@/store/walletStore';
+import {
+    readRecordedRewardWithdrawal,
+    recordRewardWithdrawal,
+    type RecordedRewardWithdrawal,
+} from '@/utils/staking-reward-withdrawal';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -92,11 +101,52 @@ function formatPercent(value: number): string {
     return `${value.toFixed(2)}%`;
 }
 
+function getRewardSettlement(params: {
+    rewardBalance: number;
+    unclaimedRewards: number | null;
+    totalStaked: number;
+    poolExpired: boolean;
+    liabilitiesResolved: boolean;
+    supportsProtectedWithdrawal: boolean;
+    contractRemainingRewards: number | null;
+}) {
+    const safeRewardBalance = Number.isFinite(params.rewardBalance) ? Math.max(0, params.rewardBalance) : 0;
+    const safeTotalStaked = Number.isFinite(params.totalStaked) ? Math.max(0, params.totalStaked) : 0;
+    const safeUnclaimed = params.unclaimedRewards === null || !Number.isFinite(params.unclaimedRewards)
+        ? null
+        : Math.max(0, params.unclaimedRewards);
+    const safeContractRemaining = params.contractRemainingRewards === null || !Number.isFinite(params.contractRemainingRewards)
+        ? null
+        : Math.max(0, params.contractRemainingRewards);
+    const remainingRewards = params.supportsProtectedWithdrawal
+        ? safeContractRemaining
+        : safeUnclaimed === null
+            ? null
+            : Math.max(0, safeRewardBalance - safeUnclaimed);
+
+    return {
+        remainingRewards,
+        canWithdrawAllRemaining:
+            params.poolExpired &&
+            remainingRewards !== null &&
+            remainingRewards > 0 &&
+            (params.supportsProtectedWithdrawal || (
+                params.liabilitiesResolved &&
+                safeTotalStaked === 0 &&
+                safeUnclaimed === 0
+            )),
+    };
+}
+
 export default function PoolManageScreen() {
     // `name` is handed over by My pools: the mobile staking route doesn't
     // project the pool's name, so without it the header would fall back to
     // the bare token symbol.
-    const { id, name: nameParam } = useLocalSearchParams<{ id: string; name?: string }>();
+    const {
+        id,
+        name: nameParam,
+        deploymentTxHash,
+    } = useLocalSearchParams<{ id: string; name?: string; deploymentTxHash?: string }>();
     const poolId = String(id || '');
     const router = useRouter();
     const { bottom } = useSafeAreaInsets();
@@ -114,14 +164,43 @@ export default function PoolManageScreen() {
     const [refreshing, setRefreshing] = useState(false);
     const [notFound, setNotFound] = useState(false);
     const [isToggling, setIsToggling] = useState(false);
+    const [isWithdrawingRewards, setIsWithdrawingRewards] = useState(false);
     const [actionError, setActionError] = useState<string | null>(null);
+    const [withdrawalError, setWithdrawalError] = useState<string | null>(null);
+    const [withdrawalStatus, setWithdrawalStatus] = useState<string | null>(null);
+    const [recordedWithdrawal, setRecordedWithdrawal] = useState<RecordedRewardWithdrawal | null>(null);
     // Both keyed by the pool address they were read for, so a result arriving
     // after the screen switched pools is discarded rather than displayed.
     const [clientOnChain, setClientOnChain] = useState<{ address: string; info: MobilePoolOnChain | null } | null>(null);
     const [stakerChain, setStakerChain] = useState<{ address: string; byWallet: StakerMap } | null>(null);
 
-    const { setPoolActive } = useStakingDeployer();
+    const { setPoolActive, withdrawRemainingRewards, emergencyWithdrawRewards } = useStakingDeployer();
     const { requireBackup, BackupRequiredModal } = useRequireBackup();
+
+    useEffect(() => {
+        let cancelled = false;
+        const poolAddress = pool?.poolContractAddress;
+        const chainId = pool?.chainId;
+        if (!poolAddress || chainId == null) {
+            setRecordedWithdrawal(null);
+            return;
+        }
+        Promise.all([
+            readRecordedRewardWithdrawal(chainId, poolAddress),
+            readPoolRewardWithdrawalClient({
+                chainId,
+                poolAddress,
+                deploymentTxHash,
+            }),
+        ]).then(async ([cached, onChain]) => {
+            const record = onChain || cached;
+            if (onChain && !cached) {
+                await recordRewardWithdrawal(chainId, poolAddress, onChain.txHash).catch(() => undefined);
+            }
+            if (!cancelled) setRecordedWithdrawal(record);
+        });
+        return () => { cancelled = true; };
+    }, [deploymentTxHash, pool?.chainId, pool?.poolContractAddress]);
 
     const loadPool = useCallback(async () => {
         try {
@@ -165,7 +244,10 @@ export default function PoolManageScreen() {
         setRefreshing(false);
     }, [loadPool, loadStakers]);
 
-    // Re-read from the device in two cases:
+    // Re-read from the device when the API payload is missing either reward
+    // token metadata or creator-settlement fields. Current protected contracts
+    // expose those values directly; legacy contracts fail only those optional
+    // reads and still return the rest of the pool information.
     //
     //  1. `onChain: null` — the API's enrichment is best-effort, and when the
     //     backend's RPC calls fail every figure below collapses to a zero that
@@ -178,8 +260,11 @@ export default function PoolManageScreen() {
     useEffect(() => {
         let cancelled = false;
         const address = pool?.poolContractAddress;
-        const payloadIsRewardAware = pool?.onChain?.rewardTokenDecimals != null;
-        if (!pool || payloadIsRewardAware || !address) return;
+        const payloadIsComplete =
+            pool?.onChain?.rewardTokenDecimals != null &&
+            pool?.onChain?.supportsProtectedRewardWithdrawal != null &&
+            pool?.onChain?.accRewardPerShare != null;
+        if (!pool || payloadIsComplete || !address) return;
 
         readPoolInfoClient({
             chainId: pool.chainId,
@@ -205,6 +290,11 @@ export default function PoolManageScreen() {
     // reward pool as "1000.00M TWC".
     const rewardSymbol = onChain?.rewardTokenSymbol || pool?.tokenSymbol || '';
     const isCrossToken = !!onChain?.isCrossToken;
+    const stakerWallets = useMemo(() => Array.from(new Set(
+        stakers
+            .map((staker) => staker.userWallet.toLowerCase())
+            .filter((wallet) => /^0x[a-fA-F0-9]{40}$/.test(wallet)),
+    )), [stakers]);
 
     // The stakers list is a DB mirror and drifts from the contract (it reported
     // a wallet holding 5.0K against an on-chain total of 4.9K — a 102% pool
@@ -215,9 +305,7 @@ export default function PoolManageScreen() {
         const address = pool?.poolContractAddress;
         if (!address || !pool || stakers.length === 0) return;
 
-        const wallets = Array.from(
-            new Set(stakers.map(s => s.userWallet.toLowerCase()).filter(w => /^0x[a-fA-F0-9]{40}$/.test(w))),
-        ).slice(0, MAX_STAKER_READS);
+        const wallets = stakerWallets.slice(0, MAX_STAKER_READS);
 
         Promise.all(wallets.map(async (wallet) => {
             const info = await readStakerOnChain({
@@ -237,11 +325,18 @@ export default function PoolManageScreen() {
 
         return () => { cancelled = true; };
         // `onChain` only feeds the reward decimals; re-running on its arrival is intended.
-    }, [pool, stakers, onChain?.rewardTokenDecimals]);
+    }, [pool, stakers, stakerWallets, onChain?.rewardTokenDecimals]);
 
     const stakerByWallet = stakerChain && stakerChain.address === pool?.poolContractAddress
         ? stakerChain.byWallet
         : NO_STAKER_CHAIN;
+    const stakerReadsComplete = stakers.length === 0 || (
+        stakerWallets.length > 0 &&
+        stakerWallets.length <= MAX_STAKER_READS &&
+        stakerWallets.length === new Set(stakers.map((staker) => staker.userWallet.toLowerCase())).size &&
+        stakerChain?.address === pool?.poolContractAddress &&
+        stakerWallets.every((wallet) => Object.prototype.hasOwnProperty.call(stakerByWallet, wallet))
+    );
 
     // Derived figures — identical arithmetic to the web's `data` memo.
     const data = useMemo(() => {
@@ -249,6 +344,13 @@ export default function PoolManageScreen() {
         const totalStaked = oc ? parseFloat(oc.totalStaked || '0') : 0;
         const poolReward = oc ? parseFloat(oc.poolReward || '0') : 0;
         const rewardBalance = oc ? parseFloat(oc.rewardBalance || '0') : 0;
+        const supportsProtectedWithdrawal = oc?.supportsProtectedRewardWithdrawal === true;
+        const protectedUnclaimed = supportsProtectedWithdrawal
+            ? parseFloat(oc?.unclaimedRewards || '0')
+            : null;
+        const protectedRemaining = supportsProtectedWithdrawal
+            ? parseFloat(oc?.remainingRewards || '0')
+            : null;
         const maxTvl = oc ? parseFloat(oc.maxTvl || '0') : 0;
         const durationSec = oc?.rewardDurationSeconds || 0;
         const distributed = Math.max(0, poolReward - rewardBalance);
@@ -265,7 +367,11 @@ export default function PoolManageScreen() {
 
         // Still-unclaimed rewards. `rewardBalance` only drops on claim, so
         // `distributed` is what stakers have actually taken out.
-        const pendingOnChain = Object.values(stakerByWallet).reduce((sum, s) => sum + s.pendingReward, 0);
+        const pendingOnChain = supportsProtectedWithdrawal
+            ? protectedUnclaimed
+            : stakerReadsComplete
+                ? Object.values(stakerByWallet).reduce((sum, s) => sum + s.pendingReward, 0)
+                : null;
 
         const activeCount = stakers.filter((s) => {
             const chain = stakerByWallet[s.userWallet.toLowerCase()];
@@ -276,8 +382,11 @@ export default function PoolManageScreen() {
         return {
             totalStaked,
             poolReward,
+            rewardBalance,
             distributed,
             pendingOnChain,
+            protectedRemaining,
+            supportsProtectedWithdrawal,
             maxTvl,
             apr,
             timePct: totalDur > 0 ? Math.min(100, Math.round((elapsed / totalDur) * 100)) : 0,
@@ -289,13 +398,25 @@ export default function PoolManageScreen() {
             ended: end > 0 ? nowSec >= end : null,
             activeCount,
         };
-    }, [onChain, stakers, stakerByWallet]);
+    }, [onChain, stakers, stakerByWallet, stakerReadsComplete]);
 
     const isOwnerActionable = !!pool?.poolContractAddress && !!evmAddress;
     const active = onChain?.active ?? (pool?.status === 'active');
     // The server's `isExpired` falls back to createdAt + duration when its own
     // chain read failed; the contract's `endTime` is authoritative when we have it.
     const isExpired = data.ended ?? !!pool?.isExpired;
+    const noLegacyRewardLiabilityEverAccrued =
+        onChain?.accRewardPerShare === '0' && data.totalStaked === 0;
+    const settlement = getRewardSettlement({
+        rewardBalance: data.rewardBalance,
+        unclaimedRewards: data.pendingOnChain,
+        totalStaked: data.totalStaked,
+        poolExpired: isExpired,
+        liabilitiesResolved: noLegacyRewardLiabilityEverAccrued,
+        supportsProtectedWithdrawal: data.supportsProtectedWithdrawal,
+        contractRemainingRewards: data.protectedRemaining,
+    });
+    const rewardsWereWithdrawn = recordedWithdrawal !== null || withdrawalStatus !== null;
     const title = pool?.name || nameParam || pool?.tokenSymbol || 'Pool';
     const symbol = pool?.tokenSymbol || '';
 
@@ -318,6 +439,38 @@ export default function PoolManageScreen() {
             setActionError(e?.message || "Action failed. Make sure you're the pool owner.");
         } finally {
             setIsToggling(false);
+        }
+    };
+
+    const handleWithdrawRemainingRewards = async () => {
+        if (!pool?.poolContractAddress || !settlement.canWithdrawAllRemaining || !evmAddress) return;
+        setWithdrawalError(null);
+        setWithdrawalStatus(null);
+        if (!requireBackup()) return;
+        setIsWithdrawingRewards(true);
+        try {
+            const params = {
+                chainId: pool.chainId,
+                poolAddress: pool.poolContractAddress as Address,
+                walletAddress: evmAddress as Address,
+            };
+            const hash = data.supportsProtectedWithdrawal
+                ? await withdrawRemainingRewards(params)
+                : await emergencyWithdrawRewards(params);
+            const record = await recordRewardWithdrawal(pool.chainId, pool.poolContractAddress, hash);
+            setRecordedWithdrawal(record);
+            const refreshed = await readPoolInfoClient({
+                chainId: pool.chainId,
+                poolAddress: pool.poolContractAddress,
+                stakingDecimals: pool.decimals ?? 18,
+                stakingSymbol: pool.tokenSymbol,
+            });
+            setClientOnChain({ address: pool.poolContractAddress, info: refreshed });
+            setWithdrawalStatus(`Rewards withdrawn successfully. Transaction ${hash.slice(0, 10)}...${hash.slice(-6)}`);
+        } catch (e: any) {
+            setWithdrawalError(e?.message || "Reward withdrawal failed. Make sure you're the pool owner.");
+        } finally {
+            setIsWithdrawingRewards(false);
         }
     };
 
@@ -453,7 +606,7 @@ export default function PoolManageScreen() {
                     {hasChainData && isCrossToken ? (
                         <Text style={styles.meterNote}>Paid in {rewardSymbol} — stakers deposit {symbol}</Text>
                     ) : null}
-                    {hasChainData && data.pendingOnChain > 0 ? (
+                    {hasChainData && data.pendingOnChain !== null && data.pendingOnChain > 0 ? (
                         <Text style={styles.meterNote}>
                             {formatCompact(data.pendingOnChain)} {rewardSymbol} earned but not yet claimed
                         </Text>
@@ -461,6 +614,79 @@ export default function PoolManageScreen() {
                 </View>
                 <View style={styles.meterCard}>
                     <Meter label="Pool duration" value={hasChainData ? `${data.timePct}% elapsed` : '—'} pct={data.timePct} />
+                </View>
+
+                <View style={styles.statGrid}>
+                    <StatCard
+                        icon="cash-outline"
+                        label="Remaining rewards"
+                        value={!hasChainData || settlement.remainingRewards === null
+                            ? '—'
+                            : `${formatCompact(settlement.remainingRewards)} ${rewardSymbol}`}
+                        sub="Unused by stakers"
+                    />
+                    <StatCard
+                        icon="people-outline"
+                        label="Unclaimed rewards"
+                        value={!hasChainData || data.pendingOnChain === null
+                            ? '—'
+                            : `${formatCompact(data.pendingOnChain)} ${rewardSymbol}`}
+                        sub="Reserved for users"
+                    />
+                    <StatCard
+                        icon="wallet-outline"
+                        label="Reward balance"
+                        value={hasChainData ? `${formatCompact(data.rewardBalance)} ${rewardSymbol}` : '—'}
+                        sub="Remaining + unclaimed"
+                    />
+                </View>
+
+                <View style={styles.settlementCard}>
+                    <Text style={styles.settlementTitle}>Creator reward withdrawal</Text>
+                    <Text style={styles.settlementText}>
+                        {!hasChainData
+                            ? 'Live reward balances are unavailable.'
+                            : rewardsWereWithdrawn
+                                ? 'Remaining rewards were withdrawn successfully. Any unclaimed user rewards remain reserved for claims.'
+                            : !isExpired
+                                ? 'Withdrawal becomes available after the pool expires.'
+                                : data.supportsProtectedWithdrawal && settlement.remainingRewards !== null
+                                    ? settlement.remainingRewards <= 0
+                                        ? 'No unused reward funds remain. User claims stay protected.'
+                                        : `${formatCompact(settlement.remainingRewards)} ${rewardSymbol} is available to withdraw. ${formatCompact(data.pendingOnChain || 0)} ${rewardSymbol} remains reserved for user claims.`
+                                    : data.totalStaked > 0
+                                        ? `${formatCompact(data.totalStaked)} ${symbol} is still staked and must remain protected.`
+                                        : data.pendingOnChain === null
+                                            ? "Checking every staker's unclaimed rewards before enabling withdrawal."
+                                            : data.pendingOnChain > 0
+                                                ? `${formatCompact(data.pendingOnChain)} ${rewardSymbol} is reserved for users and cannot be withdrawn.`
+                                                : !noLegacyRewardLiabilityEverAccrued
+                                                    ? 'Frontend protection is active for this legacy pool. Its contract cannot separate unused funds from user claims, so creator withdrawal stays locked.'
+                                                    : data.rewardBalance <= 0
+                                                        ? 'No reward funds remain in this pool.'
+                                                        : `${formatCompact(data.rewardBalance)} ${rewardSymbol} is available to return to the creator. This legacy withdrawal transfers the full remaining balance.`}
+                    </Text>
+                    {withdrawalStatus ? <Text style={styles.successText}>{withdrawalStatus}</Text> : null}
+                    {withdrawalError ? <Text style={styles.errText}>{withdrawalError}</Text> : null}
+                    <TouchableOpacity
+                        style={[
+                            styles.withdrawRewardsBtn,
+                            (!settlement.canWithdrawAllRemaining || isWithdrawingRewards || !isOwnerActionable || rewardsWereWithdrawn) && { opacity: 0.4 },
+                        ]}
+                        onPress={handleWithdrawRemainingRewards}
+                        disabled={!settlement.canWithdrawAllRemaining || isWithdrawingRewards || !isOwnerActionable || rewardsWereWithdrawn}
+                    >
+                        <Ionicons name={rewardsWereWithdrawn ? 'checkmark-circle' : 'wallet-outline'} size={16} color="#010501" />
+                        <Text style={styles.withdrawRewardsBtnText}>
+                            {isWithdrawingRewards
+                                ? 'Withdrawing…'
+                                : rewardsWereWithdrawn
+                                    ? 'Withdrawn'
+                                    : isExpired && settlement.remainingRewards === 0
+                                        ? 'No rewards remaining'
+                                        : 'Withdraw remaining rewards'}
+                        </Text>
+                    </TouchableOpacity>
                 </View>
 
                 {/* Stakers — the web's table, as cards. A 6-column table can't
@@ -607,6 +833,13 @@ const styles = StyleSheet.create({
 
     pendingNote: { borderRadius: 14, borderWidth: 1, borderColor: '#2a2410', backgroundColor: 'rgba(20,16,5,0.7)', paddingHorizontal: 14, paddingVertical: 12 },
     pendingNoteText: { color: '#facc15', fontFamily: 'Manrope-Medium', fontSize: 12, lineHeight: 17 },
+
+    settlementCard: { borderTopWidth: 1, borderBottomWidth: 1, borderColor: '#1f321d', paddingVertical: 18, gap: 10 },
+    settlementTitle: { color: '#fff', fontFamily: 'Manrope-SemiBold', fontSize: 16 },
+    settlementText: { color: '#8F9891', fontFamily: 'Manrope-Medium', fontSize: 13, lineHeight: 19 },
+    successText: { color: colors.primaryCTA, fontFamily: 'Manrope-Medium', fontSize: 12, lineHeight: 17 },
+    withdrawRewardsBtn: { minHeight: 46, borderRadius: 999, backgroundColor: colors.primaryCTA, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 18, alignSelf: 'stretch' },
+    withdrawRewardsBtnText: { color: '#010501', fontFamily: 'Manrope-SemiBold', fontSize: 13 },
 
     stakersCard: { borderRadius: 24, borderWidth: 1, borderColor: '#1f321d', backgroundColor: 'rgba(1,5,1,0.96)', paddingHorizontal: 16, paddingBottom: 8, paddingTop: 18 },
     stakersHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },

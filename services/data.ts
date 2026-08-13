@@ -1,12 +1,5 @@
-import { DexMarket, HomeData, NewsfeedItem, SpotlightToken, StatCard, TradingPair } from '@/types';
+import { DexMarket, HomeData, SpotlightToken, StatCard, TradingPair } from '@/types';
 import { apiClient } from './apiClient';
-
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-const mockNewsfeed: NewsfeedItem[] = [
-  { id: '1', imageUrl: require('../assets/home/banner.svg') },
-  { id: '2', imageUrl: require('../assets/home/banner.svg') },
-];
 
 const mockDexMarkets: DexMarket[] = [
   { id: '1', name: 'Uniswap', logo: 'https://cryptologos.cc/logos/uniswap-uni-logo.png' },
@@ -100,7 +93,7 @@ export const fetchHomeData = async (): Promise<HomeData> => {
     ];
 
     return {
-      newsfeed: mockNewsfeed,
+      newsfeed: [],
       spotlight: spotlight.length > 0 ? spotlight : [],
       tradingPairs: tradingPairs,
       stats: stats,
@@ -115,7 +108,7 @@ export const fetchHomeData = async (): Promise<HomeData> => {
     }
     // Fallback to empty shell or last known data
     return {
-      newsfeed: mockNewsfeed,
+      newsfeed: [],
       spotlight: [],
       tradingPairs: [],
       stats: [],

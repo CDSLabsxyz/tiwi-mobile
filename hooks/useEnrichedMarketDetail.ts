@@ -1,4 +1,5 @@
 import { api, MarketAsset } from '@/lib/mobile/api-client';
+import { resolveTokenLogo } from '@/utils/admin-token-logos';
 import { useQuery } from '@tanstack/react-query';
 
 interface UseEnrichedMarketDetailOptions {
@@ -45,6 +46,7 @@ export const useEnrichedMarketDetail = (options: UseEnrichedMarketDetailOptions)
                 return {
                     ...t,
                     displaySymbol: `${t.symbol}-USD`,
+                    logoURI: resolveTokenLogo(t) || t.logoURI,
                     priceUSD: t.priceUSD || '0',
                 };
             }
@@ -63,7 +65,7 @@ export const useEnrichedMarketDetail = (options: UseEnrichedMarketDetailOptions)
                 ...data,
                 id: data.id || (data.address ? `${data.chainId}-${data.address}` : data.symbol),
                 displaySymbol,
-                logoURI: data.logoURI || data.logo || '',
+                logoURI: resolveTokenLogo(data) || data.logoURI || data.logo || '',
                 priceUSD: (data.price || 0).toString(),
             };
         },

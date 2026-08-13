@@ -25,6 +25,7 @@
  */
 
 import type { SwapDefaultToken, TokenItem } from '@/lib/mobile/api-client';
+import { getAdminTokenLogo, normalizeTokenLogoUrl, resolveTokenLogo } from '@/utils/admin-token-logos';
 import { formatTokenQuantity, formatUSDPrice } from '@/utils/formatting';
 import { isSpamToken } from '@/utils/token-spam';
 import { MORALIS_NATIVE_ADDRESS, NATIVE_TOKEN_ADDRESS } from '@/utils/wallet';
@@ -172,11 +173,15 @@ export function buildTokenOptions({
         const prcNum = parseFloat(t.priceUSD || holding?.priceUSD || '0');
         const totUSD = balNum * prcNum;
         const src = apiIndex.get(addrKey(t.chainId, t.address));
+        const icon =
+            getAdminTokenLogo(t.address, t.chainId)
+            || normalizeTokenLogoUrl(t.logoURI)
+            || normalizeTokenLogoUrl(holding?.logoURI);
         return {
             id: `${t.chainId}-${t.address}`,
             symbol: t.symbol,
             name: t.name || t.symbol,
-            icon: t.logoURI || holding?.logoURI,
+            icon,
             chainIcon: chainIconFor(t.chainId),
             tvl: t.liquidity ? `$${t.liquidity.toLocaleString()}` : 'N/A',
             liquidity: t.liquidity,
@@ -291,13 +296,7 @@ export function buildTokenOptions({
                 address: d.address,
                 chainId: d.chainId,
                 decimals: d.decimals ?? 18,
-                // Curated logos can be backend-relative SVGs, which expo-image
-                // can't rasterize; drop those so the lettered fallback circle
-                // renders instead of an empty box. Entries matched against the
-                // index above already carry a raster logo.
-                logoURI: d.logo && /^https?:\/\//i.test(d.logo) && !d.logo.endsWith('.svg')
-                    ? d.logo
-                    : undefined,
+                logoURI: resolveTokenLogo(d),
             }));
         }
 

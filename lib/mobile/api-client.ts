@@ -29,6 +29,10 @@ export const TIWI_API_BASE_URL =
     process.env.NEXT_PUBLIC_APP_URL ??
     'https://lite.tiwiprotocol.xyz';
 
+export const TIWI_ADMIN_API_BASE_URL =
+    process.env.EXPO_PUBLIC_TIWI_ADMIN_URL ??
+    'https://respect.tiwiprotocol.xyz';
+
 // ─── Generic fetch helper ─────────────────────────────────────────────────────
 
 async function apiFetch<T>(
@@ -327,6 +331,13 @@ export interface MobilePoolOnChain {
     totalStaked: string;
     /** In the REWARD token. */
     rewardBalance: string;
+    /** Accumulator used to prove whether a legacy pool ever created liabilities. */
+    accRewardPerShare?: string;
+    /** Exact user reward liability exposed by protected pool contracts. */
+    unclaimedRewards?: string;
+    /** Exact creator-withdrawable surplus exposed by protected pool contracts. */
+    remainingRewards?: string;
+    supportsProtectedRewardWithdrawal?: boolean;
     startTime: number;   // unix seconds
     endTime: number;     // unix seconds
     active: boolean;
@@ -540,9 +551,11 @@ export interface TutorialsResponse {
 
 export interface AdvertItem {
     id: string;
-    title: string;
-    imageUrl: string;
+    name?: string;
+    title?: string;
+    imageUrl?: string;
     linkUrl?: string;
+    advertFormat?: 'Banner (Horizontal)' | 'Mobile Banner' | 'Card (Inline)' | 'Modal (High Placement - timed pop-up)';
     status: string;
 }
 
@@ -1135,8 +1148,13 @@ class AdvertsModule {
     constructor(private base: string) { }
 
     /** GET /api/v1/adverts */
-    list(): Promise<AdvertsResponse> {
-        return apiFetch(this.base, '/api/v1/adverts');
+    list(params?: {
+        status?: 'draft' | 'published' | 'archived';
+        advertFormat?: AdvertItem['advertFormat'];
+        excludeAdvertFormat?: AdvertItem['advertFormat'];
+        rasterizeSvg?: boolean;
+    }): Promise<AdvertsResponse> {
+        return apiFetch(this.base, '/api/v1/adverts', undefined, params);
     }
 }
 
@@ -1701,7 +1719,7 @@ export class TiwiApiClient {
         this.notifications = new NotificationsModule(baseUrl);
         this.faqs = new FaqsModule(baseUrl);
         this.tutorials = new TutorialsModule(baseUrl);
-        this.adverts = new AdvertsModule(baseUrl);
+        this.adverts = new AdvertsModule(TIWI_ADMIN_API_BASE_URL);
         this.referral = new ReferralsModule(baseUrl);
         this.charts = new ChartsModule(baseUrl);
         this.liveStatus = new LiveStatusModule(baseUrl);

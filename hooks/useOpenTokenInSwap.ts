@@ -1,4 +1,8 @@
 import { isRealTokenAddress, type MarketTokenLike } from '@/utils/market-token-resolver';
+import { resolveTokenLogo } from '@/utils/admin-token-logos';
+import { useWalletBalances } from '@/hooks/useWalletBalances';
+import { isSameTokenAddress } from '@/utils/wallet';
+import { formatTokenQuantity } from '@/utils/formatting';
 import { useRouter } from 'expo-router';
 import { useCallback } from 'react';
 
@@ -27,6 +31,7 @@ export interface OpenTokenInSwapOptions {
 
 export function useOpenTokenInSwap() {
     const router = useRouter();
+    const { data: balanceData } = useWalletBalances();
 
     return useCallback(
         (token: MarketTokenLike, options?: OpenTokenInSwapOptions) => {
@@ -40,13 +45,26 @@ export function useOpenTokenInSwap() {
             const hasRealIdentity =
                 isRealTokenAddress(address) && Number.isFinite(chainId) && chainId > 0;
 
-            const logo = typeof token.logoURI === 'string'
-                ? token.logoURI
-                : typeof token.logo === 'string'
-                    ? token.logo
-                    : undefined;
+            const logo = resolveTokenLogo({
+                address,
+                chainId,
+                logoURI: typeof token.logoURI === 'string' ? token.logoURI : undefined,
+                logo: typeof token.logo === 'string' ? token.logo : undefined,
+            });
 
             const price = token.priceUSD ?? token.price;
+            const walletToken = hasRealIdentity
+                ? balanceData?.tokens.find((t: any) =>
+                    isSameTokenAddress(t.address, address) &&
+                    Number(t.chainId) === Number(chainId)
+                )
+                : null;
+            const walletBalance = walletToken
+                ? `${formatTokenQuantity(walletToken.balanceFormatted || '0')} ${symbol}`
+                : undefined;
+            const walletValue = walletToken
+                ? `$${parseFloat(walletToken.usdValue || '0').toFixed(2)}`
+                : undefined;
 
             router.push({
                 pathname: '/swap',
@@ -56,12 +74,15 @@ export function useOpenTokenInSwap() {
                     name: token.name || symbol,
                     chainId: chainId > 0 ? String(chainId) : undefined,
                     logo,
+                    balance: walletBalance,
+                    usdValue: walletValue,
+                    decimals: walletToken?.decimals != null ? String(walletToken.decimals) : undefined,
                     priceUSD: price != null ? String(price) : undefined,
                     needsResolve: hasRealIdentity ? undefined : '1',
                     infoSource: options?.infoSource,
                 },
             } as any);
         },
-        [router],
+        [balanceData, router],
     );
 }

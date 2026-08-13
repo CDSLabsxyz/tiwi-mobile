@@ -20,13 +20,14 @@
  *    live earning rate and the claimed amount written back to the DB.
  */
 
-import { STAKING_POOL_V2_ABI } from '@/constants/abis';
+import { STAKING_POOL_REWARD_SETTLEMENT_ABI, STAKING_POOL_V2_ABI } from '@/constants/abis';
 import { createTransportForChain } from '@/constants/rpc';
 import { createPublicClient, formatUnits, type Address, type PublicClient } from 'viem';
-import { arbitrum, avalanche, base, bsc, mainnet, optimism, polygon } from 'viem/chains';
+import { arbitrum, avalanche, base, bsc, coreDao, mainnet, optimism, polygon, sei } from 'viem/chains';
 
 const CHAIN_MAP: Record<number, any> = {
-    1: mainnet, 56: bsc, 137: polygon, 42161: arbitrum, 8453: base, 10: optimism, 43114: avalanche,
+    1: mainnet, 56: bsc, 137: polygon, 42161: arbitrum, 8453: base, 10: optimism,
+    43114: avalanche, 1116: coreDao, 1329: sei,
 };
 
 const ERC20_METADATA_ABI = [
@@ -135,6 +136,10 @@ export interface PoolOnChainInfo {
     rewardPerSecond: string;
     totalStaked: string;
     rewardBalance: string;
+    accRewardPerShare: string;
+    unclaimedRewards?: string;
+    remainingRewards?: string;
+    supportsProtectedRewardWithdrawal: boolean;
     startTime: number;
     endTime: number;
     active: boolean;
@@ -161,12 +166,20 @@ export async function readPoolInfoClient(params: {
 
     try {
         const client = getClientForChain(chainId);
-        // viem infers a readonly 13-tuple from the const ABI.
-        const tuple = await client.readContract({
-            address: poolAddress as Address,
-            abi: STAKING_POOL_V2_ABI,
-            functionName: 'getPoolInfo',
-        });
+        // The accumulator is needed for the conservative legacy-pool fallback:
+        // zero proves that no reward liability ever accrued.
+        const [tuple, accRewardPerShare] = await Promise.all([
+            client.readContract({
+                address: poolAddress as Address,
+                abi: STAKING_POOL_V2_ABI,
+                functionName: 'getPoolInfo',
+            }),
+            client.readContract({
+                address: poolAddress as Address,
+                abi: STAKING_POOL_V2_ABI,
+                functionName: 'accRewardPerShare',
+            }),
+        ]);
 
         const rewardInfo = await resolveRewardToken({
             chainId,
@@ -175,6 +188,26 @@ export async function readPoolInfoClient(params: {
             stakingSymbol,
             stakingDecimals,
         });
+
+        const [unclaimedResult, remainingResult] = await Promise.allSettled([
+            client.readContract({
+                address: poolAddress as Address,
+                abi: STAKING_POOL_REWARD_SETTLEMENT_ABI,
+                functionName: 'unclaimedRewards',
+            }),
+            client.readContract({
+                address: poolAddress as Address,
+                abi: STAKING_POOL_REWARD_SETTLEMENT_ABI,
+                functionName: 'remainingRewards',
+            }),
+        ]);
+        const unclaimedWei = unclaimedResult.status === 'fulfilled'
+            ? unclaimedResult.value as bigint
+            : null;
+        const remainingWei = remainingResult.status === 'fulfilled'
+            ? remainingResult.value as bigint
+            : null;
+        const supportsProtectedRewardWithdrawal = unclaimedWei !== null && remainingWei !== null;
 
         return {
             poolReward: formatUnits(tuple[3], rewardInfo.decimals),
@@ -186,6 +219,14 @@ export async function readPoolInfoClient(params: {
             active: Boolean(tuple[9]),
             totalStaked: formatUnits(tuple[10], stakingDecimals),
             rewardBalance: formatUnits(tuple[11], rewardInfo.decimals),
+            accRewardPerShare: accRewardPerShare.toString(),
+            unclaimedRewards: unclaimedWei !== null
+                ? formatUnits(unclaimedWei, rewardInfo.decimals)
+                : undefined,
+            remainingRewards: remainingWei !== null
+                ? formatUnits(remainingWei, rewardInfo.decimals)
+                : undefined,
+            supportsProtectedRewardWithdrawal,
             funded: Boolean(tuple[12]),
             stakingToken: tuple[0],
             rewardToken: tuple[1],
@@ -206,6 +247,52 @@ export interface PoolStatusOnChain {
     funded: boolean;
     /** endTime has passed. */
     ended: boolean;
+    /** Exact rewards owed to users; only present on protected deployments. */
+    unclaimedRewards?: string;
+    /** Exact surplus the creator can withdraw after expiry. */
+    remainingRewards?: string;
+    supportsProtectedRewardWithdrawal: boolean;
+}
+
+export interface PoolRewardWithdrawalEvent {
+    txHash: string;
+    withdrawnAt: string;
+}
+
+/**
+ * Detect a completed creator withdrawal from the contract event. Starting at
+ * the deployment receipt keeps the log range bounded and also recognizes a
+ * withdrawal made on web or another device.
+ */
+export async function readPoolRewardWithdrawalClient(params: {
+    chainId: number;
+    poolAddress: string;
+    deploymentTxHash?: string;
+}): Promise<PoolRewardWithdrawalEvent | null> {
+    const { chainId, poolAddress, deploymentTxHash } = params;
+    if (!isEvmAddr(poolAddress) || !/^0x[a-fA-F0-9]{64}$/.test(deploymentTxHash || '')) return null;
+
+    try {
+        const client = getClientForChain(chainId);
+        const receipt = await client.getTransactionReceipt({ hash: deploymentTxHash as `0x${string}` });
+        const logs = await client.getLogs({
+            address: poolAddress as Address,
+            event: STAKING_POOL_REWARD_SETTLEMENT_ABI[0],
+            fromBlock: receipt.blockNumber,
+            toBlock: 'latest',
+        });
+        const latest = logs.at(-1);
+        if (!latest?.transactionHash) return null;
+
+        const block = await client.getBlock({ blockNumber: latest.blockNumber });
+        return {
+            txHash: latest.transactionHash,
+            withdrawnAt: new Date(Number(block.timestamp) * 1000).toISOString(),
+        };
+    } catch (e) {
+        console.warn('[pool-onchain] reward withdrawal event read failed', poolAddress, e);
+        return null;
+    }
 }
 
 /**
@@ -215,8 +302,10 @@ export interface PoolStatusOnChain {
 export async function readPoolStatusClient(params: {
     chainId: number;
     poolAddress: string;
+    stakingDecimals?: number;
+    stakingSymbol?: string;
 }): Promise<PoolStatusOnChain | null> {
-    const { chainId, poolAddress } = params;
+    const { chainId, poolAddress, stakingDecimals = 18, stakingSymbol } = params;
     if (!isEvmAddr(poolAddress)) return null;
 
     try {
@@ -228,6 +317,32 @@ export async function readPoolStatusClient(params: {
             functionName: 'getPoolInfo',
         });
 
+        const rewardInfo = await resolveRewardToken({
+            chainId,
+            rewardTokenAddress: tuple[1],
+            stakingTokenAddress: tuple[0],
+            stakingSymbol,
+            stakingDecimals,
+        });
+        const [unclaimedResult, remainingResult] = await Promise.allSettled([
+            client.readContract({
+                address: poolAddress as Address,
+                abi: STAKING_POOL_REWARD_SETTLEMENT_ABI,
+                functionName: 'unclaimedRewards',
+            }),
+            client.readContract({
+                address: poolAddress as Address,
+                abi: STAKING_POOL_REWARD_SETTLEMENT_ABI,
+                functionName: 'remainingRewards',
+            }),
+        ]);
+        const unclaimedWei = unclaimedResult.status === 'fulfilled'
+            ? unclaimedResult.value as bigint
+            : null;
+        const remainingWei = remainingResult.status === 'fulfilled'
+            ? remainingResult.value as bigint
+            : null;
+        const supportsProtectedRewardWithdrawal = unclaimedWei !== null && remainingWei !== null;
         const endTime = Number(tuple[8]);
         return {
             startTime: Number(tuple[7]),
@@ -235,6 +350,13 @@ export async function readPoolStatusClient(params: {
             active: Boolean(tuple[9]),
             funded: Boolean(tuple[12]),
             ended: endTime > 0 && Date.now() / 1000 >= endTime,
+            unclaimedRewards: unclaimedWei !== null
+                ? formatUnits(unclaimedWei, rewardInfo.decimals)
+                : undefined,
+            remainingRewards: remainingWei !== null
+                ? formatUnits(remainingWei, rewardInfo.decimals)
+                : undefined,
+            supportsProtectedRewardWithdrawal,
         };
     } catch (e) {
         console.warn('[pool-onchain] readPoolStatusClient failed', poolAddress, e);

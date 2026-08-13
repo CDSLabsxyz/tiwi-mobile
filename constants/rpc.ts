@@ -16,6 +16,8 @@ export const RPC_CONFIG: Record<number, string> = {
     137: 'https://polygon-mainnet.g.alchemy.com/v2/WLJoFMJfcDSAUbsnhlyCl',
     8453: 'https://base-mainnet.g.alchemy.com/v2/WLJoFMJfcDSAUbsnhlyCl',
     56: 'https://bnb-mainnet.g.alchemy.com/v2/WLJoFMJfcDSAUbsnhlyCl',
+    1116: 'https://rpc.coredao.org',
+    1329: 'https://evm-rpc.sei-apis.com',
 };
 
 /**
@@ -32,6 +34,8 @@ const DRPC_NETWORK_SLUGS: Record<number, string> = {
     137: 'polygon',
     8453: 'base',
     56: 'bsc',
+    1116: 'core',
+    1329: 'sei',
 };
 
 function drpcUrl(chainId: number): string | undefined {
@@ -62,7 +66,6 @@ const BSC_RPC_URLS = [
     'https://bsc-dataseed4.binance.org',
     'https://bsc.publicnode.com',
     'https://bsc.drpc.org',
-    'https://binance.llamarpc.com',
     RPC_CONFIG[56],
 ].filter(Boolean) as string[];
 
@@ -115,6 +118,14 @@ const CHAIN_RPC_FALLBACKS: Record<number, string[]> = {
         'https://rpc.ankr.com/base',
     ],
     56: BSC_RPC_URLS,
+    1116: [
+        RPC_CONFIG[1116],
+        'https://core.drpc.org',
+    ],
+    1329: [
+        RPC_CONFIG[1329],
+        'https://sei.drpc.org',
+    ],
 };
 
 /** Primary URL for a chain: dRPC when a key is configured, else Alchemy. */

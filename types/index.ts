@@ -43,6 +43,7 @@ export interface DexMarket {
 export interface NewsfeedItem {
   id: string;
   imageUrl: string | any;
+  linkUrl?: string;
 }
 
 export interface HomeData {

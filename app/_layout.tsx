@@ -30,6 +30,7 @@ import { updateService } from '@/services/updateService';
 import { useOnboardingStore } from '@/store/onboardingStore';
 import { useSecurityStore } from '@/store/securityStore';
 import { useWalletStore } from '@/store/walletStore';
+import { prefetchAdminTokenLogoOverrides } from '@/utils/admin-token-logos';
 import { AppKit, AppKitProvider } from '@reown/appkit-react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Stack, useRouter, useSegments } from 'expo-router';
@@ -149,6 +150,9 @@ function GlobalAIBubble() {
 function AppContent() {
   // Prefetch tokens on app load
   useTokenPrefetch();
+  useEffect(() => {
+    prefetchAdminTokenLogoOverrides();
+  }, []);
   const router = useRouter();
 
   // Eagerly prefetch wallet balances on app load

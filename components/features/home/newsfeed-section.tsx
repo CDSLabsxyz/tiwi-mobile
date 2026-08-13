@@ -3,17 +3,21 @@ import { colors } from '@/constants/colors';
 import { NewsfeedItem } from '@/types';
 import { Image } from 'expo-image';
 import React, { useEffect, useRef, useState } from 'react';
+import { Dimensions, FlatList, Linking, NativeScrollEvent, NativeSyntheticEvent, Pressable, StyleSheet, View } from 'react-native';
 
 interface NewsfeedSectionProps {
     items: NewsfeedItem[];
     isLoading?: boolean;
 }
 
-import { Dimensions, FlatList, NativeScrollEvent, NativeSyntheticEvent, StyleSheet, View } from 'react-native';
-
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const BANNER_HEIGHT = 160; // Increased height significantly for better presence
 const AUTO_SCROLL_INTERVAL = 5000;
+
+function getSupportedLinkUrl(value?: string) {
+    const url = value?.trim();
+    return url && /^(https?:\/\/|tiwi:\/\/)/i.test(url) ? url : undefined;
+}
 
 /**
  * Newsfeed Section Component
@@ -71,20 +75,7 @@ export const NewsfeedSection: React.FC<NewsfeedSectionProps> = ({
     }
 
     if (!items || items.length === 0) {
-        return (
-            <View style={styles.container}>
-                <View style={styles.bannerWrapper}>
-                    <Image
-                        source={require('../../../assets/home/banner.svg')}
-                        style={styles.image}
-                        contentFit="contain"
-                    />
-                </View>
-                <View style={styles.indicatorContainer}>
-                    <View style={[styles.indicator, { width: 8, backgroundColor: colors.primaryCTA }]} />
-                </View>
-            </View>
-        );
+        return null;
     }
 
     const onScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -107,18 +98,33 @@ export const NewsfeedSection: React.FC<NewsfeedSectionProps> = ({
     };
 
     const renderBanner = ({ item }: { item: NewsfeedItem }) => {
-        const imageSource = typeof item.imageUrl === 'string'
-            ? item.imageUrl
-            : item.imageUrl || require('../../../assets/home/banner.svg');
+        const imageSource = item.imageUrl;
+        const linkUrl = getSupportedLinkUrl(item.linkUrl);
 
         return (
-            <View style={styles.bannerWrapper}>
-                <Image
-                    source={imageSource}
-                    style={styles.image}
-                    contentFit="contain"
-                />
-            </View>
+            <Pressable
+                disabled={!linkUrl}
+                onPress={() => {
+                    if (!linkUrl) return;
+                    void Linking.openURL(linkUrl).catch((error) => {
+                        console.warn('[NewsfeedSection] Unable to open advert link:', error);
+                    });
+                }}
+                accessibilityRole={linkUrl ? 'link' : undefined}
+                accessibilityLabel={linkUrl ? 'Open promotion' : undefined}
+                style={({ pressed }) => [
+                    styles.bannerWrapper,
+                    pressed && linkUrl ? styles.bannerPressed : undefined,
+                ]}
+            >
+                <View style={styles.bannerFrame}>
+                    <Image
+                        source={imageSource}
+                        style={styles.image}
+                        contentFit="cover"
+                    />
+                </View>
+            </Pressable>
         );
     };
 
@@ -181,9 +187,16 @@ const styles = StyleSheet.create({
     bannerWrapper: {
         width: SCREEN_WIDTH,
         height: BANNER_HEIGHT,
-        overflow: 'hidden',
-        backgroundColor: colors.bg, // Match background for contain
         paddingHorizontal: 16,
+    },
+    bannerFrame: {
+        flex: 1,
+        overflow: 'hidden',
+        borderRadius: 16,
+        backgroundColor: colors.bgCards,
+    },
+    bannerPressed: {
+        opacity: 0.88,
     },
     image: {
         width: '100%',

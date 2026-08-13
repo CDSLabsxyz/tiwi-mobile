@@ -478,7 +478,7 @@ export class TiwiProtocolDEXExecutor implements SwapRouterExecutor {
         // Gas estimation failed = contract will revert = don't send tx
         // Throw so the fallback chain picks up a working executor
         const msg = gasError?.message?.toLowerCase() || '';
-        console.error('[TiwiDEX] Gas estimation REVERTED — contract will fail, skipping:', msg);
+        console.warn('[TiwiDEX] Gas estimation reverted; trying the backup executor:', msg);
         throw new Error(
           msg.includes('revert') || msg.includes('overflow')
             ? 'execution reverted'  // triggers shouldTryFallback → true
@@ -506,7 +506,10 @@ export class TiwiProtocolDEXExecutor implements SwapRouterExecutor {
       return { success: true, txHash: hash, actualToAmount: route.toToken.amount };
 
     } catch (error: any) {
-      console.error('[TiwiDEX] Swap failed:', error);
+      // This executor is intentionally first in a fallback chain. Keep expected
+      // incompatibilities out of Expo's red error overlay while preserving the
+      // diagnostic for development logs.
+      console.warn('[TiwiDEX] Swap attempt failed:', error);
       const { formatErrorMessage } = await import('../utils/error-handler');
       onStatusUpdate?.({ stage: 'failed', message: formatErrorMessage(error), error });
       throw error;

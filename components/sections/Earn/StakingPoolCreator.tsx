@@ -3,8 +3,10 @@
  *
  * Native port of the web `components/earn/staking-pool-creator.tsx`. Same fields,
  * same order, same validation, same submit orchestration:
- *   name check → deploy → record staking_pools (inactive) → pay fee (if any)
- *   → record user_staking_pools (pending) → session list + notice.
+ *   name check → deploy → record staking_pools (inactive)
+ *   → record user_staking_pools (pending/unpaid) → session list + notice.
+ * Creation fees are paid from "My Pools" so this flow returns as soon as the
+ * pool exists and is recoverable.
  *
  * Renders a plain View tree (no ScrollView) so it can be embedded inside the
  * Earn tab sub-tab or the standalone /earn/create screen.
@@ -16,10 +18,12 @@ import { useRequireBackup } from '@/hooks/useRequireBackup';
 import { api, type PoolFeeSettings } from '@/lib/mobile/api-client';
 import { useWalletBalances } from '@/hooks/useWalletBalances';
 import { formatNumberInput } from '@/utils/formatting';
+import { resolveTokenLogo } from '@/utils/admin-token-logos';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View, type LayoutChangeEvent } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { isAddress, type Address } from 'viem';
 import { SwapKeyboard } from '../Swap/SwapKeyboard';
 import { TokenSelectSheet, type TokenOption } from '../Swap/TokenSelectSheet';
@@ -29,7 +33,7 @@ const TWC_ICON = require('../../../assets/home/tiwicat.svg');
 type RewardMode = 'same' | 'cross';
 type TokenSide = 'stake' | 'earn';
 type DurationUnit = 'days' | 'hours' | 'minutes';
-type CreationStep = 'idle' | 'creating' | 'saving' | 'paying';
+type CreationStep = 'idle' | 'creating' | 'saving';
 /** The six numeric "Pool settings" inputs, all driven by the in-app numpad. */
 type NumericField = 'reward' | 'duration' | 'maxTvl' | 'minStake' | 'maxStake' | 'minLock';
 
@@ -82,6 +86,61 @@ const parseNumber = (value: string, fallback = 0) => {
 };
 const compactAddress = (a?: string | null) => (a ? `${a.slice(0, 6)}...${a.slice(-4)}` : 'No EVM wallet');
 const chainName = (id: number) => CHAIN_LABELS[id] || CHAIN_NAMES[id] || `Chain ${id}`;
+const formatUsdEstimate = (value: number) => {
+    if (!Number.isFinite(value) || value <= 0) return null;
+    return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: value >= 1 ? 0 : 2,
+        maximumFractionDigits: value >= 1 ? 2 : 6,
+    }).format(value);
+};
+const formatCompactTokenAmount = (value: number) => {
+    if (!Number.isFinite(value)) return '0';
+    const abs = Math.abs(value);
+    const units = [
+        { value: 1e15, suffix: 'q' },
+        { value: 1e12, suffix: 't' },
+        { value: 1e9, suffix: 'b' },
+        { value: 1e6, suffix: 'm' },
+        { value: 1e3, suffix: 'k' },
+    ];
+    const unit = units.find((u) => abs >= u.value);
+    if (!unit) {
+        return value.toLocaleString('en-US', { maximumFractionDigits: 6 });
+    }
+    const scaled = value / unit.value;
+    const maxDecimals = Math.abs(scaled) >= 100 ? 0 : Math.abs(scaled) >= 10 ? 1 : 2;
+    return `${scaled.toFixed(maxDecimals).replace(/\.?0+$/, '')}${unit.suffix}`;
+};
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function isRetryableNetworkError(e: any) {
+    const message = String(e?.message || e || '').toLowerCase();
+    return (
+        message.includes('network request failed') ||
+        message.includes('failed to fetch') ||
+        message.includes('timeout') ||
+        message.includes('502') ||
+        message.includes('503') ||
+        message.includes('504')
+    );
+}
+
+async function retryNetworkRequest<T>(label: string, run: () => Promise<T>, attempts = 3): Promise<T> {
+    let lastError: any;
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+        try {
+            return await run();
+        } catch (e: any) {
+            lastError = e;
+            if (!isRetryableNetworkError(e) || attempt === attempts) break;
+            console.warn(`[StakingPoolCreator] ${label} failed, retrying (${attempt}/${attempts})`, e?.message || e);
+            await sleep(700 * attempt);
+        }
+    }
+    throw lastError;
+}
 
 function toPoolToken(t: TokenOption): PoolToken {
     return {
@@ -110,6 +169,7 @@ export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, on
     const [notice, setNotice] = useState<string | null>(null);
     const [blockingError, setBlockingError] = useState<string | null>(null);
     const [feeSettings, setFeeSettings] = useState<PoolFeeSettings | null>(null);
+    const [feeTokenPriceUsd, setFeeTokenPriceUsd] = useState<number | null>(null);
     // Pool settings are typed on the app's own numpad (the Swap / Send / Pool-create
     // sheet) instead of the OS keyboard. `keypadField` names the field being edited
     // and doubles as the sheet's visibility flag.
@@ -122,7 +182,7 @@ export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, on
     // grid wraps into rows, so the third row is ~2 card-heights down.
     const fieldOffsets = useRef<Partial<Record<NumericField, number>>>({});
 
-    const { createPool, payCreationFee, status: deployStatus } = useStakingDeployer();
+    const { createPool, status: deployStatus } = useStakingDeployer();
     const { data: balanceData } = useWalletBalances();
     const { requireBackup, BackupRequiredModal } = useRequireBackup();
 
@@ -172,6 +232,48 @@ export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, on
 
     const evmReady = isEvmAddress(activeWalletAddress);
     const activeEarnToken = rewardMode === 'same' ? stakeToken : earnToken;
+    const feeTokenWalletPriceUsd = useMemo(() => {
+        if (!feeSettings) return null;
+        const rows = (balanceData as any)?.tokens;
+        if (!Array.isArray(rows)) return null;
+        const row = rows.find(
+            (t: any) =>
+                Number(t.chainId) === feeSettings.creationFeeChainId &&
+                String(t.address || '').toLowerCase() === feeSettings.creationFeeTokenAddress.toLowerCase(),
+        );
+        const price = Number(row?.priceUSD || row?.priceUsd || 0);
+        return Number.isFinite(price) && price > 0 ? price : null;
+    }, [balanceData, feeSettings]);
+    const feeLabel = useMemo(() => {
+        if (!feeActive || !feeSettings) return 'Free';
+        const amount = Number(feeSettings.creationFeeAmount);
+        const amountLabel = `${formatCompactTokenAmount(amount)} ${feeSettings.creationFeeTokenSymbol || 'tokens'}`;
+        const price = feeTokenWalletPriceUsd ?? feeTokenPriceUsd;
+        const usdLabel = price ? formatUsdEstimate(amount * price) : null;
+        return usdLabel ? `${amountLabel} (${usdLabel})` : amountLabel;
+    }, [feeActive, feeSettings, feeTokenWalletPriceUsd, feeTokenPriceUsd]);
+
+    useEffect(() => {
+        if (!feeActive || !feeSettings) {
+            setFeeTokenPriceUsd(null);
+            return;
+        }
+
+        let cancelled = false;
+        setFeeTokenPriceUsd(null);
+
+        api.tokenInfo.get(feeSettings.creationFeeChainId, feeSettings.creationFeeTokenAddress)
+            .then((info) => {
+                if (cancelled) return;
+                const price = Number(info?.pool?.priceUsd || 0);
+                setFeeTokenPriceUsd(Number.isFinite(price) && price > 0 ? price : null);
+            })
+            .catch(() => {
+                if (!cancelled) setFeeTokenPriceUsd(null);
+            });
+
+        return () => { cancelled = true; };
+    }, [feeActive, feeSettings]);
 
     // Wallet balance of the reward token — the only figure on this form that is a
     // share of something the user holds, so it's what the numpad's %/Max act on.
@@ -293,38 +395,46 @@ export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, on
             const deployer = deployResult.deployerAddress;
 
             // 2. Persist pool metadata as 'inactive' (hidden until admin approves).
-            //    Kicked off here but awaited AFTER the fee tx is broadcast: the DB
-            //    write and the fee transfer don't depend on each other, so running
-            //    them in series just added a round trip to the user's wait.
+            //    Save before charging the fee: if the backend/network flakes after
+            //    deployment, the user should not also pay the creation fee for a
+            //    pool the app failed to record.
             setCreationStep('saving');
             let savedPoolId: string | undefined;
-            const savePool = api.staking.createPoolRecord({
-                name: trimmedName,
-                chainId,
-                chainName: network,
-                tokenAddress: stakeToken.address,
-                tokenSymbol: stakeToken.symbol,
-                tokenName: stakeToken.name,
-                tokenLogo: typeof stakeToken.icon === 'string' ? stakeToken.icon : undefined,
-                decimals: stakingDecimals,
-                minStakingPeriod: minStakePeriodValue > 0 ? `${minStakePeriodValue} days` : undefined,
-                minStakeAmount: minStakeValue,
-                maxStakeAmount: maxStakeValue > 0 ? maxStakeValue : undefined,
-                // The Options toggles were removed from the form; both
-                // features are off for every pool created here. Sent
-                // explicitly rather than omitted so rows keep the same shape
-                // as the ones written before the toggles went away.
-                stakeModificationFee: false,
-                timeBoost: false,
-                maxTvl: maxTvlValue,
-                poolReward: poolRewardValue,
-                rewardDurationSeconds,
-                poolContractAddress: deployResult.poolAddress,
-                factoryAddress: deployer,
-                status: 'inactive',
-            });
-            // Don't let an unawaited rejection escape while the fee tx runs.
-            savePool.catch(() => { /* surfaced where it's awaited below */ });
+            try {
+                const poolJson = await retryNetworkRequest('save pool record', () =>
+                    api.staking.createPoolRecord({
+                        name: trimmedName,
+                        chainId,
+                        chainName: network,
+                        tokenAddress: stakeToken.address,
+                        tokenSymbol: stakeToken.symbol,
+                        tokenName: stakeToken.name,
+                        tokenLogo: typeof stakeToken.icon === 'string' ? stakeToken.icon : undefined,
+                        decimals: stakingDecimals,
+                        minStakingPeriod: minStakePeriodValue > 0 ? `${minStakePeriodValue} days` : undefined,
+                        minStakeAmount: minStakeValue,
+                        maxStakeAmount: maxStakeValue > 0 ? maxStakeValue : undefined,
+                        // The Options toggles were removed from the form; both
+                        // features are off for every pool created here. Sent
+                        // explicitly rather than omitted so rows keep the same shape
+                        // as the ones written before the toggles went away.
+                        stakeModificationFee: false,
+                        timeBoost: false,
+                        maxTvl: maxTvlValue,
+                        poolReward: poolRewardValue,
+                        rewardDurationSeconds,
+                        poolContractAddress: deployResult.poolAddress,
+                        factoryAddress: deployer,
+                        status: 'inactive',
+                    }),
+                );
+                savedPoolId = poolJson?.pool?.id;
+            } catch (e: any) {
+                throw new Error(
+                    `Pool deployed at ${deployResult.poolAddress} but saving it failed after retrying: ${e?.message || 'unknown error'}. ` +
+                    `Contact support with this address.`,
+                );
+            }
 
             // Record the deployment in the activities board — shows as
             // "Created staking pool" in Activities. Best-effort; never blocks.
@@ -344,73 +454,67 @@ export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, on
                 }).catch(() => { /* tracking is best-effort */ });
             }
 
-            // 3. Charge the admin-set creation fee (deploy-first, but MANDATORY).
-            let feePaidTxHash: string | undefined;
-            let feePaymentError: string | undefined;
-            if (feeActive && feeSettings) {
-                setCreationStep('paying');
-                try {
-                    feePaidTxHash = await payCreationFee({
-                        chainId: feeSettings.creationFeeChainId,
-                        tokenAddress: feeSettings.creationFeeTokenAddress as Address,
-                        treasury: feeSettings.creationFeeTreasuryAddress as Address,
-                        amount: String(feeSettings.creationFeeAmount),
-                        decimals: feeSettings.creationFeeTokenDecimals,
-                        walletAddress: activeWalletAddress as Address,
-                    });
-                } catch (e: any) {
-                    feePaymentError = e?.message || 'The fee payment was rejected.';
-                    console.warn('[StakingPoolCreator] creation fee payment failed', e);
-                }
-            }
-
-            // 3b. Collect the pool-metadata write started in step 2.
-            try {
-                const poolJson = await savePool;
-                savedPoolId = poolJson?.pool?.id;
-            } catch (e: any) {
-                throw new Error(
-                    `Pool deployed at ${deployResult.poolAddress} but saving it failed: ${e?.message || 'unknown error'}. ` +
-                    `Contact support with this address.`,
-                );
-            }
-
-            // 4. Record ownership → admin approval queue + creator's "My Pools".
+            // 3. Record ownership BEFORE charging the fee. This row is what
+            //    makes the deployed pool recoverable under "My Pools"; if the
+            //    app is closed while the fee transfer is pending, the creator
+            //    can come back and pay from there instead of losing the pool.
             let ownershipError: string | undefined;
             if (!savedPoolId) {
                 ownershipError = 'the pool was saved but no pool id came back';
             } else {
                 try {
-                    await api.staking.recordUserPool({
-                        creatorWallet: activeWalletAddress as string,
-                        stakingPoolId: savedPoolId,
-                        poolName: trimmedName,
-                        poolContractAddress: deployResult.poolAddress,
-                        chainId,
-                        txHash: deployResult.txHash,
-                        creationFeeAmount: feePaidTxHash ? feeSettings?.creationFeeAmount : undefined,
-                        creationFeeToken: feePaidTxHash ? (feeSettings?.creationFeeTokenSymbol || feeSettings?.creationFeeTokenAddress) : undefined,
-                        creationFeeTxHash: feePaidTxHash,
-                        tokenSymbol: stakeToken.symbol,
-                        rewardTokenSymbol: activeEarnToken.symbol,
-                        poolType: rewardMode,
-                        minStakingPeriod: minStakePeriodValue > 0 ? `${minStakePeriodValue} days` : undefined,
-                        minStakeAmount: minStakeValue,
-                        maxStakeAmount: maxStakeValue > 0 ? maxStakeValue : undefined,
-                        maxTvl: maxTvlValue,
-                        poolReward: poolRewardValue,
-                        rewardDurationSeconds,
-                        stakeModificationFee: false,
-                        timeBoost: false,
-                    });
+                    await retryNetworkRequest('record pool ownership', () =>
+                        api.staking.recordUserPool({
+                            creatorWallet: activeWalletAddress as string,
+                            stakingPoolId: savedPoolId,
+                            poolName: trimmedName,
+                            poolContractAddress: deployResult.poolAddress,
+                            chainId,
+                            txHash: deployResult.txHash,
+                            tokenSymbol: stakeToken.symbol,
+                            rewardTokenSymbol: activeEarnToken.symbol,
+                            poolType: rewardMode,
+                            minStakingPeriod: minStakePeriodValue > 0 ? `${minStakePeriodValue} days` : undefined,
+                            minStakeAmount: minStakeValue,
+                            maxStakeAmount: maxStakeValue > 0 ? maxStakeValue : undefined,
+                            maxTvl: maxTvlValue,
+                            poolReward: poolRewardValue,
+                            rewardDurationSeconds,
+                            stakeModificationFee: false,
+                            timeBoost: false,
+                        }),
+                    );
                 } catch (e: any) {
                     ownershipError = e?.message || 'network error';
                     console.warn('[StakingPoolCreator] failed to record pool ownership:', ownershipError);
                 }
             }
 
-            // 5. Reflect the new pool in the session list (Unpaid until fee clears).
-            const feeUnpaid = feeActive && !feePaidTxHash;
+            // Ownership-record gate. Without this row the pool never reaches
+            // My Pools/admin review, so do not charge the creation fee yet.
+            if (ownershipError) {
+                setCreatedPools((current) => [
+                    {
+                        id: savedPoolId || deployResult.poolAddress,
+                        pair: pairLabel,
+                        chain: network,
+                        feeStatus: 'unpaid',
+                        visibility: 'Hidden',
+                    },
+                    ...current,
+                ]);
+                setPreviewOpen(false);
+                setBlockingError(
+                    `Your pool was deployed and saved, but it couldn't be submitted for admin review (${ownershipError}). ` +
+                    `It won't show under My Pools yet — please try again.`,
+                );
+                return;
+            }
+
+            // 4. Reflect the new pool in the session list. Fee payment is kept
+            //    out of the critical create path; "My Pools" already exposes a
+            //    Pay fee action that PATCHes this ownership row once confirmed.
+            const feeUnpaid = feeActive;
             setCreatedPools((current) => [
                 {
                     id: savedPoolId || deployResult.poolAddress,
@@ -423,22 +527,10 @@ export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, on
             ]);
             setPreviewOpen(false);
 
-            // 6a. Ownership-record gate.
-            if (ownershipError) {
-                setBlockingError(
-                    `Your pool was deployed and saved, but it couldn't be submitted for admin review (${ownershipError}). ` +
-                    `It won't show under My Pools yet — please try again.`,
-                );
-                return;
-            }
-
-            // 6b. Mandatory-fee gate.
             if (feeUnpaid) {
                 const feeLabelText = `${feeSettings?.creationFeeAmount} ${feeSettings?.creationFeeTokenSymbol || 'tokens'}`;
-                setBlockingError(
-                    `Your pool was deployed but the ${feeLabelText} creation fee wasn't paid` +
-                    (feePaymentError ? ` (${feePaymentError})` : '') +
-                    `. It's saved as Unpaid — open it under “My Pools” and tap “Pay fee” to complete it.`,
+                setNotice(
+                    `Pool created and saved as Unpaid. Open it under “My Pools” and tap “Pay fee” to pay the ${feeLabelText} creation fee.`,
                 );
                 return;
             }
@@ -492,13 +584,13 @@ export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, on
         <View style={styles.wrap}>
             {notice ? (
                 <View style={[styles.banner, styles.bannerOk]}>
-                    <Ionicons name="checkmark-circle" size={16} color={colors.primaryCTA} />
+                    <Ionicons name="checkmark-circle" size={16} color={colors.primaryCTA} style={styles.bannerIcon} />
                     <Text style={[styles.bannerText, { color: colors.primaryCTA }]}>{notice}</Text>
                 </View>
             ) : null}
             {blockingError ? (
                 <View style={[styles.banner, styles.bannerErr]}>
-                    <Text style={[styles.bannerText, { color: '#f87171', flex: 1 }]}>{blockingError}</Text>
+                    <Text style={[styles.bannerText, { color: '#f87171' }]}>{blockingError}</Text>
                     <TouchableOpacity onPress={() => setBlockingError(null)}>
                         <Ionicons name="close" size={16} color="#f87171" />
                     </TouchableOpacity>
@@ -620,7 +712,7 @@ export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, on
                 minStake={minStake}
                 maxStake={maxStake}
                 minStakePeriod={minStakePeriod}
-                feeLabel={feeActive && feeSettings ? `${feeSettings.creationFeeAmount} ${feeSettings.creationFeeTokenSymbol || 'tokens'}` : 'Free'}
+                feeLabel={feeLabel}
                 walletAddress={activeWalletAddress}
                 evmReady={evmReady}
                 creationStep={creationStep}
@@ -676,17 +768,17 @@ function PoolPreviewModal(props: {
     const { open, onClose, stakeToken, earnToken, pairLabel, network, estimatedApr, rewardAmount, durationDays,
         durationUnit, maxTvl, minStake, maxStake, minStakePeriod, feeLabel,
         walletAddress, evmReady, creationStep, deployStatus, createError, onSubmit } = props;
+    const { bottom } = useSafeAreaInsets();
     const isSubmitting = creationStep !== 'idle';
-    const isFree = feeLabel === 'Free';
+    const footerBottomPadding = Math.max(bottom + 14, 36);
     // 'creating' covers a two-tx batch (approve, then deploy). Naming the tx in
     // flight makes the wait legible instead of one label stuck for both.
     const submitLabel =
         creationStep === 'creating'
             ? (deployStatus === 'approving' ? `Approving ${earnToken.symbol}…` : 'Deploying & funding pool…')
-            : creationStep === 'saving' ? 'Saving pool…'
-                : creationStep === 'paying' ? 'Charging fee…'
+                : creationStep === 'saving' ? 'Saving pool…'
                     : !evmReady ? 'Connect EVM wallet'
-                        : isFree ? 'Create pool' : 'Pay fee and create';
+                        : 'Create pool';
 
     return (
         <Modal visible={open} transparent animationType="slide" onRequestClose={onClose}>
@@ -738,7 +830,7 @@ function PoolPreviewModal(props: {
 
                         <View style={styles.feeRow}>
                             <Text style={styles.previewMuted}>Creation fee</Text>
-                            <Text style={styles.feeValue}>{feeLabel}</Text>
+                            <Text numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.8} style={styles.feeValue}>{feeLabel}</Text>
                         </View>
 
                         {createError ? (
@@ -746,7 +838,7 @@ function PoolPreviewModal(props: {
                         ) : null}
                     </View>
 
-                    <View style={styles.modalFooter}>
+                    <View style={[styles.modalFooter, { paddingBottom: footerBottomPadding }]}>
                         <TouchableOpacity style={styles.backBtn} onPress={onClose} disabled={isSubmitting}>
                             <Text style={styles.backBtnText}>Back</Text>
                         </TouchableOpacity>
@@ -796,10 +888,28 @@ function TokenSelector({ label, token, onPress }: { label: string; token: PoolTo
 }
 
 function TokenIcon({ token, size = 34 }: { token: PoolToken; size?: number }) {
+    const [logoError, setLogoError] = useState(false);
+    const resolvedIcon = typeof token.icon === 'string'
+        ? resolveTokenLogo({
+            address: token.address,
+            chainId: token.chainId,
+            logoURI: token.icon,
+        })
+        : token.icon;
+    const showIcon = !!resolvedIcon && !logoError;
+    useEffect(() => {
+        setLogoError(false);
+    }, [resolvedIcon]);
+
     return (
         <View style={{ width: size, height: size }}>
-            {token.icon ? (
-                <Image source={token.icon} style={{ width: size, height: size, borderRadius: size / 2 }} contentFit="contain" />
+            {showIcon ? (
+                <Image
+                    source={resolvedIcon}
+                    style={{ width: size, height: size, borderRadius: size / 2 }}
+                    contentFit="contain"
+                    onError={() => setLogoError(true)}
+                />
             ) : (
                 <View style={[styles.tokenFallback, { width: size, height: size, borderRadius: size / 2 }]}>
                     <Text style={styles.tokenFallbackText}>{token.symbol.charAt(0).toUpperCase()}</Text>
@@ -872,10 +982,11 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
 
 const styles = StyleSheet.create({
     wrap: { width: '100%', gap: 16 },
-    banner: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, borderRadius: 18, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 12 },
+    banner: { width: '100%', flexDirection: 'row', alignItems: 'flex-start', gap: 10, borderRadius: 18, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 12 },
     bannerOk: { borderColor: '#1f5c1a', backgroundColor: 'rgba(10,31,8,0.8)' },
     bannerErr: { borderColor: '#5b1a1a', backgroundColor: 'rgba(26,8,8,0.8)' },
-    bannerText: { fontFamily: 'Manrope-Medium', fontSize: 13, lineHeight: 18 },
+    bannerIcon: { marginTop: 1 },
+    bannerText: { flex: 1, flexShrink: 1, minWidth: 0, fontFamily: 'Manrope-Medium', fontSize: 13, lineHeight: 18 },
 
     card: { borderRadius: 24, borderWidth: 1, borderColor: '#1f321d', backgroundColor: 'rgba(1,5,1,0.95)', overflow: 'hidden' },
     formBlock: { paddingHorizontal: 16, paddingVertical: 18, borderBottomWidth: 1, borderBottomColor: '#1f321d' },
@@ -951,8 +1062,8 @@ const styles = StyleSheet.create({
     summaryCell: { width: '47.5%', flexGrow: 1, borderRadius: 14, borderWidth: 1, borderColor: '#1f321d', backgroundColor: 'rgba(1,5,1,0.6)', paddingHorizontal: 12, paddingVertical: 10 },
     summaryLabel: { color: '#8F9891', fontFamily: 'Manrope-Regular', fontSize: 11 },
     summaryValue: { color: '#fff', fontFamily: 'Manrope-SemiBold', fontSize: 13, marginTop: 2 },
-    feeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderRadius: 18, borderWidth: 1, borderColor: '#1f321d', backgroundColor: 'rgba(7,16,7,0.8)', paddingHorizontal: 14, paddingVertical: 12 },
-    feeValue: { color: '#fff', fontFamily: 'Manrope-SemiBold', fontSize: 14 },
+    feeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, borderRadius: 18, borderWidth: 1, borderColor: '#1f321d', backgroundColor: 'rgba(7,16,7,0.8)', paddingHorizontal: 14, paddingVertical: 12 },
+    feeValue: { flex: 1, minWidth: 0, color: '#fff', fontFamily: 'Manrope-SemiBold', fontSize: 14, lineHeight: 19, textAlign: 'right' },
     previewErr: { borderRadius: 14, borderWidth: 1, borderColor: '#5b1a1a', backgroundColor: 'rgba(26,8,8,0.8)', paddingHorizontal: 14, paddingVertical: 12 },
     previewErrText: { color: '#f87171', fontFamily: 'Manrope-Medium', fontSize: 13 },
     modalFooter: { flexDirection: 'row', gap: 8, paddingHorizontal: 18, paddingVertical: 14, borderTopWidth: 1, borderTopColor: '#1f321d' },

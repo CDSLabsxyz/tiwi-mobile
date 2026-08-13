@@ -28,7 +28,7 @@ import { useStakingStore } from '@/store/stakingStore';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, usePathname, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react';
-import { AppState, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, AppState, Linking, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // Mock token icon - in production, use actual token logo
@@ -69,6 +69,21 @@ export default function EarnScreen() {
     const handleWalletPress = () => {
         useWalletStore.getState().setWalletModalVisible(true);
     };
+
+    const handleTelegramSupportPress = useCallback(async () => {
+        try {
+            await Linking.openURL('tg://resolve?domain=tiwiecosystemsupport');
+        } catch {
+            try {
+                await Linking.openURL('https://t.me/tiwiecosystemsupport');
+            } catch {
+                Alert.alert(
+                    'Unable to open Telegram',
+                    'Please make sure Telegram or a web browser is available on your device.',
+                );
+            }
+        }
+    }, []);
 
     const { address: walletAddress, walletGroups, activeGroupId } = useWalletStore();
     // The staking deployer + fee/withdraw txns are EVM-only. Resolve the active
@@ -312,6 +327,19 @@ export default function EarnScreen() {
                                 <Text style={styles.supportEntryChevron}>›</Text>
                             </TouchableOpacity>
 
+                            <TouchableOpacity
+                                activeOpacity={0.8}
+                                accessibilityRole="link"
+                                accessibilityLabel="Chat with Telegram support"
+                                onPress={handleTelegramSupportPress}
+                                style={styles.telegramSupportButton}
+                            >
+                                <Ionicons name="paper-plane" size={16} color="#b1f128" />
+                                <Text style={styles.telegramSupportButtonText}>
+                                    Chat with Telegram support
+                                </Text>
+                            </TouchableOpacity>
+
                             {/* Create Pool entry point — launches the deployer flow. */}
                             <TouchableOpacity
                                 activeOpacity={0.85}
@@ -357,7 +385,7 @@ export default function EarnScreen() {
                                         { backgroundColor: stakingSubTab === 'stake' ? '#081f02' : '#0b0f0a' }
                                     ]}
                                 >
-                                    <Text style={[styles.subTabText, { color: stakingSubTab === 'stake' ? '#b1f128' : '#b5b5b5' }]}>Stake</Text>
+                                    <Text numberOfLines={1} style={[styles.subTabText, { color: stakingSubTab === 'stake' ? '#b1f128' : '#b5b5b5' }]}>Stake</Text>
                                 </TouchableOpacity>
 
                                 <TouchableOpacity
@@ -368,7 +396,7 @@ export default function EarnScreen() {
                                         { backgroundColor: stakingSubTab === 'active' ? '#081f02' : '#0b0f0a' }
                                     ]}
                                 >
-                                    <Text style={[styles.subTabText, { color: stakingSubTab === 'active' ? '#b1f128' : '#b5b5b5' }]}>Active Positions</Text>
+                                    <Text numberOfLines={1} style={[styles.subTabText, { color: stakingSubTab === 'active' ? '#b1f128' : '#b5b5b5' }]}>Active Positions</Text>
                                 </TouchableOpacity>
 
                                 <TouchableOpacity
@@ -379,7 +407,7 @@ export default function EarnScreen() {
                                         { backgroundColor: stakingSubTab === 'my-stakes' ? '#081f02' : '#0b0f0a' }
                                     ]}
                                 >
-                                    <Text style={[styles.subTabText, { color: stakingSubTab === 'my-stakes' ? '#b1f128' : '#b5b5b5' }]}>My Stakes</Text>
+                                    <Text numberOfLines={1} style={[styles.subTabText, { color: stakingSubTab === 'my-stakes' ? '#b1f128' : '#b5b5b5' }]}>My Stakes</Text>
                                 </TouchableOpacity>
 
                                 <TouchableOpacity
@@ -390,7 +418,7 @@ export default function EarnScreen() {
                                         { backgroundColor: stakingSubTab === 'create-pool' ? '#081f02' : '#0b0f0a' }
                                     ]}
                                 >
-                                    <Text style={[styles.subTabText, { color: stakingSubTab === 'create-pool' ? '#b1f128' : '#b5b5b5' }]}>Create Pool</Text>
+                                    <Text numberOfLines={1} style={[styles.subTabText, { color: stakingSubTab === 'create-pool' ? '#b1f128' : '#b5b5b5' }]}>Create Pool</Text>
                                 </TouchableOpacity>
 
                                 <TouchableOpacity
@@ -401,7 +429,7 @@ export default function EarnScreen() {
                                         { backgroundColor: stakingSubTab === 'my-pools' ? '#081f02' : '#0b0f0a' }
                                     ]}
                                 >
-                                    <Text style={[styles.subTabText, { color: stakingSubTab === 'my-pools' ? '#b1f128' : '#b5b5b5' }]}>My Pools</Text>
+                                    <Text numberOfLines={1} style={[styles.subTabText, { color: stakingSubTab === 'my-pools' ? '#b1f128' : '#b5b5b5' }]}>My Pools</Text>
                                 </TouchableOpacity>
                             </ScrollView>
 
@@ -473,7 +501,7 @@ export default function EarnScreen() {
                                         ))
                                     ) : (
                                         <Text style={{ color: colors.mutedText, textAlign: 'center', marginTop: 20 }}>
-                                            You don't have any completed or withdrawn stakes yet.
+                                            You do not have any completed or withdrawn stakes yet.
                                         </Text>
                                     )
                                 )}
@@ -524,10 +552,12 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         minWidth: 80,
+        flexShrink: 0,
     },
     subTabText: {
         fontFamily: 'Manrope-SemiBold',
         fontSize: 14,
+        lineHeight: 18,
     },
     supportEntry: {
         flexDirection: 'row',
@@ -569,6 +599,25 @@ const styles = StyleSheet.create({
         color: '#b5b5b5',
         fontSize: 22,
         marginLeft: 4,
+    },
+    telegramSupportButton: {
+        width: '100%',
+        height: 40,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        paddingHorizontal: 16,
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: '#1f261e',
+        backgroundColor: '#0f130d',
+    },
+    telegramSupportButtonText: {
+        color: '#b1f128',
+        fontFamily: 'Manrope-SemiBold',
+        fontSize: 13,
+        lineHeight: 17,
     },
     supportBellWrap: {
         marginRight: 6,

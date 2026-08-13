@@ -31,6 +31,8 @@ import type { RouterRoute } from '@/services/swap/core/router-types';
 import { GasTokenType } from '@/services/swap/core/config/tax-config';
 import { useSwapStore } from '@/services/swap/core/platform/swap-store';
 import { shouldSkipSeparateTax } from '../utils/evm-tax-helper';
+import { describeMinOutput, resolveMinAmountOut } from '../utils/min-output';
+import { waitForReceiptResilient } from '../utils/receipt';
 
 // ============================================================================
 // Constants
@@ -327,13 +329,10 @@ export class BscDirectSwapExecutor implements SwapRouterExecutor {
         }
       }
 
-      const minAmountOut = (expectedOutput * BigInt(95)) / BigInt(100); // 5% slippage
-
       console.log('[BscDirectSwapExecutor] Swap details:', {
         path: path.join(' → '),
         swapAmount: formatUnits(swapAmountWei, fromDecimals),
         expectedOutput: formatUnits(expectedOutput, toToken.decimals || 18),
-        minAmountOut: formatUnits(minAmountOut, toToken.decimals || 18),
       });
 
       // 4. Check and handle approval for PancakeSwap router
@@ -363,10 +362,13 @@ export class BscDirectSwapExecutor implements SwapRouterExecutor {
           chain: bsc,
         });
 
-        await this.publicClient.waitForTransactionReceipt({
-          hash: approveTxHash,
-          timeout: 30000,
+        const approveReceipt = await waitForReceiptResilient(this.publicClient, approveTxHash, {
+          timeout: 90000,
         });
+
+        if (approveReceipt?.status === 'reverted') {
+          throw new Error('Token approval reverted');
+        }
 
         console.log('[BscDirectSwapExecutor] Approval done:', approveTxHash);
       }
@@ -396,11 +398,19 @@ export class BscDirectSwapExecutor implements SwapRouterExecutor {
 
         console.log('[BscDirectSwapExecutor] Tax sent:', taxTxHash);
 
-        // Wait for tax tx confirmation
-        await this.publicClient.waitForTransactionReceipt({
-          hash: taxTxHash,
-          timeout: 30000,
+        const taxReceipt = await waitForReceiptResilient(this.publicClient, taxTxHash, {
+          timeout: 60000,
         });
+
+        if (taxReceipt?.status === 'reverted') {
+          throw new Error('Tax transfer reverted — swap aborted');
+        }
+        if (!taxReceipt) {
+          console.warn(
+            '[BscDirectSwapExecutor] Tax tx unconfirmed after 60s (RPC degraded), continuing:',
+            taxTxHash,
+          );
+        }
       } else {
         console.log('[BscDirectSwapExecutor] Skipping tax (charged on another leg or inline)');
       }
@@ -415,11 +425,30 @@ export class BscDirectSwapExecutor implements SwapRouterExecutor {
         ? 'swapExactTokensForETHSupportingFeeOnTransferTokens'
         : 'swapExactTokensForTokensSupportingFeeOnTransferTokens';
 
-      const swapData = encodeFunctionData({
+      const buildSwapData = (minOut: bigint) => encodeFunctionData({
         abi: PANCAKESWAP_ABI,
         functionName: functionName as any,
-        args: [swapAmountWei, minAmountOut, pathAddresses, recipient, deadline], // FULL swap amount
+        args: [swapAmountWei, minOut, pathAddresses, recipient, deadline],
       });
+
+      // This must run after approval: the probe replays the exact transferFrom.
+      const minOutput = await resolveMinAmountOut(
+        this.publicClient,
+        expectedOutput,
+        (minOut) => ({
+          to: PANCAKESWAP_V2_ROUTER,
+          data: buildSwapData(minOut),
+          account: userAddress as Address,
+        }),
+      );
+      const minAmountOut = minOutput.minAmountOut;
+
+      console.log(
+        '[BscDirectSwapExecutor]',
+        describeMinOutput(minOutput, toToken.decimals || 18),
+      );
+
+      const swapData = buildSwapData(minAmountOut);
 
       const swapTxHash = await activeWallet.sendTransaction({
         to: PANCAKESWAP_V2_ROUTER,
@@ -435,11 +464,15 @@ export class BscDirectSwapExecutor implements SwapRouterExecutor {
         txHash: swapTxHash,
       });
 
-      const receipt = await this.publicClient.waitForTransactionReceipt({
-        hash: swapTxHash,
-        timeout: 60000,
+      const receipt = await waitForReceiptResilient(this.publicClient, swapTxHash, {
+        timeout: 120000,
       });
 
+      if (!receipt) {
+        throw new Error(
+          `Swap not confirmed within 120s — check ${swapTxHash} on BscScan before retrying`,
+        );
+      }
       if (receipt.status === 'reverted') {
         throw new Error('Swap transaction reverted');
       }

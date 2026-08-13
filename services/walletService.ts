@@ -10,6 +10,7 @@ import { moralisService } from "@/services/moralisService";
 import { useWalletStore } from "@/store/walletStore";
 import { normalizeSolanaBalanceRow } from "@/utils/solanaIdentity";
 import { formatTokenAmount } from "@/utils/formatting";
+import { ensureAdminTokenLogoOverrides, getAdminTokenLogo, normalizeTokenLogoUrl } from "@/utils/admin-token-logos";
 
 // Simulate API delay
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -112,13 +113,14 @@ export const fetchWalletData = async (address: string): Promise<WalletData> => {
   try {
     // 1. Fetch real balances using the new SDK
     const balanceResponse = await api.wallet.balances({ address });
+    await ensureAdminTokenLogoOverrides().catch(() => {});
 
     // 2. Map SDK response to existing PortfolioItem format (API returns flat WalletToken[])
     const portfolio: PortfolioItem[] = balanceResponse.balances.map((b, i) => ({
       id: `${b.chainId}-${b.address || i}`,
       symbol: b.symbol,
       name: b.name,
-      logo: b.logoURI || getDefaultTokenLogo(b.symbol, b.address),
+      logo: getAdminTokenLogo(b.address, b.chainId) || normalizeTokenLogoUrl(b.logoURI) || getDefaultTokenLogo(b.symbol, b.address) || '',
       balance: b.balanceFormatted || b.balance,
       usdValue: `$${parseFloat(b.usdValue || '0').toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
       change24h: parseFloat(b.priceChange24h || '0'),
@@ -678,7 +680,10 @@ export const fetchAssetDetail = async (assetId: string, chainId?: number | strin
             id: assetId,
             symbol: realAsset.symbol,
             name: realAsset.name,
-            logo: realAsset.logoURI || realAsset.logo,
+            logo: getAdminTokenLogo(realAsset.address, realAsset.chainId)
+              || normalizeTokenLogoUrl(realAsset.logoURI || realAsset.logo)
+              || realAsset.logoURI
+              || realAsset.logo,
             balance: realAsset.balanceFormatted || realAsset.balance,
             usdValue: `$${parseFloat(realAsset.usdValue || '0').toFixed(2)}`,
             priceUSD: price.toString(),
@@ -745,5 +750,3 @@ export const fetchAssetDetail = async (assetId: string, chainId?: number | strin
     activities,
   };
 };
-
-

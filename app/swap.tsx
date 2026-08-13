@@ -29,6 +29,7 @@ import { useChains } from '@/hooks/useChains';
 import { useTokenPrefetch } from '@/hooks/useTokenPrefetch';
 import { useWalletBalances } from '@/hooks/useWalletBalances';
 import { activityService } from '@/services/activityService';
+import { fetchEvmTokenBalanceDetails } from '@/services/customTokenBalance';
 import { api } from '@/lib/mobile/api-client';
 import { getChainById } from '@/services/signer/SignerUtils';
 import { securityGuard } from '@/services/securityGuard';
@@ -43,16 +44,38 @@ import { useCustomTokenStore } from '@/store/customTokenStore';
 import { useSecurityStore } from '@/store/securityStore';
 import { useSwapStore } from '@/store/swapStore';
 import { useWalletStore } from '@/store/walletStore';
-import { formatCompactNumber, formatFiatValue, formatTokenAmount } from '@/utils/formatting';
+import { formatCompactNumber, formatFiatValue, formatTokenAmount, formatTokenQuantity } from '@/utils/formatting';
 import { useRequireBackup } from '@/hooks/useRequireBackup';
 import { useTokenDetail } from '@/hooks/useTokenDetail';
 import TokenOverviewCard from '@/components/sections/Swap/TokenOverviewCard';
 import { resolveMarketToken } from '@/utils/market-token-resolver';
+import { resolveTokenLogo } from '@/utils/admin-token-logos';
 import { useLocalSearchParams, usePathname, useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+function upsertReceivedTokenBalance(snapshot: any, token: any) {
+    const currentTokens = Array.isArray(snapshot?.tokens) ? snapshot.tokens : [];
+    const index = currentTokens.findIndex((candidate: any) =>
+        Number(candidate?.chainId) === Number(token.chainId) &&
+        isSameTokenAddress(candidate?.address, token.address)
+    );
+    const tokens = [...currentTokens];
+    if (index >= 0) tokens[index] = { ...tokens[index], ...token };
+    else tokens.push(token);
+    tokens.sort((a: any, b: any) => parseFloat(b?.usdValue || '0') - parseFloat(a?.usdValue || '0'));
+
+    return {
+        ...(snapshot || {}),
+        tokens,
+        totalNetWorthUsd: tokens
+            .reduce((sum: number, row: any) => sum + parseFloat(row?.usdValue || '0'), 0)
+            .toFixed(8),
+        portfolioChange: snapshot?.portfolioChange || { amount: '0.00', percent: '0.00' },
+    };
+}
 
 export default function SwapScreen() {
     const { bottom } = useSafeAreaInsets();
@@ -70,6 +93,7 @@ export default function SwapScreen() {
         chainId?: string;
         logo?: string;
         priceUSD?: string;
+        decimals?: string;
         // Pool-page deep link: a full pair plus (optionally) the pool to route
         // through. Mirrors the web's buildSwapHref.
         fromTokenAddress?: string;
@@ -304,50 +328,56 @@ export default function SwapScreen() {
         return hiddenKeySet.has(`${cid}-${addr.toLowerCase()}`);
     }, [hiddenKeySet]);
 
+    const findWalletTokenFor = useCallback((token?: any) => {
+        if (!token?.address || token.chainId == null || !balanceData?.tokens) return null;
+        return balanceData.tokens.find((t: any) =>
+            isSameTokenAddress(t.address, token.address) &&
+            Number(t.chainId) === Number(token.chainId)
+        ) || null;
+    }, [balanceData]);
+
+    const mergeWalletBalance = useCallback((token: any) => {
+        if (!token) return token;
+        const hidden = isTokenHidden(token.address, token.chainId);
+        if (hidden) {
+            return {
+                ...token,
+                balanceToken: `0 ${token.symbol}`,
+                balanceFiat: '$0.00',
+            };
+        }
+
+        const walletToken = findWalletTokenFor(token);
+        if (!walletToken) return token;
+
+        return {
+            ...token,
+            icon: resolveTokenLogo({
+                address: token.address,
+                chainId: token.chainId,
+                logoURI: walletToken.logoURI || (typeof token.icon === 'string' ? token.icon : undefined),
+            }) || token.icon,
+            balanceToken: `${formatTokenQuantity(walletToken.balanceFormatted || '0')} ${token.symbol}`,
+            balanceFiat: `$${parseFloat(walletToken.usdValue || '0').toFixed(2)}`,
+            decimals: token.decimals ?? walletToken.decimals,
+            priceUSD: token.priceUSD || walletToken.priceUSD,
+        };
+    }, [findWalletTokenFor, isTokenHidden]);
+
     // 1. Sync Balances for selected tokens
     useEffect(() => {
         if (!balanceData) return;
 
         if (fromToken) {
-            const hidden = isTokenHidden(fromToken.address, fromToken.chainId);
-            const walletToken = balanceData.tokens.find(
-                t => isSameTokenAddress(t.address, fromToken.address) && t.chainId === fromToken.chainId
-            );
-            if (hidden) {
-                setFromToken({
-                    ...fromToken,
-                    balanceToken: `0 ${fromToken.symbol}`,
-                    balanceFiat: '$0.00',
-                });
-            } else if (walletToken) {
-                setFromToken({
-                    ...fromToken,
-                    balanceToken: `${parseFloat(walletToken.balanceFormatted || '0').toFixed(6)} ${fromToken.symbol}`,
-                    balanceFiat: `$${parseFloat(walletToken.usdValue || '0').toFixed(2)}`
-                });
-            }
+            const merged = mergeWalletBalance(fromToken);
+            if (merged !== fromToken) setFromToken(merged);
         }
 
         if (toToken) {
-            const hidden = isTokenHidden(toToken.address, toToken.chainId);
-            const walletToken = balanceData.tokens.find(
-                t => isSameTokenAddress(t.address, toToken.address) && t.chainId === toToken.chainId
-            );
-            if (hidden) {
-                setToToken({
-                    ...toToken,
-                    balanceToken: `0 ${toToken.symbol}`,
-                    balanceFiat: '$0.00',
-                });
-            } else if (walletToken) {
-                setToToken({
-                    ...toToken,
-                    balanceToken: `${parseFloat(walletToken.balanceFormatted || '0').toFixed(6)} ${toToken.symbol}`,
-                    balanceFiat: `$${parseFloat(walletToken.usdValue || '0').toFixed(2)}`
-                });
-            }
+            const merged = mergeWalletBalance(toToken);
+            if (merged !== toToken) setToToken(merged);
         }
-    }, [balanceData, fromToken?.address, fromToken?.chainId, toToken?.address, toToken?.chainId, isTokenHidden]);
+    }, [balanceData, fromToken?.address, fromToken?.chainId, toToken?.address, toToken?.chainId, mergeWalletBalance]);
 
     // 2. Fetch Prices Updates (BNB & TWC) silently in background
     useEffect(() => {
@@ -362,11 +392,11 @@ export default function SwapScreen() {
             try {
                 // Silently update chain icons if missing
                 if (chains && fromChain && !fromChain.icon) {
-                    const real = chains.find(c => c.id === fromChain.id);
+                    const real = chains.find((c: any) => c.id === fromChain.id);
                     if (real) setFromChain({ ...fromChain, icon: real.logoURI });
                 }
                 if (chains && toChain && !toChain.icon) {
-                    const real = chains.find(c => c.id === toChain.id);
+                    const real = chains.find((c: any) => c.id === toChain.id);
                     if (real) setToChain({ ...toChain, icon: real.logoURI });
                 }
 
@@ -452,18 +482,18 @@ export default function SwapScreen() {
         pairParamsAppliedRef.current = true;
 
         const toChainOption = (c: any) => ({ id: c.id, name: c.name, icon: c.logoURI });
-        const seed = (addr: string, sym: string, logo: string | undefined, dec: string | undefined, cid: number) => ({
+        const seed = (addr: string, sym: string, logo: string | undefined, dec: string | undefined, cid: number) => mergeWalletBalance({
             id: `${cid}-${addr}`,
             symbol: sym,
             name: sym,
-            icon: logo,
+            icon: resolveTokenLogo({ address: addr, chainId: cid, logoURI: logo }) || logo,
             address: addr,
             chainId: cid,
             decimals: dec ? Number(dec) : 18,
             balanceToken: '0.00',
             balanceFiat: '$0.00',
             priceUSD: '0',
-        }) as any;
+        } as any);
 
         setFromChain(toChainOption(srcChain));
         setToChain(toChainOption(dstChain));
@@ -513,7 +543,7 @@ export default function SwapScreen() {
                 priceUSD: real.priceUSD || live.priceUSD || '0',
             } as any);
         });
-    }, [hasPairParams, chains]);
+    }, [hasPairParams, chains, mergeWalletBalance]);
 
     // 2b. Pre-populate from a Market / Spotlight row.
     //
@@ -567,7 +597,11 @@ export default function SwapScreen() {
             id: params.assetId || symbol,
             symbol,
             name: params.name || symbol,
-            icon: params.logo,
+            icon: resolveTokenLogo({
+                address: params.assetId,
+                chainId: params.chainId ? Number(params.chainId) : undefined,
+                logoURI: params.logo,
+            }) || params.logo,
             // No address yet — deliberately. An unresolved row must never look
             // routable to the quote/balance code.
             address: '',
@@ -620,18 +654,22 @@ export default function SwapScreen() {
                     return;
                 }
 
-                const applied = {
+                const applied = mergeWalletBalance({
                     ...seeded,
                     id: `${resolved.chainId}-${resolved.address}`,
                     symbol: resolved.symbol,
                     name: resolved.name,
-                    icon: resolved.logoURI || params.logo,
+                    icon: resolveTokenLogo({
+                        address: resolved.address,
+                        chainId: resolved.chainId,
+                        logoURI: resolved.logoURI || params.logo,
+                    }) || resolved.logoURI || params.logo,
                     address: resolved.address,
                     chainId: resolved.chainId,
                     decimals: resolved.decimals ?? 18,
                     priceUSD: resolved.priceUSD || seeded.priceUSD,
                     liquidity: resolved.liquidity,
-                } as any;
+                } as any);
 
                 setFromChain({ id: chain.id, name: chain.name, icon: chain.logoURI });
                 setFromToken(applied);
@@ -663,7 +701,7 @@ export default function SwapScreen() {
             .finally(() => {
                 if (!resolveCancelledRef.current) setIsResolvingMarketToken(false);
             });
-    }, [needsResolve, chains]);
+    }, [needsResolve, chains, mergeWalletBalance]);
 
     // 2c. Pre-populate from params if coming from asset detail
     const hasParams = !hasPairParams && !needsResolve && !!(params.symbol && params.chainId);
@@ -671,7 +709,7 @@ export default function SwapScreen() {
 
     useEffect(() => {
         if (hasParams && chains && !paramsAppliedRef.current) {
-            const chain = chains.find(c => String(c.id) === params.chainId);
+            const chain = chains.find((c: any) => String(c.id) === params.chainId);
 
             if (chain) {
                 paramsAppliedRef.current = true;
@@ -682,18 +720,22 @@ export default function SwapScreen() {
                 };
                 setFromChain(chainOption);
 
-                const seeded = {
+                const seeded = mergeWalletBalance({
                     id: params.assetId || params.symbol,
                     symbol: params.symbol!,
                     name: params.name || params.symbol!,
-                    icon: params.logo,
+                    icon: resolveTokenLogo({
+                        address: params.assetId,
+                        chainId: chainOption.id,
+                        logoURI: params.logo,
+                    }) || params.logo,
                     balanceToken: params.balance || '0.00',
                     balanceFiat: params.usdValue || '$0.00',
                     priceUSD: params.priceUSD || '0',
                     address: params.assetId || '',
                     chainId: chainOption.id,
-                    decimals: 18,
-                } as any;
+                    decimals: params.decimals ? Number(params.decimals) : 18,
+                } as any);
                 setFromToken(seeded);
                 setToChain(null);
                 setToToken(null);
@@ -712,18 +754,20 @@ export default function SwapScreen() {
                         .then((res) => {
                             const real = res?.tokens?.[0];
                             if (!real) return;
-                            setFromToken({
-                                ...seeded,
+                            const live = useSwapStore.getState().fromToken;
+                            if (!live || (live.address || '').toLowerCase() !== String(seeded.address || '').toLowerCase()) return;
+                            setFromToken(mergeWalletBalance({
+                                ...live,
                                 decimals: real.decimals ?? seeded.decimals,
                                 liquidity: real.liquidity,
                                 priceUSD: real.priceUSD || seeded.priceUSD,
-                            } as any);
+                            } as any));
                         })
                         .catch((e) => console.warn('[SwapScreen] Deep-link token enrich failed:', e));
                 }
             }
         }
-    }, [hasParams, chains]);
+    }, [hasParams, chains, mergeWalletBalance]);
 
     const handleOpenAssetSheet = (target: 'from' | 'to', initialStep: 'chains' | 'tokens' = 'tokens') => {
         setAssetSheetTarget(target);
@@ -1101,6 +1145,7 @@ export default function SwapScreen() {
 
     const isInsufficientBalanceError = (error: any): boolean => {
         const msg = (error?.message || error?.reason || '').toLowerCase();
+        if (/insufficient[_\s-]*output(?:[_\s-]*amount)?/.test(msg)) return false;
         return (
             msg.includes('insufficient') ||
             msg.includes('exceeds balance') ||
@@ -1112,6 +1157,11 @@ export default function SwapScreen() {
             msg.includes('gas required exceeds') ||
             msg.includes('out of gas')
         );
+    };
+
+    const isInsufficientOutputError = (error: any): boolean => {
+        const msg = (error?.message || error?.reason || '').toLowerCase();
+        return /insufficient[_\s-]*output(?:[_\s-]*amount)?/.test(msg);
     };
 
     const cleanErrorMessage = (error: any): string => {
@@ -1212,6 +1262,8 @@ export default function SwapScreen() {
                 const chain = getChainById(Number(fromChain?.id) || 1);
                 const gasToken = chain.nativeCurrency?.symbol || 'ETH';
                 setSwapErrorMessage(`Not enough ${gasToken} on ${chain.name} to pay for gas fees. Please add ${gasToken} to cover transaction costs.`);
+            } else if (isInsufficientOutputError(error)) {
+                setSwapErrorMessage('The received amount fell below the protected minimum. Refresh the quote and try again.');
             } else if (isInsufficientBalanceError(error)) {
                 setSwapErrorMessage(`Not enough ${fromToken.symbol} to complete this swap. Please try with a lower amount.`);
             } else {
@@ -1252,6 +1304,92 @@ export default function SwapScreen() {
                 throw new Error('Swap did not return a transaction hash.');
             }
             const chainId = Number(fromChain?.id) || 56;
+
+            // Listing/spotlight tokens may not be in the portfolio index yet.
+            // Track an ERC-20 received by this wallet and read it directly from
+            // chain after confirmation so the new balance appears immediately.
+            const destinationChainId = Number(toToken.chainId);
+            const ownDestinationAddress = getAddressForChain(destinationChainId);
+            const receivedByThisWallet = !!toAddr && !!ownDestinationAddress &&
+                toAddr.toLowerCase() === ownDestinationAddress.toLowerCase();
+            const isEvmContract = /^0x[0-9a-fA-F]{40}$/.test(toToken.address || '') &&
+                getChainTypeFromId(destinationChainId) === 'EVM' &&
+                !isNativeToken(toToken.address);
+
+            if (receivedByThisWallet && isEvmContract) {
+                const walletKey = activeGroupId || address || 'default';
+                const logoURI = resolveTokenLogo({
+                    address: toToken.address,
+                    chainId: destinationChainId,
+                    logoURI: typeof toToken.icon === 'string' ? toToken.icon : undefined,
+                }) || undefined;
+                const quotedOutput = parseFloat(swapQuote?.toAmount || toAmount || '0');
+                const quotedUsd = parseFloat(String(toFiatAmount || '').replace(/[^0-9.]/g, '') || '0');
+                const priceUSD = String(
+                    parseFloat(toToken.priceUSD || '0') ||
+                    (quotedOutput > 0 && quotedUsd > 0 ? quotedUsd / quotedOutput : 0)
+                );
+
+                const customTokenStore = useCustomTokenStore.getState();
+                customTokenStore.addToken(walletKey, {
+                    address: toToken.address,
+                    chainId: destinationChainId,
+                    symbol: toToken.symbol,
+                    name: toToken.name || toToken.symbol,
+                    decimals: toToken.decimals || 18,
+                    logoURI,
+                    priceUSD,
+                    balanceFormatted: '0',
+                    usdValue: '0',
+                    addedAt: Date.now(),
+                });
+
+                const directBalance = await fetchEvmTokenBalanceDetails(
+                    destinationChainId,
+                    toToken.address,
+                    ownDestinationAddress,
+                );
+                if (directBalance) {
+                    const balanceFormatted = directBalance.balanceFormatted;
+                    const usdValue = (
+                        parseFloat(balanceFormatted || '0') * parseFloat(priceUSD || '0')
+                    ).toFixed(8);
+                    customTokenStore.updateTokenBalance(walletKey, toToken.address, destinationChainId, {
+                        balanceFormatted,
+                        usdValue,
+                        priceUSD,
+                        logoURI,
+                        decimals: directBalance.decimals,
+                    });
+
+                    const receivedRow = {
+                        address: toToken.address,
+                        chainId: destinationChainId,
+                        symbol: toToken.symbol,
+                        name: toToken.name || toToken.symbol,
+                        decimals: directBalance.decimals,
+                        logoURI,
+                        balance: directBalance.balance,
+                        balanceFormatted,
+                        usdValue,
+                        priceUSD,
+                        priceChange24h: 0,
+                        isCustom: true,
+                    };
+                    let persistedSnapshot = upsertReceivedTokenBalance(balanceData, receivedRow);
+                    queryClient.setQueriesData({ queryKey: ['walletBalances'] }, (current: any) => {
+                        const next = upsertReceivedTokenBalance(current, receivedRow);
+                        if ((next.tokens?.length || 0) >= (persistedSnapshot.tokens?.length || 0)) {
+                            persistedSnapshot = next;
+                        }
+                        return next;
+                    });
+                    useWalletStore.getState().setCachedBalances(
+                        `${address}-${activeGroupId}-v3`,
+                        persistedSnapshot,
+                    );
+                }
+            }
 
             // No receipt re-verification here — matching the web app. Every
             // executor already waits for its own confirmation (and reverts are
@@ -1313,7 +1451,7 @@ export default function SwapScreen() {
             setIsSuccessModalVisible(true);
 
             // Immediately refresh wallet balances so new amounts show up
-            queryClient.invalidateQueries({ queryKey: ['walletBalances'] });
+            await queryClient.invalidateQueries({ queryKey: ['walletBalances'] });
 
         } catch (error: any) {
             console.error('Swap execution failed:', error.message, error);
@@ -1323,6 +1461,8 @@ export default function SwapScreen() {
                 const chain = getChainById(Number(fromChain?.id) || 1);
                 const gasToken = chain.nativeCurrency?.symbol || 'ETH';
                 setSwapErrorMessage(`Not enough ${gasToken} on ${chain.name} to pay for gas fees. Please add ${gasToken} to cover transaction costs.`);
+            } else if (isInsufficientOutputError(error)) {
+                setSwapErrorMessage('The received amount fell below the protected minimum. Refresh the quote and try again.');
             } else if (isInsufficientBalanceError(error)) {
                 setSwapErrorMessage(`Not enough ${fromToken.symbol} to complete this swap. Please try with a lower amount.`);
             } else {
@@ -1628,7 +1768,11 @@ export default function SwapScreen() {
                                 socials={tokenOverview?.socials}
                                 symbol={fromToken?.symbol}
                                 name={tokenOverview?.name || fromToken?.name}
-                                logo={tokenOverview?.logoURI || params.logo}
+                                logo={tokenOverview?.logoURI || resolveTokenLogo({
+                                    address: fromToken?.address || params.assetId,
+                                    chainId: fromToken?.chainId || (params.chainId ? Number(params.chainId) : undefined),
+                                    logoURI: params.logo,
+                                })}
                                 address={fromToken?.address}
                                 chainId={fromToken?.chainId}
                                 isLoading={isTokenOverviewLoading}

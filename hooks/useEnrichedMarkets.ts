@@ -1,4 +1,5 @@
 import { api, MarketAsset } from '@/lib/mobile/api-client';
+import { resolveTokenLogo } from '@/utils/admin-token-logos';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -92,7 +93,7 @@ export const useEnrichedMarkets = (options: UseEnrichedMarketsOptions = {}) => {
             return {
                 ...m,
                 displaySymbol: displaySymbol || cleanSymbol,
-                logoURI: m.logoURI || m.logo,
+                logoURI: resolveTokenLogo(m) || m.logoURI || m.logo,
                 priceUSD: (m.price || 0).toString(),
             } as EnrichedMarketCompat;
         });

@@ -13,7 +13,7 @@ import type { PortfolioItem } from '@/services/walletService';
 import { useWalletStore } from '@/store/walletStore';
 import { formatTokenQuantity, getColorFromSeed } from '@/utils/formatting';
 import { Image } from 'expo-image';
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 interface AssetListItemProps {
@@ -65,6 +65,9 @@ export const AssetListItem: React.FC<AssetListItemProps> = ({
     const { t } = useTranslation();
     const [logoError, setLogoError] = useState(false);
     const handleLogoError = useCallback(() => setLogoError(true), []);
+    useEffect(() => {
+        setLogoError(false);
+    }, [asset.logo]);
     const isPositive = asset.change24h >= 0;
     // Figma Colors: success #3FEA9B, primaryCTA #B1F128, negative #FB406E
     const chartColor = isPositive ? '#B1F128' : '#FB406E';
@@ -174,7 +177,7 @@ export const AssetListItem: React.FC<AssetListItemProps> = ({
                     <View style={styles.priceRow}>
                         {parseFloat(asset.usdValue || '0') === 0 && parseFloat(asset.priceUSD || '0') > 0 ? (
                             <Text style={[styles.usdValue, { color: colors.mutedText }]}>
-                                @${parseFloat(asset.priceUSD).toFixed(6)}
+                                @${parseFloat(asset.priceUSD || '0').toFixed(6)}
                             </Text>
                         ) : (
                             <TokenPrice

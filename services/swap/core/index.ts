@@ -9,6 +9,7 @@ import type { SwapExecutionParams, SwapExecutionResult, SwapExecutionStatus, Swa
 import type { RouterRoute } from '@/services/swap/core/router-types';
 import { TiwiProtocolDEXExecutor } from './executors/tiwi-protocol-dex-executor';
 import { BscRelayerPlanExecutor } from './executors/bsc-relayer-plan-executor';
+import { BscGaslessExecutor } from './executors/bsc-gasless-executor';
 import { BscDirectSwapExecutor } from './executors/bsc-direct-swap-executor';
 import { BscNativeSwapExecutor } from './executors/bsc-native-swap-executor';
 import { OpenOceanExecutor } from './executors/openocean-executor';
@@ -55,7 +56,8 @@ export class SwapExecutor {
     // Initialize all router executors
     // TiwiProtocolDEX is HIGHEST PRIORITY — single-signature swaps on BSC.
     // Falls through to old executors if contract not deployed (address = 0x0).
-    // BscRelayerPlanExecutor is the relayer path; the server plans it.
+    // The web-compatible gasless executor is the default relayer path. The
+    // server-planned executor remains available behind an explicit rollout flag.
     // MultiStepExecutor should be last as it handles universal routes.
     this.executors = [
       // Deep-linked "swap through this liquidity pool" (router:'tiwi-pool'). Settles
@@ -63,17 +65,12 @@ export class SwapExecutor {
       // First so it never gets shadowed by a same-chain aggregator executor.
       new TiwiPoolExecutor(),
       new TiwiProtocolDEXExecutor(), // SINGLE SIGN: TiwiProtocolDEX contract (approve once, swap forever)
-      // The relayer path, planned server-side (/api/v1/relayer/swap/plan).
-      //
-      // This replaces BscGaslessExecutor and BscRelayerExecutor, both of which
-      // are still on disk but are NO LONGER REGISTERED — they were hand-ported
-      // copies of the web executor and had drifted onto the dead V2 relayer
-      // contract (0xfCa2E4…, superseded by V2.1 0x6011D1b2…) and onto the
-      // non-fee-on-transfer PancakeSwap functions, which revert with
-      // "Pancake: K" on a self-taxing token like TWC. Do not re-register them;
-      // fix the server plan instead.
+      // Optional server-planned relayer path (/api/v1/relayer/swap/plan).
       new BscRelayerPlanExecutor(),
-      new BscDirectSwapExecutor(), // BNB gas selected, or the relayer API is down: user pays own gas
+      // Same active implementation as web: gas drip, service fee, FoT-safe
+      // protocol fee, then the direct BSC swap.
+      new BscGaslessExecutor(),
+      new BscDirectSwapExecutor(), // BNB gas selected: user pays own gas
       new BscNativeSwapExecutor(), // Native BNB → Token swaps with 0.25% tax
       // Cross-chain INTO a taxed token (e.g. TWC): bridge to a stable on the destination
       // chain, then swap that stable → taxed token locally with our FoT-safe BSC executors.
@@ -315,8 +312,8 @@ export class SwapExecutor {
       return true;
     }
 
-    // BscRelayerPlan: fall through to BscDirect on anything that means "the plan
-    // API didn't work", so an outage there degrades to a user-pays-gas swap
+    // BscRelayerPlan: fall through to the web-compatible gasless executor when
+    // the plan API fails, so an outage there does not force a user-paid-gas swap
     // instead of failing. NOT on an on-chain revert or a refusal the user must
     // act on (insufficient balance, outstanding drip) — retrying those on
     // another executor charges them twice or fails again more slowly.

@@ -10,11 +10,12 @@ import { colors } from '@/constants/colors';
 
 
 import { useChains } from '@/hooks/useChains';
+import { useMobileBanners } from '@/hooks/useMobileBanners';
 import { useSmartMarkets } from '@/hooks/useSmartMarkets';
 import { useSpotlightTokens } from '@/hooks/useSpotlightTokens';
 import { useTWCSupply } from '@/hooks/useTWCSupply';
 import { useTWCToken } from '@/hooks/useTWCToken';
-import { formatCompactNumber, formatNumber } from '@/utils/formatting';
+import { formatCompactNumber } from '@/utils/formatting';
 
 import { MarketSection } from '@/components/features/home/market-section';
 import { NewsfeedSection } from '@/components/features/home/newsfeed-section';
@@ -48,7 +49,7 @@ export default function HomeScreen() {
     });
   }, [queryClient]);
 
-  const { isConnected, disconnect, setWalletModalVisible } = useWalletStore();
+  const { setWalletModalVisible } = useWalletStore();
   const [refreshing, setRefreshing] = useState(false);
 
   // Queries (Moved up so formatted variables can access them)
@@ -56,6 +57,11 @@ export default function HomeScreen() {
     data: spotlightTokens = [],
     isLoading: isLoadingSpotlight,
   } = useSpotlightTokens();
+
+  const {
+    data: mobileBanners = [],
+    isLoading: isLoadingMobileBanners,
+  } = useMobileBanners();
 
   const {
     data: chains = [],
@@ -120,6 +126,7 @@ export default function HomeScreen() {
     setRefreshing(true);
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['spotlightTokens'] }),
+      queryClient.invalidateQueries({ queryKey: ['mobileBanners'] }),
       queryClient.invalidateQueries({ queryKey: ['marketPrice'] }),
       queryClient.invalidateQueries({ queryKey: ['walletBalances'] }),
       queryClient.invalidateQueries({ queryKey: ['chains'] }),
@@ -134,10 +141,7 @@ export default function HomeScreen() {
 
   const homeData = useMemo(() => {
     return {
-      newsfeed: [
-        { id: '1', imageUrl: require('../../assets/home/banner.svg') },
-        { id: '2', imageUrl: require('../../assets/home/frame-referral.png') },
-      ],
+      newsfeed: mobileBanners,
       spotlight: spotlightTokens.map(t => ({
         id: t.id,
         symbol: t.symbol,
@@ -193,7 +197,7 @@ export default function HomeScreen() {
         logo: m.logo
       })),
     };
-  }, [spotlightTokens, chains, smartMarkets, formattedTWCPrice, formattedTWCMcap, formattedTWCVol, formattedTWCTotalSupply, t]);
+  }, [mobileBanners, spotlightTokens, chains, smartMarkets, formattedTWCPrice, formattedTWCMcap, formattedTWCVol, formattedTWCTotalSupply, t]);
 
   const isStatsLoading = isLoadingChains || isLoadingTWCToken || isLoadingTWCSupply;
 
@@ -232,7 +236,10 @@ export default function HomeScreen() {
             />
           }
         >
-          <NewsfeedSection items={homeData.newsfeed} isLoading={false} />
+          <NewsfeedSection
+            items={homeData.newsfeed}
+            isLoading={isLoadingMobileBanners}
+          />
 
           <View style={styles.paddedContent}>
             <QuickActionsSection />

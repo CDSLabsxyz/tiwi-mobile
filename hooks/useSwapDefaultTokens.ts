@@ -1,4 +1,5 @@
 import { api, type SwapDefaultToken } from '@/lib/mobile/api-client';
+import { registerAdminTokenLogoOverrides, resolveTokenLogo } from '@/utils/admin-token-logos';
 import { useQuery } from '@tanstack/react-query';
 
 export const SWAP_DEFAULT_TOKENS_QUERY_KEY = ['swap-default-tokens'] as const;
@@ -19,7 +20,12 @@ export function useSwapDefaultTokens({ enabled = true }: { enabled?: boolean } =
         queryKey: SWAP_DEFAULT_TOKENS_QUERY_KEY,
         queryFn: async ({ signal }) => {
             const resp = await api.tokens.swapDefaults({ signal });
-            return resp.tokens || [];
+            const tokens = resp.tokens || [];
+            registerAdminTokenLogoOverrides(tokens);
+            return tokens.map((token) => ({
+                ...token,
+                logo: resolveTokenLogo(token) || token.logo,
+            }));
         },
         enabled,
         staleTime: 5 * 60 * 1000,

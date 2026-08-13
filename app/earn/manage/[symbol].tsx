@@ -23,6 +23,7 @@ import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useToastStore } from '@/store/useToastStore';
 import { formatCompactNumber } from '@/utils/formatting';
+import { isSameTokenAddress } from '@/utils/wallet';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
     Alert,
@@ -66,6 +67,8 @@ export default function ManageStakeScreen() {
     const { showToast } = useToastStore();
     const [isLoading, setIsLoading] = useState(true);
     const inputRef = useRef<TextInput>(null);
+    const stakeTokenSymbol = userStake?.pool?.tokenSymbol || symbol || 'TWC';
+    const stakeTokenDecimals = userStake?.pool?.decimals ?? 9;
 
     // Live rewards state
     const [liveRewards, setLiveRewards] = useState(0);
@@ -74,10 +77,17 @@ export default function ManageStakeScreen() {
 
     // Get user balance for this specific token
     const userTokenBalance = useMemo(() => {
-        if (!balanceData?.tokens || !symbol) return '0';
-        const token = balanceData.tokens.find(t => t.symbol.toLowerCase() === symbol.toLowerCase());
+        if (!balanceData?.tokens || !stakeTokenSymbol) return '0';
+        const poolTokenAddress = userStake?.pool?.tokenAddress;
+        const poolChainId = userStake?.pool?.chainId;
+        const token = poolTokenAddress && poolChainId
+            ? balanceData.tokens.find(t =>
+                Number(t.chainId) === Number(poolChainId) &&
+                isSameTokenAddress(t.address, poolTokenAddress)
+            )
+            : balanceData.tokens.find(t => t.symbol.toLowerCase() === stakeTokenSymbol.toLowerCase());
         return token?.balanceFormatted || '0';
-    }, [balanceData, symbol]);
+    }, [balanceData, stakeTokenSymbol, userStake?.pool?.chainId, userStake?.pool?.tokenAddress]);
 
     // Available accounts
     const availableAccounts = useMemo(() => {
@@ -90,12 +100,12 @@ export default function ManageStakeScreen() {
                 id: groupAddress,
                 name: group.name || (isMain ? 'Main Wallet' : 'Imported Wallet'),
                 type: 'Wallet',
-                balance: `${isMain ? userTokenBalance : '0.00'} ${symbol}`,
+                balance: `${isMain ? userTokenBalance : '0.00'} ${stakeTokenSymbol}`,
                 address: groupAddress
             });
         });
         return list;
-    }, [walletGroups, activeAddress, userTokenBalance, symbol]);
+    }, [walletGroups, activeAddress, userTokenBalance, stakeTokenSymbol]);
 
     const [selectedAccountId, setSelectedAccountId] = useState<string>(activeAddress || '');
     const selectedAccount = useMemo(() =>
@@ -114,7 +124,7 @@ export default function ManageStakeScreen() {
     }, [activeAddress, symbol]);
 
     const manageIdentifier = userStake?.pool?.poolContractAddress ? userStake?.pool?.id : userStake?.pool?.poolId;
-    const stakingData = useStakingPool(manageIdentifier, userStake?.pool?.decimals ?? 9, {
+    const stakingData = useStakingPool(manageIdentifier, stakeTokenDecimals, {
         poolContractAddress: userStake?.pool?.poolContractAddress,
     });
     const {
@@ -135,7 +145,7 @@ export default function ManageStakeScreen() {
     // as the staking token for a "stake A, earn A" pool. Labelling pending
     // rewards / earning rate / the claim amount with `symbol` reported a pool
     // that pays USDT as paying TWC.
-    const rewardSymbol = stakingData.rewardTokenSymbol || symbol || 'TWC';
+    const rewardSymbol = stakingData.rewardTokenSymbol || stakeTokenSymbol;
 
     // Real-time Mining & Countdown Logic
     useEffect(() => {
@@ -253,12 +263,12 @@ export default function ManageStakeScreen() {
         }
         if (!amount || isNaN(parseFloat(amount))) return false;
         try {
-            const amountWei = parseUnits(amount, 9);
+            const amountWei = parseUnits(amount, stakeTokenDecimals);
             const isNeeded = (currentAllowance || 0n) < amountWei;
             if (isNeeded) startPolling(); else stopPolling();
             return isNeeded;
         } catch (e) { return false; }
-    }, [amount, currentAllowance, activeTab, startPolling, stopPolling]);
+    }, [amount, currentAllowance, activeTab, stakeTokenDecimals, startPolling, stopPolling]);
 
     const handleKeyPress = (value: string) => {
         if (value === '.' && amount.includes('.')) return;
@@ -385,11 +395,11 @@ export default function ManageStakeScreen() {
                     <Image source={userStake?.pool.tokenLogo ? { uri: userStake.pool.tokenLogo } : TWCIcon} style={styles.tokenIcon} contentFit="cover" />
                     <View style={{ flexShrink: 1, minWidth: 0 }}>
                         <Text style={styles.headerSymbol} numberOfLines={1}>
-                            {userStake?.pool.name || symbol || 'TWC'}
+                            {userStake?.pool.name || stakeTokenSymbol}
                         </Text>
                         <Text style={{ color: colors.mutedText, fontSize: 12 }} numberOfLines={1}>
                             {userStake?.pool.name
-                                ? `${symbol || ''} · ${userStake?.pool.tokenName || 'TIWICAT'}`
+                                ? `${stakeTokenSymbol} · ${userStake?.pool.tokenName || 'TIWICAT'}`
                                 : (userStake?.pool.tokenName || 'TIWICAT')}
                         </Text>
                     </View>
@@ -444,7 +454,7 @@ export default function ManageStakeScreen() {
                                 <Ionicons name="link-outline" size={16} color="#C4F440" />
                                 <Text style={styles.gridLabel}>Staked Amount</Text>
                             </View>
-                            <Text style={styles.gridValue}>{formatCompactNumber(Number(effectiveStats.stakedAmount), { decimals: 2 })} <Text style={styles.gridSymbol}>{symbol}</Text></Text>
+                            <Text style={styles.gridValue}>{formatCompactNumber(Number(effectiveStats.stakedAmount), { decimals: 2 })} <Text style={styles.gridSymbol}>{stakeTokenSymbol}</Text></Text>
                         </View>
                         <View style={styles.gridItem}>
                             <View style={styles.gridLabelRow}>
@@ -575,7 +585,7 @@ export default function ManageStakeScreen() {
                 onSelect={(account) => setSelectedAccountId(account.id)}
                 accounts={availableAccounts}
                 selectedAccountId={selectedAccountId}
-                totalBalance={`${userTokenBalance} ${symbol}`}
+                totalBalance={`${userTokenBalance} ${stakeTokenSymbol}`}
             />
 
             <PercentageActionModal
@@ -593,7 +603,7 @@ export default function ManageStakeScreen() {
                 onClose={() => setIsUnstakeModalVisible(false)}
                 kind="unstake"
                 maxAmount={parseFloat(stakingData.userStakedFormatted || '0')}
-                tokenSymbol={symbol || 'TWC'}
+                tokenSymbol={stakeTokenSymbol}
                 isProcessing={isTransactionPending}
                 onConfirm={onUnstakeModalConfirm}
                 onConfirmMaxWithHarvest={liveRewards > 0 ? onUnstakeMaxWithHarvest : undefined}
@@ -663,4 +673,3 @@ const styles = StyleSheet.create({
     confirmButtonText: { color: '#000', fontSize: 16, fontFamily: 'Manrope-Bold' },
     confirmButtonDisabled: { opacity: 0.3 }
 });
-

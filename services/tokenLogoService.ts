@@ -13,6 +13,7 @@
  * icon — see `getTokenLogo`.
  */
 import { getKnownWrappedNative } from '@/constants/wrappedNatives';
+import { getAdminTokenLogo } from '@/utils/admin-token-logos';
 
 const COINGECKO_API_KEY = 'CG-H5hx3pVrExRw76mpSVmATxTq';
 const COINGECKO_BASE = 'https://api.coingecko.com/api/v3';
@@ -148,6 +149,15 @@ function getTrustWalletLogo(chainId?: number, address?: string): string | undefi
     return `https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/${slug}/assets/${address}/logo.png`;
 }
 
+function isNativeLikeAddress(address?: string): boolean {
+    const normalized = (address || '').trim().toLowerCase();
+    return !normalized
+        || normalized === 'native'
+        || normalized === '0x0000000000000000000000000000000000000000'
+        || normalized === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
+        || normalized === '11111111111111111111111111111111';
+}
+
 // ── Cache warming ──
 
 async function warmCache(): Promise<void> {
@@ -191,6 +201,9 @@ async function warmCache(): Promise<void> {
  * @param address Token contract address
  */
 export function getTokenLogo(symbol?: string, chainId?: number, address?: string): string | undefined {
+    const adminLogo = getAdminTokenLogo(address, chainId);
+    if (adminLogo) return adminLogo;
+
     // 0. Wrapped natives render as their native coin (WBNB → BNB icon), the way
     //    every major wallet shows them. This has to run BEFORE the generic path:
     //    DexScreener has no image for most wrappers (its WBNB path is a 404) yet
@@ -212,7 +225,8 @@ export function getTokenLogo(symbol?: string, chainId?: number, address?: string
     }
 
     // 1. Cached logo from CoinGecko / Koin Gallery
-    if (symbol) {
+    const isContractToken = !!address && !isNativeLikeAddress(address);
+    if (symbol && !isContractToken) {
         const cached = logoCache[symbol.toUpperCase()];
         if (cached) return cached;
     }

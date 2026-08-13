@@ -1,4 +1,5 @@
 import { api, MarketAsset } from '@/lib/mobile/api-client';
+import { registerAdminTokenLogoOverrides, resolveTokenLogo } from '@/utils/admin-token-logos';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -46,9 +47,11 @@ export function useSpotlightTokens(activeOnly: boolean = true) {
             const response = await api.tokenSpotlight.get({ category: 'spotlight', activeOnly: true });
             const tokens = Array.isArray(response) ? response : response?.tokens || [];
             const today = new Date().toISOString().split('T')[0];
-            return tokens
+            const activeTokens = tokens
                 .filter((t: any) => (!t.startDate || t.startDate <= today) && (!t.endDate || t.endDate >= today))
                 .sort((a: any, b: any) => (a.rank || 0) - (b.rank || 0));
+            registerAdminTokenLogoOverrides(activeTokens);
+            return activeTokens;
         },
         staleTime: 1000 * 60 * 5,
         initialData: rawCached?.data,
@@ -90,6 +93,13 @@ export function useSpotlightTokens(activeOnly: boolean = true) {
 
         return (raw as any[]).map((t: any) => {
             const chainId = t.chainId || 56;
+            const adminLogo = resolveTokenLogo({
+                address: t.address,
+                chainId,
+                logoURI: t.logoURI,
+                logo: t.logo,
+                icon: t.icon,
+            });
             const live =
                 (t.address && byAddr.get(`${chainId}-${t.address.toLowerCase()}`)) ||
                 (t.symbol && bySymbol.get(t.symbol.toUpperCase()));
@@ -98,6 +108,8 @@ export function useSpotlightTokens(activeOnly: boolean = true) {
                 return {
                     ...t,
                     id: t.id || `${chainId}-${t.address}`,
+                    logoURI: adminLogo || live.logoURI || live.logo || undefined,
+                    logo: adminLogo || live.logo || live.logoURI || undefined,
                     priceUSD: String(live.price ?? live.priceUSD ?? '0'),
                     change24h: live.priceChange24h ?? 0,
                     volume24h: live.volume24h ?? 0,
@@ -110,6 +122,8 @@ export function useSpotlightTokens(activeOnly: boolean = true) {
             return {
                 ...t,
                 id: t.id || `${chainId}-${t.address}`,
+                logoURI: adminLogo || t.logoURI || t.logo || undefined,
+                logo: adminLogo || t.logo || t.logoURI || undefined,
                 priceUSD: t.priceUSD ?? t.price ?? '0',
                 change24h: t.change24h ?? t.priceChange24h ?? 0,
                 volume24h: t.volume24h ?? 0,

@@ -20,8 +20,8 @@
  *   2. The relayer receives $0.50 of the selected token — the `fee` step.
  *   3. The swap goes forward — the `tax`, `approve` and `swap` steps.
  *
- * Unlike the web build this is ON by default (set EXPO_PUBLIC_RELAYER_PLAN_API=0
- * to disable): there is no working local relayer path here to fall back to.
+ * This is an opt-in rollout path. The current web-compatible gasless executor
+ * remains the default and the fallback while the plan API is proven in mobile.
  */
 
 import { type Address, type Hex, type PublicClient } from 'viem';
@@ -45,9 +45,9 @@ const NATIVE_ADDRESSES = new Set([
 const isNativeToken = (addr?: string | null) =>
     !!addr && NATIVE_ADDRESSES.has(addr.toLowerCase());
 
-/** On unless explicitly disabled — the local alternative is the broken copy. */
+/** Match web: the plan API is inert unless explicitly enabled. */
 export function isRelayerPlanApiEnabled(): boolean {
-    return process.env.EXPO_PUBLIC_RELAYER_PLAN_API !== '0';
+    return process.env.EXPO_PUBLIC_RELAYER_PLAN_API === '1';
 }
 
 type RelayerStepId = 'fee' | 'tax' | 'approve' | 'swap';

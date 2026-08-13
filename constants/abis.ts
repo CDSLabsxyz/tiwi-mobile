@@ -193,6 +193,13 @@ export const ERC20_ABI = [
 export const STAKING_POOL_V2_ABI = [
     {
         inputs: [],
+        name: 'accRewardPerShare',
+        outputs: [{ internalType: 'uint256', name: '', type: 'uint256' }],
+        stateMutability: 'view',
+        type: 'function'
+    },
+    {
+        inputs: [],
         name: 'getPoolInfo',
         outputs: [
             { internalType: 'address', name: 'stakingToken_', type: 'address' },
@@ -276,5 +283,42 @@ export const STAKING_POOL_V2_ABI = [
         ],
         name: 'Deposit',
         type: 'event'
+    }
+] as const;
+
+/**
+ * Reward settlement added by protected staking pools. Kept separate so mobile
+ * can probe legacy pools safely: missing selectors simply mean unsupported.
+ */
+export const STAKING_POOL_REWARD_SETTLEMENT_ABI = [
+    {
+        anonymous: false,
+        inputs: [
+            { indexed: true, internalType: 'address', name: 'recipient', type: 'address' },
+            { indexed: false, internalType: 'uint256', name: 'amount', type: 'uint256' }
+        ],
+        name: 'RemainingRewardsWithdrawn',
+        type: 'event'
+    },
+    {
+        inputs: [],
+        name: 'unclaimedRewards',
+        outputs: [{ internalType: 'uint256', name: '', type: 'uint256' }],
+        stateMutability: 'view',
+        type: 'function'
+    },
+    {
+        inputs: [],
+        name: 'remainingRewards',
+        outputs: [{ internalType: 'uint256', name: '', type: 'uint256' }],
+        stateMutability: 'view',
+        type: 'function'
+    },
+    {
+        inputs: [{ internalType: 'address', name: '_to', type: 'address' }],
+        name: 'withdrawRemainingRewards',
+        outputs: [],
+        stateMutability: 'nonpayable',
+        type: 'function'
     }
 ] as const;

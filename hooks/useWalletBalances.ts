@@ -1,18 +1,22 @@
 import { KNOWN_CHAIN_IDS, NATIVE_SYMBOL_CHAINS } from '@/constants/knownChains';
 import { isKnownWrappedNative } from '@/constants/wrappedNatives';
 import { api, type PortfolioAddresses } from '@/lib/mobile/api-client';
+import { fetchEvmTokenBalanceDetails, fetchSolanaTokenBalance } from '@/services/customTokenBalance';
 import { fetchExtraNativeBalances } from '@/services/extraChainBalances';
 import { moralisService } from '@/services/moralisService';
 import { notificationService } from '@/services/notificationService';
 import { ensureTokenLogos, getTokenLogo, prefetchTokenLogos } from '@/services/tokenLogoService';
+import { useCustomTokenStore, type CustomToken } from '@/store/customTokenStore';
 import { useFilterStore } from '@/store/filterStore';
 import { useWalletStore, type WalletGroup } from '@/store/walletStore';
+import { ensureAdminTokenLogoOverrides, getAdminTokenLogo, normalizeTokenLogoUrl, prefetchAdminTokenLogoOverrides, resolveTokenLogo } from '@/utils/admin-token-logos';
 import { normalizeSolanaBalanceRow, SOLANA_NATIVE_ADDRESS } from '@/utils/solanaIdentity';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
 // Kick off logo cache warming as early as possible (CoinGecko + Koin Gallery)
 prefetchTokenLogos();
+prefetchAdminTokenLogoOverrides();
 
 // Nexxend-covered chains, used only by the legacy per-address fallback path.
 // Discovery itself is UNFILTERED — the server portfolio route sweeps every
@@ -387,6 +391,8 @@ function normalizeToken(b: any) {
     const apiLogo = !isUnreliableLogo(b.logoURI) ? b.logoURI
         : !isUnreliableLogo(b.logo) ? b.logo
         : undefined;
+    const adminLogo = getAdminTokenLogo(b.address, b.chainId);
+    const providerLogo = normalizeTokenLogoUrl(apiLogo);
 
     const balance = parseFloat(b.balanceFormatted || b.balance || '0');
     let usdValue = b.usdValue || '0';
@@ -409,7 +415,7 @@ function normalizeToken(b: any) {
         // sheet's chain+symbol dedupe key, hiding one of the two.
         symbol: b.symbol,
         name: b.name || b.symbol || 'Unknown',
-        logoURI: getTokenLogo(b.symbol, b.chainId, b.address) || apiLogo,
+        logoURI: adminLogo || providerLogo || getTokenLogo(b.symbol, b.chainId, b.address),
         balanceFormatted: b.balanceFormatted || b.balance || '0',
         usdValue,
         priceUSD,
@@ -417,9 +423,129 @@ function normalizeToken(b: any) {
     };
 }
 
+async function fetchCustomTokenRows(args: {
+    customTokens: CustomToken[];
+    evmAddr?: string;
+    solAddr?: string;
+    walletKey: string;
+    updateTokenBalance: ReturnType<typeof useCustomTokenStore.getState>['updateTokenBalance'];
+}) {
+    const { customTokens, evmAddr, solAddr, walletKey, updateTokenBalance } = args;
+    const rows: any[] = [];
+
+    for (const ct of customTokens) {
+        if (ct.hidden) continue;
+        let balanceInfo: { balance?: string; balanceFormatted: string; decimals?: number } | null = null;
+
+        if (ct.chainId === 7565164) {
+            if (!solAddr) continue;
+            const bal = await fetchSolanaTokenBalance(ct.address, solAddr);
+            if (bal !== null) balanceInfo = { balanceFormatted: bal, decimals: ct.decimals };
+        } else {
+            if (!evmAddr || !isEvmAddress(evmAddr)) continue;
+            const evm = await fetchEvmTokenBalanceDetails(ct.chainId, ct.address, evmAddr);
+            if (evm) balanceInfo = evm;
+        }
+
+        if (!balanceInfo) continue;
+
+        let priceUSD = ct.priceUSD || '0';
+        let logoURI = ct.logoURI;
+        let symbol = ct.symbol;
+        let name = ct.name;
+        try {
+            const info = await api.tokenInfo.get(ct.chainId, ct.address);
+            if (info?.pool?.priceUsd != null) priceUSD = String(info.pool.priceUsd);
+            if (info?.token?.symbol && info.token.symbol !== 'UNKNOWN') symbol = info.token.symbol;
+            if (info?.token?.name && info.token.name !== 'Unknown Token') name = info.token.name;
+            logoURI = resolveTokenLogo({
+                address: ct.address,
+                chainId: ct.chainId,
+                logoURI: info?.token?.logo || logoURI,
+            }) || logoURI;
+        } catch {
+            logoURI = getAdminTokenLogo(ct.address, ct.chainId) || normalizeTokenLogoUrl(logoURI);
+        }
+
+        const balanceFormatted = String(balanceInfo.balanceFormatted || '0');
+        const usdValue = (parseFloat(balanceFormatted) * parseFloat(priceUSD || '0')).toFixed(6);
+        const decimals = balanceInfo.decimals ?? ct.decimals;
+
+        if (
+            balanceFormatted !== ct.balanceFormatted ||
+            usdValue !== ct.usdValue ||
+            priceUSD !== ct.priceUSD ||
+            decimals !== ct.decimals ||
+            symbol !== ct.symbol ||
+            name !== ct.name ||
+            logoURI !== ct.logoURI
+        ) {
+            updateTokenBalance(walletKey, ct.address, ct.chainId, {
+                balanceFormatted,
+                usdValue,
+                priceUSD,
+                symbol,
+                name,
+                logoURI,
+                decimals,
+            });
+        }
+
+        if (parseFloat(balanceFormatted || '0') <= 0) continue;
+
+        rows.push({
+            address: ct.address,
+            chainId: ct.chainId,
+            symbol,
+            name,
+            decimals,
+            logoURI,
+            balance: balanceInfo.balance || balanceFormatted,
+            balanceFormatted,
+            usdValue,
+            priceUSD,
+            priceChange24h: 0,
+            isCustom: true,
+        });
+    }
+
+    return rows;
+}
+
+function mergeCustomRows(tokens: any[], customRows: any[]) {
+    if (customRows.length === 0) return tokens;
+    const out = [...tokens];
+
+    for (const row of customRows) {
+        const key = tokenRowKey(row);
+        const index = out.findIndex((t) => tokenRowKey(t) === key);
+        if (index >= 0) {
+            const existing = out[index];
+            const priceUSD = row.priceUSD || existing.priceUSD || '0';
+            const usdValue = parseFloat(row.usdValue || '0') > 0
+                ? row.usdValue
+                : (parseFloat(row.balanceFormatted || '0') * parseFloat(priceUSD || '0')).toFixed(6);
+            out[index] = {
+                ...existing,
+                ...row,
+                logoURI: row.logoURI || existing.logoURI,
+                priceUSD,
+                usdValue,
+                priceChange24h: existing.priceChange24h || row.priceChange24h || 0,
+            };
+        } else {
+            out.push(row);
+        }
+    }
+
+    return out;
+}
+
 export function useWalletBalances() {
     const { activeAddress, activeGroupId, walletGroups, _hasHydrated, cachedBalances, setCachedBalances } = useWalletStore();
     const selectedChains = useFilterStore((state) => state.chains);
+    const tokensByWallet = useCustomTokenStore((state) => state.tokensByWallet);
+    const updateCustomTokenBalance = useCustomTokenStore((state) => state.updateTokenBalance);
 
     // An explicit chain filter narrows DISCOVERY too (fewer RPC sweeps); with no
     // filter we sweep everything — the chain chips in the wallet screen filter
@@ -433,6 +559,15 @@ export function useWalletBalances() {
     }, [selectedChains]);
 
     const group = useMemo(() => walletGroups.find(g => g.id === activeGroupId), [walletGroups, activeGroupId]);
+    const walletKey = activeGroupId || activeAddress || 'default';
+    const customTokens = useMemo(() => tokensByWallet[walletKey] || [], [tokensByWallet, walletKey]);
+    const customTokenIdentityKey = useMemo(
+        () => customTokens
+            .map(t => `${t.chainId}:${t.address.toLowerCase()}:${t.hidden ? 'hidden' : 'shown'}`)
+            .sort()
+            .join('|'),
+        [customTokens],
+    );
 
     // Cache key for this wallet. The version suffix invalidates every snapshot
     // written by an older balance pipeline — otherwise the app opens showing a
@@ -444,7 +579,7 @@ export function useWalletBalances() {
     const cached = cachedBalances[cacheKey];
 
     return useQuery({
-        queryKey: ['walletBalances', activeAddress, activeGroupId, chainIdsForFetch],
+        queryKey: ['walletBalances', activeAddress, activeGroupId, chainIdsForFetch, customTokenIdentityKey],
         queryFn: async () => {
             if (!_hasHydrated || !activeAddress) {
                 return { tokens: [], totalNetWorthUsd: '0.00', portfolioChange: { amount: '0.00', percent: '0.00' } };
@@ -566,19 +701,30 @@ export function useWalletBalances() {
                 });
 
                 // ── 5. Filter spam + normalize ──
-                // Fire logo cache warming in background — don't block balance render
+                // Admin-uploaded logos are tiny and contract-keyed; load them
+                // before row normalization so portfolio and picker icons agree.
+                await ensureAdminTokenLogoOverrides().catch(() => {});
+                // Fire broad logo cache warming in background — don't block balance render
                 ensureTokenLogos().catch(() => {});
                 // ── 5b. Cross-refetch grace (web parity) ──
                 // filterToken keeps every non-spam holding; this pass is what
                 // finally retires a token — after 4 consecutive $0 fetches —
                 // and carries a briefly-missing one forward for 3 cycles so a
                 // timed-out source never blanks a chain.
-                const tokens = applyStabilityGrace(
+                let tokens = applyStabilityGrace(
                     Array.from(dedupedMap.values())
                         .filter(filterToken)
                         .map(normalizeToken),
                     cacheKey,
                 );
+                const customRows = await fetchCustomTokenRows({
+                    customTokens,
+                    evmAddr,
+                    solAddr,
+                    walletKey,
+                    updateTokenBalance: updateCustomTokenBalance,
+                });
+                tokens = mergeCustomRows(tokens, customRows);
 
                 // ── 6. Portfolio metrics ──
                 // Always compute from the FILTERED token list so any spam

@@ -27,6 +27,7 @@ import { useSendStore } from '@/store/sendStore';
 import { useWalletStore } from '@/store/walletStore';
 import { validateAddress, validateAmount } from '@/utils/addressValidation';
 import { mapAssetToTokenOption } from '@/utils/assetMapping';
+import { resolveTokenLogo } from '@/utils/admin-token-logos';
 import { isNativeToken } from '@/utils/wallet';
 import * as Haptics from 'expo-haptics';
 import { useRequireBackup } from '@/hooks/useRequireBackup';
@@ -157,7 +158,11 @@ export default function SendScreen() {
                 id: params.assetId || params.symbol,
                 symbol: params.symbol,
                 name: params.name || params.symbol,
-                icon: params.logo,
+                icon: resolveTokenLogo({
+                    address: params.address || params.assetId,
+                    chainId: params.chainId ? Number(params.chainId) : undefined,
+                    logoURI: params.logo,
+                }) || params.logo,
                 balanceToken: params.balance || '0',
                 balanceFiat: params.usdValue || '$0',
                 priceUSD: params.priceUSD || '0',
@@ -165,7 +170,7 @@ export default function SendScreen() {
                 decimals: params.decimals ? Number(params.decimals) : undefined,
             };
 
-            const chain = chains.find(c => String(c.id) === params.chainId);
+            const chain = chains.find((c: any) => String(c.id) === params.chainId);
             if (tokenOption && chain) {
                 const chainOption = {
                     id: chain.id,
@@ -185,7 +190,7 @@ export default function SendScreen() {
                     const asset = walletData.portfolio.find((a) => a.id === params.assetId);
                     if (asset) {
                         const tokenOption = mapAssetToTokenOption(asset, asset.balance, asset.usdValue);
-                        const chain = chains.find(c => c.id === asset.chainId);
+                        const chain = chains.find((c: any) => c.id === asset.chainId);
 
                         if (tokenOption && chain) {
                             const chainOption = {
@@ -235,7 +240,7 @@ export default function SendScreen() {
         sendStore.setSelectedToken(token);
         // Set chain if provided
         if (chainId && chains) {
-            const chain = chains.find(c => String(c.id) === chainId);
+            const chain = chains.find((c: any) => String(c.id) === chainId);
             if (chain) {
                 sendStore.setSelectedChain({
                     id: chain.id,
@@ -249,7 +254,7 @@ export default function SendScreen() {
                     const res = await apiClient.getWalletBalances(walletAddress);
                     const asset = res?.balances?.find((a: any) => a.symbol === token.symbol);
                     if (asset) {
-                        const chain = chains.find(c => c.id === asset.chainId);
+                        const chain = chains.find((c: any) => c.id === asset.chainId);
                         if (chain) {
                             sendStore.setSelectedChain({
                                 id: chain.id,

@@ -16,13 +16,18 @@ function isGasShortageMessage(lowerMessage: string): boolean {
   );
 }
 
+function isOutputShortageMessage(lowerMessage: string): boolean {
+  return /insufficient[_\s-]*output(?:[_\s-]*amount)?/.test(lowerMessage);
+}
+
 function isBalanceShortageMessage(lowerMessage: string): boolean {
   return (
     (lowerMessage.includes("insufficient balance") ||
       lowerMessage.includes("not enough balance") ||
       lowerMessage.includes("exceeds balance") ||
       lowerMessage.includes("insufficient")) &&
-    !isGasShortageMessage(lowerMessage)
+    !isGasShortageMessage(lowerMessage) &&
+    !isOutputShortageMessage(lowerMessage)
   );
 }
 
@@ -52,6 +57,10 @@ export function formatErrorMessage(error: unknown): string {
   }
 
   const lowerMessage = rawMessage.toLowerCase();
+
+  if (isOutputShortageMessage(lowerMessage)) {
+    return "Price moved beyond the protected minimum — refresh the quote and try again";
+  }
 
   // 1. GLOBAL REJECTION CHECK (The most important one)
   // If ANY part of the error message contains rejection keywords, return ONLY "User rejected"
@@ -226,7 +235,7 @@ export function getErrorCode(error: unknown): SwapErrorCode {
     if (message.includes('rejected')) {
       return SwapErrorCode.TRANSACTION_REJECTED;
     }
-    if (message.includes('insufficient')) {
+    if (message.includes('insufficient') && !isOutputShortageMessage(message)) {
       return SwapErrorCode.INSUFFICIENT_BALANCE;
     }
     if (message.includes('network') || message.includes('rpc')) {

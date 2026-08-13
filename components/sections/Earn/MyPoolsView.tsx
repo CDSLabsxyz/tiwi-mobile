@@ -10,12 +10,21 @@ import { colors } from '@/constants/colors';
 import { useStakingDeployer } from '@/hooks/useStakingDeployer';
 import { useRequireBackup } from '@/hooks/useRequireBackup';
 import { api, type PoolFeeSettings, type UserStakingPool } from '@/lib/mobile/api-client';
-import { readPoolStatusClient, type PoolStatusOnChain } from '@/lib/mobile/pool-onchain';
+import {
+    readPoolRewardWithdrawalClient,
+    readPoolStatusClient,
+    type PoolStatusOnChain,
+} from '@/lib/mobile/pool-onchain';
 import { Ionicons } from '@expo/vector-icons';
+import {
+    readRecordedRewardWithdrawal,
+    recordRewardWithdrawal,
+    type RecordedRewardWithdrawal,
+} from '@/utils/staking-reward-withdrawal';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import { Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import type { Address } from 'viem';
+import type { Address, Hash } from 'viem';
 
 const SECONDS_PER_YEAR = 31_536_000;
 
@@ -44,6 +53,8 @@ const EXPLORERS: Record<number, string> = {
     8453: 'https://basescan.org',
     10: 'https://optimistic.etherscan.io',
     43114: 'https://snowtrace.io',
+    1116: 'https://scan.coredao.org',
+    1329: 'https://seitrace.com',
 };
 
 const isEvmAddr = (v?: string) => !!v && /^0x[a-fA-F0-9]{40}$/.test(v);
@@ -71,6 +82,12 @@ function durationText(seconds?: number): string {
     }
     const minutes = Math.max(1, Math.round(seconds / 60));
     return `${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`;
+}
+
+function rewardAmountText(value?: string): string {
+    const amount = Number(value);
+    if (!Number.isFinite(amount)) return '—';
+    return amount.toLocaleString('en-US', { maximumFractionDigits: 6 });
 }
 
 interface Props {
@@ -217,26 +234,69 @@ function MyPoolRow({ pool, walletAddress, feeSettings, onChanged }: {
     const [expanded, setExpanded] = useState(false);
     const [isWithdrawing, setIsWithdrawing] = useState(false);
     const [isPayingFee, setIsPayingFee] = useState(false);
+    const [pendingFeeTxHash, setPendingFeeTxHash] = useState<Hash | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [rewardWithdrawalError, setRewardWithdrawalError] = useState<string | null>(null);
+    const [withdrawalSuccess, setWithdrawalSuccess] = useState<string | null>(null);
+    const [recordedWithdrawal, setRecordedWithdrawal] = useState<RecordedRewardWithdrawal | null>(null);
     const [chainStatus, setChainStatus] = useState<PoolStatusOnChain | null>(null);
-    const { payCreationFee, emergencyWithdrawRewards } = useStakingDeployer();
+    const { payCreationFee, emergencyWithdrawRewards, withdrawRemainingRewards } = useStakingDeployer();
     const { requireBackup, BackupRequiredModal } = useRequireBackup();
+
+    useEffect(() => {
+        let cancelled = false;
+        Promise.all([
+            readRecordedRewardWithdrawal(pool.chainId, pool.poolContractAddress),
+            readPoolRewardWithdrawalClient({
+                chainId: pool.chainId,
+                poolAddress: pool.poolContractAddress,
+                deploymentTxHash: pool.txHash,
+            }),
+        ]).then(async ([cached, onChain]) => {
+            const record = onChain || cached;
+            if (onChain && !cached) {
+                await recordRewardWithdrawal(pool.chainId, pool.poolContractAddress, onChain.txHash).catch(() => undefined);
+            }
+            if (!cancelled) setRecordedWithdrawal(record);
+        });
+        return () => { cancelled = true; };
+    }, [pool.chainId, pool.poolContractAddress, pool.txHash]);
 
     // `endTime` lives on the contract, not in `staking_pools`, so the badge has
     // to read it. Only approved pools are worth the call — the rest can't be live.
     useEffect(() => {
         let cancelled = false;
         if (pool.approvalStatus !== 'approved' || !isEvmAddr(pool.poolContractAddress)) return;
-        readPoolStatusClient({ chainId: pool.chainId, poolAddress: pool.poolContractAddress })
+        readPoolStatusClient({
+            chainId: pool.chainId,
+            poolAddress: pool.poolContractAddress,
+            stakingDecimals: pool.pool?.decimals ?? 18,
+            stakingSymbol: pool.settings?.tokenSymbol || pool.pool?.tokenSymbol,
+        })
             .then((status) => { if (!cancelled) setChainStatus(status); });
         return () => { cancelled = true; };
-    }, [pool.approvalStatus, pool.poolContractAddress, pool.chainId]);
+    }, [
+        pool.approvalStatus,
+        pool.poolContractAddress,
+        pool.chainId,
+        pool.pool?.decimals,
+        pool.pool?.tokenSymbol,
+        pool.settings?.tokenSymbol,
+    ]);
 
     const lifecycle: PoolLifecycle = chainStatus
         ? chainStatus.ended ? 'ended' : chainStatus.active ? 'live' : 'paused'
         : lifecycleFromDb(pool);
 
-    const canWithdraw = pool.approvalStatus === 'rejected' && !pool.fundsWithdrawn;
+    const canWithdrawRejectedPool = pool.approvalStatus === 'rejected' && !pool.fundsWithdrawn;
+    const remainingRewards = Number(chainStatus?.remainingRewards);
+    const canWithdrawRemaining =
+        pool.approvalStatus === 'approved' &&
+        chainStatus?.supportsProtectedRewardWithdrawal === true &&
+        chainStatus.ended &&
+        Number.isFinite(remainingRewards) &&
+        remainingRewards > 0;
+    const rewardsWereWithdrawn = recordedWithdrawal !== null || withdrawalSuccess !== null;
     const feeUnpaid =
         !!feeSettings?.creationFeeEnabled &&
         feeSettings.creationFeeAmount > 0 &&
@@ -257,8 +317,9 @@ function MyPoolRow({ pool, walletAddress, feeSettings, onChanged }: {
     const stakeSymbol = pool.settings?.tokenSymbol || pool.pool?.tokenSymbol || '';
     const rewardSymbol = pool.settings?.rewardTokenSymbol || stakeSymbol;
 
-    const handleWithdraw = async () => {
+    const handleRejectedPoolWithdraw = async () => {
         setError(null);
+        setWithdrawalSuccess(null);
         if (!requireBackup()) return;
         setIsWithdrawing(true);
         try {
@@ -276,20 +337,54 @@ function MyPoolRow({ pool, walletAddress, feeSettings, onChanged }: {
         }
     };
 
+    const handleRemainingRewardsWithdraw = async () => {
+        if (!canWithdrawRemaining) return;
+        setRewardWithdrawalError(null);
+        setWithdrawalSuccess(null);
+        if (!requireBackup()) return;
+        setIsWithdrawing(true);
+        try {
+            const hash = await withdrawRemainingRewards({
+                chainId: pool.chainId,
+                poolAddress: pool.poolContractAddress as Address,
+                walletAddress: walletAddress as Address,
+            });
+            const record = await recordRewardWithdrawal(pool.chainId, pool.poolContractAddress, hash);
+            setRecordedWithdrawal(record);
+            const refreshed = await readPoolStatusClient({
+                chainId: pool.chainId,
+                poolAddress: pool.poolContractAddress,
+                stakingDecimals: pool.pool?.decimals ?? 18,
+                stakingSymbol: stakeSymbol,
+            });
+            setChainStatus(refreshed);
+            setWithdrawalSuccess(`Remaining rewards withdrawn. Transaction ${hash.slice(0, 10)}…${hash.slice(-6)}`);
+        } catch (e: any) {
+            setRewardWithdrawalError(e?.message || 'Reward withdrawal failed. Please try again.');
+        } finally {
+            setIsWithdrawing(false);
+        }
+    };
+
     const handlePayFee = async () => {
         if (!feeSettings) return;
         setError(null);
-        if (!requireBackup()) return;
+        if (!pendingFeeTxHash && !requireBackup()) return;
         setIsPayingFee(true);
         try {
-            const hash = await payCreationFee({
-                chainId: feeSettings.creationFeeChainId,
-                tokenAddress: feeSettings.creationFeeTokenAddress as Address,
-                treasury: feeSettings.creationFeeTreasuryAddress as Address,
-                amount: String(feeSettings.creationFeeAmount),
-                decimals: feeSettings.creationFeeTokenDecimals,
-                walletAddress: walletAddress as Address,
-            });
+            let hash = pendingFeeTxHash;
+            if (!hash) {
+                hash = await payCreationFee({
+                    chainId: feeSettings.creationFeeChainId,
+                    tokenAddress: feeSettings.creationFeeTokenAddress as Address,
+                    treasury: feeSettings.creationFeeTreasuryAddress as Address,
+                    amount: String(feeSettings.creationFeeAmount),
+                    decimals: feeSettings.creationFeeTokenDecimals,
+                    tokenSymbol: feeSettings.creationFeeTokenSymbol,
+                    walletAddress: walletAddress as Address,
+                });
+            }
+            setPendingFeeTxHash(hash);
             try {
                 await api.staking.patchUserPool({
                     id: pool.id,
@@ -297,14 +392,15 @@ function MyPoolRow({ pool, walletAddress, feeSettings, onChanged }: {
                     creationFeeAmount: feeSettings.creationFeeAmount,
                     creationFeeToken: feeSettings.creationFeeTokenSymbol || feeSettings.creationFeeTokenAddress,
                 });
+                setPendingFeeTxHash(null);
             } catch (patchErr: any) {
                 // The server re-verifies the hash on-chain before storing it,
                 // so a rejection means the pool is genuinely still unpaid. Say
                 // so — and surface the hash — rather than refreshing into a
                 // misleading "paid" state.
                 throw new Error(
-                    patchErr?.message
-                    || `The fee was sent (tx ${hash}) but recording it failed. Try again, or contact support with this hash.`,
+                    `The fee was sent (tx ${hash}) but recording it failed. ` +
+                    `${patchErr?.message || 'Try confirming again, or contact support with this hash.'}`,
                 );
             }
             onChanged();
@@ -314,6 +410,9 @@ function MyPoolRow({ pool, walletAddress, feeSettings, onChanged }: {
             setIsPayingFee(false);
         }
     };
+    const feeButtonText = isPayingFee
+        ? pendingFeeTxHash ? 'Confirming…' : 'Paying…'
+        : pendingFeeTxHash ? 'Confirm fee' : 'Pay fee';
 
     return (
         <View style={styles.row}>
@@ -373,12 +472,56 @@ function MyPoolRow({ pool, walletAddress, feeSettings, onChanged }: {
                             // token symbol, and this row already knows it.
                             onPress={() => router.push({
                                 pathname: '/earn/pool/[id]',
-                                params: { id: pool.stakingPoolId, name: title },
+                                params: {
+                                    id: pool.stakingPoolId,
+                                    name: title,
+                                    deploymentTxHash: pool.txHash || '',
+                                },
                             } as any)}
                         >
                             <Ionicons name="settings-outline" size={15} color={colors.primaryCTA} />
                             <Text style={styles.manageBtnText}>Manage pool</Text>
                         </TouchableOpacity>
+                    ) : null}
+
+                    {pool.approvalStatus === 'approved' ? (
+                        <View style={styles.rewardNote}>
+                            <Text style={styles.rewardNoteTitle}>Remaining rewards</Text>
+                            <Text style={styles.rewardNoteText}>
+                                {rewardsWereWithdrawn
+                                    ? 'Remaining rewards were withdrawn successfully. User claims remain protected.'
+                                    : !chainStatus
+                                    ? 'Checking the pool contract for withdrawable rewards.'
+                                    : !chainStatus.supportsProtectedRewardWithdrawal
+                                      ? 'This is a legacy pool. Open Manage pool to verify whether a full reward withdrawal is safe.'
+                                    : chainStatus.ended
+                                    ? Number.isFinite(remainingRewards) && remainingRewards > 0
+                                        ? `${rewardAmountText(chainStatus.remainingRewards)} ${rewardSymbol} is available to withdraw.`
+                                        : 'No unused reward funds remain in this pool.'
+                                    : 'Withdrawal becomes available after the pool expires.'}
+                                {!rewardsWereWithdrawn && chainStatus?.supportsProtectedRewardWithdrawal
+                                    ? ` ${rewardAmountText(chainStatus.unclaimedRewards)} ${rewardSymbol} remains reserved for user claims.`
+                                    : ''}
+                            </Text>
+                            {withdrawalSuccess ? <Text style={styles.successText}>{withdrawalSuccess}</Text> : null}
+                            {rewardWithdrawalError ? <Text style={styles.errText}>{rewardWithdrawalError}</Text> : null}
+                            <TouchableOpacity
+                                style={[styles.remainingBtn, (!canWithdrawRemaining || isWithdrawing || rewardsWereWithdrawn) && { opacity: 0.45 }]}
+                                onPress={handleRemainingRewardsWithdraw}
+                                disabled={!canWithdrawRemaining || isWithdrawing || rewardsWereWithdrawn}
+                            >
+                                <Ionicons name={rewardsWereWithdrawn ? 'checkmark-circle' : 'wallet-outline'} size={15} color="#010501" />
+                                <Text style={styles.remainingBtnText}>
+                                    {isWithdrawing
+                                        ? 'Withdrawing…'
+                                        : rewardsWereWithdrawn
+                                            ? 'Withdrawn'
+                                            : chainStatus?.ended && remainingRewards === 0
+                                                ? 'No rewards remaining'
+                                                : 'Withdraw remaining rewards'}
+                                </Text>
+                            </TouchableOpacity>
+                        </View>
                     ) : null}
 
                     {pool.approvalStatus === 'pending' && !canPayFee ? (
@@ -399,18 +542,18 @@ function MyPoolRow({ pool, walletAddress, feeSettings, onChanged }: {
                             </Text>
                             {error ? <Text style={styles.errText}>{error}</Text> : null}
                             <TouchableOpacity style={[styles.payBtn, isPayingFee && { opacity: 0.6 }]} onPress={handlePayFee} disabled={isPayingFee}>
-                                <Text style={styles.payBtnText}>{isPayingFee ? 'Paying…' : 'Pay fee'}</Text>
+                                <Text style={styles.payBtnText}>{feeButtonText}</Text>
                             </TouchableOpacity>
                         </View>
                     ) : null}
 
-                    {canWithdraw ? (
+                    {canWithdrawRejectedPool ? (
                         <View style={styles.rejectNote}>
                             <Text style={styles.rejectNoteText}>
                                 This pool was rejected. You can withdraw the reward funds you deposited — the pool will be nullified but stays listed here.
                             </Text>
                             {error ? <Text style={styles.errText}>{error}</Text> : null}
-                            <TouchableOpacity style={[styles.withdrawBtn, isWithdrawing && { opacity: 0.6 }]} onPress={handleWithdraw} disabled={isWithdrawing}>
+                            <TouchableOpacity style={[styles.withdrawBtn, isWithdrawing && { opacity: 0.6 }]} onPress={handleRejectedPoolWithdraw} disabled={isWithdrawing}>
                                 <Text style={styles.withdrawBtnText}>{isWithdrawing ? 'Withdrawing…' : 'Withdraw funds'}</Text>
                             </TouchableOpacity>
                         </View>
@@ -479,9 +622,16 @@ const styles = StyleSheet.create({
     nullNote: { marginTop: 14, borderRadius: 14, borderWidth: 1, borderColor: '#242424', backgroundColor: 'rgba(12,12,12,0.7)', paddingHorizontal: 14, paddingVertical: 12 },
     nullNoteText: { color: '#8F9891', fontFamily: 'Manrope-Medium', fontSize: 13, lineHeight: 18 },
     errText: { color: '#f87171', fontFamily: 'Manrope-Medium', fontSize: 12, marginTop: 8 },
+    successText: { color: colors.primaryCTA, fontFamily: 'Manrope-Medium', fontSize: 12, marginTop: 8 },
+
+    rewardNote: { marginTop: 14, borderRadius: 14, borderWidth: 1, borderColor: '#29421f', backgroundColor: 'rgba(7,20,5,0.75)', paddingHorizontal: 14, paddingVertical: 12 },
+    rewardNoteTitle: { color: '#fff', fontFamily: 'Manrope-SemiBold', fontSize: 13 },
+    rewardNoteText: { color: '#a8b3aa', fontFamily: 'Manrope-Medium', fontSize: 12, lineHeight: 18, marginTop: 4 },
 
     payBtn: { marginTop: 12, alignSelf: 'flex-start', borderRadius: 999, backgroundColor: colors.primaryCTA, paddingHorizontal: 16, paddingVertical: 9 },
     payBtnText: { color: '#010501', fontFamily: 'Manrope-SemiBold', fontSize: 13 },
     withdrawBtn: { marginTop: 12, alignSelf: 'flex-start', borderRadius: 999, backgroundColor: '#f87171', paddingHorizontal: 16, paddingVertical: 9 },
     withdrawBtnText: { color: '#160808', fontFamily: 'Manrope-SemiBold', fontSize: 13 },
+    remainingBtn: { marginTop: 12, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 999, backgroundColor: colors.primaryCTA, paddingHorizontal: 16, paddingVertical: 9 },
+    remainingBtnText: { color: '#010501', fontFamily: 'Manrope-SemiBold', fontSize: 13 },
 });

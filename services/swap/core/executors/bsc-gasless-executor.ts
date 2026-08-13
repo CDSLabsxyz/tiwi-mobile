@@ -28,6 +28,8 @@ import { getCachedPublicClient } from '@/services/swap/core/platform/viem-client
 import type { SwapExecutionParams, SwapExecutionResult, SwapRouterExecutor } from '../types';
 import type { RouterRoute } from '@/services/swap/core/router-types';
 import {
+  BSC_RELAYER_V2_CONFIG,
+  REVENUE_WALLETS,
   GasTokenType,
   getTaxRate,
   BASIS_POINTS,
@@ -48,8 +50,18 @@ const WBNB_ADDRESS = '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c';
 const TWC_ADDRESS = '0xDA1060158F7D593667cCE0a15DB346BB3FfB3596';
 
 // V2.1 Relayer contract address (supports native BNB output)
-const RELAYER_V2_CONTRACT = (process.env.EXPO_PUBLIC_BSC_RELAYER_V2_CONTRACT ||
-  '0xfCa2E4468bb376F5b74834F75D76714390b4540A') as Address;
+
+// Gas units a BEP20 `approve` costs. Used only to decide whether a wallet can
+// already pay for its own approval; deliberately generous so we sponsor a
+// borderline wallet rather than letting it fail at the prompt.
+const APPROVE_GAS_ESTIMATE = 60_000;
+
+// Protocol tax destination — the same revenue wallet every other path uses.
+const REVENUE_WALLET = REVENUE_WALLETS.evm as Address;
+
+// Where the up-front service fee goes — the same wallet that fronts the drip
+// and pays for the relayed swap, so its BNB outlay and token income net out.
+const RELAYER_FEE_WALLET = BSC_RELAYER_V2_CONFIG.mainnet.relayerWallet as Address;
 
 // PancakeSwap V2 Router
 const PANCAKESWAP_V2_ROUTER = '0x10ED43C718714eb63d5aA57B78B54704E256024E';
@@ -91,11 +103,6 @@ const MULTISWAP_ABI = [
     ],
     outputs: [{ name: 'amountOut', type: 'uint256' }],
   },
-] as const;
-
-// Relayer view: is a router allowlisted? Used to gate the TiwiMultiSwap path.
-const RELAYER_ALLOWLIST_ABI = [
-  { name: 'isRouterAllowed', type: 'function', stateMutability: 'view', inputs: [{ name: 'router', type: 'address' }], outputs: [{ type: 'bool' }] },
 ] as const;
 
 // Native BNB placeholder (used in contract for native BNB output)
@@ -146,64 +153,37 @@ function applySlippage(expectedOutput: bigint, slippagePercent: number | undefin
 // ============================================================================
 
 // EIP712 domain is built dynamically with the contract address
-function getEIP712Domain() {
-  return {
-    name: 'TiwiSwapRelayer',
-    version: '2',
-    chainId: BSC_CHAIN_ID,
-    verifyingContract: RELAYER_V2_CONTRACT,
-  };
-}
-
-const SWAP_REQUEST_TYPES = {
-  SwapRequest: [
-    { name: 'user', type: 'address' },
-    { name: 'fromToken', type: 'address' },
-    { name: 'toToken', type: 'address' },
-    { name: 'fromAmount', type: 'uint256' },
-    { name: 'minAmountOut', type: 'uint256' },
-    { name: 'recipient', type: 'address' },
-    { name: 'router', type: 'address' },
-    { name: 'routerCalldataHash', type: 'bytes32' },
-    { name: 'gasToken', type: 'address' },
-    { name: 'taxAmount', type: 'uint256' },
-    { name: 'maxGasFee', type: 'uint256' },
-    { name: 'gasTokenType', type: 'uint8' },
-    { name: 'nonce', type: 'uint256' },
-    { name: 'deadline', type: 'uint256' },
-  ],
-} as const;
 
 // ============================================================================
 // PancakeSwap ABI
 // ============================================================================
 
+const SWAP_INPUTS = [
+  { name: 'amountIn', type: 'uint256' },
+  { name: 'amountOutMin', type: 'uint256' },
+  { name: 'path', type: 'address[]' },
+  { name: 'to', type: 'address' },
+  { name: 'deadline', type: 'uint256' },
+] as const;
+
+// Only the fee-on-transfer variants. They behave identically for a normal token
+// and are the only ones that work for a token that taxes its own transfers —
+// the plain versions revert with "Pancake: K" because the pair receives less
+// than amountIn and the constant-product check fails. TWC is such a token.
 const PANCAKESWAP_ABI = [
   {
-    inputs: [
-      { name: 'amountIn', type: 'uint256' },
-      { name: 'amountOutMin', type: 'uint256' },
-      { name: 'path', type: 'address[]' },
-      { name: 'to', type: 'address' },
-      { name: 'deadline', type: 'uint256' },
-    ],
-    name: 'swapExactTokensForTokens',
-    outputs: [{ name: 'amounts', type: 'uint256[]' }],
-    stateMutability: 'nonpayable',
+    name: 'swapExactTokensForTokensSupportingFeeOnTransferTokens',
     type: 'function',
+    inputs: SWAP_INPUTS,
+    outputs: [],
+    stateMutability: 'nonpayable',
   },
   {
-    inputs: [
-      { name: 'amountIn', type: 'uint256' },
-      { name: 'amountOutMin', type: 'uint256' },
-      { name: 'path', type: 'address[]' },
-      { name: 'to', type: 'address' },
-      { name: 'deadline', type: 'uint256' },
-    ],
-    name: 'swapExactTokensForETH',
-    outputs: [{ name: 'amounts', type: 'uint256[]' }],
-    stateMutability: 'nonpayable',
+    name: 'swapExactTokensForETHSupportingFeeOnTransferTokens',
     type: 'function',
+    inputs: SWAP_INPUTS,
+    outputs: [],
+    stateMutability: 'nonpayable',
   },
 ] as const;
 
@@ -256,11 +236,38 @@ const ERC20_ABI = [
     outputs: [{ name: '', type: 'string' }],
     stateMutability: 'view',
   },
+  {
+    // A push, used for the up-front sponsorship service fee. Unlike
+    // approve+transferFrom it needs no pre-existing allowance, which is what
+    // lets it be the first token movement out of a cold wallet.
+    name: 'transfer',
+    type: 'function',
+    inputs: [
+      { name: 'to', type: 'address' },
+      { name: 'amount', type: 'uint256' },
+    ],
+    outputs: [{ name: '', type: 'bool' }],
+    stateMutability: 'nonpayable',
+  },
 ] as const;
 
 // ============================================================================
 // BSC Gasless Executor
 // ============================================================================
+
+/**
+ * Outcome of pricing the cold-start sponsorship.
+ *
+ * Deliberately three-valued. Collapsing "not needed" and "couldn't be
+ * arranged" into a single null made every sponsorship failure look identical to
+ * success-by-omission: the flow fell through to an approval prompt with the
+ * real reason only in the console.
+ */
+type Sponsorship =
+  | { kind: 'not-needed' }
+  | { kind: 'ready'; amountWei: bigint; amountToken: string; quoteAmountWei: string }
+  | { kind: 'unavailable'; reason: string };
+
 
 export class BscGaslessExecutor implements SwapRouterExecutor {
   private publicClient: PublicClient;
@@ -282,12 +289,6 @@ export class BscGaslessExecutor implements SwapRouterExecutor {
     const isToBsc = toChainId === BSC_CHAIN_ID;
 
     if (!isFromBsc || !isToBsc) {
-      return false;
-    }
-
-    // Check if V2 relayer contract is configured
-    if (RELAYER_V2_CONTRACT === '0x0000000000000000000000000000000000000000') {
-      console.log('[BscGaslessExecutor] V2 relayer contract not configured');
       return false;
     }
 
@@ -315,7 +316,9 @@ export class BscGaslessExecutor implements SwapRouterExecutor {
    * Get the spender address for token approval
    */
   async getSpenderAddress(route: RouterRoute): Promise<string | null> {
-    return RELAYER_V2_CONTRACT;
+    // Tokens are approved to the DEX router — this path no longer routes
+    // through a relayer contract, so nothing else is ever a spender.
+    return PANCAKESWAP_V2_ROUTER;
   }
 
   /**
@@ -356,54 +359,45 @@ export class BscGaslessExecutor implements SwapRouterExecutor {
     });
 
     try {
-      // 1. Build router calldata — honor the finder's discovered intermediary path
-      //    (e.g. TWC -> USDC -> USDT) so the executed swap matches the quoted route.
-      let swapData: { routerAddress: string; routerCalldata: Hex; path: string[]; expectedOutput: bigint; outputIsNativeBNB: boolean } | null = null;
-
-      // Prefer TiwiMultiSwap for V3 / multi-DEX routes — but only once it's allowlisted
-      // on the relayer (gate). Until then this is skipped and we use the V2 path.
-      if (this.routeNeedsMultiSwap(route) && (await this.isMultiSwapAllowlisted())) {
-        const steps = this.extractMultiSwapSteps(route);
-        if (steps) {
-          swapData = this.buildMultiSwapCalldata(route, fromToken, toToken, fromAmount, recipientAddress || userAddress, steps, slippagePct);
-          if (swapData) console.log('[BscGaslessExecutor] Routing via TiwiMultiSwap (V3/multi-DEX):', steps);
-        }
-      }
-
-      // Fallback: same-DEX V2 path via the relayer, honoring the finder's intermediary
-      // path (e.g. TWC -> USDC -> USDT) so the executed swap matches the quoted route.
-      if (!swapData) {
-        const routePath = this.extractRoutePath(route);
-        swapData = await this.buildSwapCalldata(
-          fromToken,
-          toToken,
-          fromAmount,
-          recipientAddress || userAddress,
-          routePath,
-          slippagePct
-        );
-      }
-
-      const { routerAddress, routerCalldata, path, expectedOutput, outputIsNativeBNB } = swapData;
+      // 1. (No calldata built here.) BscDirectSwapExecutor builds the swap
+      //    itself in step 4 — building a second copy here was both wasted RPC
+      //    work and the source of the "Pancake: K" mismatch.
 
       // 2. Calculate gas payment details
       const fromAmountWei = parseUnits(fromAmount, fromToken.decimals || 18);
-      const { gasToken, taxAmount, maxGasFee, gasTokenType } = this.calculateGasPayment(
+      const { gasToken, taxRateBps } = this.calculateGasPayment(
         fromAmountWei,
         fromToken.decimals || 18,
         selectedGasTokenType,
         selectedGasToken
       );
 
+      // The relayer path charges its OWN rate — 0.20% with TWC as the gas token,
+      // 0.30% otherwise — not the normal path's flat 0.25%. It's collected here
+      // (step 3.5) and the normal executor is told to skip its own, so the user
+      // is taxed exactly once.
+      const taxAmountWei = (fromAmountWei * BigInt(taxRateBps)) / BigInt(BASIS_POINTS);
+
       // 2.5. CRITICAL: Check user balances BEFORE proceeding
       // This prevents the "Gas estimation failed" error when user doesn't have enough tokens
       const normalizedFromToken = normalizeTokenAddress(fromToken.address) as Address;
-      const totalGasPayment = taxAmount + maxGasFee;
+      // The relayer contract used to take a gas reimbursement inside
+      // executeGaslessSwap. A direct swap doesn't, so nothing is required here
+      // on that account — the tax below and the $0.50 service fee are the only
+      // charges, and both are checked explicitly.
+      const totalGasPayment = BigInt(0);
 
       onStatusUpdate?.({
         stage: 'preparing',
         message: 'Checking...',
       });
+
+      // The sponsorship service fee is charged in the GAS token, which is very
+      // often the same token being swapped. Reserve it here, BEFORE the balance
+      // check, or the check passes against a balance the fee is about to spend
+      // and the swap reverts later inside the relayed transaction.
+      const sponsorship = await this.quoteSponsorship(chainId, gasToken);
+      const serviceFeeWei = sponsorship.kind === 'ready' ? sponsorship.amountWei : BigInt(0);
 
       // Check FROM token balance
       const fromBalance = await this.publicClient.readContract({
@@ -413,9 +407,29 @@ export class BscGaslessExecutor implements SwapRouterExecutor {
         args: [userAddress as Address],
       }) as bigint;
 
-      if (fromBalance < fromAmountWei) {
+      // Everything this swap takes out of the FROM token. When the gas token IS
+      // the from-token (the usual "pay gas in TWC while swapping TWC" case) the
+      // tax and the service fee come out of the same balance, so checking the
+      // swap amount alone passes and then the swap reverts mid-flow — after the
+      // user has already paid the fee and approved.
+      const fromDecimals = fromToken.decimals || 18;
+      const gasIsFromToken = gasToken.toLowerCase() === normalizedFromToken.toLowerCase();
+      const fromTokenRequired = gasIsFromToken
+        ? fromAmountWei + taxAmountWei + serviceFeeWei
+        : fromAmountWei + taxAmountWei;
+
+      if (fromBalance < fromTokenRequired) {
         const fromSymbol = fromToken.symbol || 'token';
-        throw new Error(`Insufficient ${fromSymbol} balance. You have ${(Number(fromBalance) / 10 ** (fromToken.decimals || 18)).toFixed(4)} but need ${fromAmount}`);
+        const n = (v: bigint) => Number(v) / 10 ** fromDecimals;
+        throw new Error(
+          `Insufficient ${fromSymbol} balance. You have ${n(fromBalance).toFixed(4)} but this swap needs ` +
+            `${n(fromTokenRequired).toFixed(4)} (${n(fromAmountWei).toFixed(4)} to swap` +
+            ` + ${n(taxAmountWei).toFixed(4)} fee` +
+            (gasIsFromToken && serviceFeeWei > BigInt(0)
+              ? ` + ${n(serviceFeeWei).toFixed(4)} gasless service fee`
+              : '') +
+            `). Lower the amount and try again.`,
+        );
       }
 
       // Check GAS token balance (if different from FROM token)
@@ -427,7 +441,7 @@ export class BscGaslessExecutor implements SwapRouterExecutor {
           args: [userAddress as Address],
         }) as bigint;
 
-        if (gasBalance < totalGasPayment) {
+        if (gasBalance < totalGasPayment + serviceFeeWei) {
           // Get gas token symbol
           let gasSymbol = 'gas token';
           try {
@@ -462,95 +476,55 @@ export class BscGaslessExecutor implements SwapRouterExecutor {
         totalGasPayment: totalGasPayment.toString(),
       });
 
-      // 3. Ensure token approvals for relayer contract
-      onStatusUpdate?.({
-        stage: 'approving',
-        message: 'Approving...',
-      });
-
-      await this.ensureApprovals(
+      // 3. Relayer releases $0.10 of BNB to the user, then collects $0.50 of
+      //    the selected token. After this the wallet can pay its own gas.
+      await this.ensureSponsoredGas(
         activeWallet,
         userAddress as Address,
-        RELAYER_V2_CONTRACT,
-        normalizedFromToken,
-        fromAmountWei,
+        chainId,
         gasToken,
-        totalGasPayment,
-        onStatusUpdate
+        sponsorship,
+        onStatusUpdate,
       );
 
-      // 4. Get user's nonce
-      const nonce = await this.getUserNonce(userAddress as Address);
 
-      // 5. Build the swap request
-      const deadline = BigInt(Math.floor(Date.now() / 1000) + 1200); // 20 minutes
-      // Relayer-enforced minOut — uses the user's actual slippage tolerance.
-      const minAmountOut = applySlippage(expectedOutput, slippagePct);
+      // 3.5. Protocol tax for the relayer path, taken after the $0.50 and
+      //      before the swap. Paid with the BNB released in step 3.
+      if (taxAmountWei > BigInt(0)) {
+        onStatusUpdate?.({ stage: 'signing', message: 'Confirm the fee...' });
 
-      // For native BNB output, use the placeholder address so contract checks ETH balance
-      const toTokenForContract = outputIsNativeBNB
-        ? NATIVE_BNB_PLACEHOLDER
-        : normalizeTokenAddress(toToken.address);
-
-      const swapRequest = {
-        user: userAddress as Address,
-        fromToken: normalizeTokenAddress(fromToken.address) as Address,
-        toToken: toTokenForContract as Address,
-        fromAmount: fromAmountWei,
-        minAmountOut,
-        recipient: (recipientAddress || userAddress) as Address,
-        router: routerAddress as Address,
-        routerCalldata: routerCalldata as Hex,
-        gasToken,
-        taxAmount,   // exact fee user signs — computed with decimal adjustment
-        maxGasFee,
-        gasTokenType,
-        nonce,
-        deadline,
-      };
-
-      console.log('[BscGaslessExecutor] Swap request:', {
-        ...swapRequest,
-        fromAmount: swapRequest.fromAmount.toString(),
-        minAmountOut: swapRequest.minAmountOut.toString(),
-        maxGasFee: swapRequest.maxGasFee.toString(),
-        nonce: swapRequest.nonce.toString(),
-        deadline: swapRequest.deadline.toString(),
-      });
-
-      // 6. Request user signature (THIS IS FREE - no gas!)
-      onStatusUpdate?.({
-        stage: 'signing',
-        message: 'Confirming in wallet...',
-      });
-
-      const signature = await this.signSwapRequest(activeWallet, userAddress as Address, swapRequest, routerCalldata);
-
-      console.log('[BscGaslessExecutor] User signed the request');
-
-      // 7. Submit to backend relayer
-      onStatusUpdate?.({
-        stage: 'confirming',
-        message: 'Reviewing...',
-      });
-
-      const result = await this.submitToRelayer(swapRequest, signature, routerCalldata);
-
-      if (!result.success) {
-        throw new Error(result.error || 'Relayer submission failed');
+        const taxHash = await activeWallet.sendTransaction({
+          to: normalizedFromToken,
+          data: encodeFunctionData({
+            abi: ERC20_ABI,
+            functionName: 'transfer',
+            args: [REVENUE_WALLET, taxAmountWei],
+          }),
+          account: userAddress as Address,
+          chain: bsc,
+        });
+        const taxReceipt = await this.publicClient.waitForTransactionReceipt({
+          hash: taxHash,
+          timeout: 90_000,
+        });
+        if (taxReceipt.status !== 'success') {
+          throw new Error('The fee transfer reverted on-chain.');
+        }
+        console.log(`[BscGaslessExecutor] tax paid (${taxRateBps / 100}%):`, taxHash);
       }
 
-      onStatusUpdate?.({
-        stage: 'completed',
-        message: 'Success',
-        txHash: result.txHash,
-      });
+      // 4. From here it IS a normal swap. Hand off to BscDirectSwapExecutor
+      //    rather than re-implementing approve + swap here — that duplicate is
+      //    what produced "Pancake: K", since this file built calldata with
+      //    `swapExactTokensForETH` while the normal executor correctly uses the
+      //    SupportingFeeOnTransferTokens variants that a self-taxing token like
+      //    TWC requires.
+      //
+      //    skipTax: the relayer rate was charged above, so its flat 0.25% must
+      //    not fire as well or the user is taxed twice.
+      const { BscDirectSwapExecutor } = await import('./bsc-direct-swap-executor');
+      return await new BscDirectSwapExecutor().execute({ ...params, skipTax: true });
 
-      return {
-        success: true,
-        txHash: result.txHash!,
-        actualToAmount: route.toToken.amount,
-      };
     } catch (error: any) {
       console.error('[BscGaslessExecutor] Swap failed:', error);
 
@@ -646,21 +620,11 @@ export class BscGaslessExecutor implements SwapRouterExecutor {
    * owner flips this on, we fall back to the V2 path (so this stays inert pre-gate).
    */
   private async isMultiSwapAllowlisted(): Promise<boolean> {
-    if (TIWI_MULTISWAP_CONTRACT === '0x0000000000000000000000000000000000000000') return false;
-    if (this._multiSwapAllowlisted !== null) return this._multiSwapAllowlisted;
-    try {
-      const allowed = await this.publicClient.readContract({
-        address: RELAYER_V2_CONTRACT,
-        abi: RELAYER_ALLOWLIST_ABI,
-        functionName: 'isRouterAllowed',
-        args: [TIWI_MULTISWAP_CONTRACT],
-      }) as boolean;
-      this._multiSwapAllowlisted = allowed;
-      return allowed;
-    } catch {
-      return false;
-    }
+    // The allowlist lived on the relayer contract, which this path no longer
+    // uses: a direct swap calls the router itself, so nothing gates it.
+    return TIWI_MULTISWAP_CONTRACT !== '0x0000000000000000000000000000000000000000';
   }
+
 
   /**
    * Build executeMultiSwap calldata targeting TiwiMultiSwap for a V3/multi-DEX route.
@@ -772,20 +736,24 @@ export class BscGaslessExecutor implements SwapRouterExecutor {
     const minAmountOut = applySlippage(expectedOutput, slippagePct);
     const pathAddresses = path.map(addr => getAddress(addr)) as readonly `0x${string}`[];
 
-    // Use swapExactTokensForETH if output should be native BNB
+    // Always the fee-on-transfer variants. They behave identically for a normal
+    // token, and they are the ONLY ones that work for a token that taxes its own
+    // transfers — the plain versions revert with "Pancake: K" because the pair
+    // receives less than amountIn and the constant-product check fails. TWC is
+    // such a token, which is exactly how this surfaced.
     // This function unwraps WBNB to native BNB and sends to recipient
     let routerCalldata: Hex;
     if (outputIsNativeBNB) {
-      console.log('[BscGaslessExecutor] Using swapExactTokensForETH for native BNB output');
+      console.log('[BscGaslessExecutor] Using swapExactTokensForETHSupportingFeeOnTransferTokens for native BNB output');
       routerCalldata = encodeFunctionData({
         abi: PANCAKESWAP_ABI,
-        functionName: 'swapExactTokensForETH',
+        functionName: 'swapExactTokensForETHSupportingFeeOnTransferTokens',
         args: [fromAmountWei, minAmountOut, pathAddresses, recipient as Address, deadline],
       });
     } else {
       routerCalldata = encodeFunctionData({
         abi: PANCAKESWAP_ABI,
-        functionName: 'swapExactTokensForTokens',
+        functionName: 'swapExactTokensForTokensSupportingFeeOnTransferTokens',
         args: [fromAmountWei, minAmountOut, pathAddresses, recipient as Address, deadline],
       });
     }
@@ -810,6 +778,8 @@ export class BscGaslessExecutor implements SwapRouterExecutor {
   ): {
     gasToken: Address;
     taxAmount: bigint;
+    /** Protocol tax rate in basis points for the chosen gas token. */
+    taxRateBps: number;
     maxGasFee: bigint;
     gasTokenType: number;
   } {
@@ -864,193 +834,182 @@ export class BscGaslessExecutor implements SwapRouterExecutor {
     return {
       gasToken,
       taxAmount,
+      taxRateBps,
       maxGasFee,
       gasTokenType: gasTokenType as number,
     };
   }
 
   /**
-   * Get user's nonce from the relayer contract
+   * Decide whether this swap needs sponsorship, and price it — WITHOUT moving
+   * any funds.
+   *
+   * Split from the execution below so the fee can be reserved in the pre-flight
+   * balance check. Quoting and spending must agree on one number: the fee is
+   * charged in the gas token, which is usually the same token being swapped, so
+   * a fee discovered after the balance check silently eats into the swap amount.
+   *
+   * Returns null when no sponsorship applies — either every allowance is
+   * already set (the user signs no transaction, so there is no gas to cover and
+   * a drip would be $0.10 against $0), or the opt-out is enabled and they can
+   * already pay.
    */
-  private async getUserNonce(user: Address): Promise<bigint> {
+  private async quoteSponsorship(chainId: number, gasToken: Address): Promise<Sponsorship> {
     try {
-      const response = await fetch(apiUrl(`/api/v1/gasless-swap?user=${user}`));
-      const data = await response.json();
-      if (data.success) {
-        return BigInt(data.nonce);
+      // Unconditional. Choosing the relayer means the user's own BNB is never
+      // what pays for the swap, so the release/receive pair runs every time —
+      // it is not gated on the wallet's BNB balance, nor on whether an approval
+      // happens to be outstanding.
+      const res = await fetch(apiUrl(`/api/v1/relayer/gas-drip?gasTokenAddress=${gasToken}&chainId=${chainId}`));
+      const quote = await res.json().catch(() => ({}));
+      if (!res.ok || !quote?.amountWei) {
+        // Sponsorship IS needed here but we couldn't price it. Report that
+        // rather than returning "nothing to do" — the caller decides whether a
+        // user who can self-fund proceeds, and a user who can't gets told why.
+        return {
+          kind: 'unavailable',
+          reason: quote?.error || `service-fee quote failed (HTTP ${res.status})`,
+        };
       }
-      return BigInt(0);
-    } catch (error) {
-      console.warn('[BscGaslessExecutor] Failed to get nonce, using 0:', error);
-      return BigInt(0);
+      return {
+        kind: 'ready',
+        amountWei: BigInt(quote.amountWei),
+        amountToken: String(quote.amountToken ?? ''),
+        quoteAmountWei: String(quote.amountWei),
+      };
+    } catch (e: any) {
+      return { kind: 'unavailable', reason: e?.message || String(e) };
     }
   }
 
   /**
-   * Sign the swap request using EIP-712
+   * Cold-start gas sponsorship — the part that moves funds.
+   *
+   * Everything else in this flow is already gasless for the user: the tax, the
+   * gas reimbursement, the token pull and the swap all happen inside the single
+   * transaction the relayer submits and pays for. The one exception is the
+   * ERC20 `approve` — it writes `allowance[msg.sender][spender]`, so the user
+   * must be `msg.sender`, and `msg.sender` pays.
+   *
+   * Sequence:
+   *   1. Ask the relayer to send BNB, so the user's own BNB is never what pays
+   *      for a relayer swap. Fires whenever an approval is required, not only
+   *      when the user is short — see quoteSponsorship().
+   *   2. Collect the service fee, in the gas token, as a plain `transfer` — a
+   *      push needs no allowance, so it works on a cold wallet right after the
+   *      drip. The amount is the one already reserved by the balance check.
+   *   3. Report it to the server, which verifies it on-chain and settles the
+   *      drip. An unsettled drip blocks this wallet from drawing another.
+   *
+   * A failure here is never fatal: we log and fall through to the approval,
+   * which may still succeed on the user's own balance.
    */
-  private async signSwapRequest(
+  private async ensureSponsoredGas(
     walletClient: any,
-    user: Address,
-    request: any,
-    routerCalldata: Hex
-  ): Promise<{ v: number; r: Hex; s: Hex }> {
-    // Hash the routerCalldata for the typed data
-    const { keccak256, toBytes } = await import('viem');
-    const routerCalldataHash = keccak256(toBytes(routerCalldata));
-
-    const typedData = {
-      domain: getEIP712Domain(),
-      types: SWAP_REQUEST_TYPES,
-      primaryType: 'SwapRequest' as const,
-      message: {
-        user: request.user,
-        fromToken: request.fromToken,
-        toToken: request.toToken,
-        fromAmount: request.fromAmount,
-        minAmountOut: request.minAmountOut,
-        recipient: request.recipient,
-        router: request.router,
-        routerCalldataHash,
-        gasToken: request.gasToken,
-        taxAmount: request.taxAmount,
-        maxGasFee: request.maxGasFee,
-        gasTokenType: request.gasTokenType,
-        nonce: request.nonce,
-        deadline: request.deadline,
-      },
-    };
-
-    // Request signature from wallet
-    const signature = await walletClient.signTypedData({
-      account: user,
-      ...typedData,
-    });
-
-    // Parse signature into v, r, s components
-    const { hexToBytes } = await import('viem');
-    const sigBytes = hexToBytes(signature);
-
-    const r = `0x${Buffer.from(sigBytes.slice(0, 32)).toString('hex')}` as Hex;
-    const s = `0x${Buffer.from(sigBytes.slice(32, 64)).toString('hex')}` as Hex;
-    const v = sigBytes[64];
-
-    return { v, r, s };
-  }
-
-  /**
-   * Submit signed request to backend relayer
-   */
-  private async submitToRelayer(
-    request: any,
-    signature: { v: number; r: Hex; s: Hex },
-    routerCalldata: Hex
-  ): Promise<{ success: boolean; txHash?: Hex; error?: string }> {
-    const response = await fetch(apiUrl('/api/v1/gasless-swap'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        user: request.user,
-        fromToken: request.fromToken,
-        toToken: request.toToken,
-        fromAmount: request.fromAmount.toString(),
-        minAmountOut: request.minAmountOut.toString(),
-        recipient: request.recipient,
-        router: request.router,
-        routerCalldata,
-        gasToken: request.gasToken,
-        taxAmount: request.taxAmount.toString(),
-        maxGasFee: request.maxGasFee.toString(),
-        gasTokenType: request.gasTokenType,
-        nonce: request.nonce.toString(),
-        deadline: request.deadline.toString(),
-        signature,
-      }),
-    });
-
-    const data = await response.json();
-    return {
-      success: data.success,
-      txHash: data.txHash as Hex,
-      error: data.error,
-    };
-  }
-
-  /**
-   * Ensure token approvals
-   */
-  private async ensureApprovals(
-    walletClient: any,
-    owner: Address,
-    spender: Address,
-    fromToken: Address,
-    fromAmount: bigint,
+    userAddress: Address,
+    chainId: number,
     gasToken: Address,
-    gasAmount: bigint,
-    onStatusUpdate?: (status: any) => void
+    sponsorship: Sponsorship,
+    onStatusUpdate?: (status: any) => void,
   ): Promise<void> {
-    const maxApproval = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff');
+    if (sponsorship.kind === 'not-needed') return;
 
-    // Check and approve FROM token
-    const fromAllowance = await this.publicClient.readContract({
-      address: fromToken,
-      abi: ERC20_ABI,
-      functionName: 'allowance',
-      args: [owner, spender],
-    }) as bigint;
+    try {
+      if (sponsorship.kind === 'unavailable') {
+        throw new Error(sponsorship.reason);
+      }
 
-    if (fromAllowance < fromAmount) {
+      onStatusUpdate?.({ stage: 'approving', message: 'Setting up gasless swap...' });
+
+      const dripRes = await fetch(apiUrl('/api/v1/relayer/gas-drip'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userWallet: userAddress, chainId, gasTokenAddress: gasToken }),
+      });
+      const drip = await dripRes.json().catch(() => ({}));
+
+      if (!dripRes.ok) {
+        // The server refuses for good reasons (outstanding drip, daily cap,
+        // budget). Its message tells the user what to do — surface it, but keep
+        // going: if they do hold BNB the approval still works.
+        throw new Error(drip?.error || 'Gas sponsorship is unavailable right now.');
+      }
+
+      // Defensive: the server always sends on success, but if it ever reports
+      // no release then there is nothing to charge a fee for either.
+      if (!drip.txHash) return;
+      console.log('[BscGaslessExecutor] gas sponsored:', drip.txHash);
+
       onStatusUpdate?.({
         stage: 'approving',
-        message: 'Approving...',
+        message: `Confirm the ${Number(sponsorship.amountToken).toFixed(4)} service fee...`,
       });
 
-      const approveData = encodeFunctionData({
+      // A push (`transfer`) rather than approve+transferFrom: no allowance
+      // needed, which is what lets it be the first token movement out of a
+      // cold wallet.
+      const feeData = encodeFunctionData({
         abi: ERC20_ABI,
-        functionName: 'approve',
-        args: [spender, maxApproval],
+        functionName: 'transfer',
+        args: [RELAYER_FEE_WALLET, sponsorship.amountWei],
       });
-
-      const hash = await walletClient.sendTransaction({
-        to: fromToken,
-        data: approveData,
-        account: owner,
+      const feeHash = await walletClient.sendTransaction({
+        to: gasToken,
+        data: feeData,
+        account: userAddress,
         chain: bsc,
       });
-
-      await this.publicClient.waitForTransactionReceipt({ hash, timeout: 60000 });
-    }
-
-    // Check and approve gas token (if different)
-    if (gasToken.toLowerCase() !== fromToken.toLowerCase()) {
-      const gasAllowance = await this.publicClient.readContract({
-        address: gasToken,
-        abi: ERC20_ABI,
-        functionName: 'allowance',
-        args: [owner, spender],
-      }) as bigint;
-
-      if (gasAllowance < gasAmount) {
-        onStatusUpdate?.({
-          stage: 'approving',
-          message: 'Approving...',
-        });
-
-        const approveData = encodeFunctionData({
-          abi: ERC20_ABI,
-          functionName: 'approve',
-          args: [spender, maxApproval],
-        });
-
-        const hash = await walletClient.sendTransaction({
-          to: gasToken,
-          data: approveData,
-          account: owner,
-          chain: bsc,
-        });
-
-        await this.publicClient.waitForTransactionReceipt({ hash, timeout: 60000 });
+      const feeReceipt = await this.publicClient.waitForTransactionReceipt({
+        hash: feeHash,
+        timeout: 90_000,
+      });
+      if (feeReceipt.status !== 'success') {
+        throw new Error('The service-fee transfer reverted on-chain.');
       }
+
+      const settleRes = await fetch(apiUrl('/api/v1/relayer/gas-drip'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'settle',
+          userWallet: userAddress,
+          txHash: feeHash,
+          gasTokenAddress: gasToken,
+          expectedAmountWei: sponsorship.quoteAmountWei,
+        }),
+      });
+      if (!settleRes.ok) {
+        const err = await settleRes.json().catch(() => ({}));
+        console.warn('[BscGaslessExecutor] service fee not settled server-side:', err?.error);
+      }
+
+      console.log('[BscGaslessExecutor] service fee paid:', feeHash);
+    } catch (e: any) {
+      const detail = e?.message || String(e);
+      console.warn('[BscGaslessExecutor] gas sponsorship did not complete:', detail);
+
+      // Whether this is fatal depends entirely on whether the user can pay for
+      // the approval themselves. Silently continuing was the wrong default: for
+      // a wallet with no BNB it produced an approval prompt that could never be
+      // paid, with the real reason buried in the console.
+      const [balance, gasPrice] = await Promise.all([
+        this.publicClient.getBalance({ address: userAddress }),
+        this.publicClient.getGasPrice(),
+      ]).catch(() => [BigInt(0), BigInt(0)] as [bigint, bigint]);
+
+      const canSelfFund = gasPrice > BigInt(0)
+        && balance >= gasPrice * BigInt(APPROVE_GAS_ESTIMATE) * BigInt(2);
+
+      if (!canSelfFund) {
+        throw new Error(
+          `Gasless setup failed and this wallet has no BNB to approve with, so the swap was stopped ` +
+            `before costing you anything. Reason: ${detail}`,
+        );
+      }
+
+      onStatusUpdate?.({ stage: 'approving', message: 'Continuing without sponsored gas...' });
     }
   }
+
+
 }

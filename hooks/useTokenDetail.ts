@@ -1,4 +1,5 @@
 import { api } from '@/lib/mobile/api-client';
+import { resolveTokenLogo } from '@/utils/admin-token-logos';
 import { useQuery } from '@tanstack/react-query';
 
 interface UseTokenDetailParams {
@@ -34,7 +35,11 @@ export function useTokenDetail({ address, chainId, symbol, enabled = true }: Use
                             liquidity: detail.pool?.liquidity || 0,
                             holders: detail.holders || 0,
                             verified: true,
-                            logoURI: detail.token.logo,
+                            logoURI: resolveTokenLogo({
+                                address,
+                                chainId,
+                                logo: detail.token.logo,
+                            }) || detail.token.logo,
                             description: detail.token.description || '',
                             // Admin-curated copy + ordered links from the Listing /
                             // Spotlight tables, merged in by /api/v1/token-info
@@ -74,6 +79,7 @@ export function useTokenDetail({ address, chainId, symbol, enabled = true }: Use
                         totalSupply: token.totalSupply || 0,
                         liquidity: token.liquidity || 0,
                         verified: token.verified || false,
+                        logoURI: resolveTokenLogo(token) || token.logoURI,
                     };
                 }
             } catch (err) {

@@ -7,6 +7,7 @@ import { useOpenTokenInSwap } from '@/hooks/useOpenTokenInSwap';
 import { useTWCToken } from '@/hooks/useTWCToken';
 import { api, MarketAsset, TokenItem } from '@/lib/mobile/api-client';
 import { useMarketStore } from '@/store/marketStore';
+import { registerAdminTokenLogoOverrides, resolveTokenLogo } from '@/utils/admin-token-logos';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -119,9 +120,17 @@ export const MarketSection: React.FC<MarketSectionProps> = ({
             const active = raw
                 .filter((t: any) => (!t.startDate || t.startDate <= today) && (!t.endDate || t.endDate >= today))
                 .sort((a: any, b: any) => (a.rank || 0) - (b.rank || 0));
+            registerAdminTokenLogoOverrides(active);
 
             const enriched = await Promise.all(active.map(async (st: any) => {
                 const cid = st.chainId || 56;
+                const adminLogo = resolveTokenLogo({
+                    address: st.address,
+                    chainId: cid,
+                    logoURI: st.logoURI,
+                    logo: st.logo,
+                    icon: st.icon,
+                });
                 // Match against the same enriched list Explore uses so the
                 // Spotlight/Listing tabs show identical price/24h/volume for
                 // a shared token. Strip CEX pair suffixes (`BTCUSDT` → `BTC`)
@@ -136,7 +145,17 @@ export const MarketSection: React.FC<MarketSectionProps> = ({
                     return false;
                 });
                 if (match && (parseFloat(String(match.price || match.priceUSD || 0)) > 0 || match.priceChange24h !== undefined)) {
-                    return { ...match, logoURI: match.logoURI || match.logo || st.logo || '' };
+                    return {
+                        ...match,
+                        id: st.id || `${cid}-${st.address || match.address || st.symbol}`,
+                        symbol: st.symbol,
+                        displaySymbol: st.symbol,
+                        name: st.name || match.name || st.symbol,
+                        address: st.address || match.address || '',
+                        chainId: cid,
+                        logoURI: adminLogo || match.logoURI || match.logo || st.logo || '',
+                        logo: adminLogo || match.logo || match.logoURI || st.logo || '',
+                    };
                 }
 
                 // Server-side enrichment (enrichAdminTokenRow) already populates
@@ -153,7 +172,7 @@ export const MarketSection: React.FC<MarketSectionProps> = ({
                         id: st.id || `${cid}-${st.address || st.symbol}`,
                         symbol: st.symbol, displaySymbol: st.symbol,
                         name: st.name || st.symbol, address: st.address || '', chainId: cid,
-                        logoURI: st.logo || '', logo: st.logo || '',
+                        logoURI: adminLogo || st.logo || '', logo: adminLogo || st.logo || '',
                         price: serverPrice ? String(serverPrice) : '0',
                         priceUSD: serverPrice ? String(serverPrice) : '0',
                         priceChange24h: st.priceChange24h || 0,
@@ -174,7 +193,8 @@ export const MarketSection: React.FC<MarketSectionProps> = ({
                             return {
                                 id: st.id || `${cid}-${st.address}`, symbol: st.symbol, displaySymbol: st.symbol,
                                 name: st.name || st.symbol, address: st.address, chainId: cid,
-                                logoURI: st.logo || info?.token?.logo || '', logo: st.logo || info?.token?.logo || '',
+                                logoURI: adminLogo || st.logo || info?.token?.logo || '',
+                                logo: adminLogo || st.logo || info?.token?.logo || '',
                                 price: pool.priceUsd ? String(pool.priceUsd) : '0', priceUSD: pool.priceUsd ? String(pool.priceUsd) : '0',
                                 priceChange24h: pool.priceChange24h || 0, volume24h: pool.volume24h || 0,
                                 marketCap: pool.marketCap || 0, marketType: 'spot',
@@ -185,7 +205,7 @@ export const MarketSection: React.FC<MarketSectionProps> = ({
                 return {
                     id: st.id || st.symbol, symbol: st.symbol, displaySymbol: st.symbol,
                     name: st.name || st.symbol, address: st.address || '', chainId: cid,
-                    logoURI: st.logo || '', logo: st.logo || '', price: '0', priceUSD: '0',
+                    logoURI: adminLogo || st.logo || '', logo: adminLogo || st.logo || '', price: '0', priceUSD: '0',
                     priceChange24h: 0, volume24h: 0, marketCap: 0, marketType: 'spot',
                 };
             }));

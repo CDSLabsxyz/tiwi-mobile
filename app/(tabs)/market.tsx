@@ -10,6 +10,7 @@ import { useTWCToken } from '@/hooks/useTWCToken';
 import { MarketCategory } from '@/hooks/useMarketPairs';
 import { api, MarketAsset, TokenItem } from '@/lib/mobile/api-client';
 import { useMarketStore } from '@/store/marketStore';
+import { registerAdminTokenLogoOverrides, resolveTokenLogo } from '@/utils/admin-token-logos';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Image } from 'expo-image';
 import { useLocalSearchParams } from 'expo-router';
@@ -134,7 +135,7 @@ export default function MarketScreen() {
     });
 
     // Fetch Spotlight/Listing tokens with price enrichment (matching web app)
-    const { data: adminTokens = [], isLoading: isAdminLoading } = useQuery({
+    const { data: adminTokens = { tokens: [] }, isLoading: isAdminLoading } = useQuery<{ tokens: any[] }>({
         queryKey: ['adminTokensEnriched', activeSubTab],
         queryFn: async () => {
             const res = await api.tokenSpotlight.get({
@@ -147,6 +148,7 @@ export default function MarketScreen() {
             const active = tokensFromAPI
                 .filter((t: any) => (!t.startDate || t.startDate <= today) && (!t.endDate || t.endDate >= today))
                 .sort((a: any, b: any) => (a.rank || 0) - (b.rank || 0));
+            registerAdminTokenLogoOverrides(active);
 
             // Match against the same enriched list Explore uses so the
             // Spotlight/Listing tabs show identical price/24h/volume for a
@@ -168,11 +170,28 @@ export default function MarketScreen() {
 
             const enriched = await Promise.all(active.map(async (st: any) => {
                 const chainId = st.chainId || 56;
+                const adminLogo = resolveTokenLogo({
+                    address: st.address,
+                    chainId,
+                    logoURI: st.logoURI,
+                    logo: st.logo,
+                    icon: st.icon,
+                });
                 const market = marketLookup.get((st.symbol || '').toUpperCase()) ||
                     (st.address ? marketLookup.get(st.address.toLowerCase()) : null);
 
                 if (market && (parseFloat(String(market.price || market.priceUSD || 0)) > 0 || market.priceChange24h !== undefined)) {
-                    return { ...market, logoURI: market.logoURI || market.logo || st.logo || '' };
+                    return {
+                        ...market,
+                        id: st.id || `${chainId}-${st.address || market.address || st.symbol}`,
+                        symbol: st.symbol,
+                        displaySymbol: st.symbol,
+                        name: st.name || market.name || st.symbol,
+                        address: st.address || market.address || '',
+                        chainId,
+                        logoURI: adminLogo || market.logoURI || market.logo || st.logo || '',
+                        logo: adminLogo || market.logo || market.logoURI || st.logo || '',
+                    };
                 }
 
                 // Server-side enrichment (enrichAdminTokenRow) populates price/volume/24h
@@ -193,8 +212,8 @@ export default function MarketScreen() {
                         name: st.name || st.symbol,
                         address: st.address || '',
                         chainId,
-                        logoURI: st.logo || '',
-                        logo: st.logo || '',
+                        logoURI: adminLogo || st.logo || '',
+                        logo: adminLogo || st.logo || '',
                         price: serverPrice ? String(serverPrice) : '0',
                         priceUSD: serverPrice ? String(serverPrice) : '0',
                         priceChange24h: st.priceChange24h || 0,
@@ -220,8 +239,8 @@ export default function MarketScreen() {
                                 name: st.name || info?.token?.name || st.symbol,
                                 address: st.address,
                                 chainId,
-                                logoURI: st.logo || info?.token?.logo || '',
-                                logo: st.logo || info?.token?.logo || '',
+                                logoURI: adminLogo || st.logo || info?.token?.logo || '',
+                                logo: adminLogo || st.logo || info?.token?.logo || '',
                                 price: pool.priceUsd ? String(pool.priceUsd) : '0',
                                 priceUSD: pool.priceUsd ? String(pool.priceUsd) : '0',
                                 priceChange24h: pool.priceChange24h || 0,
@@ -242,8 +261,8 @@ export default function MarketScreen() {
                     name: st.name || st.symbol,
                     address: st.address || '',
                     chainId,
-                    logoURI: st.logo || '',
-                    logo: st.logo || '',
+                    logoURI: adminLogo || st.logo || '',
+                    logo: adminLogo || st.logo || '',
                     price: '0',
                     priceUSD: '0',
                     priceChange24h: 0,

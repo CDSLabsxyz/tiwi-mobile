@@ -7,6 +7,7 @@
 import type { ChainOption } from "@/components/sections/Swap/ChainSelectSheet";
 import type { TokenOption } from "@/components/sections/Swap/TokenSelectSheet";
 import type { AssetDetail, PortfolioItem } from "@/services/walletService";
+import { normalizeTokenLogoUrl, resolveTokenLogo } from "@/utils/admin-token-logos";
 
 const TWCIcon = require("@/assets/home/tiwicat-token.svg");
 const USDCIcon = require("@/assets/home/coins-02.svg");
@@ -25,6 +26,13 @@ export const mapAssetToTokenOption = (
 ): TokenOption | null => {
   const symbol = asset.symbol.toLowerCase();
   const name = asset.name.toLowerCase();
+  const chainId = typeof asset.chainId === 'number' ? asset.chainId : 56;
+  const assetLogo = resolveTokenLogo({
+    address: asset.address,
+    chainId,
+    logoURI: typeof asset.logo === 'string' ? asset.logo : undefined,
+  }) || normalizeTokenLogoUrl(typeof asset.logo === 'string' ? asset.logo : undefined);
+  const logoIcon = assetLogo ? { uri: assetLogo } : null;
 
   // Map common token symbols - use asset logo if available, otherwise use mapped icon
   const tokenMap: Record<string, Partial<TokenOption>> = {
@@ -32,43 +40,43 @@ export const mapAssetToTokenOption = (
       id: "btc",
       symbol: "BTC",
       name: "Bitcoin",
-      icon: asset.logo ? { uri: asset.logo } : BNBIcon,
+      icon: logoIcon || BNBIcon,
     },
     eth: {
       id: "eth",
       symbol: "ETH",
       name: "Ethereum",
-      icon: asset.logo ? { uri: asset.logo } : EthereumIcon,
+      icon: logoIcon || EthereumIcon,
     },
     sol: {
       id: "sol",
       symbol: "SOL",
       name: "Solana",
-      icon: asset.logo ? { uri: asset.logo } : AegisIcon,
+      icon: logoIcon || AegisIcon,
     },
     bnb: {
       id: "bnb",
       symbol: "BNB",
       name: "BNB Smart Chain",
-      icon: asset.logo ? { uri: asset.logo } : BNBIcon,
+      icon: logoIcon || BNBIcon,
     },
     usdc: {
       id: "usdc",
       symbol: "USDC",
       name: "USDC",
-      icon: asset.logo ? { uri: asset.logo } : USDCIcon,
+      icon: logoIcon || USDCIcon,
     },
     tether: {
       id: "tether",
       symbol: "Tether",
       name: "Tether",
-      icon: asset.logo ? { uri: asset.logo } : TetherIcon,
+      icon: logoIcon || TetherIcon,
     },
     twc: {
       id: "twc",
       symbol: "TWC",
       name: "TWC",
-      icon: asset.logo ? { uri: asset.logo } : TWCIcon,
+      icon: logoIcon || TWCIcon,
     },
   };
 
@@ -80,12 +88,12 @@ export const mapAssetToTokenOption = (
       id: symbol,
       symbol: asset.symbol,
       name: asset.name,
-      icon: asset.logo ? { uri: asset.logo } : TWCIcon,
+      icon: logoIcon || TWCIcon,
       tvl: "$0",
       balanceFiat: usdValue,
       balanceToken: `${balance} ${asset.symbol}`,
       address: asset.address,
-      chainId: typeof asset.chainId === 'number' ? asset.chainId : 56,
+      chainId,
       decimals: asset.decimals,
     };
   }
@@ -97,7 +105,7 @@ export const mapAssetToTokenOption = (
     tvl: "$1,000,000",
     balanceFiat: usdValue,
     balanceToken: `${balance} ${tokenData.symbol || asset.symbol.toUpperCase()}`,
-    chainId: typeof asset.chainId === 'number' ? asset.chainId : 56, // Default to BSC if not found
+    chainId, // Default to BSC if not found
   } as TokenOption;
 };
 
@@ -117,4 +125,3 @@ export const mapAssetToChainOption = (
     icon: null,
   };
 };
-
