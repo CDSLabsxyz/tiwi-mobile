@@ -115,7 +115,7 @@ export default function ReceiveScreen() {
     // IDs for fetching tokens
     const fetchChainIds = useMemo(() => {
         if (selectedChainFilter) return [selectedChainFilter];
-        return chains?.map(c => c.id) || [];
+        return chains?.map((c: any) => c.id) || [];
     }, [selectedChainFilter, chains]);
 
     // Fetch tokens — same approach as swap token selector
@@ -152,6 +152,7 @@ export default function ReceiveScreen() {
             'BNB': [56], 'WBNB': [56],
             'MATIC': [137], 'POL': [137],
             'AVAX': [43114],
+            'HYPE': [999],
             'SOL': [7565164], 'WSOL': [7565164],
             'TRX': [728126428],
             'TON': [1100, 136105027],
@@ -179,7 +180,7 @@ export default function ReceiveScreen() {
             const walletToken = balanceData?.tokens.find(
                 wt => wt.address.toLowerCase() === t.address.toLowerCase() && wt.chainId === t.chainId
             );
-            const chainInfo = chains?.find(c => c.id === t.chainId);
+            const chainInfo = chains?.find((c: any) => c.id === t.chainId);
             // Only count as owned if user actually has an address for this chain
             const hasBalance = !!walletToken && availableChainIds.has(t.chainId);
             const balanceNum = parseFloat(walletToken?.balanceFormatted || '0');
@@ -224,7 +225,7 @@ export default function ReceiveScreen() {
                 return !mappedApiTokens.some(at => at.address.toLowerCase() === wt.address.toLowerCase() && at.chainId === wt.chainId);
             })
             .map(wt => {
-                const chainInfo = chains?.find(c => c.id === wt.chainId);
+                const chainInfo = chains?.find((c: any) => c.id === wt.chainId);
                 const usdVal = parseFloat(wt.usdValue || '0');
                 return {
                     id: `${wt.chainId}-${wt.address}`,
@@ -254,8 +255,7 @@ export default function ReceiveScreen() {
             )
             .filter(ct => availableChainIds.has(ct.chainId) && isValidNativeOnChain(ct.symbol, ct.chainId))
             .map(ct => {
-                const chainInfo = chains?.find(c => c.id === ct.chainId);
-                const bal = parseFloat(ct.balanceFormatted || '0');
+                const chainInfo = chains?.find((c: any) => c.id === ct.chainId);
                 const usdVal = parseFloat(ct.usdValue || '0');
                 return {
                     id: `${ct.chainId}-${ct.address}`,
@@ -374,7 +374,7 @@ export default function ReceiveScreen() {
     const isSearching = searchQuery.trim().length > 0;
 
     const renderToken = (item: any, key: string) => {
-        const chain = chains?.find(c => c.id === item.chainId);
+        const chain = chains?.find((c: any) => c.id === item.chainId);
         const address = getAddressForToken(item);
         return (
             <TokenRow
@@ -461,6 +461,7 @@ export default function ReceiveScreen() {
             </TouchableOpacity>
         );
     });
+    TokenRow.displayName = 'ReceiveTokenRow';
 
     const handleCopy = async () => {
         if (!selectedToken) return;
@@ -522,7 +523,7 @@ export default function ReceiveScreen() {
     // If token is selected, show QR code view
     if (selectedToken) {
         const address = getAddressForToken(selectedToken);
-        const chain = chains?.find(c => String(c.id) === String(selectedToken.chainId));
+        const chain = chains?.find((c: any) => String(c.id) === String(selectedToken.chainId));
 
         return (
             <View style={[styles.container, { backgroundColor: colors.bg }]}>

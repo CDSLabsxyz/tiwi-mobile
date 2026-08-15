@@ -28,7 +28,7 @@ import { useStakingStore } from '@/store/stakingStore';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, usePathname, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react';
-import { Alert, AppState, Linking, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, AppState, Linking, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // Mock token icon - in production, use actual token logo
@@ -36,8 +36,14 @@ const TWCIcon = require('../../assets/home/tiwicat.svg');
 
 type StakingSubTab = 'stake' | 'active' | 'my-stakes' | 'create-pool' | 'my-pools';
 
+const TABLET_BREAKPOINT = 700;
+const PHONE_CONTENT_MAX_WIDTH = 500;
+const TABLET_CONTENT_MAX_WIDTH = 760;
+
 export default function EarnScreen() {
     const { top, bottom } = useSafeAreaInsets();
+    const { width: screenWidth } = useWindowDimensions();
+    const isTabletLayout = screenWidth >= TABLET_BREAKPOINT;
     const router = useRouter();
     const pathname = usePathname();
     const { tab } = useLocalSearchParams<{ tab: string }>();
@@ -274,6 +280,7 @@ export default function EarnScreen() {
                 style={styles.scrollView}
                 contentContainerStyle={[
                     styles.scrollContent,
+                    isTabletLayout && styles.scrollContentTablet,
                     { paddingBottom: bottom + 100 } // Extra padding for tab bar
                 ]}
                 showsVerticalScrollIndicator={false}
@@ -286,7 +293,12 @@ export default function EarnScreen() {
                     />
                 }
             >
-                <View style={styles.mainContent}>
+                <View
+                    style={[
+                        styles.mainContent,
+                        { maxWidth: isTabletLayout ? TABLET_CONTENT_MAX_WIDTH : PHONE_CONTENT_MAX_WIDTH },
+                    ]}
+                >
                     {/* Top Level Category Tabs hidden — only Staking is active for now
                     <View style={{ marginBottom: 8, width: '100%' }}>
                         <EarnTabSwitcher activeTab={activeTab} onTabChange={setActiveTab} />
@@ -375,13 +387,18 @@ export default function EarnScreen() {
                             <ScrollView
                                 horizontal
                                 showsHorizontalScrollIndicator={false}
-                                contentContainerStyle={styles.subTabsContainer}
+                                style={styles.subTabsScroll}
+                                contentContainerStyle={[
+                                    styles.subTabsContainer,
+                                    isTabletLayout && styles.subTabsContainerTablet,
+                                ]}
                             >
                                 <TouchableOpacity
                                     activeOpacity={0.8}
                                     onPress={() => setStakingSubTab('stake')}
                                     style={[
                                         styles.subTabButton,
+                                        isTabletLayout && styles.subTabButtonTablet,
                                         { backgroundColor: stakingSubTab === 'stake' ? '#081f02' : '#0b0f0a' }
                                     ]}
                                 >
@@ -393,6 +410,7 @@ export default function EarnScreen() {
                                     onPress={() => setStakingSubTab('active')}
                                     style={[
                                         styles.subTabButton,
+                                        isTabletLayout && styles.subTabButtonTablet,
                                         { backgroundColor: stakingSubTab === 'active' ? '#081f02' : '#0b0f0a' }
                                     ]}
                                 >
@@ -404,6 +422,7 @@ export default function EarnScreen() {
                                     onPress={() => setStakingSubTab('my-stakes')}
                                     style={[
                                         styles.subTabButton,
+                                        isTabletLayout && styles.subTabButtonTablet,
                                         { backgroundColor: stakingSubTab === 'my-stakes' ? '#081f02' : '#0b0f0a' }
                                     ]}
                                 >
@@ -412,13 +431,14 @@ export default function EarnScreen() {
 
                                 <TouchableOpacity
                                     activeOpacity={0.8}
-                                    onPress={() => setStakingSubTab('create-pool')}
+                                    onPress={() => router.push('/earn/create' as any)}
                                     style={[
                                         styles.subTabButton,
+                                        isTabletLayout && styles.subTabButtonTablet,
                                         { backgroundColor: stakingSubTab === 'create-pool' ? '#081f02' : '#0b0f0a' }
                                     ]}
                                 >
-                                    <Text numberOfLines={1} style={[styles.subTabText, { color: stakingSubTab === 'create-pool' ? '#b1f128' : '#b5b5b5' }]}>Create Pool</Text>
+                                    <Text numberOfLines={1} style={[styles.subTabText, { color: stakingSubTab === 'create-pool' ? '#b1f128' : '#b5b5b5' }]}>Create Stake</Text>
                                 </TouchableOpacity>
 
                                 <TouchableOpacity
@@ -426,6 +446,7 @@ export default function EarnScreen() {
                                     onPress={() => setStakingSubTab('my-pools')}
                                     style={[
                                         styles.subTabButton,
+                                        isTabletLayout && styles.subTabButtonTablet,
                                         { backgroundColor: stakingSubTab === 'my-pools' ? '#081f02' : '#0b0f0a' }
                                     ]}
                                 >
@@ -440,13 +461,14 @@ export default function EarnScreen() {
                                         activeWalletAddress={evmAddress}
                                         onConnectEvmWallet={() => useWalletStore.getState().setWalletModalVisible(true)}
                                         onViewPools={() => setStakingSubTab('my-pools')}
+                                        onCreationSuccessOk={() => setStakingSubTab('stake')}
                                         scrollRef={contentScrollRef}
                                     />
                                 ) : stakingSubTab === 'my-pools' ? (
                                     <MyPoolsView
                                         activeWalletAddress={evmAddress}
                                         onConnectEvmWallet={() => useWalletStore.getState().setWalletModalVisible(true)}
-                                        onCreatePool={() => setStakingSubTab('create-pool')}
+                                        onCreatePool={() => router.push('/earn/create' as any)}
                                     />
                                 ) : stakingSubTab === 'stake' ? (
                                     activePools.length > 0 ? (
@@ -464,6 +486,7 @@ export default function EarnScreen() {
                                                     name={pool.name}
                                                     tokenSymbol={pool.tokenSymbol}
                                                     tokenName={pool.tokenName}
+                                                    minStakingPeriod={pool.minStakingPeriod}
                                                     onStakePress={() => router.push(`/earn/stake/${pool.id}` as any)}
                                                 />
                                             ))
@@ -529,9 +552,11 @@ const styles = StyleSheet.create({
         paddingHorizontal: 20,
         alignItems: 'center',
     },
+    scrollContentTablet: {
+        paddingHorizontal: 32,
+    },
     mainContent: {
         width: '100%',
-        maxWidth: 500,
         flexDirection: 'column',
         gap: 24,
     },
@@ -539,11 +564,17 @@ const styles = StyleSheet.create({
         flexDirection: 'column',
         gap: 24,
     },
+    subTabsScroll: {
+        width: '100%',
+    },
     subTabsContainer: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 8,
         paddingBottom: 4,
+    },
+    subTabsContainerTablet: {
+        width: '100%',
     },
     subTabButton: {
         paddingHorizontal: 16,
@@ -553,6 +584,10 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         minWidth: 80,
         flexShrink: 0,
+    },
+    subTabButtonTablet: {
+        flexGrow: 1,
+        flexShrink: 1,
     },
     subTabText: {
         fontFamily: 'Manrope-SemiBold',

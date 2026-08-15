@@ -23,11 +23,11 @@
 import { STAKING_POOL_REWARD_SETTLEMENT_ABI, STAKING_POOL_V2_ABI } from '@/constants/abis';
 import { createTransportForChain } from '@/constants/rpc';
 import { createPublicClient, formatUnits, type Address, type PublicClient } from 'viem';
-import { arbitrum, avalanche, base, bsc, coreDao, mainnet, optimism, polygon, sei } from 'viem/chains';
+import { arbitrum, avalanche, base, bsc, coreDao, hyperEvm, mainnet, optimism, polygon, sei } from 'viem/chains';
 
 const CHAIN_MAP: Record<number, any> = {
     1: mainnet, 56: bsc, 137: polygon, 42161: arbitrum, 8453: base, 10: optimism,
-    43114: avalanche, 1116: coreDao, 1329: sei,
+    43114: avalanche, 1116: coreDao, 1329: sei, 999: hyperEvm,
 };
 
 const ERC20_METADATA_ABI = [

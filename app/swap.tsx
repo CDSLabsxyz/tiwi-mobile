@@ -197,7 +197,6 @@ export default function SwapScreen() {
     const [isLoadingSwap, setIsLoadingSwap] = useState(false);
     const [lastFetchTime, setLastFetchTime] = useState<number>(0);
     const [isSuccessModalVisible, setIsSuccessModalVisible] = useState(false);
-    const [isComingSoonVisible, setIsComingSoonVisible] = useState(false);
     const [swapErrorMessage, setSwapErrorMessage] = useState<string | null>(null);
     const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
     /** Live stage from the swap engine ("Approving…", "Confirming…", …). */
@@ -218,6 +217,12 @@ export default function SwapScreen() {
     const quoteAbortRef = React.useRef<AbortController | null>(null);
     /** Signature of the last requested quote, to skip duplicate fetches. */
     const lastQuoteKeyRef = React.useRef<string>('');
+
+    useEffect(() => {
+        if (activeTab !== 'swap') {
+            setActiveTab('swap');
+        }
+    }, [activeTab, setActiveTab]);
 
     useEffect(() => {
         if (isKeyboardVisible) {
@@ -1561,31 +1566,6 @@ export default function SwapScreen() {
                     activeTab={activeTab}
                 />
 
-                {/* Coming Soon Modal */}
-                <Modal
-                    visible={isComingSoonVisible}
-                    transparent
-                    animationType="fade"
-                    onRequestClose={() => setIsComingSoonVisible(false)}
-                >
-                    <View style={styles.comingSoonOverlay}>
-                        <View style={styles.comingSoonModal}>
-                            <Ionicons name="construct-outline" size={48} color={colors.primaryCTA} />
-                            <Text style={styles.comingSoonTitle}>Feature In Progress</Text>
-                            <Text style={styles.comingSoonText}>
-                                This swap route is currently being optimized. Our team is actively working to support this pair. Please try a different token or check back soon.
-                            </Text>
-                            <TouchableOpacity
-                                style={styles.comingSoonButton}
-                                onPress={() => setIsComingSoonVisible(false)}
-                                activeOpacity={0.8}
-                            >
-                                <Text style={styles.comingSoonButtonText}>Got it</Text>
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                </Modal>
-
                 {/* Insufficient Balance Modal */}
                 <Modal
                     visible={!!swapErrorMessage}
@@ -1634,7 +1614,7 @@ export default function SwapScreen() {
                     />
 
                     <View style={styles.contentPadding}>
-                        <SwapTabs activeTab={activeTab} onChange={setActiveTab} />
+                        <SwapTabs />
 
                         <View style={styles.spacerLarge} />
 

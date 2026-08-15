@@ -20,6 +20,7 @@ import {
     Text,
     TextInput,
     TouchableOpacity,
+    useWindowDimensions,
     View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -28,6 +29,7 @@ import { WebView, WebViewMessageEvent, WebViewNavigation } from 'react-native-we
 const HOME_URL = 'about:blank';
 const HOME_TITLE = 'New Tab';
 const SEARCH_ENGINE = 'https://www.google.com/search?q=';
+const TABLET_BREAKPOINT = 700;
 
 interface Shortcut {
     label: string;
@@ -174,7 +176,10 @@ function shortDomain(url: string): string {
 export default function BrowserScreen() {
     const router = useRouter();
     const { top, bottom } = useSafeAreaInsets();
+    const { width: screenWidth } = useWindowDimensions();
     const { url: incomingUrl } = useLocalSearchParams<{ url?: string }>();
+    const isTabletLayout = screenWidth >= TABLET_BREAKPOINT;
+    const shortcutWidth = isTabletLayout ? '21.5%' : '28%';
 
     const [tabs, setTabs] = useState<BrowserTab[]>(() => [makeTab()]);
     const [activeTabId, setActiveTabId] = useState<string>(() => tabs[0].id);
@@ -610,7 +615,7 @@ export default function BrowserScreen() {
                             {TIWI_ECOSYSTEM_SHORTCUTS.map((s) => (
                                 <TouchableOpacity
                                     key={s.url}
-                                    style={styles.shortcut}
+                                    style={[styles.shortcut, { width: shortcutWidth }]}
                                     onPress={() => handleShortcutPress(s.url)}
                                     activeOpacity={0.7}
                                 >
@@ -631,7 +636,7 @@ export default function BrowserScreen() {
                             {OTHER_SHORTCUTS.map((s) => (
                                 <TouchableOpacity
                                     key={s.url}
-                                    style={styles.shortcut}
+                                    style={[styles.shortcut, { width: shortcutWidth }]}
                                     onPress={() => handleShortcutPress(s.url)}
                                     activeOpacity={0.7}
                                 >
@@ -993,7 +998,6 @@ const styles = StyleSheet.create({
         marginBottom: 24,
     },
     shortcut: {
-        width: '28%',
         alignItems: 'center',
         gap: 8,
     },

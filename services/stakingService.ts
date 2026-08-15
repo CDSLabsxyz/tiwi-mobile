@@ -304,7 +304,7 @@ class StakingService {
             ...pool,
             displayApy: apyValue,
             displayLimits,
-            minStakingPeriod: pool.minStakingPeriod || '30 days',
+            minStakingPeriod: pool.minStakingPeriod || undefined,
             tvl: tvl,
             activeStakers: activeStakers,
             endTime,
@@ -499,7 +499,8 @@ class StakingService {
                     displayStakedAmount: `${stake.stakedAmount} ${stake.pool?.tokenSymbol || ''}`,
                     displayRewardsEarned: `${stake.rewardsEarned} ${stake.pool?.tokenSymbol || ''}`,
                     totalClaimed: (stake as any).totalClaimed ?? '0',
-                    minStakingPeriod: (enrichedPool as StakingPool)?.minStakingPeriod || stake.pool?.minStakingPeriod || '30 days',
+                    minStakingPeriod: (enrichedPool as StakingPool)?.minStakingPeriod
+                        || stake.pool?.minStakingPeriod,
                     earningRate
                 };
             }));
@@ -651,7 +652,7 @@ class StakingService {
                             displayApy: apiPool.displayApy,
                             displayStakedAmount: `${stakedAmountStr} ${apiPool.tokenSymbol}`,
                             displayRewardsEarned: `${formatUnits(userInfo[3], decimals)} ${apiPool.tokenSymbol}`,
-                            minStakingPeriod: apiPool.minStakingPeriod || '30 days',
+                            minStakingPeriod: apiPool.minStakingPeriod || undefined,
                             earningRate: 0 // Will be calculated by store
                         } as UserStake;
                     }

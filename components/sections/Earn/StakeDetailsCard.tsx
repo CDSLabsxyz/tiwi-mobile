@@ -22,6 +22,7 @@ import { useStakingStore } from '@/store/stakingStore';
 import { useToastStore } from '@/store/useToastStore';
 import { useWalletStore } from '@/store/walletStore';
 import { formatCompactNumber } from '@/utils/formatting';
+import { formatRemainingStakingLock, getStakingLockInfo, parseStakingPeriodToMs } from '@/utils/stakingLock';
 import { PercentageActionModal } from './PercentageActionModal';
 import { RewardsSummaryPanel } from './RewardsSummaryPanel';
 
@@ -151,9 +152,8 @@ export const StakeDetailsCard: React.FC<Props> = ({ stake, isExpanded, onToggle,
         const stakeTimeMs = pooled.stakeTime > 0
             ? pooled.stakeTime * 1000
             : (stake.createdAt ? new Date(stake.createdAt).getTime() : Date.now());
-        const durationSec = pooled.rewardDurationSeconds || (stake.pool?.minStakingPeriod
-            ? parseIntSafe(stake.pool.minStakingPeriod) * 86400
-            : 30 * 86400);
+        const dbMinLockSec = parseStakingPeriodToMs(stake.pool?.minStakingPeriod) / 1000;
+        const durationSec = pooled.rewardDurationSeconds || dbMinLockSec;
 
         const onChainEndSec = pooled.endTime || Number(stake.pool?.endTime || 0);
         const endMs = onChainEndSec > 0
@@ -221,6 +221,34 @@ export const StakeDetailsCard: React.FC<Props> = ({ stake, isExpanded, onToggle,
     // path back to their principal + unclaimed rewards once the pool ends.
     const showActions = effectiveStatus !== 'withdrawn';
 
+    const minimumStakingPeriodText = stake.pool?.minStakingPeriod
+        || stake.minStakingPeriod;
+
+    const unstakeLockInfo = useMemo(() => getStakingLockInfo({
+        minStakingPeriod: minimumStakingPeriodText,
+        poolStartedAt: pooled.startTime > 0 ? pooled.startTime * 1000 : stake.pool?.createdAt,
+        stakedAmount: effectiveStatus === 'withdrawn' ? 0 : (pooled.userStakedFormatted || stake.stakedAmount),
+        nowMs: now,
+    }), [
+        minimumStakingPeriodText,
+        stake.pool?.createdAt,
+        stake.stakedAmount,
+        pooled.startTime,
+        pooled.userStakedFormatted,
+        effectiveStatus,
+        now,
+    ]);
+    const unstakeUnlockDate = unstakeLockInfo.unlockAtMs
+        ? new Date(unstakeLockInfo.unlockAtMs).toLocaleString(undefined, {
+            dateStyle: 'medium',
+            timeStyle: 'short',
+        })
+        : '';
+    const unstakeLockMessage = unstakeLockInfo.isLocked
+        ? `Minimum staking period is active. You can unstake after ${unstakeUnlockDate} (${formatRemainingStakingLock(unstakeLockInfo.remainingMs)} remaining).`
+        : '';
+    const canUnstake = !unstakeLockInfo.isLocked;
+
     // Action handlers — all PATCH bookkeeping lives in the hook's handleTxConfirmed.
     // After each write resolves we also refetch the DB-backed stake list from
     // the store so the card re-renders with the updated Claimed / staked
@@ -251,6 +279,10 @@ export const StakeDetailsCard: React.FC<Props> = ({ stake, isExpanded, onToggle,
 
     const onUnstakeConfirm = useCallback(async (pct: number) => {
         setIsUnstakeModalVisible(false);
+        if (unstakeLockInfo.isLocked) {
+            showToast(unstakeLockMessage, 'error');
+            return;
+        }
         if (displayStaked <= 0) return;
         const amount = (displayStaked * (pct / 100)).toString();
         setIsProcessing(true);
@@ -264,10 +296,14 @@ export const StakeDetailsCard: React.FC<Props> = ({ stake, isExpanded, onToggle,
         } finally {
             setIsProcessing(false);
         }
-    }, [pooled, displayStaked, showToast]);
+    }, [pooled, displayStaked, showToast, unstakeLockInfo.isLocked, unstakeLockMessage]);
 
     const onMaxUnstakeWithHarvest = useCallback(async () => {
         setIsUnstakeModalVisible(false);
+        if (unstakeLockInfo.isLocked) {
+            showToast(unstakeLockMessage, 'error');
+            return;
+        }
         setIsProcessing(true);
         try {
             await pooled.maxUnstakeWithHarvest();
@@ -279,7 +315,7 @@ export const StakeDetailsCard: React.FC<Props> = ({ stake, isExpanded, onToggle,
         } finally {
             setIsProcessing(false);
         }
-    }, [pooled, showToast]);
+    }, [pooled, showToast, unstakeLockInfo.isLocked, unstakeLockMessage]);
 
     return (
         <View style={styles.card}>
@@ -405,15 +441,34 @@ export const StakeDetailsCard: React.FC<Props> = ({ stake, isExpanded, onToggle,
                                 )}
                             </TouchableOpacity>
                             <TouchableOpacity
-                                disabled={isProcessing || displayStaked <= 0}
+                                disabled={isProcessing || displayStaked <= 0 || !canUnstake}
                                 onPress={() => setIsUnstakeModalVisible(true)}
                                 activeOpacity={0.85}
-                                style={[styles.unstakeButton, (isProcessing || displayStaked <= 0) && styles.buttonDisabled]}
+                                style={[styles.unstakeButton, (isProcessing || displayStaked <= 0 || !canUnstake) && styles.buttonDisabled]}
                             >
                                 <Text style={styles.unstakeButtonText}>
-                                    {effectiveStatus === 'completed' ? 'Withdraw' : 'Unstake'}
+                                    {isProcessing
+                                        ? 'Processing...'
+                                        : displayStaked <= 0
+                                            ? 'Nothing Staked'
+                                            : !canUnstake
+                                                ? 'Locked'
+                                                : effectiveStatus === 'completed' ? 'Withdraw' : 'Unstake'}
                                 </Text>
+                                {!canUnstake && displayStaked > 0 && !isProcessing && (
+                                    <Text style={styles.unstakeButtonSubtext}>
+                                        Unlocks in {formatRemainingStakingLock(unstakeLockInfo.remainingMs)}
+                                    </Text>
+                                )}
                             </TouchableOpacity>
+                        </View>
+                    )}
+                    {showActions && unstakeLockInfo.isLocked && (
+                        <View style={styles.lockNotice}>
+                            <Ionicons name="lock-closed-outline" size={14} color="#EAB308" />
+                            <Text style={styles.lockNoticeText}>
+                                Minimum staking period active. You can unstake after {unstakeUnlockDate}.
+                            </Text>
                         </View>
                     )}
                 </View>
@@ -436,7 +491,7 @@ export const StakeDetailsCard: React.FC<Props> = ({ stake, isExpanded, onToggle,
                 tokenSymbol={symbol}
                 isProcessing={isProcessing}
                 onConfirm={onUnstakeConfirm}
-                onConfirmMaxWithHarvest={displayPending > 0 ? onMaxUnstakeWithHarvest : undefined}
+                onConfirmMaxWithHarvest={displayPending > 0 && canUnstake ? onMaxUnstakeWithHarvest : undefined}
             />
         </View>
     );
@@ -467,12 +522,6 @@ function formatDurationLabel(totalSec: number): string {
     if (m > 0) parts.push(`${m}min`);
     if (s > 0 && d === 0 && h === 0) parts.push(`${s}sec`);
     return parts.length ? parts.join(' ') : '<1min';
-}
-
-function parseIntSafe(raw: string | number | undefined): number {
-    if (raw === undefined) return 30;
-    const n = typeof raw === 'number' ? raw : parseInt(String(raw).replace(/[^0-9]/g, ''), 10);
-    return Number.isFinite(n) && n > 0 ? n : 30;
 }
 
 const TimerBox: React.FC<{ value: number; unit: string; pad?: boolean; highlight?: boolean; variant?: 'default' | 'yellow' }> = ({ value, unit, pad, highlight, variant = 'default' }) => {
@@ -618,5 +667,19 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
     },
     unstakeButtonText: { color: '#b1f128', fontSize: 14, fontFamily: 'Manrope-Bold' },
+    unstakeButtonSubtext: { color: '#EAB308', fontSize: 10, marginTop: 2, fontFamily: 'Manrope-SemiBold' },
+    lockNotice: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: 8,
+        borderWidth: 1,
+        borderColor: 'rgba(234, 179, 8, 0.3)',
+        backgroundColor: 'rgba(234, 179, 8, 0.1)',
+        borderRadius: 10,
+        paddingHorizontal: 10,
+        paddingVertical: 8,
+        marginTop: -4,
+    },
+    lockNoticeText: { flex: 1, color: '#FDE68A', fontSize: 11, lineHeight: 16 },
     buttonDisabled: { opacity: 0.5 },
 });

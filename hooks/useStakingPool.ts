@@ -76,24 +76,6 @@ const STAKING_CHAIN_ID = 56; // BSC Mainnet
 const SECONDS_PER_YEAR_NUM = 31536000;
 const TWC_ADDRESS_BSC = '0xDA1060158F7D593667cCE0a15DB346BB3FfB3596';
 
-// Render a duration in seconds as a compact "Nd Nh Nm" string. Sub-day pools
-// (e.g. 45m reward windows) previously rounded up to "1 days" because the
-// formatter only emitted whole days.
-function formatLockDuration(seconds: number): string {
-    if (!Number.isFinite(seconds) || seconds <= 0) return '0min';
-    const days = Math.floor(seconds / 86400);
-    const hours = Math.floor((seconds % 86400) / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = Math.floor(seconds % 60);
-    const parts: string[] = [];
-    if (days > 0) parts.push(`${days}d`);
-    if (hours > 0) parts.push(`${hours}h`);
-    if (minutes > 0) parts.push(`${minutes}min`);
-    if (secs > 0 && days === 0 && hours === 0) parts.push(`${secs}sec`);
-    if (!parts.length) return '<1min';
-    return parts.join(' ');
-}
-
 // AppKit's WagmiAdapter hard-codes transports to rpc.walletconnect.org, which
 // drops ~20% of eth_call requests on BSC. Reads go through a dedicated viem
 // client on a multi-provider fallback transport (Alchemy + Binance dataseed +
@@ -929,7 +911,7 @@ export function useStakingPool(
                 isFull: false,
                 poolReward: 25500,
                 tvl: 25500,
-                lockPeriod: '30 days'
+                lockPeriod: 'No Lock'
             };
         }
 
@@ -997,10 +979,8 @@ export function useStakingPool(
             }
         }
 
-        const duration = poolConfig?.[5] ?? poolConfig?.rewardDurationSeconds ?? 0n;
-        const lockPeriodSeconds = Number(duration);
-        const lockPeriodDays = lockPeriodSeconds / 86400;
-        const lockPeriodFormatted = lockPeriodSeconds > 0 ? formatLockDuration(lockPeriodSeconds) : (poolConfig?.minStakingPeriod || '30 days');
+        const dbMinStakingPeriod = poolConfig?.minStakingPeriod;
+        const lockPeriodFormatted = dbMinStakingPeriod || 'No Lock';
 
         // Pool config index layout (factory + V2-normalized):
         //   [poolId, stakingToken, rewardToken, poolOwner, poolReward,
@@ -1061,7 +1041,7 @@ export function useStakingPool(
             endTime: endTimeSecOut,
             earningRate, // Also known as emissionVelocity for individual user
             emissionVelocity: earningRate,
-            isLocked: lockPeriodDays > 0,
+            isLocked: !!dbMinStakingPeriod,
             isFull,
             poolReward: poolRewardNum,
             tvl: totalStakedNum

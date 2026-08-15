@@ -222,8 +222,14 @@ export default function StakeScreen() {
 
     const { isConnected: isWagmiConnected } = useAccount();
     const isConnected = !!activeAddress || isWagmiConnected;
+    const isStakePageReady = !!pool
+        && !isLoading
+        && !stakingData.isCoreLoading
+        && !!stakingData.stakingToken
+        && (!isConnected || !isStakingLoading);
 
     const needsApproval = React.useMemo(() => {
+        if (!isStakePageReady) return false;
         if (!amount || isNaN(parseFloat(amount))) return false;
         try {
             const amountWei = parseUnits(amount, poolDecimals);
@@ -240,7 +246,7 @@ export default function StakeScreen() {
         } catch (e) {
             return false;
         }
-    }, [amount, currentAllowance, poolDecimals, startPolling, stopPolling]);
+    }, [amount, currentAllowance, isStakePageReady, poolDecimals, startPolling, stopPolling]);
 
     const isOutOfRange = React.useMemo(() => {
         if (!amount || !pool) return false;
@@ -279,13 +285,16 @@ export default function StakeScreen() {
         apr: stakingData.apr || pool?.displayApy || 'N/A',
         totalStaked: formatStakeAmount(parseStakeAmount((stakingData as any).tvl ?? stakingData.totalStakedFormatted)),
         // Fallback to pool object (database) if on-chain is N/A or empty
-        lockPeriod: stakingData.lockPeriod && stakingData.lockPeriod !== 'N/A' && stakingData.lockPeriod !== 'No Lock'
-            ? stakingData.lockPeriod
-            : (pool?.minStakingPeriod || 'No Lock'),
+        lockPeriod: pool?.minStakingPeriod || 'No Lock',
         limits: limitsValue,
     };
 
     const handleConfirm = async () => {
+        if (!isStakePageReady) {
+            showToast('Pool data is still loading. Please wait a moment before approving or staking.', 'error');
+            return;
+        }
+
         if (!requireBackup()) return;
 
         if (!isConnected) {
@@ -389,6 +398,20 @@ export default function StakeScreen() {
         setAmount(newAmount);
         setSelection({ start: newPos, end: newPos });
     };
+
+    const hasValidAmountInput = !!amount && parseFloat(amount) > 0;
+    const isActionDisabled = isTransactionPending
+        || !hasValidAmountInput
+        || !isStakePageReady
+        || isOutOfRange
+        || stakingData.isFull;
+    const actionButtonLabel = !isStakePageReady && hasValidAmountInput
+        ? 'Loading Pool'
+        : stakingData.isFull
+            ? 'Pool Full'
+            : needsApproval
+                ? 'Approve Token'
+                : 'Stake Now';
 
     return (
         <View style={[styles.container, { backgroundColor: colors.bg }]}>
@@ -553,10 +576,10 @@ export default function StakeScreen() {
             <View style={[styles.bottomBar, { paddingBottom: bottom + 12 }]}>
                 <TouchableOpacity
                     onPress={handleConfirm}
-                    disabled={isTransactionPending || !amount || parseFloat(amount) <= 0 || isOutOfRange || stakingData.isFull}
+                    disabled={isActionDisabled}
                     style={[
                         styles.confirmButton,
-                        (isTransactionPending || !amount || parseFloat(amount) <= 0 || isOutOfRange || stakingData.isFull) && styles.confirmButtonDisabled
+                        isActionDisabled && styles.confirmButtonDisabled
                     ]}
                     activeOpacity={0.9}
                 >
@@ -564,7 +587,7 @@ export default function StakeScreen() {
                         <TIWILoader size={40} />
                     ) : (
                         <Text style={styles.confirmButtonText}>
-                            {stakingData.isFull ? 'Pool Full' : (needsApproval ? 'Approve Token' : 'Stake Now')}
+                            {actionButtonLabel}
                         </Text>
                     )}
                 </TouchableOpacity>

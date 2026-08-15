@@ -65,6 +65,7 @@ const local = {
 /** CDN icons — identical URLs to the web app's list, for chains with no asset. */
 const remote = {
     sei: { uri: 'https://assets.coingecko.com/coins/images/28205/small/Sei_Logo_-_Transparent.png' },
+    hyperevm: { uri: 'https://assets.coingecko.com/coins/images/50882/small/hyperliquid.jpg' },
     arbitrum: { uri: 'https://assets.coingecko.com/coins/images/16547/small/photo_2023-03-29_21.47.00.jpeg' },
     linea: { uri: 'https://assets.coingecko.com/asset_platforms/images/135/small/linea.jpeg' },
     zksync: { uri: 'https://assets.coingecko.com/asset_platforms/images/121/small/zksync.jpeg' },
@@ -103,6 +104,7 @@ export const WALLET_NETWORKS: WalletNetwork[] = [
     { id: 'BASE', name: 'Base', addressKey: 'EVM', chain: 'EVM', chainId: 8453, symbol: 'ETH', icon: local.base },
     { id: 'OPTIMISM', name: 'Optimism', addressKey: 'EVM', chain: 'EVM', chainId: 10, symbol: 'OP', icon: local.optimism },
     { id: 'AVALANCHE', name: 'Avalanche', addressKey: 'EVM', chain: 'EVM', chainId: 43114, symbol: 'AVAX', icon: local.avalanche },
+    { id: 'HYPEREVM', name: 'HyperEVM', addressKey: 'EVM', chain: 'EVM', chainId: 999, symbol: 'HYPE', icon: remote.hyperevm },
     { id: 'LINEA', name: 'Linea', addressKey: 'EVM', chain: 'EVM', chainId: 59144, icon: remote.linea },
     { id: 'ZKSYNC', name: 'zkSync Era', addressKey: 'EVM', chain: 'EVM', chainId: 324, icon: remote.zksync },
     { id: 'SCROLL', name: 'Scroll', addressKey: 'EVM', chain: 'EVM', chainId: 534352, icon: remote.scroll },

@@ -23,6 +23,7 @@ import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useToastStore } from '@/store/useToastStore';
 import { formatCompactNumber } from '@/utils/formatting';
+import { formatRemainingStakingLock, getStakingLockInfo } from '@/utils/stakingLock';
 import { isSameTokenAddress } from '@/utils/wallet';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -138,7 +139,8 @@ export default function ManageStakeScreen() {
         refetch: refetchStaking,
         earningRate,
         stakeTime,
-        rewardDurationSeconds
+        rewardDurationSeconds,
+        startTime
     } = stakingData;
 
     // Rewards are paid in the pool's REWARD token, which is only the same asset
@@ -199,26 +201,29 @@ export default function ManageStakeScreen() {
 
         const currentEarningRate = earningRate > 0 ? earningRate : (userStake?.earningRate || 0);
 
-        // Handle period calculation (Prioritize on-chain, fallback to DB, ultimate fallback 30 days)
+        // Handle period calculation. Use real pool data only; missing DB lock
+        // config means "no minimum lock", not a hidden default.
         let period = rewardDurationSeconds;
         if (period <= 0) {
-            const dbValue = userStake?.minStakingPeriod || userStake?.pool?.minStakingPeriod || '30 days';
+            const dbValue = userStake?.pool?.minStakingPeriod || userStake?.minStakingPeriod;
             const dbPeriodRaw = String(dbValue);
 
-            if (dbPeriodRaw.toLowerCase().includes('day')) {
+            if (!dbValue) {
+                period = 0;
+            } else if (dbPeriodRaw.toLowerCase().includes('day')) {
                 period = parseInt(dbPeriodRaw) * 86400;
             } else {
                 const parsed = parseInt(dbPeriodRaw);
                 // If the number is small (e.g. 30), assume it's days. If large (e.g. 2592000), it's seconds.
-                period = parsed > 1000 ? parsed : (parsed > 0 ? parsed * 86400 : 2592000);
+                period = parsed > 1000 ? parsed : (parsed > 0 ? parsed * 86400 : 0);
             }
         }
 
         return {
             stakedAmount,
             earningRate: currentEarningRate,
-            period: period || 2592000,
-            totalPeriodDays: Math.ceil((period || 2592000) / 86400)
+            period,
+            totalPeriodDays: Math.ceil(period / 86400)
         };
     }, [stakingData.userStakedFormatted, userStake, earningRate, rewardDurationSeconds]);
 
@@ -246,6 +251,34 @@ export default function ManageStakeScreen() {
         };
     }, [timeStakedSeconds, effectiveStats]);
 
+    const minimumStakingPeriodText = userStake?.pool?.minStakingPeriod
+        || userStake?.minStakingPeriod;
+    const lockNowMs = Date.now();
+
+    const unstakeLockInfo = useMemo(() => getStakingLockInfo({
+        minStakingPeriod: minimumStakingPeriodText,
+        poolStartedAt: startTime > 0 ? startTime * 1000 : userStake?.pool?.createdAt,
+        stakedAmount: stakingData.userStakedFormatted || userStake?.stakedAmount,
+        nowMs: lockNowMs,
+    }), [
+        minimumStakingPeriodText,
+        startTime,
+        userStake?.pool?.createdAt,
+        userStake?.stakedAmount,
+        stakingData.userStakedFormatted,
+        lockNowMs,
+    ]);
+
+    const unstakeUnlockDate = unstakeLockInfo.unlockAtMs
+        ? new Date(unstakeLockInfo.unlockAtMs).toLocaleString(undefined, {
+            dateStyle: 'medium',
+            timeStyle: 'short',
+        })
+        : '';
+    const unstakeLockMessage = unstakeLockInfo.isLocked
+        ? `Minimum staking period is active. You can unstake after ${unstakeUnlockDate} (${formatRemainingStakingLock(unstakeLockInfo.remainingMs)} remaining).`
+        : '';
+
     const {
         allowance: polledAllowance,
         startPolling,
@@ -271,6 +304,7 @@ export default function ManageStakeScreen() {
     }, [amount, currentAllowance, activeTab, stakeTokenDecimals, startPolling, stopPolling]);
 
     const handleKeyPress = (value: string) => {
+        if (activeTab === 'Unstake' && unstakeLockInfo.isLocked) return;
         if (value === '.' && amount.includes('.')) return;
         const newAmount = amount.slice(0, selection.start) + value + amount.slice(selection.end);
         setAmount(newAmount);
@@ -293,6 +327,10 @@ export default function ManageStakeScreen() {
     };
 
     const handleMax = () => {
+        if (activeTab === 'Unstake' && unstakeLockInfo.isLocked) {
+            showToast(unstakeLockMessage, 'error');
+            return;
+        }
         const maxVal = activeTab === 'Boost' ? userTokenBalance : (stakingData.userStakedFormatted || '0');
         setAmount(maxVal);
         setSelection({ start: maxVal.length, end: maxVal.length });
@@ -301,6 +339,10 @@ export default function ManageStakeScreen() {
     const handleConfirm = async () => {
         if (!isConnected) { showToast('Connect Wallet: Please connect your wallet to continue.', 'error'); return; }
         if (!amount || parseFloat(amount) <= 0) { showToast('Invalid Amount: Please enter a valid amount.', 'error'); return; }
+        if (activeTab === 'Unstake' && unstakeLockInfo.isLocked) {
+            showToast(unstakeLockMessage, 'error');
+            return;
+        }
         try {
             if (activeTab === 'Boost') {
                 if (needsApproval) {
@@ -344,6 +386,10 @@ export default function ManageStakeScreen() {
 
     const onUnstakeModalConfirm = async (percentage: number) => {
         setIsUnstakeModalVisible(false);
+        if (unstakeLockInfo.isLocked) {
+            showToast(unstakeLockMessage, 'error');
+            return;
+        }
         const staked = parseFloat(stakingData.userStakedFormatted || '0');
         if (staked <= 0) return;
         const amt = (staked * (percentage / 100)).toString();
@@ -360,6 +406,10 @@ export default function ManageStakeScreen() {
 
     const onUnstakeMaxWithHarvest = async () => {
         setIsUnstakeModalVisible(false);
+        if (unstakeLockInfo.isLocked) {
+            showToast(unstakeLockMessage, 'error');
+            return;
+        }
         try {
             await maxUnstakeWithHarvest();
             setAmount('');
@@ -377,6 +427,15 @@ export default function ManageStakeScreen() {
             <Text style={styles.countdownLabel}>{label}</Text>
         </View>
     );
+
+    const hasTypedAmount = !!amount && parseFloat(amount) > 0;
+    const isUnstakeActionLocked = activeTab === 'Unstake' && unstakeLockInfo.isLocked;
+    const isBottomActionDisabled = isTransactionPending || !hasTypedAmount || isUnstakeActionLocked;
+    const bottomActionLabel = activeTab === 'Boost'
+        ? (needsApproval ? 'Approve Token' : 'Add to Stake')
+        : isUnstakeActionLocked
+            ? `Unlocks in ${formatRemainingStakingLock(unstakeLockInfo.remainingMs)}`
+            : 'Unstake Now';
 
     if (isLoading && !userStake) {
         return <View style={[styles.container, { backgroundColor: '#000' }]}><TIWILoader /></View>;
@@ -508,12 +567,23 @@ export default function ManageStakeScreen() {
                         </TouchableOpacity>
                         <TouchableOpacity
                             onPress={() => setIsUnstakeModalVisible(true)}
-                            disabled={isTransactionPending || parseFloat(stakingData.userStakedFormatted || '0') <= 0}
-                            style={[styles.unstakeButtonOutline, { borderColor: '#C4F440' }, (isTransactionPending || parseFloat(stakingData.userStakedFormatted || '0') <= 0) && { opacity: 0.5 }]}
+                            disabled={isTransactionPending || parseFloat(stakingData.userStakedFormatted || '0') <= 0 || unstakeLockInfo.isLocked}
+                            style={[styles.unstakeButtonOutline, { borderColor: '#C4F440' }, (isTransactionPending || parseFloat(stakingData.userStakedFormatted || '0') <= 0 || unstakeLockInfo.isLocked) && { opacity: 0.5 }]}
                         >
-                            <Text style={styles.unstakeButtonTextHeadline}>Unstake</Text>
+                            <Text style={styles.unstakeButtonTextHeadline}>{unstakeLockInfo.isLocked ? 'Locked' : 'Unstake'}</Text>
+                            {unstakeLockInfo.isLocked && (
+                                <Text style={styles.unstakeButtonSubtext}>Unlocks in {formatRemainingStakingLock(unstakeLockInfo.remainingMs)}</Text>
+                            )}
                         </TouchableOpacity>
                     </View>
+                    {unstakeLockInfo.isLocked && (
+                        <View style={styles.lockNotice}>
+                            <Ionicons name="lock-closed-outline" size={16} color="#EAB308" />
+                            <Text style={styles.lockNoticeText}>
+                                Minimum staking period active. You can unstake after {unstakeUnlockDate}.
+                            </Text>
+                        </View>
+                    )}
                 </View>
 
                 {/* Tabs */}
@@ -541,7 +611,13 @@ export default function ManageStakeScreen() {
                             placeholder="0.000"
                             placeholderTextColor={colors.mutedText}
                         />
-                        <TouchableOpacity onPress={handleMax} style={styles.maxButton}><Text style={styles.maxButtonText}>Max</Text></TouchableOpacity>
+                        <TouchableOpacity
+                            onPress={handleMax}
+                            disabled={activeTab === 'Unstake' && unstakeLockInfo.isLocked}
+                            style={[styles.maxButton, activeTab === 'Unstake' && unstakeLockInfo.isLocked && { opacity: 0.5 }]}
+                        >
+                            <Text style={styles.maxButtonText}>Max</Text>
+                        </TouchableOpacity>
                     </View>
 
                     <View style={styles.accountRow}>
@@ -569,11 +645,11 @@ export default function ManageStakeScreen() {
                 <View style={[styles.bottomBar, { paddingBottom: bottom + 12 }]}>
                     <TouchableOpacity
                         onPress={handleConfirm}
-                        disabled={isTransactionPending || !amount || parseFloat(amount) <= 0}
-                        style={[styles.confirmButton, (isTransactionPending || !amount || parseFloat(amount) <= 0) && styles.confirmButtonDisabled]}
+                        disabled={isBottomActionDisabled}
+                        style={[styles.confirmButton, isBottomActionDisabled && styles.confirmButtonDisabled]}
                     >
                         {isTransactionPending ? <TIWILoader size={40} /> : <Text style={styles.confirmButtonText}>
-                            {activeTab === 'Boost' ? (needsApproval ? 'Approve Token' : 'Add to Stake') : 'Unstake Now'}
+                            {bottomActionLabel}
                         </Text>}
                     </TouchableOpacity>
                 </View>
@@ -606,7 +682,7 @@ export default function ManageStakeScreen() {
                 tokenSymbol={stakeTokenSymbol}
                 isProcessing={isTransactionPending}
                 onConfirm={onUnstakeModalConfirm}
-                onConfirmMaxWithHarvest={liveRewards > 0 ? onUnstakeMaxWithHarvest : undefined}
+                onConfirmMaxWithHarvest={liveRewards > 0 && !unstakeLockInfo.isLocked ? onUnstakeMaxWithHarvest : undefined}
             />
         </View>
     );
@@ -652,6 +728,20 @@ const styles = StyleSheet.create({
     claimSubtext: { color: '#000', fontSize: 10, opacity: 0.7 },
     unstakeButtonOutline: { flex: 1, height: 64, borderRadius: 32, borderWidth: 1, borderColor: '#333', alignItems: 'center', justifyContent: 'center' },
     unstakeButtonTextHeadline: { color: '#FFF', fontSize: 18, fontFamily: 'Manrope-Bold' },
+    unstakeButtonSubtext: { color: '#EAB308', fontSize: 10, marginTop: 2, fontFamily: 'Manrope-SemiBold' },
+    lockNotice: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: 8,
+        marginTop: 12,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: 'rgba(234, 179, 8, 0.3)',
+        backgroundColor: 'rgba(234, 179, 8, 0.1)',
+    },
+    lockNoticeText: { flex: 1, color: '#FDE68A', fontSize: 12, lineHeight: 17 },
     tabsContainer: { flexDirection: 'row', paddingHorizontal: 20, marginTop: 10, gap: 24 },
     tab: { paddingVertical: 12 },
     tabText: { fontSize: 16, fontFamily: 'Manrope-Medium' },

@@ -32,7 +32,7 @@ import {
     type Address,
     type Hash,
 } from 'viem';
-import { bsc, mainnet, polygon, arbitrum, base, optimism, avalanche, coreDao, sei } from 'viem/chains';
+import { bsc, mainnet, polygon, arbitrum, base, optimism, avalanche, coreDao, sei, hyperEvm } from 'viem/chains';
 import { useAccount, useSendTransaction, useSwitchChain } from 'wagmi';
 import { api } from '@/lib/mobile/api-client';
 import { signerController } from '@/services/signer/SignerController';
@@ -41,7 +41,7 @@ import { createTransportForChain } from '@/constants/rpc';
 
 const CHAIN_MAP: Record<number, any> = {
     1: mainnet, 56: bsc, 137: polygon, 42161: arbitrum, 8453: base, 10: optimism,
-    43114: avalanche, 1116: coreDao, 1329: sei,
+    43114: avalanche, 1116: coreDao, 1329: sei, 999: hyperEvm,
 };
 
 /**
@@ -59,6 +59,7 @@ const RECEIPT_TIMEOUT_MS = 120_000;
 export const CHAIN_NAMES: Record<number, string> = {
     1: 'Ethereum', 56: 'BNB Smart Chain', 137: 'Polygon', 42161: 'Arbitrum',
     8453: 'Base', 10: 'Optimism', 43114: 'Avalanche', 1116: 'Core', 1329: 'Sei EVM',
+    999: 'HyperEVM',
 };
 
 const NATIVE_GAS_SYMBOLS: Record<number, string> = {
@@ -71,6 +72,7 @@ const NATIVE_GAS_SYMBOLS: Record<number, string> = {
     43114: 'AVAX',
     1116: 'CORE',
     1329: 'SEI',
+    999: 'HYPE',
 };
 
 // Minimal ABI fragment to decode the pool address out of the createPool receipt.

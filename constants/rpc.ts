@@ -16,8 +16,10 @@ export const RPC_CONFIG: Record<number, string> = {
     137: 'https://polygon-mainnet.g.alchemy.com/v2/WLJoFMJfcDSAUbsnhlyCl',
     8453: 'https://base-mainnet.g.alchemy.com/v2/WLJoFMJfcDSAUbsnhlyCl',
     56: 'https://bnb-mainnet.g.alchemy.com/v2/WLJoFMJfcDSAUbsnhlyCl',
+    43114: 'https://avalanche-c-chain-rpc.publicnode.com',
     1116: 'https://rpc.coredao.org',
     1329: 'https://evm-rpc.sei-apis.com',
+    999: 'https://rpc.hyperliquid.xyz/evm',
 };
 
 /**
@@ -34,8 +36,10 @@ const DRPC_NETWORK_SLUGS: Record<number, string> = {
     137: 'polygon',
     8453: 'base',
     56: 'bsc',
+    43114: 'avalanche',
     1116: 'core',
     1329: 'sei',
+    999: 'hyperliquid',
 };
 
 function drpcUrl(chainId: number): string | undefined {
@@ -118,6 +122,11 @@ const CHAIN_RPC_FALLBACKS: Record<number, string[]> = {
         'https://rpc.ankr.com/base',
     ],
     56: BSC_RPC_URLS,
+    43114: [
+        RPC_CONFIG[43114],
+        'https://api.avax.network/ext/bc/C/rpc',
+        'https://avalanche.drpc.org',
+    ],
     1116: [
         RPC_CONFIG[1116],
         'https://core.drpc.org',
@@ -125,6 +134,10 @@ const CHAIN_RPC_FALLBACKS: Record<number, string[]> = {
     1329: [
         RPC_CONFIG[1329],
         'https://sei.drpc.org',
+    ],
+    999: [
+        RPC_CONFIG[999],
+        'https://hyperliquid.drpc.org',
     ],
 };
 

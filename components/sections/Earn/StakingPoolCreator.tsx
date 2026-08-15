@@ -4,7 +4,7 @@
  * Native port of the web `components/earn/staking-pool-creator.tsx`. Same fields,
  * same order, same validation, same submit orchestration:
  *   name check → deploy → record staking_pools (inactive)
- *   → record user_staking_pools (pending/unpaid) → session list + notice.
+ *   → record user_staking_pools (pending/unpaid) → success modal.
  * Creation fees are paid from "My Pools" so this flow returns as soon as the
  * pool exists and is recoverable.
  *
@@ -40,7 +40,16 @@ type NumericField = 'reward' | 'duration' | 'maxTvl' | 'minStake' | 'maxStake' |
 const DURATION_UNIT_SECONDS: Record<DurationUnit, number> = { days: 86400, hours: 3600, minutes: 60 };
 
 const CHAIN_LABELS: Record<number, string> = {
-    1: 'Ethereum', 56: 'BSC', 137: 'Polygon', 42161: 'Arbitrum', 8453: 'Base', 10: 'Optimism', 43114: 'Avalanche',
+    1: 'Ethereum',
+    56: 'BSC',
+    137: 'Polygon',
+    42161: 'Arbitrum',
+    8453: 'Base',
+    10: 'Optimism',
+    43114: 'Avalanche',
+    1116: 'Core',
+    1329: 'Sei EVM',
+    999: 'HyperEVM',
 };
 
 interface PoolToken {
@@ -74,6 +83,7 @@ interface Props {
     activeWalletAddress?: string | null;
     onConnectEvmWallet?: () => void;
     onViewPools?: () => void;
+    onCreationSuccessOk?: () => void;
     /** The enclosing ScrollView. Given one, the form lifts the Pool settings
      *  block above the numpad when it opens (the form itself renders no scroller). */
     scrollRef?: React.RefObject<ScrollView | null>;
@@ -149,7 +159,7 @@ function toPoolToken(t: TokenOption): PoolToken {
     };
 }
 
-export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, onViewPools, scrollRef }: Props) {
+export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, onViewPools, onCreationSuccessOk, scrollRef }: Props) {
     const [rewardMode, setRewardMode] = useState<RewardMode>('same');
     const [poolName, setPoolName] = useState('');
     const [stakeToken, setStakeToken] = useState<PoolToken>(DEFAULT_STAKE_TOKEN);
@@ -166,7 +176,7 @@ export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, on
     const [previewOpen, setPreviewOpen] = useState(false);
     const [creationStep, setCreationStep] = useState<CreationStep>('idle');
     const [createError, setCreateError] = useState<string | null>(null);
-    const [notice, setNotice] = useState<string | null>(null);
+    const [successModal, setSuccessModal] = useState<{ title: string; message: string } | null>(null);
     const [blockingError, setBlockingError] = useState<string | null>(null);
     const [feeSettings, setFeeSettings] = useState<PoolFeeSettings | null>(null);
     const [feeTokenPriceUsd, setFeeTokenPriceUsd] = useState<number | null>(null);
@@ -326,7 +336,7 @@ export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, on
         if (!evmReady) { onConnectEvmWallet?.(); return; }
 
         setCreateError(null);
-        setNotice(null);
+        setSuccessModal(null);
         setBlockingError(null);
 
         const trimmedName = poolName.trim();
@@ -529,18 +539,28 @@ export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, on
 
             if (feeUnpaid) {
                 const feeLabelText = `${feeSettings?.creationFeeAmount} ${feeSettings?.creationFeeTokenSymbol || 'tokens'}`;
-                setNotice(
-                    `Pool created and saved as Unpaid. Open it under “My Pools” and tap “Pay fee” to pay the ${feeLabelText} creation fee.`,
-                );
+                setSuccessModal({
+                    title: 'Pool Created Successfully',
+                    message: `Your pool has been created and saved as Unpaid. Open My Pools to pay the ${feeLabelText} creation fee.`,
+                });
                 return;
             }
 
-            setNotice('Pool submitted! An admin will review it before it goes live in the app.');
+            setSuccessModal({
+                title: 'Pool Created Successfully',
+                message:
+                    'Your pool has been submitted for admin review. If approval takes more than 24 hours, contact Telegram support from the Earn screen.',
+            });
         } catch (e: any) {
             setCreateError(e?.message || 'Failed to create pool. Please try again.');
         } finally {
             setCreationStep('idle');
         }
+    };
+
+    const handleSuccessOk = () => {
+        setSuccessModal(null);
+        onCreationSuccessOk?.();
     };
 
     const numericFields: Record<NumericField, { value: string; set: (v: string) => void }> = {
@@ -582,12 +602,6 @@ export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, on
 
     return (
         <View style={styles.wrap}>
-            {notice ? (
-                <View style={[styles.banner, styles.bannerOk]}>
-                    <Ionicons name="checkmark-circle" size={16} color={colors.primaryCTA} style={styles.bannerIcon} />
-                    <Text style={[styles.bannerText, { color: colors.primaryCTA }]}>{notice}</Text>
-                </View>
-            ) : null}
             {blockingError ? (
                 <View style={[styles.banner, styles.bannerErr]}>
                     <Text style={[styles.bannerText, { color: '#f87171' }]}>{blockingError}</Text>
@@ -721,6 +735,13 @@ export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, on
                 onSubmit={handleCreatePool}
             />
 
+            <PoolCreatedSuccessModal
+                open={!!successModal}
+                title={successModal?.title || ''}
+                message={successModal?.message || ''}
+                onOk={handleSuccessOk}
+            />
+
             {/* Token selector — earn token in cross mode is constrained to the
                 stake chain. `walletOnly` limits both sides to tokens the
                 creator actually holds: the reward pool is funded out of their
@@ -848,6 +869,30 @@ function PoolPreviewModal(props: {
                     </View>
                 </Pressable>
             </Pressable>
+        </Modal>
+    );
+}
+
+function PoolCreatedSuccessModal({ open, title, message, onOk }: {
+    open: boolean;
+    title: string;
+    message: string;
+    onOk: () => void;
+}) {
+    return (
+        <Modal visible={open} transparent animationType="fade" onRequestClose={onOk}>
+            <View style={styles.successBackdrop}>
+                <View style={styles.successCard}>
+                    <View style={styles.successIconWrap}>
+                        <Ionicons name="checkmark" size={34} color="#010501" />
+                    </View>
+                    <Text style={styles.successTitle}>{title}</Text>
+                    <Text style={styles.successMessage}>{message}</Text>
+                    <TouchableOpacity style={styles.successOkButton} onPress={onOk} activeOpacity={0.9}>
+                        <Text style={styles.successOkText}>OK</Text>
+                    </TouchableOpacity>
+                </View>
+            </View>
         </Modal>
     );
 }
@@ -983,7 +1028,6 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
 const styles = StyleSheet.create({
     wrap: { width: '100%', gap: 16 },
     banner: { width: '100%', flexDirection: 'row', alignItems: 'flex-start', gap: 10, borderRadius: 18, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 12 },
-    bannerOk: { borderColor: '#1f5c1a', backgroundColor: 'rgba(10,31,8,0.8)' },
     bannerErr: { borderColor: '#5b1a1a', backgroundColor: 'rgba(26,8,8,0.8)' },
     bannerIcon: { marginTop: 1 },
     bannerText: { flex: 1, flexShrink: 1, minWidth: 0, fontFamily: 'Manrope-Medium', fontSize: 13, lineHeight: 18 },
@@ -1071,4 +1115,36 @@ const styles = StyleSheet.create({
     backBtnText: { color: '#B5B5B5', fontFamily: 'Manrope-SemiBold', fontSize: 14 },
     submitBtn: { flex: 2, borderRadius: 999, backgroundColor: colors.primaryCTA, paddingVertical: 12, alignItems: 'center' },
     submitBtnText: { color: '#010501', fontFamily: 'Manrope-SemiBold', fontSize: 14 },
+
+    successBackdrop: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.72)',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: 24,
+    },
+    successCard: {
+        width: '100%',
+        maxWidth: 360,
+        borderRadius: 24,
+        borderWidth: 1,
+        borderColor: '#1f321d',
+        backgroundColor: '#0A0D0A',
+        paddingHorizontal: 22,
+        paddingVertical: 24,
+        alignItems: 'center',
+    },
+    successIconWrap: {
+        width: 68,
+        height: 68,
+        borderRadius: 34,
+        backgroundColor: colors.primaryCTA,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 16,
+    },
+    successTitle: { color: '#fff', fontFamily: 'Manrope-Bold', fontSize: 19, textAlign: 'center' },
+    successMessage: { color: colors.bodyText, fontFamily: 'Manrope-Medium', fontSize: 13, lineHeight: 19, textAlign: 'center', marginTop: 10 },
+    successOkButton: { width: '100%', height: 52, borderRadius: 999, backgroundColor: colors.primaryCTA, alignItems: 'center', justifyContent: 'center', marginTop: 22 },
+    successOkText: { color: '#010501', fontFamily: 'Manrope-Bold', fontSize: 16 },
 });

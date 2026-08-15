@@ -25,6 +25,7 @@ interface StakingPoolAccordionProps {
     tokenSymbol: string;
     tokenName: string;
     tokenIcon?: any;
+    minStakingPeriod?: string;
     onStakePress: () => void;
 }
 
@@ -35,6 +36,7 @@ export const StakingPoolAccordion: React.FC<StakingPoolAccordionProps> = ({
     name,
     tokenSymbol,
     tokenIcon,
+    minStakingPeriod,
     onStakePress
 }) => {
     const [isExpanded, setIsExpanded] = useState(false);
@@ -46,6 +48,7 @@ export const StakingPoolAccordion: React.FC<StakingPoolAccordionProps> = ({
     });
     const { apr, lockPeriod, tvlCompact, maxTvlCompact, activeStakersCount, isCoreLoading } = stakingData;
     const isLoading = isCoreLoading;
+    const displayLockPeriod = minStakingPeriod || lockPeriod || 'No Lock';
 
     const aprNum = parseFloat(String(apr).replace(/[^\d.-]/g, ''));
     const aprCompact = Number.isFinite(aprNum)
@@ -114,7 +117,7 @@ export const StakingPoolAccordion: React.FC<StakingPoolAccordionProps> = ({
                         activeOpacity={0.7}
                     >
                         <Text style={styles.valueText}>{aprCompact}</Text>
-                        <Text style={styles.valueText}>{lockPeriod}</Text>
+                        <Text style={styles.valueText}>{displayLockPeriod}</Text>
                         <AntDesign name="arrow-right" size={20} color={colors.titleText} />
                     </TouchableOpacity>
 

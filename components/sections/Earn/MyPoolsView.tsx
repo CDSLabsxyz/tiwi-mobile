@@ -27,6 +27,7 @@ import { Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import type { Address, Hash } from 'viem';
 
 const SECONDS_PER_YEAR = 31_536_000;
+const TELEGRAM_SUPPORT_URL = 'https://t.me/tiwiecosystemsupport';
 
 type PoolLifecycle = 'live' | 'paused' | 'ended' | 'unknown';
 
@@ -242,6 +243,11 @@ function MyPoolRow({ pool, walletAddress, feeSettings, onChanged }: {
     const [chainStatus, setChainStatus] = useState<PoolStatusOnChain | null>(null);
     const { payCreationFee, emergencyWithdrawRewards, withdrawRemainingRewards } = useStakingDeployer();
     const { requireBackup, BackupRequiredModal } = useRequireBackup();
+    const handleTelegramSupportPress = useCallback(() => {
+        Linking.openURL(TELEGRAM_SUPPORT_URL).catch((e) => {
+            console.warn('[MyPoolsView] failed to open Telegram support:', e);
+        });
+    }, []);
 
     useEffect(() => {
         let cancelled = false;
@@ -526,7 +532,14 @@ function MyPoolRow({ pool, walletAddress, feeSettings, onChanged }: {
 
                     {pool.approvalStatus === 'pending' && !canPayFee ? (
                         <View style={styles.pendingNote}>
-                            <Text style={styles.pendingNoteText}>Waiting for an admin to review this pool. It isn&apos;t visible to stakers yet.</Text>
+                            <Text style={styles.pendingNoteText}>
+                                Waiting for an admin to review this pool. It isn&apos;t visible to stakers yet.
+                                {' '}If approval takes more than 24 hours,{' '}
+                                <Text style={styles.pendingNoteLink} onPress={handleTelegramSupportPress}>
+                                    contact Telegram support
+                                </Text>
+                                .
+                            </Text>
                         </View>
                     ) : null}
 
@@ -617,6 +630,7 @@ const styles = StyleSheet.create({
 
     pendingNote: { marginTop: 14, borderRadius: 14, borderWidth: 1, borderColor: '#2a2410', backgroundColor: 'rgba(20,16,5,0.7)', paddingHorizontal: 14, paddingVertical: 12 },
     pendingNoteText: { color: '#facc15', fontFamily: 'Manrope-Medium', fontSize: 13, lineHeight: 18 },
+    pendingNoteLink: { color: '#fff', fontFamily: 'Manrope-SemiBold', textDecorationLine: 'underline' },
     rejectNote: { marginTop: 14, borderRadius: 14, borderWidth: 1, borderColor: '#3a1414', backgroundColor: 'rgba(22,8,8,0.7)', paddingHorizontal: 14, paddingVertical: 12 },
     rejectNoteText: { color: '#f4a4a4', fontFamily: 'Manrope-Medium', fontSize: 13, lineHeight: 18 },
     nullNote: { marginTop: 14, borderRadius: 14, borderWidth: 1, borderColor: '#242424', backgroundColor: 'rgba(12,12,12,0.7)', paddingHorizontal: 14, paddingVertical: 12 },

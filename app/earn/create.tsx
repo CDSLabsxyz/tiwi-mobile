@@ -47,6 +47,7 @@ export default function CreatePoolScreen() {
                         activeWalletAddress={evmAddress}
                         onConnectEvmWallet={() => useWalletStore.getState().setWalletModalVisible(true)}
                         onViewPools={() => router.replace('/earn?tab=my-pools' as any)}
+                        onCreationSuccessOk={() => router.replace('/earn' as any)}
                         scrollRef={scrollRef}
                     />
                 </ScrollView>

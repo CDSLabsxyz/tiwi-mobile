@@ -21,6 +21,7 @@ import { getCanonicalChain, getCanonicalChains } from '@/services/swap/core/regi
 import { erc20Abi, formatUnits } from 'viem';
 
 const PasteIcon = require('@/assets/wallet/clipboard.svg');
+const HYPEREVM_ICON = { uri: 'https://assets.coingecko.com/coins/images/50882/small/hyperliquid.jpg' };
 
 // Free public RPC endpoints — no API key required
 const TRUSTWALLET_SLUGS: Record<number, string> = {
@@ -56,7 +57,7 @@ const SCANNABLE_EVM_CHAINS: number[] = getCanonicalChains()
 
 // Probed first, so the overwhelmingly common case costs one small wave of
 // requests instead of sweeping the whole registry.
-const PRIORITY_EVM_CHAINS = [56, 1, 8453, 42161, 137, 10, 43114];
+const PRIORITY_EVM_CHAINS = [56, 1, 8453, 42161, 137, 10, 43114, 999];
 
 type EvmHit = {
     chainId: number;
@@ -224,6 +225,7 @@ const CHAINS = [
     { id: 42161, name: 'Arbitrum', icon: require('@/assets/home/chains/ethereum.svg') },
     { id: 10, name: 'Optimism', icon: require('@/assets/home/chains/optimism.png') },
     { id: 43114, name: 'Avalanche', icon: require('@/assets/home/chains/avalanche.svg') },
+    { id: 999, name: 'HyperEVM', icon: HYPEREVM_ICON },
     { id: 7565164, name: 'Solana', icon: require('@/assets/home/chains/solana.svg') },
     { id: 728126428, name: 'TRON', icon: require('@/assets/home/chains/tron.png') },
     { id: 1100, name: 'TON', icon: require('@/assets/home/chains/ton.jpg') },
@@ -240,6 +242,7 @@ const NATIVE_TOKENS: any[] = [
     { chainId: 56, symbol: 'BNB', name: 'BNB', decimals: 18, address: EVM_NATIVE_SENTINEL, isNative: true, _primaryNative: true },
     { chainId: 137, symbol: 'POL', name: 'Polygon', decimals: 18, address: EVM_NATIVE_SENTINEL, isNative: true, _primaryNative: true },
     { chainId: 43114, symbol: 'AVAX', name: 'Avalanche', decimals: 18, address: EVM_NATIVE_SENTINEL, isNative: true, _primaryNative: true },
+    { chainId: 999, symbol: 'HYPE', name: 'HyperEVM', decimals: 18, address: EVM_NATIVE_SENTINEL, isNative: true, _primaryNative: true },
     // Solana's System Program, not the wrapped-SOL mint — `So111…112` is WSOL,
     // a separate SPL holding that gets its own row when the user has one.
     { chainId: 7565164, symbol: 'SOL', name: 'Solana', decimals: 9, address: '11111111111111111111111111111111', isNative: true, _primaryNative: true },
@@ -542,6 +545,7 @@ export default function ManageTokensScreen() {
             8453: 'ETH',
             10: 'ETH',
             43114: 'AVAX',
+            999: 'HYPE',
             7565164: 'SOL',
             728126428: 'TRX',
             1100: 'TON',
@@ -597,6 +601,7 @@ export default function ManageTokensScreen() {
             POL: 137,
             MATIC: 137,
             AVAX: 43114,
+            HYPE: 999,
             SOL: 7565164,
             TRX: 728126428,
             TON: 1100,
@@ -742,7 +747,7 @@ export default function ManageTokensScreen() {
         // for EVM the on-chain scan below decides which chain the token is on,
         // so blanketing every chain here would just be wasted requests.
         const priceProbeChains = Array.from(new Set(
-            isEvm ? [preferredChain, 1, 56, 137, 42161, 8453, 10, 43114] : [preferredChain, 7565164, 728126428, 1100, 118]
+            isEvm ? [preferredChain, 1, 56, 137, 42161, 8453, 10, 43114, 999] : [preferredChain, 7565164, 728126428, 1100, 118]
         ));
 
         const [tokenInfoResults, searchResult, evmHits, solBal, tronBal, tonBal, cosmosBal] = await Promise.all([
@@ -960,7 +965,7 @@ export default function ManageTokensScreen() {
                     keyboardShouldPersistTaps="handled"
                     showsVerticalScrollIndicator={false}
                 >
-                    <Text style={styles.subtitle}>Search popular tokens, toggle ones you've added, or paste a contract address.</Text>
+                    <Text style={styles.subtitle}>Search popular tokens, toggle ones you have added, or paste a contract address.</Text>
 
                     {/* Global chain filter — narrows both Your Tokens and Browse */}
                     <ScrollView

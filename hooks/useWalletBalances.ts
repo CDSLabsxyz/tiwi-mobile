@@ -21,7 +21,7 @@ prefetchAdminTokenLogoOverrides();
 // Nexxend-covered chains, used only by the legacy per-address fallback path.
 // Discovery itself is UNFILTERED — the server portfolio route sweeps every
 // chain in the registry and the UI applies the user's chain filter locally.
-const FALLBACK_CHAIN_IDS = [1, 56, 137, 42161, 8453, 10, 43114, 59144, 250, 42220, 100, 7565164, 1100];
+const FALLBACK_CHAIN_IDS = [1, 56, 137, 42161, 8453, 10, 43114, 999, 59144, 250, 42220, 100, 7565164, 1100];
 
 const isEvmAddress = (addr: string) => /^0x[a-fA-F0-9]{40}$/.test(addr);
 
@@ -66,6 +66,8 @@ const SACRED_SYMBOLS = [
 // (`So111…112` is WRAPPED SOL — a real, separate holding, kept sacred too.)
 const SACRED_ADDRESSES = ['native', '0x0000000000000000000000000000000000000000', '0x0000000000000000000000000000000000001010', SOLANA_NATIVE_ADDRESS, 'So11111111111111111111111111111111111111112'];
 const SPAM_KEYWORDS = ['.com', '.xyz', '.net', '.io', '.org', 'claim', 'airdrop', 'visit', 'free', 'reward', 'voucher', 'gift', 'win', 'bonus'];
+const DUST_TOKEN_USD_CEILING = 0.01;
+const UNVERIFIED_TOKEN_USD_CEILING = 1;
 
 // Symbols that airdrop scammers commonly impersonate — stablecoins and
 // wrapped tokens. A token claiming one of these symbols MUST sit at the
@@ -181,6 +183,32 @@ const SPAM_TOKEN_PATTERNS: RegExp[] = [
 function isLikelySpamToken(token: { symbol?: string; name?: string }): boolean {
     const text = `${token.symbol || ''} ${token.name || ''}`;
     return SPAM_TOKEN_PATTERNS.some((re) => re.test(text));
+}
+
+function signalNumber(value: any): number {
+    const n = typeof value === 'number' ? value : parseFloat(String(value || '0'));
+    return Number.isFinite(n) ? n : 0;
+}
+
+function hasMarketActivitySignal(token: any): boolean {
+    return signalNumber(token.marketCap) >= 10_000
+        || signalNumber(token.liquidity) >= 1_000
+        || signalNumber(token.volume24h) >= 200
+        || signalNumber(token.holders) >= 50
+        || signalNumber(token.transactionCount) >= 10;
+}
+
+function hasVerifiedSourceSignal(token: any): boolean {
+    return token.verified === true
+        || token.verified_contract === true
+        || token.verifiedContract === true
+        || token.native_token === true;
+}
+
+function isExplicitlyUnverified(token: any): boolean {
+    return token.verified === false
+        || token.verified_contract === false
+        || token.verifiedContract === false;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -349,9 +377,21 @@ function filterToken(b: any): boolean {
         }
     }
 
+    const isTWC = symbol === 'TWC' || addr === '0xda1060158f7d593667cce0a15db346bb3ffb3596';
+    const isNativeHolding = b.native_token === true
+        || (isNativeAddress(addr) && !!allowedChainsForNative?.includes(chainIdNum));
+    const trustedByIdentity = isNativeHolding || isKnownWrappedNative(chainIdNum, addr) || isTWC;
+    const hasSourceTrust = hasVerifiedSourceSignal(b) || hasMarketActivitySignal(b);
+
+    // Auto-discovery catches spam airdrops before the user asks for them. The
+    // rows in the screenshot (SpaceXcoin/DOG/PEPETO/tiny fake-stable dust) all
+    // share this shape: non-native, non-core, untrusted, and worth fractions of
+    // a cent. Hide them before the sacred-symbol pass so dust USDC-style rows
+    // do not clutter the wallet or inflate totals by tiny amounts.
+    if (!trustedByIdentity && usdValue > 0 && usdValue < DUST_TOKEN_USD_CEILING) return false;
+
     if (!impersonationUnchecked && (SACRED_SYMBOLS.includes(symbol) || SACRED_ADDRESSES.includes(addr))) return true;
 
-    const isTWC = symbol === 'TWC' || addr === '0xda1060158f7d593667cce0a15db346bb3ffb3596';
     if (isTWC) return true;
 
     // A stablecoin impersonator on a chain with no official-address table has
@@ -359,18 +399,18 @@ function filterToken(b: any): boolean {
     // and a million fake USDC would land in the total.
     if (impersonationUnchecked && usdValue <= 0) return false;
 
+    if (!trustedByIdentity && isExplicitlyUnverified(b) && !hasSourceTrust) return false;
+    if (!trustedByIdentity && !hasSourceTrust && usdValue > 0 && usdValue < UNVERIFIED_TOKEN_USD_CEILING) return false;
+
     const chg = parseFloat(b.priceChange24h || '0');
     if (Math.abs(chg) > 10000) return false;
     if (SPAM_KEYWORDS.some(k => name.includes(k) || symbol.toLowerCase().includes(k))) return false;
     if (addr && /^(.)\1{3}$/.test(addr.replace('0x', '').slice(-4))) return false;
     if (b.possible_spam === true) return false;
 
-    // Value thresholds deliberately absent. "Needs a real logo AND ≥$1, or ≥$5"
-    // used to live here and it deleted genuine long-tail holdings worth a few
-    // cents. What separates a real token from points junk is whether it has a
-    // PRICE at all, not how much it's worth — and that check needs the whole
-    // set (to tell one dead token from a dead price service), so it happens in
-    // applyStabilityGrace downstream.
+    // Broad value thresholds stay out of this final gate. The only value-based
+    // checks above are narrow dust/unverified guards for auto-discovered spam;
+    // priced, trusted long-tail holdings still survive to applyStabilityGrace.
     return true;
 }
 
@@ -573,9 +613,9 @@ export function useWalletBalances() {
     // written by an older balance pipeline — otherwise the app opens showing a
     // stale, far thinner token list from disk. Bump it whenever the discovery
     // or filtering behaviour changes materially.
-    // v3: wrapped natives (WBNB/WETH/WPOL/…) are now read + kept, so every v2
-    // snapshot on disk is missing rows the pipeline would now return.
-    const cacheKey = `${activeAddress}-${activeGroupId}-v3`;
+    // v4: stricter auto-discovered spam/dust filtering, so every v3 snapshot
+    // on disk can still contain rows the wallet now blocks.
+    const cacheKey = `${activeAddress}-${activeGroupId}-v4`;
     const cached = cachedBalances[cacheKey];
 
     return useQuery({

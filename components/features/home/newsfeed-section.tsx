@@ -3,15 +3,16 @@ import { colors } from '@/constants/colors';
 import { NewsfeedItem } from '@/types';
 import { Image } from 'expo-image';
 import React, { useEffect, useRef, useState } from 'react';
-import { Dimensions, FlatList, Linking, NativeScrollEvent, NativeSyntheticEvent, Pressable, StyleSheet, View } from 'react-native';
+import { FlatList, Linking, NativeScrollEvent, NativeSyntheticEvent, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 
 interface NewsfeedSectionProps {
     items: NewsfeedItem[];
     isLoading?: boolean;
 }
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const BANNER_HEIGHT = 160; // Increased height significantly for better presence
+const MOBILE_BANNER_ASPECT_RATIO = 363 / 149;
+const MAX_BANNER_WIDTH = 760;
+const MIN_BANNER_HEIGHT = 132;
 const AUTO_SCROLL_INTERVAL = 5000;
 
 function getSupportedLinkUrl(value?: string) {
@@ -29,9 +30,15 @@ export const NewsfeedSection: React.FC<NewsfeedSectionProps> = ({
     isLoading = false,
 }) => {
     const [activeIndex, setActiveIndex] = useState(0);
-    const flatListRef = useRef<FlatList>(null);
+    const flatListRef = useRef<FlatList<NewsfeedItem>>(null);
     const autoScrollTimerRef = useRef<NodeJS.Timeout | null>(null);
     const isUserScrollingRef = useRef(false);
+    const { width: screenWidth } = useWindowDimensions();
+    const pageWidth = Math.max(1, Math.round(screenWidth));
+    const horizontalPadding = pageWidth < 360 ? 16 : 20;
+    const bannerWidth = Math.min(MAX_BANNER_WIDTH, Math.max(1, pageWidth - horizontalPadding * 2));
+    const bannerHeight = Math.round(Math.max(MIN_BANNER_HEIGHT, bannerWidth / MOBILE_BANNER_ASPECT_RATIO));
+    const shouldCropRasterEdge = pageWidth >= 700;
 
     useEffect(() => {
         if (items.length <= 1) return;
@@ -64,7 +71,9 @@ export const NewsfeedSection: React.FC<NewsfeedSectionProps> = ({
     if (isLoading) {
         return (
             <View style={styles.container}>
-                <Skeleton width={SCREEN_WIDTH} height={BANNER_HEIGHT} borderRadius={16} style={{ paddingHorizontal: 16 }} />
+                <View style={[styles.skeletonWrapper, { width: pageWidth }]}>
+                    <Skeleton width={bannerWidth} height={bannerHeight} borderRadius={16} />
+                </View>
                 <View style={styles.indicatorContainer}>
                     <Skeleton width={8} height={4} borderRadius={100} />
                     <Skeleton width={24} height={4} borderRadius={100} />
@@ -81,7 +90,7 @@ export const NewsfeedSection: React.FC<NewsfeedSectionProps> = ({
     const onScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
         isUserScrollingRef.current = true;
         const scrollPosition = event.nativeEvent.contentOffset.x;
-        const index = Math.round(scrollPosition / SCREEN_WIDTH);
+        const index = Math.round(scrollPosition / pageWidth);
         if (index !== activeIndex && index >= 0 && index < items.length) {
             setActiveIndex(index);
         }
@@ -114,14 +123,20 @@ export const NewsfeedSection: React.FC<NewsfeedSectionProps> = ({
                 accessibilityLabel={linkUrl ? 'Open promotion' : undefined}
                 style={({ pressed }) => [
                     styles.bannerWrapper,
+                    {
+                        width: pageWidth,
+                        height: bannerHeight,
+                    },
                     pressed && linkUrl ? styles.bannerPressed : undefined,
                 ]}
             >
-                <View style={styles.bannerFrame}>
+                <View style={[styles.bannerFrame, { width: bannerWidth, height: bannerHeight }]}>
                     <Image
                         source={imageSource}
-                        style={styles.image}
+                        style={[styles.image, shouldCropRasterEdge && styles.tabletImageBleed]}
                         contentFit="cover"
+                        contentPosition="center"
+                        transition={120}
                     />
                 </View>
             </Pressable>
@@ -140,12 +155,12 @@ export const NewsfeedSection: React.FC<NewsfeedSectionProps> = ({
                 showsHorizontalScrollIndicator={false}
                 onScroll={onScroll}
                 scrollEventThrottle={16}
-                snapToInterval={SCREEN_WIDTH}
+                snapToInterval={pageWidth}
                 decelerationRate="fast"
                 onScrollToIndexFailed={onScrollToIndexFailed}
                 getItemLayout={(_, index) => ({
-                    length: SCREEN_WIDTH,
-                    offset: SCREEN_WIDTH * index,
+                    length: pageWidth,
+                    offset: pageWidth * index,
                     index,
                 })}
             />
@@ -184,10 +199,12 @@ const styles = StyleSheet.create({
         width: "100%",
         gap: 8,
     },
+    skeletonWrapper: {
+        alignItems: 'center',
+    },
     bannerWrapper: {
-        width: SCREEN_WIDTH,
-        height: BANNER_HEIGHT,
-        paddingHorizontal: 16,
+        flexShrink: 0,
+        alignItems: 'center',
     },
     bannerFrame: {
         flex: 1,
@@ -201,6 +218,9 @@ const styles = StyleSheet.create({
     image: {
         width: '100%',
         height: '100%',
+    },
+    tabletImageBleed: {
+        transform: [{ scale: 1.018 }],
     },
     indicatorContainer: {
         flexDirection: 'row',
