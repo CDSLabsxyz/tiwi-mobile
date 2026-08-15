@@ -194,7 +194,7 @@ export const StatInfoSheet: React.FC<StatInfoSheetProps> = ({ statId, onClose, c
                         { height: sheetHeight, paddingBottom: (bottom || 24) + 16 },
                     ]}
                 >
-                    {/* Drag-to-dismiss is bound to the header only — attaching it
+                    {/* Drag-to-dismiss is bound to the header only - attaching it
                         to the whole sheet would swallow the chain list's scroll. */}
                     <GestureDetector gesture={panGesture}>
                         <View>
@@ -223,7 +223,7 @@ export const StatInfoSheet: React.FC<StatInfoSheetProps> = ({ statId, onClose, c
                         contentContainerStyle={styles.scrollContent}
                         showsVerticalScrollIndicator={false}
                     >
-                        {/* Live figure — same string the tile shows. */}
+                        {/* Live figure - same string the tile shows. */}
                         {info && value ? (
                             <View style={styles.valueCard}>
                                 <Text style={styles.valueLabel}>{info.valueLabel}</Text>
@@ -237,7 +237,7 @@ export const StatInfoSheet: React.FC<StatInfoSheetProps> = ({ statId, onClose, c
                             {info?.body ? renderRichText(info.body) : null}
                         </Text>
 
-                        {/* Chain list — only the Active Chains sheet has one. */}
+                        {/* Chain list - only the Active Chains sheet has one. */}
                         {statId === 'chain-count' && (
                             <View style={styles.chainSection}>
                                 <View style={styles.chainSectionHeader}>
@@ -401,7 +401,7 @@ const styles = StyleSheet.create({
         lineHeight: 26,
         color: colors.bodyText,
     },
-    // Inherits the body's size so inline highlights sit on the same baseline —
+    // Inherits the body's size so inline highlights sit on the same baseline -
     // only weight and colour change.
     bodyStrong: {
         fontFamily: 'Manrope-SemiBold',

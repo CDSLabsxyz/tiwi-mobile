@@ -7,13 +7,13 @@ const TONCENTER_ENDPOINT = 'https://toncenter.com/api/v2/jsonRPC';
 
 /** TON attached to a jetton transfer to cover forwarding fees (0.05 TON). */
 const JETTON_FORWARD_VALUE = BigInt(50_000_000);
-/** Notification amount forwarded to the recipient (1 nanoton — standard). */
+/** Notification amount forwarded to the recipient (1 nanoton - standard). */
 const JETTON_FORWARD_TON = BigInt(1);
 /** TEP-74 jetton `transfer` opcode. */
 const JETTON_TRANSFER_OP = 0xf8a7ea5;
 
 /**
- * TonLocalEngine — signs & broadcasts TON transfers for on-device wallets.
+ * TonLocalEngine - signs & broadcasts TON transfers for on-device wallets.
  *
  * Covers native TON and TEP-74 jettons. The keypair comes from
  * `getTonKeyPair`, so it works for a BIP39 multi-chain wallet, a wallet
@@ -142,7 +142,7 @@ export class TonLocalEngine implements SignerEngine {
     }
 
     /**
-     * TON has no receipt to await — the wallet's seqno incrementing is the
+     * TON has no receipt to await - the wallet's seqno incrementing is the
      * confirmation that the external message was accepted.
      */
     private async waitForSeqno(contract: any, previous: number, attempts = 20): Promise<void> {
@@ -151,7 +151,7 @@ export class TonLocalEngine implements SignerEngine {
             try {
                 if ((await contract.getSeqno()) > previous) return;
             } catch {
-                /* transient RPC error — keep polling */
+                /* transient RPC error - keep polling */
             }
         }
     }

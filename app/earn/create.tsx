@@ -3,7 +3,7 @@
  *
  * Thin screen wrapper around the shared <StakingPoolCreator/> (web-parity form).
  * The same component also renders inline under the Earn tab's "Create Pool"
- * sub-tab — this route is the full-screen entry point used by the
+ * sub-tab - this route is the full-screen entry point used by the
  * "Create Staking Pool" card.
  */
 
@@ -23,7 +23,7 @@ export default function CreatePoolScreen() {
     const scrollRef = useRef<ScrollView>(null);
     const { address, walletGroups, activeGroupId } = useWalletStore();
 
-    // EVM-only flow — resolve the active group's EVM address.
+    // EVM-only flow - resolve the active group's EVM address.
     const evmAddress = useMemo(() => {
         const group = walletGroups.find(g => g.id === activeGroupId);
         return group?.addresses?.EVM || address || null;

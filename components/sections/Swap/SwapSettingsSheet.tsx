@@ -87,7 +87,7 @@ export const SwapSettingsSheet: React.FC<SwapSettingsSheetProps> = ({
                     </View>
                 </View>
 
-                {/* The "Managed Swap (Relayer) — SOON" toggle used to live here.
+                {/* The "Managed Swap (Relayer) - SOON" toggle used to live here.
                     Removed: the BSC gasless relayer is live, and the control for
                     it is the gas-token selector on the swap card (TWC / BNB /
                     other BEP-20), which is where the web app puts it too. A

@@ -1,10 +1,10 @@
 /**
- * Liquidity Hub — shared DTO types (ported from tiwi-user-app
+ * Liquidity Hub - shared DTO types (ported from tiwi-user-app
  * lib/shared/types/liquidity.ts). Mirrors the shapes returned by the
  * /api/v1/pools and /api/v1/pool-positions routes.
  *
  * All token amounts cross boundaries as human-readable strings (converted with
- * viem parseUnits/formatUnits at the edge) — large NUMERIC values must never
+ * viem parseUnits/formatUnits at the edge) - large NUMERIC values must never
  * round-trip through a JS Number.
  */
 

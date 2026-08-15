@@ -34,7 +34,7 @@ const TABLET_BREAKPOINT = 700;
 interface Shortcut {
     label: string;
     url: string;
-    icon?: any; // local require() or { uri: string } — overrides favicon fetch
+    icon?: any; // local require() or { uri: string } - overrides favicon fetch
 }
 
 const TIWI_LOGO = require('../assets/images/tiwi-logo.svg');
@@ -60,7 +60,7 @@ const OTHER_SHORTCUTS: Shortcut[] = [
 // ─── Tab model ──────────────────────────────────────────────────────────
 //
 // Each open page is its own tab with its own WebView instance. The active
-// tab drives the toolbar and is the only one visible — inactive tabs are
+// tab drives the toolbar and is the only one visible - inactive tabs are
 // kept mounted (display: 'none') so navigation history and DOM state
 // survive a switch.
 
@@ -73,7 +73,7 @@ interface BrowserTab {
     loading: boolean;
     // Path to a temp-file snapshot of the current page. Refreshed on each
     // page load and whenever the switcher is opened, so the grid reflects
-    // what the user last saw — same UX as Safari / Chrome.
+    // what the user last saw - same UX as Safari / Chrome.
     thumbnail?: string;
 }
 
@@ -91,7 +91,7 @@ function makeTab(): BrowserTab {
 // ─── Browsing history ──────────────────────────────────────────────────
 //
 // Saved across launches in AsyncStorage. The toolbar's search input
-// surfaces matching entries as type-ahead suggestions — same UX as
+// surfaces matching entries as type-ahead suggestions - same UX as
 // every desktop and mobile browser.
 
 const HISTORY_KEY = '@tiwi/browser_history';
@@ -377,7 +377,7 @@ export default function BrowserScreen() {
 
     // Features that open in the in-app browser each spawn a tab, so these pile
     // up fast. Closing them all leaves a single empty start page, same as every
-    // mobile browser — never zero tabs.
+    // mobile browser - never zero tabs.
     const closeAllTabs = () => {
         webViewRefs.current.clear();
         containerRefs.current.clear();
@@ -406,7 +406,7 @@ export default function BrowserScreen() {
             });
             patchTab(tabId, { thumbnail: uri });
         } catch (e) {
-            // Captures occasionally fail mid-navigation; ignore — the
+            // Captures occasionally fail mid-navigation; ignore - the
             // next onLoadEnd will retry.
         }
     };
@@ -436,7 +436,7 @@ export default function BrowserScreen() {
             query: state.url && state.url !== HOME_URL ? state.url : '',
             title: state.title || shortDomain(state.url) || HOME_TITLE,
         });
-        // Only persist once the navigation has finished — `loading: false`
+        // Only persist once the navigation has finished - `loading: false`
         // arrives via onLoadEnd and corresponds to the same `state.url`.
         if (state.url && !state.loading && state.url !== HOME_URL) {
             recordHistory(state.url, state.title || shortDomain(state.url));
@@ -449,7 +449,7 @@ export default function BrowserScreen() {
         const q = activeTab.query.trim().toLowerCase();
         if (!q || q.length < 1) return [];
         // If the user is already on a URL that exactly matches the query,
-        // hide the dropdown — there's nothing useful to suggest.
+        // hide the dropdown - there's nothing useful to suggest.
         if (q === activeTab.url.toLowerCase()) return [];
         const scored = history
             .filter((h) => h.url.toLowerCase().includes(q) || h.title.toLowerCase().includes(q))
@@ -834,7 +834,7 @@ export default function BrowserScreen() {
 
                     {/*
                       Confirm step. Rendered inside the switcher modal instead of
-                      as a nested <Modal> — iOS only shows one modal at a time.
+                      as a nested <Modal> - iOS only shows one modal at a time.
                     */}
                     {confirmCloseAll && (
                         <View style={styles.confirmOverlay}>

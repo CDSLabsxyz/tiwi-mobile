@@ -1,5 +1,5 @@
 /**
- * Chat history drawer — the mobile counterpart of the web AI modal's sidebar.
+ * Chat history drawer - the mobile counterpart of the web AI modal's sidebar.
  *
  * Same structure and actions: New chat, Search chats, Pinned prompt shortcuts,
  * Projects (create / rename / pin / delete / home / settings, with their chats

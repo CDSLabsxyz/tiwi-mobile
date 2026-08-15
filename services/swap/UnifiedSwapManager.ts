@@ -1,7 +1,7 @@
 /**
  * UnifiedSwapManager
  *
- * Port of `tiwi-user-app/hooks/useSwapExecution.ts`. It owns no routing logic —
+ * Port of `tiwi-user-app/hooks/useSwapExecution.ts`. It owns no routing logic -
  * the route comes from the backend and is settled by `services/swap/core`, the
  * executor engine copied from the web app. This class does the three things the
  * web hook does around that call:
@@ -27,7 +27,7 @@ import { toCoreToken } from './route-adapter';
 import { ExecuteSwapParams, SwapExecutionResult } from './types';
 
 export interface ExecuteSwapOptions {
-    /** Progress callback — mirrors the web toast stages. */
+    /** Progress callback - mirrors the web toast stages. */
     onStatusUpdate?: (status: SwapExecutionStatus) => void;
     /**
      * Skip the Tiwi fee for THIS execution. Set on the 2nd leg of a multi-leg
@@ -54,7 +54,7 @@ export class UnifiedSwapManager {
             // MUST have a recipient valid on the destination. Otherwise the
             // executors fall back to the source-VM address and funds are
             // delivered somewhere that cannot exist on the destination chain
-            // (unrecoverable). EVM↔EVM is unaffected — the same 0x address is
+            // (unrecoverable). EVM↔EVM is unaffected - the same 0x address is
             // valid on any EVM chain, so the source address passes this itself.
             if (Number(fromToken.chainId) !== Number(toToken.chainId)) {
                 const recipientUsable =

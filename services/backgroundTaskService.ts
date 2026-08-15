@@ -3,7 +3,7 @@
  *
  * Runs every ~15 minutes (OS-floor) to poll the active wallet for new
  * transactions and fire local notifications for anything the user hasn't
- * seen yet — so incoming txs notify even when the app is fully closed.
+ * seen yet - so incoming txs notify even when the app is fully closed.
  *
  * IMPORTANT constraints (the OS, not us):
  *   • iOS decides if/when to run. Heuristic based on how often the user
@@ -48,7 +48,7 @@ try {
     nativeAvailable = !!(BackgroundFetch && TaskManager);
 } catch (e) {
     console.warn(
-        '[bg-tx-task] native modules unavailable — rebuild app with `expo prebuild --clean` to enable background tx polling.',
+        '[bg-tx-task] native modules unavailable - rebuild app with `expo prebuild --clean` to enable background tx polling.',
         e,
     );
 }

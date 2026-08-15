@@ -37,7 +37,7 @@ import { TiwiPoolExecutor } from './executors/tiwi-pool-executor';
 import { SwapExecutionError, SwapErrorCode } from './types';
 import { alignRouteTokensWithParams } from './utils/route-token-identity';
 
-// BLACKLISTED contracts — never allow TIWI Protocol users to interact with these
+// BLACKLISTED contracts - never allow TIWI Protocol users to interact with these
 const BLACKLISTED_CONTRACTS = new Set([
   '0xac1ce734566f390a94b4571ce386795b52a5a288', // PancakeSwap Multicall V3
   '0x556b9306565093c855aea9ae92a594704c2cd59e', // PancakeSwap Multicall V2
@@ -54,7 +54,7 @@ export class SwapExecutor {
 
   constructor() {
     // Initialize all router executors
-    // TiwiProtocolDEX is HIGHEST PRIORITY — single-signature swaps on BSC.
+    // TiwiProtocolDEX is HIGHEST PRIORITY - single-signature swaps on BSC.
     // Falls through to old executors if contract not deployed (address = 0x0).
     // The web-compatible gasless executor is the default relayer path. The
     // server-planned executor remains available behind an explicit rollout flag.
@@ -74,7 +74,7 @@ export class SwapExecutor {
       new BscNativeSwapExecutor(), // Native BNB → Token swaps with 0.25% tax
       // Cross-chain INTO a taxed token (e.g. TWC): bridge to a stable on the destination
       // chain, then swap that stable → taxed token locally with our FoT-safe BSC executors.
-      // Aggregators quote these but can't settle them — their destination swap reverts on the
+      // Aggregators quote these but can't settle them - their destination swap reverts on the
       // transfer tax and the bridge refunds in the deposited currency. Registered BEFORE the
       // pre-swap executor so a taxed→taxed pair splits on the destination first and its leg 1
       // (taxed source → stable) then falls to the pre-swap executor.
@@ -110,7 +110,7 @@ export class SwapExecutor {
       // funded vaults + running relayer + audit). Before MultiStep so it takes over
       // tiwi-bridge routes from the 3-sig multi-step path once enabled.
       new CrossChainOrchestratorExecutor(),
-      // CCTP any-to-any rail (Circle burn/mint USDC): executes 'tiwi-cctp' routes — source swap
+      // CCTP any-to-any rail (Circle burn/mint USDC): executes 'tiwi-cctp' routes - source swap
       // to USDC + depositForBurn; the relayer delivers on the destination. INERT unless
       // NEXT_PUBLIC_CCTP_ENABLED=true. Before MultiStep so it takes tiwi-cctp routes.
       new TiwiCctpExecutor(),
@@ -255,7 +255,7 @@ export class SwapExecutor {
 
   /**
    * True if at least one registered executor can handle (execute) this route.
-   * Used to avoid serving a quote whose winning route nothing can settle — e.g. a
+   * Used to avoid serving a quote whose winning route nothing can settle - e.g. a
    * universal/V3 route on an EVM chain where TiwiMultiSwap isn't deployed yet.
    */
   canExecute(route: RouterRoute): boolean {
@@ -292,12 +292,12 @@ export class SwapExecutor {
   private shouldTryFallback(executor: SwapRouterExecutor, error: unknown): boolean {
     const lowerMessage = this.extractErrorMessage(error).toLowerCase();
 
-    // NEVER fall through on user rejection — user explicitly cancelled
+    // NEVER fall through on user rejection - user explicitly cancelled
     if (/rejected|user rejected|user_rejected|cancelled|denied|declined/.test(lowerMessage)) {
       return false;
     }
 
-    // NEVER fall through on insufficient balance — no point trying another executor
+    // NEVER fall through on insufficient balance - no point trying another executor
     if (
       lowerMessage.includes('insufficient balance') ||
       lowerMessage.includes('not enough balance') ||
@@ -315,7 +315,7 @@ export class SwapExecutor {
     // BscRelayerPlan: fall through to the web-compatible gasless executor when
     // the plan API fails, so an outage there does not force a user-paid-gas swap
     // instead of failing. NOT on an on-chain revert or a refusal the user must
-    // act on (insufficient balance, outstanding drip) — retrying those on
+    // act on (insufficient balance, outstanding drip) - retrying those on
     // another executor charges them twice or fails again more slowly.
     if (executor instanceof BscRelayerPlanExecutor) {
       if (

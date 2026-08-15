@@ -26,7 +26,6 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { Address, Hash } from 'viem';
 
-const SECONDS_PER_YEAR = 31_536_000;
 const TELEGRAM_SUPPORT_URL = 'https://t.me/tiwiecosystemsupport';
 
 type PoolLifecycle = 'live' | 'paused' | 'ended' | 'unknown';
@@ -34,7 +33,7 @@ type PoolLifecycle = 'live' | 'paused' | 'ended' | 'unknown';
 /**
  * Fallback lifecycle from DB fields, for the moment before the on-chain read
  * lands (or when it fails). The contract's `startTime` is set at funding, a beat
- * after `created_at` — close enough to decide "ended", not close enough to
+ * after `created_at` - close enough to decide "ended", not close enough to
  * render a countdown from.
  */
 function lifecycleFromDb(pool: UserStakingPool): PoolLifecycle {
@@ -61,8 +60,7 @@ const EXPLORERS: Record<number, string> = {
 const isEvmAddr = (v?: string) => !!v && /^0x[a-fA-F0-9]{40}$/.test(v);
 
 function aprText(p: UserStakingPool['pool']): string | null {
-    if (!p?.poolReward || !p.maxTvl || !p.rewardDurationSeconds) return null;
-    const apr = (p.poolReward / (p.maxTvl * p.rewardDurationSeconds)) * SECONDS_PER_YEAR * 100;
+    const apr = Number(p?.apy);
     return Number.isFinite(apr) ? `${apr.toFixed(2)}%` : null;
 }
 
@@ -72,7 +70,7 @@ function aprText(p: UserStakingPool['pool']): string | null {
  * as a flat "0 days".
  */
 function durationText(seconds?: number): string {
-    if (!seconds || seconds <= 0) return '—';
+    if (!seconds || seconds <= 0) return '-';
     if (seconds >= 86400) {
         const days = seconds / 86400;
         return `${Number.isInteger(days) ? days : days.toFixed(1)} ${days === 1 ? 'day' : 'days'}`;
@@ -87,7 +85,7 @@ function durationText(seconds?: number): string {
 
 function rewardAmountText(value?: string): string {
     const amount = Number(value);
-    if (!Number.isFinite(amount)) return '—';
+    if (!Number.isFinite(amount)) return '-';
     return amount.toLocaleString('en-US', { maximumFractionDigits: 6 });
 }
 
@@ -118,10 +116,10 @@ export function MyPoolsView({ activeWalletAddress, onConnectEvmWallet, onCreateP
             setPools(data?.pools || []);
         } catch (e: any) {
             // A 404 means the user-staking-pools route isn't deployed on this
-            // backend yet — treat it as "no pools" rather than a hard error so
+            // backend yet - treat it as "no pools" rather than a hard error so
             // the screen shows the normal empty state instead of a dev overlay.
             const notDeployed = String(e?.message || '').includes('404');
-            if (notDeployed) console.warn('[MyPoolsView] user-staking-pools route unavailable (404) — showing empty state');
+            if (notDeployed) console.warn('[MyPoolsView] user-staking-pools route unavailable (404) - showing empty state');
             else console.warn('[MyPoolsView] load failed', e);
             setPools([]);
         } finally {
@@ -176,7 +174,7 @@ export function MyPoolsView({ activeWalletAddress, onConnectEvmWallet, onCreateP
 
 /**
  * An approved pool is only "Live" while its reward window is open and it hasn't
- * been paused. Once `endTime` passes nobody can stake and no rewards accrue —
+ * been paused. Once `endTime` passes nobody can stake and no rewards accrue -
  * badging that as Live told creators their expired pool was still running.
  */
 function StatusBadge({ pool, lifecycle }: { pool: UserStakingPool; lifecycle: PoolLifecycle }) {
@@ -269,7 +267,7 @@ function MyPoolRow({ pool, walletAddress, feeSettings, onChanged }: {
     }, [pool.chainId, pool.poolContractAddress, pool.txHash]);
 
     // `endTime` lives on the contract, not in `staking_pools`, so the badge has
-    // to read it. Only approved pools are worth the call — the rest can't be live.
+    // to read it. Only approved pools are worth the call - the rest can't be live.
     useEffect(() => {
         let cancelled = false;
         if (pool.approvalStatus !== 'approved' || !isEvmAddr(pool.poolContractAddress)) return;
@@ -309,7 +307,7 @@ function MyPoolRow({ pool, walletAddress, feeSettings, onChanged }: {
         isEvmAddr(feeSettings.creationFeeTokenAddress) &&
         isEvmAddr(feeSettings.creationFeeTreasuryAddress) &&
         !pool.creationFeeTxHash;
-    // An outstanding fee stays payable for as long as the pool is live —
+    // An outstanding fee stays payable for as long as the pool is live -
     // gating this to 'pending' left an already-approved pool with no way to
     // settle it. A rejected pool is the one case where we stop asking: it's
     // being nullified.
@@ -402,7 +400,7 @@ function MyPoolRow({ pool, walletAddress, feeSettings, onChanged }: {
             } catch (patchErr: any) {
                 // The server re-verifies the hash on-chain before storing it,
                 // so a rejection means the pool is genuinely still unpaid. Say
-                // so — and surface the hash — rather than refreshing into a
+                // so - and surface the hash - rather than refreshing into a
                 // misleading "paid" state.
                 throw new Error(
                     `The fee was sent (tx ${hash}) but recording it failed. ` +
@@ -433,7 +431,7 @@ function MyPoolRow({ pool, walletAddress, feeSettings, onChanged }: {
                     </Text>
                 </View>
                 {/* An unpaid fee is the one thing the creator has to act on, so
-                    it reads from the collapsed row — no expanding to find it. */}
+                    it reads from the collapsed row - no expanding to find it. */}
                 {canPayFee ? (
                     <View style={[styles.badge, { backgroundColor: '#201a08', marginRight: 6 }]}>
                         <Ionicons name="wallet" size={13} color="#facc15" />
@@ -447,9 +445,9 @@ function MyPoolRow({ pool, walletAddress, feeSettings, onChanged }: {
             {expanded ? (
                 <View style={styles.rowBody}>
                     <View style={styles.infoGrid}>
-                        <Info label="APR" value={apr || '—'} />
-                        <Info label="Reward pool" value={pool.pool?.poolReward != null ? `${pool.pool.poolReward} ${rewardSymbol}`.trim() : '—'} />
-                        <Info label="Max TVL" value={pool.pool?.maxTvl != null ? `${pool.pool.maxTvl} ${stakeSymbol}`.trim() : '—'} />
+                        <Info label="APR" value={apr || '-'} />
+                        <Info label="Reward pool" value={pool.pool?.poolReward != null ? `${pool.pool.poolReward} ${rewardSymbol}`.trim() : '-'} />
+                        <Info label="Max TVL" value={pool.pool?.maxTvl != null ? `${pool.pool.maxTvl} ${stakeSymbol}`.trim() : '-'} />
                         <Info label="Duration" value={durationText(pool.pool?.rewardDurationSeconds)} />
                     </View>
 
@@ -473,7 +471,7 @@ function MyPoolRow({ pool, walletAddress, feeSettings, onChanged }: {
                             // /earn/pool/manage?id=<stakingPoolId>.
                             //
                             // `name` is passed along because the mobile
-                            // staking route doesn't project the pool's name —
+                            // staking route doesn't project the pool's name -
                             // without it the header falls back to the bare
                             // token symbol, and this row already knows it.
                             onPress={() => router.push({
@@ -563,7 +561,7 @@ function MyPoolRow({ pool, walletAddress, feeSettings, onChanged }: {
                     {canWithdrawRejectedPool ? (
                         <View style={styles.rejectNote}>
                             <Text style={styles.rejectNoteText}>
-                                This pool was rejected. You can withdraw the reward funds you deposited — the pool will be nullified but stays listed here.
+                                This pool was rejected. You can withdraw the reward funds you deposited - the pool will be nullified but stays listed here.
                             </Text>
                             {error ? <Text style={styles.errText}>{error}</Text> : null}
                             <TouchableOpacity style={[styles.withdrawBtn, isWithdrawing && { opacity: 0.6 }]} onPress={handleRejectedPoolWithdraw} disabled={isWithdrawing}>

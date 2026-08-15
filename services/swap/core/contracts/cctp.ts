@@ -1,5 +1,5 @@
 /**
- * Circle CCTP V2 configuration — single source of truth for the CCTP cross-chain USDC rail.
+ * Circle CCTP V2 configuration - single source of truth for the CCTP cross-chain USDC rail.
  *
  * WHY CCTP: it moves USDC across chains by burn-and-mint (Circle attestation), so the
  * cross-chain hop needs ZERO bridge liquidity and costs ~nothing. We use it as the backbone
@@ -19,7 +19,7 @@
  */
 
 /**
- * VM family of a CCTP chain — selects the source/dest adapter (see docs/cctp-non-evm-adapters.md).
+ * VM family of a CCTP chain - selects the source/dest adapter (see docs/cctp-non-evm-adapters.md).
  * Every chain wired today is 'evm'; the others are added as their adapters land.
  */
 export type CctpVm = 'evm' | 'svm' | 'cosmos' | 'move' | 'cairo' | 'stellar';
@@ -27,7 +27,7 @@ export type CctpVm = 'evm' | 'svm' | 'cosmos' | 'move' | 'cairo' | 'stellar';
 export interface CctpChainConfig {
   chainId: number;          // canonical chainId (synthetic for non-EVM, e.g. Solana 7565164)
   domain: number;           // Circle CCTP domain id (NOT the chainId)
-  vm: CctpVm;               // adapter family — 'evm' for all currently-wired chains
+  vm: CctpVm;               // adapter family - 'evm' for all currently-wired chains
   cctpVersion: 1 | 2;       // Circle protocol version (Aptos/Sui/Noble are V1-only)
   usdc: string;             // Circle-native USDC identifier (0x address on EVM; mint/denom on non-EVM)
   usdcDecimals: 6;
@@ -50,7 +50,7 @@ export const CCTP_CHAINS: Record<number, CctpChainConfig> = {
   8453: { chainId: 8453, domain: 6, vm: 'evm', cctpVersion: 2, usdc: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', usdcDecimals: 6, tokenMessenger: TOKEN_MESSENGER_V2, messageTransmitter: MESSAGE_TRANSMITTER_V2 },
   137: { chainId: 137, domain: 7, vm: 'evm', cctpVersion: 2, usdc: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359', usdcDecimals: 6, tokenMessenger: TOKEN_MESSENGER_V2, messageTransmitter: MESSAGE_TRANSMITTER_V2 },
   59144: { chainId: 59144, domain: 11, vm: 'evm', cctpVersion: 2, usdc: '0x176211869cA2b568f2A7D4EE941E073a821EE1ff', usdcDecimals: 6, tokenMessenger: TOKEN_MESSENGER_V2, messageTransmitter: MESSAGE_TRANSMITTER_V2 },
-  // Solana mainnet (synthetic chainId) — non-EVM CCTP dest. Mint proven on-chain 2026-07-16.
+  // Solana mainnet (synthetic chainId) - non-EVM CCTP dest. Mint proven on-chain 2026-07-16.
   // NOTE: EVM→Solana is only EXECUTABLE once NEXT_PUBLIC_CCTP_RELAYER_SOLANA is set (the source
   // needs the relayer's Solana USDC ATA as mintRecipient); until then routes fall back to aggregators.
   7565164: { chainId: 7565164, domain: 5, vm: 'svm', cctpVersion: 2, usdc: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', usdcDecimals: 6, programs: { tokenMessengerMinterV2: 'CCTPV2vPZJS2u2BBsUoscuikbYjnpFmbFsvVuJdgUMQe', messageTransmitterV2: 'CCTPV2Sm4AdWt5296sk4P66VBZ7bEhcARwFaaS9YPbeC' } },
@@ -61,8 +61,8 @@ export const CCTP_IRIS_API_BASE = 'https://iris-api.circle.com';
 
 /** minFinalityThreshold values for depositForBurn. */
 export const CCTP_FINALITY = {
-  FAST: 1000,      // soft finality (seconds) — charges a fee via maxFee
-  STANDARD: 2000,  // hard finality (~13–19 min) — free
+  FAST: 1000,      // soft finality (seconds) - charges a fee via maxFee
+  STANDARD: 2000,  // hard finality (~13–19 min) - free
 } as const;
 
 /** Nested-call gas headroom for depositForBurn / receiveMessage. */
@@ -106,7 +106,7 @@ export function encodeRecipientBytes32(vm: CctpVm, address: string): string {
     case 'evm':
       return addressToBytes32(address);
     case 'svm':
-      // Solana pubkeys are already 32 bytes — base58-decode and hex-encode directly.
+      // Solana pubkeys are already 32 bytes - base58-decode and hex-encode directly.
       return svmAddressToBytes32(address);
     default:
       throw new Error(`encodeRecipientBytes32: CCTP vm '${vm}' not implemented yet`);
@@ -160,7 +160,7 @@ export function isCctpChain(chainId: number): boolean {
 
 /**
  * A pair is CCTP-eligible when it's cross-chain and BOTH endpoints are CCTP chains.
- * (The tokens themselves need not be USDC — the local legs swap into/out of USDC.)
+ * (The tokens themselves need not be USDC - the local legs swap into/out of USDC.)
  */
 export function isCctpPair(fromChainId: number, toChainId: number): boolean {
   return fromChainId !== toChainId && isCctpChain(fromChainId) && isCctpChain(toChainId);

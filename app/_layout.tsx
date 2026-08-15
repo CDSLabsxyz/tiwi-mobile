@@ -111,7 +111,7 @@ function SecurityOverlay() {
 
 /**
  * Kicks the wallet-balances query off the very first moment the wallet
- * store has hydrated and an active address is available — before the
+ * store has hydrated and an active address is available - before the
  * user navigates into the Wallet tab. The hook internally gates on
  * `enabled: _hasHydrated && !!activeAddress`, and React Query dedupes
  * by query key, so the Wallet tab / modal / Send screen just read from
@@ -126,7 +126,7 @@ function BalancePrefetcher() {
 }
 
 /**
- * Global AI bubble — mounted once, visible on every authenticated screen.
+ * Global AI bubble - mounted once, visible on every authenticated screen.
  * Hidden pre-setup (onboarding/welcome/security/lock), while the app is
  * locked, and on the chatbot screen itself (would overlap its header).
  */
@@ -163,12 +163,12 @@ function AppContent() {
   // Safe to call without a wallet address.
   useEffect(() => {
     notificationService.initNotifications();
-    // Opportunistic background tx polling — runs every ~15 min when the OS
+    // Opportunistic background tx polling - runs every ~15 min when the OS
     // permits. Supplement to server push, not a replacement.
     registerBackgroundTxTask();
   }, []);
 
-  // Ensure push token is registered — retry if wallet loads late
+  // Ensure push token is registered - retry if wallet loads late
   useEffect(() => {
     const registerToken = async () => {
       try {
@@ -207,7 +207,7 @@ function AppContent() {
     return () => clearTimeout(timer);
   }, []);
 
-  // Push-notification tap handler — deep-link based on the payload's `type`.
+  // Push-notification tap handler - deep-link based on the payload's `type`.
   useEffect(() => {
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
       const data = response.notification.request.content.data as any;
@@ -317,7 +317,7 @@ export default function RootLayout() {
 
   // Backfill/repair the active wallet's derived addresses once the store has
   // hydrated. This carries the TON derivation fix (secp256k1 → ed25519) to
-  // wallets created before it — waiting for the wallet modal to be opened would
+  // wallets created before it - waiting for the wallet modal to be opened would
   // leave them showing a TON address the signer can't reproduce.
   useEffect(() => {
     if (!isHydrated) return;
@@ -421,10 +421,10 @@ export default function RootLayout() {
     const inWalletFlow = firstSegment === 'wallet';
     const isRoot = segmentsArray.length === 0;
 
-    // Step 1: Onboarding — only on first ever launch
+    // Step 1: Onboarding - only on first ever launch
     if (!hasCompletedOnboarding && !isOnboardingLoading) {
       if (!inOnboarding) {
-        console.log('[Guard] First launch — showing onboarding...');
+        console.log('[Guard] First launch - showing onboarding...');
         router.replace('/onboarding' as any);
       }
       return;

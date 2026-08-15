@@ -202,7 +202,7 @@ class UpdateService {
 
         try {
             if (Platform.OS !== 'android') {
-                // Debug mode on non-Android — simulate install success
+                // Debug mode on non-Android - simulate install success
                 console.log('[UpdateService] DEBUG: Install simulated (non-Android). APK at:', this.downloadedApkUri);
                 this.setStatus('idle');
                 return;

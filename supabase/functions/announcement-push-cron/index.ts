@@ -7,7 +7,7 @@
 // Schema: supabase/announcement_push_schema.sql
 // Deploy: supabase/functions/announcement-push-cron/README.md
 
-// @ts-ignore — resolved at runtime by Supabase Edge Runtime.
+// @ts-ignore - resolved at runtime by Supabase Edge Runtime.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 
 // @ts-ignore
@@ -74,7 +74,7 @@ async function sendExpoPush(messages: any[]): Promise<void> {
 
 // ─── MAIN ─────────────────────────────────────────────────────────────────
 
-// @ts-ignore — Deno.serve is the Supabase Edge Function entrypoint.
+// @ts-ignore - Deno.serve is the Supabase Edge Function entrypoint.
 Deno.serve(async (_req: Request) => {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 

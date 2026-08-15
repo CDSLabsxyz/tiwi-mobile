@@ -1,12 +1,12 @@
 /**
  * Confirms a tx actually succeeded on-chain. Submitting a transaction only
- * broadcasts it — reverts (OOG, failed approve→transfer, contract require
+ * broadcasts it - reverts (OOG, failed approve→transfer, contract require
  * failure, etc.) come back as `receipt.status === 'reverted'`. Activity
  * loggers MUST gate on this before recording "Sent Successfully" or similar,
  * otherwise the UI reports actions that never happened.
  *
  * Uses the app's configured RPC for the chain. Returns `null` if the RPC
- * isn't configured or the receipt fetch times out — caller should treat
+ * isn't configured or the receipt fetch times out - caller should treat
  * `null` as "unknown" and, for safety, decline to log as successful.
  */
 

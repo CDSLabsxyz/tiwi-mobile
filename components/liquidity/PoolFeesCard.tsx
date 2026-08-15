@@ -1,5 +1,5 @@
 /**
- * PoolFeesCard — creator/platform protocol-fee claim UI.
+ * PoolFeesCard - creator/platform protocol-fee claim UI.
  * Ported from tiwi-user-app app/pool/[chain]/[address]/pool-fees-card.tsx.
  * Renders nothing for pre-upgrade pools (readPoolFees → null).
  */

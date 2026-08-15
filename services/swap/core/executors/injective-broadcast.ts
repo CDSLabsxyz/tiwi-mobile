@@ -72,7 +72,7 @@ export async function broadcastInjectiveExternal(
 
   // External can't simulate with a pk, so use a generous fixed gas limit. A
   // same-chain wasm DEX swap is ~0.5–1.5M gas; the wallet UI shows the fee and
-  // the user confirms. Injective mainnet min gas price is 160000000 inj — 5e8
+  // the user confirms. Injective mainnet min gas price is 160000000 inj - 5e8
   // is a safe multiple. Unused gas is not charged.
   const gasLimit = 3_000_000;
   const fee = {

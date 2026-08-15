@@ -19,7 +19,7 @@ import {
 import Animated, { useAnimatedKeyboard, useAnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-// Unified row — same shape used by the address-book sheet so rename/dedupe
+// Unified row - same shape used by the address-book sheet so rename/dedupe
 // behavior is consistent across both surfaces.
 type WhitelistRow = {
     name: string;
@@ -44,13 +44,13 @@ export default function WhitelistAddressesScreen() {
     const [newName, setNewName] = useState('');
     const [newAddress, setNewAddress] = useState('');
 
-    // Per-address inline rename — same UX as the address-book sheet.
+    // Per-address inline rename - same UX as the address-book sheet.
     const [editingAddress, setEditingAddress] = useState<string | null>(null);
     const [editDraft, setEditDraft] = useState('');
     const listRef = useRef<FlatList<WhitelistRow>>(null);
 
     // Lift the entire screen above the keyboard while a rename input is open
-    // (mirrors the TIWI AI input — IME inset comes from native via reanimated).
+    // (mirrors the TIWI AI input - IME inset comes from native via reanimated).
     const keyboard = useAnimatedKeyboard();
     const keyboardPaddingStyle = useAnimatedStyle(() => ({
         paddingBottom: keyboard.height.value,
@@ -58,7 +58,7 @@ export default function WhitelistAddressesScreen() {
 
     // Build the displayed list: every wallet × chain pair, then any manual
     // whitelist contacts that aren't already covered. Deduped by lowercase
-    // address — the wallet entry (with chain badge) wins.
+    // address - the wallet entry (with chain badge) wins.
     const rows = useMemo<WhitelistRow[]>(() => {
         const seen = new Set<string>();
         const out: WhitelistRow[] = [];

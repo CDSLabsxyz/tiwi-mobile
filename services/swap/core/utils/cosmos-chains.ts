@@ -5,7 +5,7 @@
  * secp256k1 key path (Cosmos `m/44'/118'/…`). That means one keypair produces
  * one 20-byte account hash, and the on-chain address is simply that hash
  * re-encoded under each chain's bech32 prefix. So `cosmos1abc…` and `dydx1abc…`
- * (etc.) are the *same* wallet — we can re-encode between them locally without a
+ * (etc.) are the *same* wallet - we can re-encode between them locally without a
  * mnemonic.
  *
  * Injective (chainId 8000001) is intentionally EXCLUDED: it derives addresses
@@ -14,7 +14,7 @@
  * chains here that share the standard secp256k1 derivation.
  *
  * The chainId → prefix/denom/decimals data mirrors `COSMOS_CHAINS` in
- * `app/api/v1/cosmos-direct-balances/route.ts` — keep the two in sync.
+ * `app/api/v1/cosmos-direct-balances/route.ts` - keep the two in sync.
  */
 // bech32 v2 (what the mobile app pins) exposes the codec under a `bech32`
 // namespace instead of top-level `decode`/`encode` like v1 did on web.

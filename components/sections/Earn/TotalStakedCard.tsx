@@ -1,6 +1,6 @@
 /**
  * Total Staked Card
- * 6-stat grid — ports super-app's total-staked-card.tsx:
+ * 6-stat grid - ports super-app's total-staked-card.tsx:
  *   OVERALL TVL | NO. OF ACTIVE POOLS | NO. OF INACTIVE POOLS
  *   TOTAL TWC STAKED | TOTAL NO. OF ACTIVE STAKERS | ALL TIME STAKERS
  * On mobile we collapse the single-row desktop layout to a 2x3 grid.

@@ -11,7 +11,7 @@
  * (internal-sui-signer) or the external Sui wallet (external-sui-wallet). Mirrors
  * the Cetus executor's signing; the only difference is where the tx comes from.
  *
- * BSC is NOT reachable here (excluded from CCTP) — that pair is served by the
+ * BSC is NOT reachable here (excluded from CCTP) - that pair is served by the
  * Allbridge rail.
  */
 
@@ -141,7 +141,7 @@ export class MayanSuiExecutor implements SwapRouterExecutor {
 
       onStatusUpdate?.({
         stage: 'completed',
-        message: 'Sui side submitted — Mayan is delivering on the destination chain.',
+        message: 'Sui side submitted - Mayan is delivering on the destination chain.',
         txHash: digest,
       });
 

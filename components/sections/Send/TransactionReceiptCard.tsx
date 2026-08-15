@@ -3,7 +3,7 @@
  *
  * Shown on the send-success step. Displays Amount / Network / Sender /
  * Receiver / Date / Tx ID, and lets the user save the receipt to their gallery,
- * download it as a PDF, or share either format — the image is captured with
+ * download it as a PDF, or share either format - the image is captured with
  * react-native-view-shot, the PDF rendered by expo-print.
  */
 
@@ -54,7 +54,7 @@ const truncate = (s: string, head = 6, tail = 6) =>
     !s ? '' : s.length <= head + tail + 3 ? s : `${s.slice(0, head)}…${s.slice(-tail)}`;
 
 // TIWI logo (assets/logo/tiwi-logo.svg) inlined as a base64 data URI so the
-// generated PDF is fully self-contained — no external assets, no font/CORS
+// generated PDF is fully self-contained - no external assets, no font/CORS
 // issues from the WebView print pipeline.
 const TIWI_LOGO_DATA_URI =
     'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzYiIGhlaWdodD0iNDEiIHZpZXdCb3g9IjAgMCAzNiA0MSIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGcgY2xpcC1wYXRoPSJ1cmwoI2NsaXAwXzQ3MzRfMTY2NTEpIj4KPHBhdGggZD0iTTE3LjE0MTQgNy4xNDk5MkwxNy41MzMgMy41MTM1NUMxNy41MzMgMy41MTM1NSAyNS45OTE3IDEyLjUyMDYgMjYuNzMwMiAxOS44OTRDMjcuNDY4NiAyNy4yNjc0IDI2LjYwNzEgMzAuNjM1MyAxNy45ODA1IDQwLjA1NjNDMTcuOTgwNSA0MC4wNTYzIDMzLjE1MjYgMjEuNzg0OSAxNy4xNTI1IDcuMTQ5OTJIMTcuMTQxNFoiIGZpbGw9IiM3OEE2MjciLz4KPHBhdGggZD0iTTE4LjIzNzkgMzIuOTI4N0wxNy44NDYzIDM2LjU2NTFDMTcuODQ2MyAzNi41NjUxIDkuMzQyNzYgMjcuNTU4MSA4LjYwNDMgMjAuMTg0N0M3Ljg2NTg0IDEyLjgxMTIgOC43MjczOCA5LjQ1NDU3IDE3LjM5ODcgMC4wMzM1NjkzQzE3LjM5ODcgMC4wMzM1NjkzIDIuMTQ4MzQgMTguMzA0OSAxOC4yMzc5IDMyLjkyODdaIiBmaWxsPSIjNzhBNjI3Ii8+CjxwYXRoIGQ9Ik0xNy44MjM4IDM2LjU0MjdIOS4zNTM4NkwyLjczMDA3IDI2LjgwODRDMS4wMDY5OSAyNC4yOTEgMC4xMDA2OTIgMjEuMzgxOSAtNy40NjAyNGUtMDYgMTguNDYxNkMtNy40NjAyNGUtMDYgMTguMzYwOSAtNy40NjAyNGUtMDYgMTguMjQ5IC03LjQ2MDI0ZS0wNiAxOC4xNDgzQy0wLjA0NDc2MjggMTQuOTgxOCAwLjg2MTUzMyAxMS44MTU0IDIuNzMwMDcgOS4wODUzM0w4LjkwNjMgMEgxNy4zNzYyTDExLjIgOS4wODUzM0M5LjM0MjY3IDExLjgxNTQgOC40MzYzNyAxNC45ODE4IDguNDY5OTQgMTguMTQ4M0M4LjQ2OTk0IDE4LjI0OSA4LjQ2OTk0IDE4LjM2MDkgOC40Njk5NCAxOC40NjE2QzguNTU5NDUgMjEuMzgxOSA5LjQ2NTc0IDI0LjI5MSAxMS4xODg4IDI2LjgwODRMMTcuODEyNiAzNi41NDI3SDE3LjgyMzhaIiBmaWxsPSIjQjFGMTI4Ii8+CjxwYXRoIGQ9Ik0zNS4zNTY1IDIxLjkwOEMzNS40MDEzIDI1LjA3NDQgMzQuNDk1IDI4LjI0MDkgMzIuNjI2NCAzMC45NzA5TDI2LjQ1MDIgNDAuMDU2M0gxNy45ODAzTDI0LjE1NjUgMzAuOTcwOUMyNi4wMTM4IDI4LjI0MDkgMjYuOTMxMyAyNS4wNzQ0IDI2Ljg4NjYgMjEuOTA4QzI2Ljg4NjYgMjEuODA3MyAyNi44ODY2IDIxLjY5NTQgMjYuODg2NiAyMS41OTQ3QzI2Ljc5NzEgMTguNjc0NCAyNS44OTA4IDE1Ljc2NTMgMjQuMTY3NyAxMy4yNDc4TDE3LjUzMjcgMy41MTM1NUgyNi4wMDI3TDMyLjYyNjQgMTMuMjQ3OEMzNC4zNDk1IDE1Ljc3NjUgMzUuMjU1OCAxOC42NzQ0IDM1LjM0NTMgMjEuNTk0N0MzNS4zNDUzIDIxLjY5NTQgMzUuMzQ1MyAyMS44MDczIDM1LjM0NTMgMjEuOTA4SDM1LjM1NjVaIiBmaWxsPSIjQjFGMTI4Ii8+CjwvZz4KPGRlZnM+CjxjbGlwUGF0aCBpZD0iY2xpcDBfNDczNF8xNjY1MSI+CjxyZWN0IHdpZHRoPSIzNS4zNTY3IiBoZWlnaHQ9IjQwLjA1NiIgZmlsbD0id2hpdGUiLz4KPC9jbGlwUGF0aD4KPC9kZWZzPgo8L3N2Zz4K';
@@ -268,7 +268,7 @@ export const TransactionReceiptCard: React.FC<Props> = ({ receipt, onDone }) => 
 
     /**
      * Renders the receipt to a PDF in the cache dir and returns its uri.
-     * Builds a self-contained HTML doc styled with TIWI brand colors — we
+     * Builds a self-contained HTML doc styled with TIWI brand colors - we
      * don't reuse the React tree, expo-print needs raw HTML/CSS.
      */
     const generatePdf = async (): Promise<string> => {
@@ -323,7 +323,7 @@ export const TransactionReceiptCard: React.FC<Props> = ({ receipt, onDone }) => 
             try {
                 await MediaLibrary.createAlbumAsync('TIWI Receipts', asset, false);
             } catch {
-                // Album creation can fail on restricted permissions — the asset
+                // Album creation can fail on restricted permissions - the asset
                 // is already in the gallery, so this isn't worth surfacing.
             }
             Alert.alert('Saved', 'Receipt saved to your gallery.');
@@ -497,7 +497,7 @@ export const TransactionReceiptCard: React.FC<Props> = ({ receipt, onDone }) => 
                     </View>
                 </ViewShot>
 
-                {/* Action buttons (NOT inside view-shot — we don't capture them) */}
+                {/* Action buttons (NOT inside view-shot - we don't capture them) */}
                 <View style={styles.actions}>
                     {/* Primary: keep a copy on the device */}
                     <View style={styles.shareRow}>

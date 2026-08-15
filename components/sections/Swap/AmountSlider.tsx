@@ -1,11 +1,11 @@
 /**
- * Percentage slider for the swap "From" amount — the native port of the web
+ * Percentage slider for the swap "From" amount - the native port of the web
  * swap card's "Scroll or drag" control (tiwi-user-app components/swap/token-input.tsx).
  *
  * Same model as the web one: the value is a PERCENTAGE OF BALANCE, and the
  * parent owns the conversion to an amount, so Max keeps whatever gas/fee
  * reserve the parent already applies. There is no wheel on a phone, hence
- * "Drag to select" rather than the web's "Scroll or drag" — tapping anywhere on
+ * "Drag to select" rather than the web's "Scroll or drag" - tapping anywhere on
  * the track jumps there, which is the touch equivalent.
  */
 
@@ -35,7 +35,7 @@ export const AmountSlider: React.FC<AmountSliderProps> = ({ value, onChange, dis
     const percent = Number.isFinite(value) ? Math.min(100, Math.max(0, value)) : 0;
 
     const trackRef = useRef<View>(null);
-    /** Track's x in window coords — drags are tracked in page space (see below). */
+    /** Track's x in window coords - drags are tracked in page space (see below). */
     const originRef = useRef(0);
 
     const emitFromX = useCallback((x: number) => {
@@ -132,7 +132,7 @@ const styles = StyleSheet.create({
     },
     hint: { color: colors.mutedText, fontFamily: 'Manrope-Medium', fontSize: 11 },
     percentText: { color: colors.primaryCTA, fontFamily: 'Manrope-SemiBold', fontSize: 11 },
-    // Generous vertical padding — the visible track is 4px, which is far too
+    // Generous vertical padding - the visible track is 4px, which is far too
     // thin to hit with a thumb.
     touchArea: { paddingVertical: 10, justifyContent: 'center' },
     track: { height: 4, borderRadius: 999, backgroundColor: colors.bgStroke, justifyContent: 'center' },

@@ -36,7 +36,7 @@ export default function AssetActivitiesScreen() {
     const { id, tab, chainId } = useLocalSearchParams<{ id: string; tab?: string; chainId?: string }>();
 
     // State
-    // `currentAsset` is a global left behind by the last asset screen — only
+    // `currentAsset` is a global left behind by the last asset screen - only
     // reuse it when it is THIS asset. Matching on address alone isn't enough:
     // the same address is a different token on another chain.
     const { currentAsset } = useAssetStore();
@@ -103,7 +103,7 @@ export default function AssetActivitiesScreen() {
                 // Activities screen: when on-chain disagrees with the stored
                 // category, trust on-chain. A tx logged as "Swap" whose
                 // resolver determines there is no received leg is actually
-                // a pure Send — relabel it so the user sees "Sent".
+                // a pure Send - relabel it so the user sees "Sent".
                 let mappedType: AssetActivity["type"] = "swap";
                 if (onChain?.resolvedDirection === 'sent'
                     && !typeLower.includes('received') && !typeLower.includes('receive')) {
@@ -165,7 +165,7 @@ export default function AssetActivitiesScreen() {
         }
 
         // `asset.activities` (fetched via fetchAssetDetail) hits the same
-        // backend endpoint as useUnifiedActivities and returns the same txs —
+        // backend endpoint as useUnifiedActivities and returns the same txs -
         // but labeled as "Swap" for rows the logger mislabeled. Merging it
         // produces duplicate ghost Swap rows alongside the real Sent rows
         // from the unified pipeline. Use unified only; fall back to
@@ -219,7 +219,7 @@ export default function AssetActivitiesScreen() {
         if (router.canGoBack()) {
             router.back();
         } else {
-            // Navigate back to asset detail screen if no history — keep the
+            // Navigate back to asset detail screen if no history - keep the
             // chain so the detail screen resolves the same token.
             const parts: string[] = [];
             if (tab) parts.push(`tab=${tab}`);

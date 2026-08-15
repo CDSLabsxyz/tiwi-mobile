@@ -2,7 +2,7 @@
  * Chain-family classification used by multi-send dispatching.
  *
  * Sourced from the canonical chain registry (`lib/backend/registry/chains.ts`)
- * so every chain the platform lists is classified consistently — all 50 EVM
+ * so every chain the platform lists is classified consistently - all 50 EVM
  * chains, all Cosmos chains, Solana, TRON, TON, Sui, Aptos, Bitcoin, etc.
  * Falls back to the heuristic `getChainType()` for any chainId not in the
  * registry.

@@ -1,5 +1,5 @@
 /**
- * Crypto global — MUST be installed before any other module is evaluated.
+ * Crypto global - MUST be installed before any other module is evaluated.
  *
  * Why this is its own file, and why it uses `require` instead of `import`:
  *
@@ -9,7 +9,7 @@
  *     exports.crypto = 'crypto' in globalThis ? globalThis.crypto : undefined;
  *
  * If it evaluates before the polyfill runs, it captures `undefined` forever and
- * every later `randomBytes()` throws "crypto.getRandomValues must be defined" —
+ * every later `randomBytes()` throws "crypto.getRandomValues must be defined" -
  * which is exactly what a Solana swap hit, because generating the temporary
  * account for a WSOL unwrap needs a random keypair.
  *
@@ -18,7 +18,7 @@
  * the reference early ends up holding the same object the method lands on.
  *
  * ES `import`s are hoisted above statements, so ordering only holds with
- * `require` — do not "tidy" these into imports.
+ * `require` - do not "tidy" these into imports.
  */
 
 /* eslint-disable @typescript-eslint/no-require-imports --
@@ -37,7 +37,7 @@ require('react-native-get-random-values');
 
 // 3. Last resort: Expo's native crypto, in case the module above could not
 //    install itself (bridgeless/remote-debug edge cases). Never leave the app
-//    with a silently missing PRNG — key material depends on it.
+//    with a silently missing PRNG - key material depends on it.
 if (typeof g.crypto.getRandomValues !== 'function') {
   const expoCrypto = require('expo-crypto');
   g.crypto.getRandomValues = <T extends ArrayBufferView>(array: T): T =>

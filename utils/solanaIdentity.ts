@@ -1,8 +1,8 @@
 /**
  * Solana native vs wrapped SOL.
  *
- * `So111…112` is the WRAPPED-SOL mint. Native SOL — the lamport balance every
- * other wallet simply calls "SOL" — belongs at the System Program address, and
+ * `So111…112` is the WRAPPED-SOL mint. Native SOL - the lamport balance every
+ * other wallet simply calls "SOL" - belongs at the System Program address, and
  * that is what the routers and swap executors already treat as native SOL.
  *
  * Older backend builds report a lamport balance under the wrapped mint, which
@@ -25,7 +25,7 @@ export function isSolanaChainId(chainId: unknown): boolean {
  * The symbol is the discriminator, and it is the one the backend itself sets:
  * its Solana reader labels the lamport balance `SOL` and a wrapped token
  * account `WSOL`. So a row at the wrapped mint that does NOT say WSOL is a
- * native balance wearing the wrong address — move it to the native one.
+ * native balance wearing the wrong address - move it to the native one.
  */
 export function normalizeSolanaBalanceRow<T extends { chainId?: unknown; address?: string; symbol?: string; name?: string }>(
     row: T,

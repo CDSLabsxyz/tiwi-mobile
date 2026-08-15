@@ -1,5 +1,5 @@
 /**
- * Pool detail — /pool/[chain]/[address]
+ * Pool detail - /pool/[chain]/[address]
  * Ported from tiwi-user-app app/pool/[chain]/[address]/page.tsx.
  * Live reserves + status metrics (TVL / Fee APR / 24H+30D volume / fee level)
  * + a polling transactions table. Swap / Add Liquidity actions in the header.
@@ -38,7 +38,7 @@ export default function PoolDetailScreen() {
     queryKey: ['liquidityPool', chain, address],
     queryFn: async () => {
       // Guard against a hung/slow enrich (on-chain reads) or an unreachable
-      // backend — turn an infinite wait into a surfaced error after 20s.
+      // backend - turn an infinite wait into a surfaced error after 20s.
       const timeout = new Promise<never>((_, rej) =>
         setTimeout(() => rej(new Error('Request timed out. Check your connection and try again.')), 20_000),
       );
@@ -184,7 +184,7 @@ export default function PoolDetailScreen() {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Transactions</Text>
           {swaps.length === 0 ? (
-            <Text style={styles.empty}>{pool.pairAddress ? 'No transactions yet.' : 'Registry pool — no on-chain swaps.'}</Text>
+            <Text style={styles.empty}>{pool.pairAddress ? 'No transactions yet.' : 'Registry pool - no on-chain swaps.'}</Text>
           ) : (
             swaps.map((sw) => (
               <View key={`${sw.txHash}-${sw.blockNumber}`} style={styles.txRow}>

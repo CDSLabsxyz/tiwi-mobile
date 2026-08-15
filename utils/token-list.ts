@@ -8,13 +8,13 @@
  *
  * Two modes:
  *
- *   BROWSE (no search query) — wallet holdings, then the admin-curated
+ *   BROWSE (no search query) - wallet holdings, then the admin-curated
  *     `/api/v1/swap-default-tokens` list, then user-imported custom tokens.
  *     The raw `/api/v1/tokens` index is used only to enrich curated entries
  *     with live logo/price/market data and to top a single chain up to
  *     {@link CURATED_TARGET_PER_CHAIN} rows.
  *
- *   SEARCH — everything from the index that matches and survives isSpamToken,
+ *   SEARCH - everything from the index that matches and survives isSpamToken,
  *     so any real token stays findable by symbol or pasted address.
  *
  * Browsing the raw index directly is what made the picker list "01", "100¥",
@@ -53,7 +53,7 @@ export interface TokenOption {
     chainId: number;
     decimals: number;
     priceUSD?: string;
-    /** Pair liquidity in USD — forwarded to the route API to skip a slow
+    /** Pair liquidity in USD - forwarded to the route API to skip a slow
      *  server-side DexScreener lookup on every quote. */
     liquidity?: number;
 }
@@ -79,7 +79,7 @@ export interface ImportedToken {
     decimals: number;
     logoURI?: string;
     priceUSD?: string;
-    /** Last known balance. The custom-token store keeps its own copy — the
+    /** Last known balance. The custom-token store keeps its own copy - the
      *  balance sweep in useWalletBalances does not cover imported tokens. */
     balanceFormatted?: string;
     hidden?: boolean;
@@ -106,7 +106,7 @@ export interface BuildTokenOptionsInput {
      *
      * Used by the staking pool creator: a pool is funded out of the creator's
      * own balance, so offering tokens they don't hold is a dead end. Curated
-     * defaults, the raw index and zero-balance rows are all suppressed —
+     * defaults, the raw index and zero-balance rows are all suppressed -
      * including while searching, so the search box narrows the holdings
      * rather than reaching back into the index.
      */
@@ -149,8 +149,8 @@ export function buildTokenOptions({
     // logo / price / market data instead of rendering as bare stubs.
     const apiIndex = new Map(apiTokens.map(t => [addrKey(t.chainId, t.address), t]));
 
-    // Imported tokens carry their own balance — useWalletBalances doesn't
-    // sweep the custom-token store — so fold the ones with a balance into the
+    // Imported tokens carry their own balance - useWalletBalances doesn't
+    // sweep the custom-token store - so fold the ones with a balance into the
     // holdings set. Without this, a token the user imported AND holds renders
     // with a "0" balance, and disappears entirely in walletOnly mode.
     const heldIndex = new Map(held.map(h => [addrKey(h.chainId, h.address), h]));
@@ -199,7 +199,7 @@ export function buildTokenOptions({
     };
 
     // ── Wallet holdings ─────────────────────────────────────────────────
-    // Always shown first, and only the obvious-scam filter applies — a token
+    // Always shown first, and only the obvious-scam filter applies - a token
     // the user actually holds is a token they may legitimately want to use,
     // whatever its market data looks like.
     const walletRows = holdings
@@ -278,7 +278,7 @@ export function buildTokenOptions({
             usedSyms.add(symKey(r.chainId, r.symbol));
         });
 
-        // Inject curated entries the index didn't return — common on the
+        // Inject curated entries the index didn't return - common on the
         // non-EVM chains, whose tokens the index barely covers.
         for (const d of curated) {
             if (d.chainId === null || d.chainId === undefined) continue;
@@ -302,7 +302,7 @@ export function buildTokenOptions({
 
         others = matched;
 
-        // On a single chain the curated set can be thin — top up from the
+        // On a single chain the curated set can be thin - top up from the
         // verified pool, then the permissive one.
         if (scopedChain !== null && others.length < CURATED_TARGET_PER_CHAIN) {
             const takeFrom = (pool: Row[], remaining: number) => {
@@ -357,7 +357,7 @@ export function buildTokenOptions({
         return a.symbol.localeCompare(b.symbol);
     });
 
-    // Holdings lead, by USD value — the web renders them as a separate
+    // Holdings lead, by USD value - the web renders them as a separate
     // section above the browse list.
     walletRows.sort((a, b) => b.usdValueNum - a.usdValueNum);
 

@@ -11,13 +11,13 @@
  *   Osmosis 249339, Sui 101) are preserved for backward compatibility.
  *
  * providerIds are only populated for chains where the provider is known to support
- * the chain. New chains start empty — fill them in when wiring up the new router stack.
+ * the chain. New chains start empty - fill them in when wiring up the new router stack.
  */
 
 import type { CanonicalChain } from '@/services/swap/core/registry/types';
 
 // ============================================================================
-// Chain Registry — 80 chains
+// Chain Registry - 80 chains
 // ============================================================================
 
 export const CHAIN_REGISTRY: CanonicalChain[] = [
@@ -257,17 +257,17 @@ export const CHAIN_REGISTRY: CanonicalChain[] = [
     nativeCurrency: { symbol: 'SEI', decimals: 18 },
     providerIds: { lifi: 1329, dexscreener: 'seiv2' },
   },
-  // Additional EVM chains — native-currency data sourced from viem/chains so the
+  // Additional EVM chains - native-currency data sourced from viem/chains so the
   // direct-RPC balance reader (see useWalletBalances) can cover them.
   // providerIds.lifi = the EVM chainId. Populated after verifying (2026-07) that
-  // LiFi serves a token list for each — without it, resolveChain's static fast-path
+  // LiFi serves a token list for each - without it, resolveChain's static fast-path
   // returns the empty registry entry and shadows LiFi, so the selector showed no tokens.
   { id: 288, name: 'Boba Network', type: 'EVM', nativeCurrency: { symbol: 'ETH', decimals: 18 }, providerIds: { lifi: 288 } },
   { id: 42170, name: 'Arbitrum Nova', type: 'EVM', nativeCurrency: { symbol: 'ETH', decimals: 18 }, providerIds: { lifi: 42170 } },
   { id: 1135, name: 'Lisk', type: 'EVM', nativeCurrency: { symbol: 'ETH', decimals: 18 }, providerIds: { lifi: 1135 } },
   { id: 130, name: 'Unichain', type: 'EVM', nativeCurrency: { symbol: 'ETH', decimals: 18 }, providerIds: { lifi: 130, dexscreener: 'unichain' } },
   { id: 146, name: 'Sonic', type: 'EVM', nativeCurrency: { symbol: 'S', decimals: 18 }, providerIds: { lifi: 146, dexscreener: 'sonic' } },
-  // Swellchain / Corn: no LiFi token list and no index platform — genuinely sourceless.
+  // Swellchain / Corn: no LiFi token list and no index platform - genuinely sourceless.
   { id: 1923, name: 'Swellchain', type: 'EVM', nativeCurrency: { symbol: 'ETH', decimals: 18 }, providerIds: {} },
   { id: 21000000, name: 'Corn', type: 'EVM', nativeCurrency: { symbol: 'BTCN', decimals: 18 }, providerIds: {} },
   { id: 2741, name: 'Abstract', type: 'EVM', nativeCurrency: { symbol: 'ETH', decimals: 18 }, providerIds: { lifi: 2741, dexscreener: 'abstract' } },
@@ -279,7 +279,7 @@ export const CHAIN_REGISTRY: CanonicalChain[] = [
   { id: 747474, name: 'Katana', type: 'EVM', nativeCurrency: { symbol: 'ETH', decimals: 18 }, providerIds: { lifi: 747474, dexscreener: 'katana' } },
   { id: 999, name: 'HyperEVM', type: 'EVM', nativeCurrency: { symbol: 'HYPE', decimals: 18 }, providerIds: { lifi: 999, dexscreener: 'hyperevm' } },
   { id: 9745, name: 'Plasma', type: 'EVM', nativeCurrency: { symbol: 'XPL', decimals: 18 }, providerIds: { lifi: 9745, dexscreener: 'plasma' } },
-  // Superposition: no LiFi token list and no index platform — genuinely sourceless.
+  // Superposition: no LiFi token list and no index platform - genuinely sourceless.
   { id: 55244, name: 'Superposition', type: 'EVM', nativeCurrency: { symbol: 'ETH', decimals: 18 }, providerIds: {} },
   { id: 5031, name: 'Somnia', type: 'EVM', nativeCurrency: { symbol: 'SOMI', decimals: 18 }, providerIds: { lifi: 5031 } },
   { id: 1625, name: 'Gravity', type: 'EVM', nativeCurrency: { symbol: 'G', decimals: 18 }, providerIds: { lifi: 1625 } },
@@ -370,7 +370,7 @@ export const CHAIN_REGISTRY: CanonicalChain[] = [
     providerIds: {},
   },
   {
-    // Monad mainnet (chainId 143) — live; default tokens use verified addresses.
+    // Monad mainnet (chainId 143) - live; default tokens use verified addresses.
     id: 143,
     name: 'Monad',
     type: 'EVM',
@@ -378,7 +378,7 @@ export const CHAIN_REGISTRY: CanonicalChain[] = [
     providerIds: {},
   },
   {
-    // MegaETH — currently testnet (chainId 6342). Update when mainnet launches.
+    // MegaETH - currently testnet (chainId 6342). Update when mainnet launches.
     id: 6342,
     name: 'MegaETH',
     type: 'EVM',
@@ -387,7 +387,7 @@ export const CHAIN_REGISTRY: CanonicalChain[] = [
     providerIds: {},
   },
   {
-    // Movement (chainId 30732) — EVM testnet; mainnet is Move-VM, not EVM.
+    // Movement (chainId 30732) - EVM testnet; mainnet is Move-VM, not EVM.
     id: 30732,
     name: 'Movement',
     type: 'EVM',
@@ -445,7 +445,7 @@ export const CHAIN_REGISTRY: CanonicalChain[] = [
     providerIds: {},
   },
   {
-    // SKALE Europa Hub (chainId 2046399126) — primary SKALE hub.
+    // SKALE Europa Hub (chainId 2046399126) - primary SKALE hub.
     id: 2046399126,
     name: 'SKALE Europa',
     type: 'EVM',
@@ -748,17 +748,17 @@ const HIDDEN_CHAIN_STATUSES = new Set(['testnet', 'pre-mainnet']);
 /**
  * Live mainnet chains that have NO token source (no provider token list and no
  * index platform coverage as of 2026-07), so selecting them renders an empty
- * token list. Hidden from user-facing chain lists until a source exists — remove
+ * token list. Hidden from user-facing chain lists until a source exists - remove
  * the id here once the chain is wired to LiFi/CoinGecko/GeckoTerminal/etc.
  */
 const HIDDEN_CHAIN_IDS = new Set<number>([
-  660279,   // Xai — CoinGecko has no matching platform; GeckoTerminal 'xai' indexes 0 pools
-  1923,     // Swellchain — no LiFi token list, no index platform
-  21000000, // Corn — no LiFi token list, no index platform
-  55244,    // Superposition — no LiFi token list, no index platform
-  9332,     // Litecoin — UTXO, no contract-token standard
-  354,      // Polkadot — no CoinGecko/GeckoTerminal contract-token platform
-  8000002,  // THORChain — native RUNE only, no contract tokens
+  660279,   // Xai - CoinGecko has no matching platform; GeckoTerminal 'xai' indexes 0 pools
+  1923,     // Swellchain - no LiFi token list, no index platform
+  21000000, // Corn - no LiFi token list, no index platform
+  55244,    // Superposition - no LiFi token list, no index platform
+  9332,     // Litecoin - UTXO, no contract-token standard
+  354,      // Polkadot - no CoinGecko/GeckoTerminal contract-token platform
+  8000002,  // THORChain - native RUNE only, no contract tokens
 ]);
 
 /**

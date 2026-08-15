@@ -14,7 +14,7 @@ export const applyFilters = (
 ): any[] => {
   let filtered = [...items];
 
-  // Apply category filter — only when categories are explicitly selected
+  // Apply category filter - only when categories are explicitly selected
   if (tokenCategories && tokenCategories.size > 0) {
     filtered = filtered.filter(item => {
       const category = item.category || (item.contractAddress ? 'NFT' : undefined);
@@ -22,7 +22,7 @@ export const applyFilters = (
     });
   }
 
-  // Apply chain filter — only when chains are explicitly selected.
+  // Apply chain filter - only when chains are explicitly selected.
   // NOTE: The wallet query already scopes to selected chains at the API level,
   // so this acts as a client-side guard for mixed lists (e.g. tokens + NFTs).
   if (chains && chains.size > 0) {

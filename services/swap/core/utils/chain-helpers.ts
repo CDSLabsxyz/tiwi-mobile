@@ -29,7 +29,7 @@ const COMMON_EVM_CHAINS = new Set([
  * Sources the answer from the canonical registry rather than a hard-coded list,
  * so it stays in sync with routing/quoting. A static allow-list here previously
  * rejected HyperEVM (999) at the wallet-client step even though the quote layer
- * supported it — don't reintroduce a hard-coded list as the source of truth.
+ * supported it - don't reintroduce a hard-coded list as the source of truth.
  */
 export function isEVMChain(chainId: number): boolean {
   if (COMMON_EVM_CHAINS.has(chainId)) return true;
@@ -79,7 +79,7 @@ export function isTRONChain(chainId: number): boolean {
  * an EVM chain" (e.g. an SCRT→SHD swap on Secret 8000007). Covers all 14
  * cosmos-family chains: the 13 standard-secp256k1 chains via isCosmosChainId
  * (incl. Osmosis, typed 'Osmosis') plus Injective (8000001, eth_secp256k1, typed
- * 'Cosmos') via the registry. Mirrors isEVMChain — registry is the source of truth.
+ * 'Cosmos') via the registry. Mirrors isEVMChain - registry is the source of truth.
  */
 export function isCosmosChain(chainId: number): boolean {
   if (isCosmosChainId(chainId)) return true;
@@ -115,7 +115,7 @@ export function isNativeToken(tokenAddress: string, chainId: number): boolean {
     );
   }
 
-  // Solana native SOL. Every spelling a source might hand us — including the
+  // Solana native SOL. Every spelling a source might hand us - including the
   // app-wide zero-address sentinel and the bare 'native' marker. `So111…112`
   // stays in the list because routers quote native SOL under the wrapped mint,
   // but note that a BALANCE at that address is wrapped SOL, not native.

@@ -73,14 +73,14 @@ interface SwapState {
   toFiatAmount: string;
   /**
    * Staged progress copy while a quote is in flight ("Searching routes…",
-   * "Scanning DEXes…", …). Ported from the web swap store — routing can take a
+   * "Scanning DEXes…", …). Ported from the web swap store - routing can take a
    * few seconds and a bare spinner reads as frozen.
    */
   quoteStep: string;
 
   // Settings state
   slippage: number;
-  /** Auto-slippage mode — keeps slippage at the safe default and lets the
+  /** Auto-slippage mode - keeps slippage at the safe default and lets the
    *  app pick a value per-route in the future. The numeric `slippage` field
    *  continues to drive the actual swap so quoting code doesn't need to
    *  branch. */
@@ -98,7 +98,7 @@ interface SwapState {
   selectedGasToken: TokenOption | null;
 
   /**
-   * "Swap through THIS liquidity pool" — set only by the deep link from a TIWI
+   * "Swap through THIS liquidity pool" - set only by the deep link from a TIWI
    * pool page's Swap button, and cleared the moment either side of the pair
    * changes. `pinnedPoolAddress` is the TiwiLiquidityPair; `preferredRouter`
    * is 'tiwi-pool'. Both ride along on the route request, where the backend
@@ -204,7 +204,7 @@ export const useSwapStore = create<SwapState>((set, get) => ({
   setFromAmount: (amount) => set({ fromAmount: amount }),
   setToAmount: (amount) => set({ toAmount: amount }),
   setFromChain: (chain) => set({ fromChain: chain }),
-  // Swapping in a DIFFERENT token invalidates a pool pin — the pinned pair
+  // Swapping in a DIFFERENT token invalidates a pool pin - the pinned pair
   // may not trade the new pair at all, and routing through it anyway would
   // quote the wrong market. Re-setting the SAME token (the deep link enriches
   // decimals/liquidity right after seeding) must keep the pin.

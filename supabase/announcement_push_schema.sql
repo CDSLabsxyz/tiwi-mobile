@@ -11,7 +11,7 @@
 -- 1. Announcement push log (dedup of what we've already fanned out)
 -- ============================================================================
 --
--- `announcement_id` is PRIMARY KEY — this is the race guard. Two overlapping
+-- `announcement_id` is PRIMARY KEY - this is the race guard. Two overlapping
 -- cron runs both attempt to claim the same id with ON CONFLICT DO NOTHING,
 -- and only the run that actually inserts a new row proceeds to dispatch.
 

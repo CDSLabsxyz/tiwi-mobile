@@ -2,7 +2,7 @@
  * Message tree for the TIWI AI chat.
  *
  * Each message is a node in a tree. Editing a user message creates a NEW
- * SIBLING under the same parent rather than overwriting the original — so the
+ * SIBLING under the same parent rather than overwriting the original - so the
  * previous prompt + AI reply stay reachable. The visible conversation is just
  * the active path from root to leaf, picking each parent's activeChild at every
  * step. Switching versions is a one-line state update on activeChildByParent.

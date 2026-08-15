@@ -111,7 +111,7 @@ export default function WalletScreen() {
     const customTokens = useMemo(() => tokensByWallet[walletKey] || [], [tokensByWallet, walletKey]);
     const [tokenToRemove, setTokenToRemove] = useState<CustomToken | null>(null);
 
-    // Auto-sync custom token balances — runs on mount + whenever wallet refreshes.
+    // Auto-sync custom token balances - runs on mount + whenever wallet refreshes.
     // Directly fetches each custom token's balance from the chain so low-value tokens
     // (which the main balance API filters out at the $5 threshold) still update correctly.
     useEffect(() => {
@@ -142,7 +142,7 @@ export default function WalletScreen() {
                     continue;
                 }
 
-                // 2. Not in main API — fetch directly from chain
+                // 2. Not in main API - fetch directly from chain
                 let freshBal: string | null = null;
                 if (ct.chainId === 7565164) {
                     const solAddr = activeGroup.addresses?.SOLANA;

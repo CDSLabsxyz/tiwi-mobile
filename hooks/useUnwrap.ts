@@ -1,5 +1,5 @@
 /**
- * useUnwrap — everything a screen needs to offer "unwrap this token into the
+ * useUnwrap - everything a screen needs to offer "unwrap this token into the
  * chain's native coin": the owning address, the live on-chain balance, and the
  * execute call.
  *

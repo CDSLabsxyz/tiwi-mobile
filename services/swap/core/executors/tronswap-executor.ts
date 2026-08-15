@@ -15,7 +15,7 @@ const TRONSWAP_ROUTER_ADDRESS = 'TKzxdSv2FZKQrEqkKVgp5DcwEXBEKMg2Ax';
 /**
  * True when an address represents native TRX (not a TRC20). The app can carry
  * native TRX as any of several placeholders depending on the code path, so we
- * check them all case-insensitively. WTRX is intentionally NOT native — it's a
+ * check them all case-insensitively. WTRX is intentionally NOT native - it's a
  * TRC20 and must go through the token approve path.
  */
 function isNativeTrx(address?: string): boolean {
@@ -41,7 +41,7 @@ interface EnergyPlan {
  *
  * TRON charges "Energy" for contract calls. With no staked Energy the network
  * BURNS TRX to pay for it, and a failed "Out of Energy" tx STILL consumes the
- * burned TRX — so a doomed swap costs the user real money (we saw a wallet lose
+ * burned TRX - so a doomed swap costs the user real money (we saw a wallet lose
  * ~9.6 TRX this way). We estimate the Energy via a read-only triggerConstantContract,
  * compare it against the wallet's staked Energy + burnable TRX, and abort with a
  * clear message BEFORE broadcasting when it can't be afforded.
@@ -67,7 +67,7 @@ async function assertCanAffordEnergy(
       plan.parameters,
       ownerAddress,
     );
-    // If the read-only call itself reverts, the estimate isn't trustworthy — skip.
+    // If the read-only call itself reverts, the estimate isn't trustworthy - skip.
     if (!est?.result?.result) return;
     energyNeeded = Number(est.energy_used || 0);
     if (!energyNeeded) return;
@@ -89,7 +89,7 @@ async function assertCanAffordEnergy(
     return; // estimation unavailable → don't block
   }
 
-  // 20% headroom — real execution runs a little above the constant-call estimate.
+  // 20% headroom - real execution runs a little above the constant-call estimate.
   const energyToBuy = Math.max(0, Math.ceil(energyNeeded * 1.2) - availableEnergy);
   const burnSun = energyToBuy * energyFeeSun;
   // The native-TRX amount is locked in the same tx, so it counts against balance.
@@ -152,7 +152,7 @@ export class TronSwapExecutor implements SwapRouterExecutor {
 
             // Determine method based on tokens (TRX involved?)
             // IMPORTANT: the deployed SunSwap V2 router keeps the UniswapV2 *ETH*
-            // naming — it exposes swapExactETHForTokens / swapExactTokensForETH,
+            // naming - it exposes swapExactETHForTokens / swapExactTokensForETH,
             // NOT ...TRX... variants. Calling a ...TRX... name yields `undefined`
             // and the swap throws (previously surfaced as a misleading "No route
             // found"). "ETH" here means native TRX. Verified against the on-chain ABI.
@@ -197,7 +197,7 @@ export class TronSwapExecutor implements SwapRouterExecutor {
 
             // If input is native TRX (mapped to WTRX in path but passed as call value):
             if (fromNative) {
-                // swapExactETHForTokens(amountOutMin, path, to, deadline) — "ETH" = native TRX
+                // swapExactETHForTokens(amountOutMin, path, to, deadline) - "ETH" = native TRX
                 txId = await routerContract.swapExactETHForTokens(
                     amountOutMin,
                     path,
@@ -208,7 +208,7 @@ export class TronSwapExecutor implements SwapRouterExecutor {
                     shouldPollResponse: false
                 });
             } else if (toNative) {
-                // swapExactTokensForETH(amountIn, amountOutMin, path, to, deadline) — "ETH" = native TRX
+                // swapExactTokensForETH(amountIn, amountOutMin, path, to, deadline) - "ETH" = native TRX
 
                 // First approve
                 const tokenAddress = path[0];

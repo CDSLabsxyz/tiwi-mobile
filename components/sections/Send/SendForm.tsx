@@ -132,7 +132,7 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext, onKeyboardToggle }) 
         setIsContractRecipient(isContract);
         sendStore.setContractRecipient(isContract);
       } catch (e) {
-        // Network/RPC failures shouldn't block the user — leave the flag false
+        // Network/RPC failures shouldn't block the user - leave the flag false
         // and rely on the existing validation.
         console.warn('[SendForm] contract check failed:', e);
         sendStore.setContractRecipient(false);
@@ -239,7 +239,7 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext, onKeyboardToggle }) 
       // Smart Max Logic.
       //
       // `balance` here is parsed from the *displayed* balance string (e.g.
-      // "1.5402 USDT"), which is rounded — sometimes UP — from the true
+      // "1.5402 USDT"), which is rounded - sometimes UP - from the true
       // on-chain amount. Sending 100% of the rounded value reverts when the
       // actual balance is fractionally lower (1.540199…). Apply a small
       // margin so Max always lands at the largest amount that's guaranteed
@@ -255,7 +255,7 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext, onKeyboardToggle }) 
       targetAmount = balance * (percent / 100);
     }
 
-    // Truncate (don't round) to the token's decimals — capped at 8 so we
+    // Truncate (don't round) to the token's decimals - capped at 8 so we
     // emit a sensible-length number for high-decimal tokens. `toFixed`
     // rounds half-up and can re-introduce the same overshoot we just fixed.
     const decimals = Math.min(selectedToken.decimals ?? 6, 8);
@@ -285,7 +285,7 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext, onKeyboardToggle }) 
     }
   };
 
-  // Custom-keyboard key handler — mirrors swap.tsx behaviour.
+  // Custom-keyboard key handler - mirrors swap.tsx behaviour.
   const handleKeyPress = (key: string) => {
     const current = parseRawValue(localAmount);
     if (key === "CLEAR") {
@@ -659,7 +659,7 @@ export const SendForm: React.FC<SendFormProps> = ({ onNext, onKeyboardToggle }) 
                     : "#FFFFFF",
                 }}
               >
-                I understand the risk — send anyway
+                I understand the risk - send anyway
               </Text>
             </TouchableOpacity>
           </View>

@@ -17,13 +17,13 @@ import { UnwrapSheet } from './UnwrapSheet';
 interface UnwrapButtonProps {
     chainId: number | string | undefined;
     address: string | undefined;
-    /** The token's own symbol — keeps native SOL (which shares the WSOL mint
+    /** The token's own symbol - keeps native SOL (which shares the WSOL mint
      *  in several feeds) from being offered as unwrappable. */
     symbol?: string;
     logoURI?: string;
     style?: StyleProp<ViewStyle>;
     /**
-     * Render even with a zero balance. Off by default — an unwrap button on a
+     * Render even with a zero balance. Off by default - an unwrap button on a
      * token you don't hold is noise.
      */
     showWhenEmpty?: boolean;

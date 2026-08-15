@@ -3,7 +3,7 @@
  *
  * Ported verbatim from the web app's `lib/backend/types/backend-tokens.ts` so
  * `registry/chains.ts` (a straight copy of the web registry) compiles unchanged.
- * Keep the two in sync — the registry is the source of truth for which chains
+ * Keep the two in sync - the registry is the source of truth for which chains
  * the swap engine considers EVM / Cosmos / Solana / … .
  */
 

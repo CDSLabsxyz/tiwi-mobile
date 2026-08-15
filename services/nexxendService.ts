@@ -4,7 +4,7 @@
  * The TIWI super-app backend's /api/v1/wallet/balances endpoint currently
  * returns `{ balances: [], totalUSD: "0.00" }` for every wallet. Until that
  * regression is fixed server-side, the mobile client talks directly to
- * Nexxend — the upstream the TIWI backend was meant to proxy.
+ * Nexxend - the upstream the TIWI backend was meant to proxy.
  *
  * This module returns data in the same `WalletBalanceResponse` shape
  * `api.wallet.balances()` used to return, so callers don't change.
@@ -105,10 +105,10 @@ export async function getNexxendBalances(
     chainIds: number[],
 ): Promise<WalletBalanceResponse> {
     if (!NEXXEND_API_KEY) {
-        throw new Error('NEXXEND_API_KEY missing — set EXPO_PUBLIC_NEXXEND_API_KEY');
+        throw new Error('NEXXEND_API_KEY missing - set EXPO_PUBLIC_NEXXEND_API_KEY');
     }
 
-    // Build URL by string concatenation — `new URL('/wallet/balances', base)`
+    // Build URL by string concatenation - `new URL('/wallet/balances', base)`
     // strips the /api/v1 prefix from base, which would route us to the wrong path.
     const finalUrl =
         NEXXEND_BASE_URL.replace(/\/$/, '') +
@@ -123,7 +123,7 @@ export async function getNexxendBalances(
     });
 
     // 400 = wallet family doesn't match any requested chains (e.g. an EVM
-    // chainId list sent against a Solana address). Not a hard failure —
+    // chainId list sent against a Solana address). Not a hard failure -
     // just means this branch has nothing to report. Same outcome as an
     // empty `balances` array.
     if (res.status === 400) {
@@ -157,7 +157,7 @@ export async function getNexxendBalances(
             flat.push({
                 symbol: t.symbol,
                 name: t.name,
-                // "native" is preserved as-is — useWalletBalances dedupe step
+                // "native" is preserved as-is - useWalletBalances dedupe step
                 // already collapses "native" to the zero address.
                 address: t.address,
                 chainId: numericChainId,
@@ -167,7 +167,7 @@ export async function getNexxendBalances(
                 usdValue: usd.toFixed(8),
                 priceUSD: price.toString(),
                 // Nexxend's balances endpoint doesn't return 24h price change.
-                // The Total Balance card will show 0.00% — improve later by
+                // The Total Balance card will show 0.00% - improve later by
                 // calling Nexxend's price endpoint or merging from CoinGecko.
                 priceChange24h: '0',
                 logoURI: t.logoUrl,

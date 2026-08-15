@@ -1,13 +1,13 @@
 /**
- * The wallet's network list — the single source of truth for every screen that
+ * The wallet's network list - the single source of truth for every screen that
  * shows "which chains does this wallet have an address on".
  *
  * This MIRRORS the web app's `chains` array in
  * `tiwi-user-app/components/wallet/address-selector-dropdown.tsx`: same order,
  * same labels, same networks. The mobile app derives the same 27 accounts as
  * the web app (see `deriveMultiChainAddressesFromMnemonic`), but each mobile
- * screen used to carry its own hand-written subset — 12 rows in Account
- * Settings, 17 in the wallet modal — so most of the derived addresses were
+ * screen used to carry its own hand-written subset - 12 rows in Account
+ * Settings, 17 in the wallet modal - so most of the derived addresses were
  * invisible and unreachable. One list, imported everywhere, fixes that.
  *
  * `addressKey` is the slot in `WalletGroup.addresses` a row displays, and
@@ -23,7 +23,7 @@
 import type { AddressKey, ChainType } from '@/store/walletStore';
 
 export interface WalletNetwork {
-    /** Stable id — persisted as `activeNetworkId`, so never rename these. */
+    /** Stable id - persisted as `activeNetworkId`, so never rename these. */
     id: string;
     name: string;
     /** Which `addresses` slot this row shows. */
@@ -31,7 +31,7 @@ export interface WalletNetwork {
     /**
      * The ChainType activated when this row is selected. OMITTED for chains the
      * app derives and can receive on but cannot yet sign for (Polkadot, the
-     * non-Bitcoin UTXO chains, Stacks, THORChain) — those rows display and copy
+     * non-Bitcoin UTXO chains, Stacks, THORChain) - those rows display and copy
      * their address but must never become the active signing chain, or a send
      * would be routed to an engine for a different chain.
      */
@@ -39,7 +39,7 @@ export interface WalletNetwork {
     /** Canonical numeric id (EIP-155 for EVM). */
     chainId?: number;
     symbol?: string;
-    /** `require(...)` asset or `{ uri }` — both accepted by expo-image. */
+    /** `require(...)` asset or `{ uri }` - both accepted by expo-image. */
     icon: any;
 }
 
@@ -62,7 +62,7 @@ const local = {
     starknet: require('@/assets/home/chains/starknet.svg'),
 };
 
-/** CDN icons — identical URLs to the web app's list, for chains with no asset. */
+/** CDN icons - identical URLs to the web app's list, for chains with no asset. */
 const remote = {
     sei: { uri: 'https://assets.coingecko.com/coins/images/28205/small/Sei_Logo_-_Transparent.png' },
     hyperevm: { uri: 'https://assets.coingecko.com/coins/images/50882/small/hyperliquid.jpg' },
@@ -117,7 +117,7 @@ export const WALLET_NETWORKS: WalletNetwork[] = [
     { id: 'JUNO', name: 'Juno', addressKey: 'JUNO', chain: 'COSMOS', chainId: 8000003, symbol: 'JUNO', icon: remote.juno },
     { id: 'CELESTIA', name: 'Celestia', addressKey: 'CELESTIA', chain: 'COSMOS', chainId: 8000008, symbol: 'TIA', icon: remote.celestia },
     // THORChain is deliberately absent from COSMOS_CHAIN_CONFIG (non-standard
-    // bank/fee model), so it is receive-only for now — same as the web app.
+    // bank/fee model), so it is receive-only for now - same as the web app.
     { id: 'THORCHAIN', name: 'THORChain', addressKey: 'THORCHAIN', symbol: 'RUNE', icon: remote.thorchain },
     { id: 'STRIDE', name: 'Stride', addressKey: 'STRIDE', chain: 'COSMOS', chainId: 8000004, symbol: 'STRD', icon: remote.stride },
     { id: 'DYDX', name: 'dYdX', addressKey: 'DYDX', chain: 'COSMOS', chainId: 8000005, symbol: 'DYDX', icon: remote.dydx },
@@ -136,7 +136,7 @@ export const WALLET_NETWORKS: WalletNetwork[] = [
     //    list them in its dropdown; hiding an address the wallet actually owns
     //    would make funds sent there look lost, so they are shown here.
     { id: 'STARKNET', name: 'Starknet', addressKey: 'STARKNET', chain: 'STARKNET', chainId: 23448594291968334, symbol: 'STRK', icon: local.starknet },
-    // Receive-only (no `chain`) — derived and displayable, not yet signable.
+    // Receive-only (no `chain`) - derived and displayable, not yet signable.
     { id: 'POLKADOT', name: 'Polkadot', addressKey: 'POLKADOT', symbol: 'DOT', icon: remote.polkadot },
     { id: 'LITECOIN', name: 'Litecoin', addressKey: 'LITECOIN', symbol: 'LTC', icon: remote.litecoin },
     { id: 'DOGECOIN', name: 'Dogecoin', addressKey: 'DOGECOIN', symbol: 'DOGE', icon: remote.dogecoin },
@@ -158,7 +158,7 @@ export function getWalletNetwork(id: string | null | undefined): WalletNetwork |
 }
 
 /**
- * The network a wallet should land on for a given signing chain — the first
+ * The network a wallet should land on for a given signing chain - the first
  * listed row belonging to that chain that the wallet actually has an address
  * for (Ethereum for EVM, Solana for SOLANA, Cosmos for COSMOS, …).
  *

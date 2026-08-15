@@ -40,19 +40,19 @@ interface SwapTokenCardProps {
     onRecipientPress?: () => void;
     /**
      * Truncated destination address, shown next to the label. This is the
-     * EFFECTIVE recipient — a custom one if set, otherwise your own address on
-     * the destination chain — so the label always says where the output lands.
+     * EFFECTIVE recipient - a custom one if set, otherwise your own address on
+     * the destination chain - so the label always says where the output lands.
      */
     recipientLabel?: string | null;
     /**
      * "From" card only: current amount as a percentage of balance, plus the
-     * setter. Supplying `onPercentChange` is what renders the drag slider — the
+     * setter. Supplying `onPercentChange` is what renders the drag slider - the
      * web swap card's "Scroll or drag" control. The parent converts percent →
      * amount so Max keeps its gas/fee reserve.
      */
     percentOfBalance?: number;
     onPercentChange?: (percent: number) => void;
-    /** Greys the slider out — no token picked, or nothing to spend. */
+    /** Greys the slider out - no token picked, or nothing to spend. */
     sliderDisabled?: boolean;
 }
 
@@ -213,7 +213,7 @@ export const SwapTokenCard: React.FC<SwapTokenCardProps> = ({
                                 numberOfLines={1}
                                 ellipsizeMode="tail"
                             >
-                                {/* Grouped for readability. Only the "From" side needs it —
+                                {/* Grouped for readability. Only the "From" side needs it -
                                     the "To" side is handed an already-formatted string. */}
                                 {formatNumberInput(amount) || '0.0'}
                             </Text>
@@ -243,7 +243,7 @@ export const SwapTokenCard: React.FC<SwapTokenCardProps> = ({
                 </View>
             </View>
 
-            {/* Drag-to-percentage, mirroring the web swap card. "From" only —
+            {/* Drag-to-percentage, mirroring the web swap card. "From" only -
                 the "To" amount is quoted, not chosen. */}
             {isFrom && !!onPercentChange && (
                 <AmountSlider

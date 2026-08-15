@@ -50,7 +50,7 @@ export function useNotifications() {
             const vIds = new Set(globalNotifications.map(n => n.id).filter(id => !unreadAdminIds.has(id)));
             setViewedAdminIds(vIds);
 
-            // Calculate totals — local activities older than cutoff are read
+            // Calculate totals - local activities older than cutoff are read
             const localUnread = localActivities.filter(a => {
                 if (a.is_read) return false;
                 if (cutoffMs && a.created_at && new Date(a.created_at).getTime() <= cutoffMs) return false;

@@ -4,7 +4,7 @@ import { useWalletStore } from '@/store/walletStore';
 import { ExecutionResult, SignerEngine, TransactionRequest } from './SignerTypes';
 
 /**
- * AptosLocalEngine — signs & broadcasts Aptos transactions for in-app (mnemonic)
+ * AptosLocalEngine - signs & broadcasts Aptos transactions for in-app (mnemonic)
  * wallets. The account is re-derived from the group's stored mnemonic on demand
  * (ed25519, m/44'/637'/0'/0'/0'), matching deriveAptosAddress.
  *

@@ -29,7 +29,7 @@ enabled from the price-alert deploy.
 
 ### 2. Secrets
 
-`TIWI_BACKEND_URL` was already set during the price-alert deploy — the
+`TIWI_BACKEND_URL` was already set during the price-alert deploy - the
 same secret is reused here, no action needed. To override:
 
 ```bash
@@ -102,7 +102,7 @@ Second run (nothing new):
 ## First-deploy gotcha
 
 The first time this cron runs, every currently-live announcement gets
-pushed at once — even ones that are days old — because none of them are
+pushed at once - even ones that are days old - because none of them are
 in `announcement_push_log` yet. That's usually not what you want.
 
 **To backfill silently** (mark existing announcements as "already
@@ -132,7 +132,7 @@ already deep-links `data.type === 'announcement'` payloads to
 ## Why poll and not webhook?
 
 The admin panel lives in a separate repo (`tiwi-super-app`) and writes
-announcements to the TIWI backend's own `notifications` table — not into
+announcements to the TIWI backend's own `notifications` table - not into
 Supabase. A webhook would require changes there. Polling from an Edge
 Function keeps the fan-out logic entirely inside the mobile/Supabase
 stack, at the cost of a ~5-minute worst-case delay between publishing

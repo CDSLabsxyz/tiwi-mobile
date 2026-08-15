@@ -52,7 +52,7 @@ const ChainMarquee = ({ chains = [] }: { chains?: ChainItem[] }) => {
 
     // Use dynamic logos from API if available, otherwise fallback to local icons
     const logos = chains.length > 0
-        // `logo` isn't on ChainItem but some API responses carry it — keep the
+        // `logo` isn't on ChainItem but some API responses carry it - keep the
         // runtime fallback, just don't let it break the build.
         ? chains.map(c => c.logoURI || (c as { logo?: string }).logo).filter(Boolean)
         : localChainLogos;

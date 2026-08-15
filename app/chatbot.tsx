@@ -13,7 +13,7 @@
  *
  * Mobile-only extras kept from the previous screen: pinch-to-zoom image viewer,
  * the full-screen composer, and the edit-as-branch message tree (a superset of
- * the web app's in-place edit — every earlier version stays reachable).
+ * the web app's in-place edit - every earlier version stays reachable).
  */
 
 import { AiCreditsSheet } from '@/components/ai/AiCreditsSheet';
@@ -39,7 +39,7 @@ import {
   setActiveChild,
   type MessageNode,
 } from '@/lib/ai/message-tree';
-import type { Receipt } from '@/services/aiCreditsService';
+import { isEvmAddress, type Receipt } from '@/services/aiCreditsService';
 import {
   OutOfCreditsError,
   streamAIResponse,
@@ -257,13 +257,27 @@ const zoomStyles = StyleSheet.create({
 export default function ChatbotScreen() {
   const router = useRouter();
   const { top, bottom } = useSafeAreaInsets();
-  const { activeAddress } = useWalletStore();
+  const activeAddress = useWalletStore((state) => state.activeAddress);
+  const activeGroupId = useWalletStore((state) => state.activeGroupId);
+  const walletGroups = useWalletStore((state) => state.walletGroups);
   const { data: balancesData } = useWalletBalances();
+  const creditWalletAddress = useMemo(() => {
+    if (isEvmAddress(activeAddress)) return activeAddress;
+    const activeGroup =
+      walletGroups.find((group) => group.id === activeGroupId) ||
+      walletGroups.find((group) =>
+        Object.values(group.addresses).some(
+          (address) => address?.toLowerCase() === (activeAddress || '').toLowerCase(),
+        ),
+      );
+    const evm = activeGroup?.addresses?.EVM;
+    return isEvmAddress(evm) ? evm : activeAddress;
+  }, [activeAddress, activeGroupId, walletGroups]);
 
   const sessionsApi = useAiChatSessions(activeAddress);
   // The balance list doubles as a second opinion on the TWC balance shown in
   // the billing sheet, so a flaky RPC read can't report "No TWC detected".
-  const creditsApi = useAiCredits(activeAddress, balancesData?.tokens);
+  const creditsApi = useAiCredits(creditWalletAddress, balancesData?.tokens);
   const { tree, setTree } = sessionsApi;
   const messages = useMemo(() => getActivePath(tree), [tree]);
 
@@ -295,7 +309,7 @@ export default function ChatbotScreen() {
   const [listeningField, setListeningField] = useState<'main' | 'project' | null>(null);
 
   // IME inset sourced from native WindowInsetsCompat (Android) / keyboard frame
-  // (iOS) — works in release APKs with edge-to-edge + new arch where the older
+  // (iOS) - works in release APKs with edge-to-edge + new arch where the older
   // Keyboard.addListener height workaround was unreliable.
   const keyboard = useAnimatedKeyboard();
   const keyboardPaddingStyle = useAnimatedStyle(() => ({
@@ -426,7 +440,7 @@ export default function ChatbotScreen() {
   };
 
   /**
-   * Share insight — copy first (so the full text is always on the clipboard
+   * Share insight - copy first (so the full text is always on the clipboard
    * regardless of which share target the OS picks), then open the share sheet.
    * Same two-step behaviour as the web panel.
    */
@@ -439,14 +453,14 @@ export default function ChatbotScreen() {
         title: 'TIWI AI Insight',
       });
     } catch {
-      /* user cancelled — the clipboard copy is the fallback */
+      /* user cancelled - the clipboard copy is the fallback */
     }
   };
 
   // ─── Editing / branching ────────────────────────────────────────────────
 
   // Begin editing a previously-sent user message. We DON'T mutate the tree
-  // here — the original branch stays intact. On the next send we add a new
+  // here - the original branch stays intact. On the next send we add a new
   // sibling under the same parent, so the user can flip between versions.
   const handleEditMessage = (messageId: string) => {
     const target = tree.nodes[messageId];
@@ -643,7 +657,7 @@ export default function ChatbotScreen() {
   const buildContext = useCallback(
     (historyNodes: MessageNode[]): AIChatContext => {
       const context: AIChatContext = {};
-      if (activeAddress) context.walletAddress = activeAddress;
+      if (creditWalletAddress) context.walletAddress = creditWalletAddress;
 
       if (balancesData?.tokens?.length) {
         const tokens = balancesData.tokens
@@ -679,10 +693,11 @@ export default function ChatbotScreen() {
         monthlyLeft: creditsApi.summary.monthlyLeft,
         paidLeft: creditsApi.summary.paidLeft,
       };
+      context.chargePaidCredit = creditsApi.summary.monthlyLeft <= 0 && creditsApi.summary.paidLeft > 0;
 
       return context;
     },
-    [activeAddress, balancesData, creditsApi.summary],
+    [creditWalletAddress, balancesData, creditsApi.summary],
   );
 
   /**
@@ -709,6 +724,7 @@ export default function ChatbotScreen() {
       };
 
       let accumulatedText = '';
+      const shouldUseLocalFreeCredit = creditsApi.summary.monthlyLeft > 0;
 
       await streamAIResponse({
         prompt: prompt || (images.length > 0 ? 'What is in this image?' : ''),
@@ -721,22 +737,27 @@ export default function ChatbotScreen() {
           setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 50);
         },
         onComplete: (fullText: string, meta: AIChatMeta) => {
+          const shouldSpendLocalFree =
+            shouldUseLocalFreeCredit &&
+            !meta.creditCharged &&
+            meta.creditReason !== 'blocked_by_security_validation' &&
+            meta.creditReason !== 'empty_model_response';
+          if (shouldSpendLocalFree) void creditsApi.spendFreeCredit();
           setTree((prev) =>
             patchNode(prev, aiMessageId, {
               text: fullText,
               isStreaming: false,
               validation: meta.validation,
-              creditCharged: meta.creditCharged,
+              creditCharged: meta.creditCharged || shouldSpendLocalFree,
             }),
           );
-          // The SERVER already spent the credit against the shared ledger —
-          // mirror its balance rather than deducting anything locally, which is
-          // what keeps this in step with the web app for the same wallet.
+          // Paid credits are spent on the server; free credits are spent above
+          // from this device's local allowance.
           creditsApi.applyServerBalance(meta.balance);
           finish();
         },
         onError: (error) => {
-          // Out of credits isn't a failure to retry — drop the empty bubble and
+          // Out of credits isn't a failure to retry - drop the empty bubble and
           // send the user to the billing sheet.
           if (error instanceof OutOfCreditsError) {
             creditsApi.applyServerBalance(error.balance);
@@ -762,9 +783,8 @@ export default function ChatbotScreen() {
   );
 
   /**
-   * Local pre-check shared by send and Retry. It's a courtesy so an obviously
-   * empty balance doesn't cost a round trip — the server is still the one that
-   * decides, and will refuse with 402 if this number is stale.
+   * Local pre-check shared by send and Retry. Free credits are device-local;
+   * paid credits are server-controlled once the local free bucket is empty.
    */
   const ensureCredits = () => {
     if (creditsApi.summary.totalLeft > 0) return true;
@@ -833,7 +853,7 @@ export default function ChatbotScreen() {
   };
 
   /**
-   * Retry — re-run the AI on the prompt that produced this reply, replacing the
+   * Retry - re-run the AI on the prompt that produced this reply, replacing the
    * stale answer (and anything after it) instead of appending a second reply.
    */
   const handleRetry = async (aiMessageId: string) => {
@@ -1265,7 +1285,7 @@ export default function ChatbotScreen() {
                   contentFit="contain"
                 />
                 <Text style={[styles.editingBannerText, { color: colors.bodyText }]}>
-                  Editing message — send to create a new version
+                  Editing message - send to create a new version
                 </Text>
               </View>
               <TouchableOpacity onPress={handleCancelEdit} hitSlop={8}>

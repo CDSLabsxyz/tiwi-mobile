@@ -339,7 +339,7 @@ export function formatSmartUSD(value: number | string, symbol: string = '$'): st
  * numeric string a parser expects. The inverse of `formatNumberInput`.
  *
  * Amount fields keep their RAW value in state and only format on the way to
- * the screen, so nothing downstream — parseUnits, BigInt, validation — ever
+ * the screen, so nothing downstream - parseUnits, BigInt, validation - ever
  * sees a comma. Run this on every keystroke before calling the setter.
  */
 export function parseNumberInput(value: string | number | null | undefined): string {
@@ -352,12 +352,12 @@ export function parseNumberInput(value: string | number | null | undefined): str
 }
 
 /**
- * Thousands separators for a LIVE numeric input — safe to apply on every
+ * Thousands separators for a LIVE numeric input - safe to apply on every
  * keystroke because it never disturbs what the user is mid-way through
  * typing: a trailing "." survives ("1,234." stays), so does an empty decimal
  * tail, and the fraction is never grouped ("0.123456" not "0.123,456").
  *
- * Long token amounts are the reason this exists — "12888888888" is unreadable
+ * Long token amounts are the reason this exists - "12888888888" is unreadable
  * where "12,888,888,888" is not.
  */
 export function formatNumberInput(value: string | number | null | undefined): string {
@@ -368,7 +368,7 @@ export function formatNumberInput(value: string | number | null | undefined): st
     const intPart = dot === -1 ? raw : raw.slice(0, dot);
     const fracPart = dot === -1 ? undefined : raw.slice(dot + 1);
 
-    // "00000000" should read "0", not "00,000,000" — collapse leading zeros
+    // "00000000" should read "0", not "00,000,000" - collapse leading zeros
     // but keep a lone "0" so "0.5" can still be typed.
     const normalizedInt = intPart.replace(/^0+(?=\d)/, '');
     const grouped = normalizedInt.replace(/\B(?=(\d{3})+(?!\d))/g, ',');

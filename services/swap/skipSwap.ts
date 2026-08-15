@@ -2,7 +2,7 @@
  * Skip direct-to-API swap helpers (mobile).
  *
  * The web app proxies Skip through /api/v1/route/{skip-msgs,cosmos-rpc}, but
- * those routes are NOT deployed to production — and React Native has no CORS —
+ * those routes are NOT deployed to production - and React Native has no CORS -
  * so mobile calls Skip's public API (api.skip.build) DIRECTLY:
  *   1. POST /v2/fungible/route  → route (quote)
  *   2. POST /v2/fungible/msgs   → cosmos msgs to sign
@@ -39,7 +39,7 @@ export const CANONICAL_TO_SKIP_CHAIN_ID: Record<number, string> = {
     8000012: 'cataclysm-1',
 };
 
-/** Cosmos chains whose accounts derive from an Ethereum key — can't re-encode. */
+/** Cosmos chains whose accounts derive from an Ethereum key - can't re-encode. */
 const ETH_SECP256K1_PREFIXES = new Set(['inj', 'evmos', 'dym', 'zeta', 'realio', 'haqq', 'planq', 'gravity']);
 
 export function isSkipChain(chainId: number | string | undefined): boolean {
@@ -97,7 +97,7 @@ export interface SkipRoute {
     [k: string]: any;
 }
 
-/** POST /v2/fungible/route — the quote. Returns null if Skip has no route. */
+/** POST /v2/fungible/route - the quote. Returns null if Skip has no route. */
 export async function fetchSkipRoute(params: {
     fromChainId: number; toChainId: number;
     fromToken: string; toToken: string; amountIn: string;
@@ -141,7 +141,7 @@ export async function buildSkipAddressList(
     return requiredChains.map((ibcId) => {
         if (ibcId === sourceIbcId) return sourceAddress;
         const prefix = prefixMap[ibcId];
-        if (!prefix) throw new Error(`Unknown chain ${ibcId} in route — can't derive your address for it.`);
+        if (!prefix) throw new Error(`Unknown chain ${ibcId} in route - can't derive your address for it.`);
         if (ETH_SECP256K1_PREFIXES.has(prefix)) {
             const supplied = ethSecpAddresses?.[prefix];
             if (supplied && supplied.startsWith(`${prefix}1`)) return supplied;
@@ -153,7 +153,7 @@ export async function buildSkipAddressList(
     });
 }
 
-/** POST /v2/fungible/msgs — returns the single cosmos_tx or throws. */
+/** POST /v2/fungible/msgs - returns the single cosmos_tx or throws. */
 export async function fetchSkipCosmosTx(
     route: SkipRoute, addressList: string[], slippage: number,
 ): Promise<{ chain_id: string; msgs: any[] }> {
@@ -197,7 +197,7 @@ export function toEncodeObject(m: any): { typeUrl: string; value: any } {
     const parsed = JSON.parse(rawMsg);
 
     if (typeUrl === '/ibc.applications.transfer.v1.MsgTransfer') {
-        // timeout_timestamp is a uint64 (ns) that exceeds MAX_SAFE_INTEGER — pull
+        // timeout_timestamp is a uint64 (ns) that exceeds MAX_SAFE_INTEGER - pull
         // it from the raw string as a bigint (JSON.parse would corrupt it).
         const tsMatch = rawMsg.match(/"timeout_timestamp"\s*:\s*"?(\d+)"?/);
         const timeoutTimestamp = tsMatch ? BigInt(tsMatch[1]) : BigInt(0);
@@ -220,5 +220,5 @@ export function toEncodeObject(m: any): { typeUrl: string; value: any } {
             },
         };
     }
-    throw new Error(`Skip returned an unsupported message type (${typeUrl}). Same-chain Cosmos DEX swaps aren't executable in-app yet — try a cross-chain (IBC) route.`);
+    throw new Error(`Skip returned an unsupported message type (${typeUrl}). Same-chain Cosmos DEX swaps aren't executable in-app yet - try a cross-chain (IBC) route.`);
 }

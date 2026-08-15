@@ -8,14 +8,14 @@
  * every subscribed <Text> re-renders and picks up the translation.
  *
  * Mirrors the LiveTranslator's localStorage cache and batching logic, adapted
- * to RN (no DOM walker — we hook the Text component itself in
+ * to RN (no DOM walker - we hook the Text component itself in
  * `installGlobalTranslate.ts`).
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 
-// Bump the suffix (`v2`) to invalidate older caches — an earlier build
+// Bump the suffix (`v2`) to invalidate older caches - an earlier build
 // stored double-encoded garbage (e.g. "管理%20代币") into v1; we don't want to
 // keep reading that back on startup.
 const STORAGE_PREFIX = 'tiwi_autotrans_v2_';
@@ -35,7 +35,7 @@ function isMyMemoryErrorMessage(text: string): boolean {
     if (lower.includes('invalid target language')) return true;
     if (lower.includes('quota finished')) return true;
     if (lower.includes('used all available free translations')) return true;
-    // Garbage from the old double-encoding bug — any `%XX` percent-escape
+    // Garbage from the old double-encoding bug - any `%XX` percent-escape
     // sequence in a translated UI label is almost certainly MyMemory echoing
     // back double-encoded input. Catches %20 (space), %24 ($), %27 ('),
     // %2C (,), etc.
@@ -60,7 +60,7 @@ interface AutoTranslateState {
 
 /**
  * Global version counter. Every time a new translation lands in the cache we
- * increment it — components that subscribe (via the patched Text render)
+ * increment it - components that subscribe (via the patched Text render)
  * re-render and re-call `autoTranslate`, which now returns the cached value.
  */
 export const useAutoTranslateStore = create<AutoTranslateState>((set) => ({
@@ -69,7 +69,7 @@ export const useAutoTranslateStore = create<AutoTranslateState>((set) => ({
 }));
 
 /**
- * Coalesce version bumps — if 40 translations come back in the same tick we
+ * Coalesce version bumps - if 40 translations come back in the same tick we
  * only want one re-render wave, not 40.
  */
 let bumpScheduled = false;
@@ -107,7 +107,7 @@ function shouldTranslate(text: string): boolean {
     // ALL CAPS tickers / acronyms (≤ 8 chars, no spaces).
     if (/^[A-Z0-9_\-]{1,8}$/.test(trimmed)) return false;
 
-    // Must contain at least one ASCII letter — otherwise assume it's already
+    // Must contain at least one ASCII letter - otherwise assume it's already
     // in the target script (CJK, Arabic, Cyrillic, etc.).
     if (!/[a-zA-Z]/.test(trimmed)) return false;
 
@@ -131,7 +131,7 @@ async function fetchTranslation(text: string, targetLang: string): Promise<void>
         // Pre-encode every reserved character ourselves. The previous
         // construction left a raw `|` in the URL (`langpair=en|zh`), which
         // RN's fetch URL normalizer treated as invalid and re-encoded the
-        // whole query — turning our `%20` into `%2520` and producing
+        // whole query - turning our `%20` into `%2520` and producing
         // garbage like `管理%20代币` on the server side.
         const url =
             'https://api.mymemory.translated.net/get?q=' +
@@ -164,7 +164,7 @@ async function fetchTranslation(text: string, targetLang: string): Promise<void>
 /**
  * Synchronously return the translation for `text` in `targetLang`, or the
  * original text if none is cached yet. Kicks off a background fetch when the
- * cache misses — the calling Text will re-render once the fetch lands.
+ * cache misses - the calling Text will re-render once the fetch lands.
  */
 export function autoTranslate(text: string, targetLang: string | null | undefined): string {
     if (!text || typeof text !== 'string') return text;
@@ -181,14 +181,14 @@ export function autoTranslate(text: string, targetLang: string | null | undefine
         if (isMyMemoryErrorMessage(cached)) {
             memCache.delete(cacheKey);
             AsyncStorage.removeItem(STORAGE_PREFIX + cacheKey).catch(() => { });
-            // Don't mark as failed — let the next render re-fetch cleanly.
+            // Don't mark as failed - let the next render re-fetch cleanly.
             fetchTranslation(text, lang);
             return text;
         }
         return cached;
     }
 
-    // Fire and forget — re-renders pick up the translation later via the
+    // Fire and forget - re-renders pick up the translation later via the
     // version bump.
     fetchTranslation(text, lang);
     return text;
@@ -202,7 +202,7 @@ export async function preloadAutoTranslateCache(): Promise<void> {
     try {
         const keys = await AsyncStorage.getAllKeys();
 
-        // Purge anything stored under the legacy prefix — it may contain the
+        // Purge anything stored under the legacy prefix - it may contain the
         // double-encoded garbage from the previous build.
         const legacyKeys = keys.filter(
             (k) => k.startsWith(LEGACY_STORAGE_PREFIX) && !k.startsWith(STORAGE_PREFIX),
@@ -229,6 +229,6 @@ export async function preloadAutoTranslateCache(): Promise<void> {
         }
         useAutoTranslateStore.getState().bump();
     } catch {
-        // Ignore — we'll populate lazily via fetches.
+        // Ignore - we'll populate lazily via fetches.
     }
 }

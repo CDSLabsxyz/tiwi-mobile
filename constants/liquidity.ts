@@ -1,5 +1,5 @@
 /**
- * TIWI Liquidity Hub — chain constants + address registry for React Native.
+ * TIWI Liquidity Hub - chain constants + address registry for React Native.
  *
  * Factory/router addresses are provided by the backend (GET /api/v1/liquidity-addresses)
  * and cached here via `setLiquidityAddresses`, with an EXPO_PUBLIC_* env fallback for

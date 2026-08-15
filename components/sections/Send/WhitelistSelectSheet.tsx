@@ -28,7 +28,7 @@ interface WhitelistSelectSheetProps {
     onMultiSelect?: (addresses: string[]) => void;
 }
 
-// Unified address book entry — covers both user-imported whitelist contacts
+// Unified address book entry - covers both user-imported whitelist contacts
 // and the user's own multi-chain wallets (EVM/Solana/Tron/TON/Cosmos/Osmosis).
 type BookEntry = {
     name: string;
@@ -37,7 +37,7 @@ type BookEntry = {
     /** "wallet" rows come from the user's walletGroups; "contact" rows come
      *  from the security store's whitelistedAddresses. */
     source: "wallet" | "contact";
-    /** WalletGroup id — only present for "wallet" rows. Needed to rename
+    /** WalletGroup id - only present for "wallet" rows. Needed to rename
      *  the group when the user edits the displayed name. */
     groupId?: string;
 };
@@ -64,7 +64,7 @@ export const WhitelistSelectSheet: React.FC<WhitelistSelectSheetProps> = ({
     const [editDraft, setEditDraft] = useState("");
 
     // Lift the whole sheet content above the keyboard, same approach used
-    // by the TIWI AI input — IME inset comes straight from native via
+    // by the TIWI AI input - IME inset comes straight from native via
     // reanimated, so it stays correct in release APKs with edge-to-edge.
     const keyboard = useAnimatedKeyboard();
     const keyboardPaddingStyle = useAnimatedStyle(() => ({
@@ -108,11 +108,11 @@ export const WhitelistSelectSheet: React.FC<WhitelistSelectSheetProps> = ({
 
     // Flatten every non-empty (wallet × chain) pair into its own entry, then
     // append the manually-curated whitelist. The wallet's name carries
-    // through verbatim — the chain is shown as a small suffix so the user
+    // through verbatim - the chain is shown as a small suffix so the user
     // can tell the SOL address apart from the EVM one.
     //
     // Dedupe across sources by address: if a whitelist contact happens to be
-    // one of the user's own wallet addresses (common — users often whitelist
+    // one of the user's own wallet addresses (common - users often whitelist
     // themselves), keep the wallet entry (which has the chain badge) and
     // drop the un-badged duplicate.
     const bookEntries = useMemo<BookEntry[]>(() => {

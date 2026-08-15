@@ -155,7 +155,7 @@ export function MultiSendRowItem({
 }
 
 // ----------------------------------------------------------------------------
-// Form view — only the latest row + Add User / Bulk Add
+// Form view - only the latest row + Add User / Bulk Add
 // ----------------------------------------------------------------------------
 
 type FormProps = {
@@ -203,7 +203,7 @@ export function MultiSendRowsForm({ rows, onChange, availableTokens, onBulkAdd }
             <Text style={{ fontFamily: "Manrope-Bold", fontSize: 11, color: colors.bg }}>{committedCount}</Text>
           </View>
           <Text style={{ flex: 1, fontFamily: "Manrope-Regular", fontSize: 11, color: colors.bodyText }}>
-            {committedCount === 1 ? "recipient" : "recipients"} added — open Preview to view, edit, or delete.
+            {committedCount === 1 ? "recipient" : "recipients"} added - open Preview to view, edit, or delete.
           </Text>
         </View>
       )}
@@ -262,7 +262,7 @@ export function MultiSendRowsForm({ rows, onChange, availableTokens, onBulkAdd }
 }
 
 // ----------------------------------------------------------------------------
-// Editable list — every row (used inside the preview)
+// Editable list - every row (used inside the preview)
 // ----------------------------------------------------------------------------
 
 export function MultiSendRowsList({ rows, onChange, availableTokens }: FormProps) {

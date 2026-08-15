@@ -89,7 +89,7 @@ END $$;
 --   CREATE EXTENSION IF NOT EXISTS pg_net;
 --
 -- Then replace <PROJECT_REF> and <SERVICE_ROLE_KEY> below and run the
--- cron.schedule() block. The Edge Function must already be deployed —
+-- cron.schedule() block. The Edge Function must already be deployed -
 -- see supabase/functions/price-alert-cron/README.md.
 --
 --   SELECT cron.schedule(

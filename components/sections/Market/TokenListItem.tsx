@@ -13,7 +13,7 @@ const TWC_ADDRESS_LOWER = '0xda1060158f7d593667cce0a15db346bb3ffb3596';
 
 interface TokenListItemProps {
     token: MarketAsset & { displaySymbol?: string; priceUSD?: string; marketCapRank?: number };
-    /** Omitted where the row is display-only — the token detail screen was removed. */
+    /** Omitted where the row is display-only - the token detail screen was removed. */
     onPress?: () => void;
 }
 

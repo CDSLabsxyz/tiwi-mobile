@@ -20,7 +20,7 @@ const ArrowDown01 = require('@/assets/home/arrow-down-01.svg');
 /** Inset of the rows inside the card, top + bottom. */
 const CARD_VERTICAL_PADDING = 24;
 /**
- * Height to open to if the rows haven't reported a layout yet — three rows at
+ * Height to open to if the rows haven't reported a layout yet - three rows at
  * ~14px plus their gaps. Only a first-frame fallback; the real height is
  * measured. Never open to 0, or the details would be invisible.
  */
@@ -28,9 +28,9 @@ const MIN_EXPANDED_HEIGHT = 54;
 
 interface SwapDetailsCardProps {
     gasFee?: string;
-    /** Router(s) the winning route uses — e.g. ["Relay"], ["Pancakeswap"]. */
+    /** Router(s) the winning route uses - e.g. ["Relay"], ["Pancakeswap"]. */
     source?: string[];
-    /** Source chainId — the protocol fee is tier-based on BSC. */
+    /** Source chainId - the protocol fee is tier-based on BSC. */
     chainId?: number;
     slippageTolerance?: string;
     twcFee?: string;
@@ -88,7 +88,7 @@ export const SwapDetailsCard: React.FC<SwapDetailsCardProps> = ({
     const rotation = useSharedValue(0);
     const height = useSharedValue(0);
     const pulseOpacity = useSharedValue(0.3);
-    /** Natural height of the rows, measured on layout — see `contentStyle`. */
+    /** Natural height of the rows, measured on layout - see `contentStyle`. */
     const contentHeight = useSharedValue(0);
     const isAutoSlippage = useSwapStore((s) => s.isAutoSlippage);
     const selectedGasTokenType = useSwapStore((s) => s.selectedGasTokenType);
@@ -179,7 +179,7 @@ export const SwapDetailsCard: React.FC<SwapDetailsCardProps> = ({
                         />
                     )}
 
-                    {/* Route — which router actually settles the swap. Worth
+                    {/* Route - which router actually settles the swap. Worth
                         surfacing now that the engine can pick from ~30. */}
                     {!!source?.length && (
                         <View style={styles.detailRow}>
@@ -215,7 +215,7 @@ export const SwapDetailsCard: React.FC<SwapDetailsCardProps> = ({
                         )}
                     </View>
 
-                    {/* Protocol Fee — shown as a flat percentage, not a USD value */}
+                    {/* Protocol Fee - shown as a flat percentage, not a USD value */}
                     <View style={styles.detailRow}>
                         <Text style={styles.detailLabel}>Protocol Fee</Text>
                         {isLoading ? (
@@ -263,7 +263,7 @@ const styles = StyleSheet.create({
     },
     /**
      * Absolutely positioned on purpose. The card's height is animated, and a
-     * child in normal flow gets measured against that animated height — so
+     * child in normal flow gets measured against that animated height - so
      * `onLayout` reports the collapsed height and the card sizes itself to a
      * fraction of its own content. Out of flow, the rows lay out at their
      * natural height no matter what the card is currently doing, which is what

@@ -28,7 +28,7 @@ You can contact us at **info@tiwiprotocol.xyz** with any privacy-related questio
 
 ---
 
-## 3. Summary of What We Do — and Don't Do
+## 3. Summary of What We Do - and Don't Do
 
 | Category | Status |
 |---|---|
@@ -38,9 +38,9 @@ You can contact us at **info@tiwiprotocol.xyz** with any privacy-related questio
 | Use your data for cross-context behavioral advertising | ❌ Never |
 | Knowingly collect data from children under 18 | ❌ Never |
 | Require account registration, email, name, or KYC to use the wallet | ❌ Not required |
-| Collect device metadata (model, OS, IP-based country, language) | ✅ Yes — to operate the App, deliver notifications, and protect against fraud |
-| Send your AI prompts to a third-party AI provider when you use the chatbot | ✅ Yes — only when you use the chatbot |
-| Store push notification tokens and price-alert preferences on our backend | ✅ Yes — when you opt in to notifications/alerts |
+| Collect device metadata (model, OS, IP-based country, language) | ✅ Yes - to operate the App, deliver notifications, and protect against fraud |
+| Send your AI prompts to a third-party AI provider when you use the chatbot | ✅ Yes - only when you use the chatbot |
+| Store push notification tokens and price-alert preferences on our backend | ✅ Yes - when you opt in to notifications/alerts |
 
 ---
 
@@ -66,7 +66,7 @@ The following data is stored **only on your device**, inside secure storage (App
 When you install and use the App, we (and the service providers listed in Section 7) automatically collect:
 
 - **Device information**: device model, manufacturer, operating system and version, device type (phone/tablet), device language, device identifier (Expo device ID / installation ID), and app version.
-- **Network and connection information**: IP address and approximate geolocation derived from your IP address (city and country level only — we do not collect precise GPS location).
+- **Network and connection information**: IP address and approximate geolocation derived from your IP address (city and country level only - we do not collect precise GPS location).
 - **Session information**: timestamps of app launches, last-active timestamp, and basic session metadata used to power the "Connected Devices" feature so you can see where your wallet has been used.
 - **Push notification token**: a token issued by Apple Push Notification Service (APNs), Firebase Cloud Messaging (FCM), or Expo Push that allows us to deliver notifications to your specific device.
 - **Wallet addresses you choose to associate with the App backend**: e.g., wallet addresses used to register for price alerts, the referral program, or push notifications. Wallet addresses are **public blockchain identifiers**, not directly personally identifying, but combined with other data they may become identifying.
@@ -87,7 +87,7 @@ We collect data you choose to provide, including:
 
 ### 4.4 On-Chain (Public Blockchain) Data
 
-Public blockchain data — including your wallet addresses, balances, NFT holdings, transaction history, and any token approvals — is read directly from public block explorers and RPC providers, and from data providers like Moralis. This information is **inherently public and immutable** because it lives on the blockchain. We do not control or store it on our own infrastructure beyond ordinary caching.
+Public blockchain data - including your wallet addresses, balances, NFT holdings, transaction history, and any token approvals - is read directly from public block explorers and RPC providers, and from data providers like Moralis. This information is **inherently public and immutable** because it lives on the blockchain. We do not control or store it on our own infrastructure beyond ordinary caching.
 
 ### 4.5 Information We Do **Not** Collect
 
@@ -96,7 +96,7 @@ We do not collect:
 - your real name, postal address, date of birth, government ID, or KYC documents;
 - your bank account, credit card, or other payment instrument details;
 - precise GPS location;
-- biometric templates — biometric authentication is processed entirely on your device by the operating system, and we never receive your fingerprint or face data;
+- biometric templates - biometric authentication is processed entirely on your device by the operating system, and we never receive your fingerprint or face data;
 - the content of your private messages with other users (the App does not include user-to-user messaging);
 - contacts from your address book (the App does not request contacts permission);
 - health, fitness, or wellness data.
@@ -109,13 +109,13 @@ The App requests the following permissions on iOS and/or Android. Each permissio
 
 | Permission | Why It Is Used | Required? |
 |---|---|---|
-| **Camera** | Scan QR codes for wallet addresses, WalletConnect pairing, and dApp linking. | Optional — only when you use QR features. |
-| **Microphone (Android RECORD_AUDIO)** | Capture short voice clips for the optional **voice-to-text** input in the AI chatbot. Audio is processed by a third-party speech-to-text service and is not stored by the App. The microphone is **not** used by `expo-camera` on iOS (declared as `microphonePermission: false`). | Optional — only if you use voice input. |
-| **Photo Library / Media Library** | Save QR codes, receipts, or chart screenshots you generate; allow you to attach an image to a chatbot question. | Optional — only when you save or upload an image. |
-| **Notifications** | Deliver push notifications (price alerts, transaction confirmations, security alerts) and display local notifications. | Optional — you can disable in OS settings. |
-| **Biometrics (Face ID / Touch ID / Android Biometric)** | Locally unlock the App, authorize sensitive operations, and protect access to your Seed Phrase. Biometric data never leaves your device. | Optional — you may use a PIN instead. |
+| **Camera** | Scan QR codes for wallet addresses, WalletConnect pairing, and dApp linking. | Optional - only when you use QR features. |
+| **Microphone (Android RECORD_AUDIO)** | Capture short voice clips for the optional **voice-to-text** input in the AI chatbot. Audio is processed by a third-party speech-to-text service and is not stored by the App. The microphone is **not** used by `expo-camera` on iOS (declared as `microphonePermission: false`). | Optional - only if you use voice input. |
+| **Photo Library / Media Library** | Save QR codes, receipts, or chart screenshots you generate; allow you to attach an image to a chatbot question. | Optional - only when you save or upload an image. |
+| **Notifications** | Deliver push notifications (price alerts, transaction confirmations, security alerts) and display local notifications. | Optional - you can disable in OS settings. |
+| **Biometrics (Face ID / Touch ID / Android Biometric)** | Locally unlock the App, authorize sensitive operations, and protect access to your Seed Phrase. Biometric data never leaves your device. | Optional - you may use a PIN instead. |
 | **Clipboard** | Paste wallet addresses, transaction hashes, and referral codes. | Used only on user action. |
-| **Background fetch / processing (iOS UIBackgroundModes; Android background tasks)** | Periodically poll for new transactions and price alert triggers so the App can notify you. | Optional — controlled by OS. |
+| **Background fetch / processing (iOS UIBackgroundModes; Android background tasks)** | Periodically poll for new transactions and price alert triggers so the App can notify you. | Optional - controlled by OS. |
 | **Install packages (Android REQUEST_INSTALL_PACKAGES)** | Apply in-app updates delivered via Expo Updates / OTA where required. | Used only on user action. |
 
 We do **not** request: precise location (GPS), contacts, calendar, SMS, call history, or health data.
@@ -126,15 +126,15 @@ We do **not** request: precise location (GPS), contacts, calendar, SMS, call his
 
 We use the categories of information described above for the following purposes:
 
-1. **To provide and operate the App** — generate and manage wallets, sign and broadcast transactions, route swaps and bridges via aggregators, display balances, render NFTs and market data.
-2. **To deliver push notifications and price alerts** — send a push to your specific device when your subscribed price threshold is hit, a new transaction is detected, or a security event occurs.
-3. **To power the AI chatbot** — process your prompt with a third-party AI provider (e.g., Google Gemini) and, where relevant and you have authorized it, enrich the prompt with public market data and a snapshot of your portfolio you choose to share.
-4. **To operate the referral program** — generate and validate referral codes, track referrals associated with your wallet address, and credit rewards.
-5. **To manage devices and sessions** — show you a list of devices currently connected to your wallet and allow you to revoke them.
-6. **To maintain security and integrity** — detect and prevent fraud, abuse, sybil attacks, sanctions evasion, and violations of our Terms of Use.
-7. **To comply with legal obligations** — respond to lawful requests from regulators, courts, or law enforcement, and meet our sanctions screening obligations where required.
-8. **To improve and debug the App** — fix bugs, monitor stability, and develop new features based on aggregated, non-identifying signals.
-9. **To respond to your support requests** — communicate with you when you email us.
+1. **To provide and operate the App** - generate and manage wallets, sign and broadcast transactions, route swaps and bridges via aggregators, display balances, render NFTs and market data.
+2. **To deliver push notifications and price alerts** - send a push to your specific device when your subscribed price threshold is hit, a new transaction is detected, or a security event occurs.
+3. **To power the AI chatbot** - process your prompt with a third-party AI provider (e.g., Google Gemini) and, where relevant and you have authorized it, enrich the prompt with public market data and a snapshot of your portfolio you choose to share.
+4. **To operate the referral program** - generate and validate referral codes, track referrals associated with your wallet address, and credit rewards.
+5. **To manage devices and sessions** - show you a list of devices currently connected to your wallet and allow you to revoke them.
+6. **To maintain security and integrity** - detect and prevent fraud, abuse, sybil attacks, sanctions evasion, and violations of our Terms of Use.
+7. **To comply with legal obligations** - respond to lawful requests from regulators, courts, or law enforcement, and meet our sanctions screening obligations where required.
+8. **To improve and debug the App** - fix bugs, monitor stability, and develop new features based on aggregated, non-identifying signals.
+9. **To respond to your support requests** - communicate with you when you email us.
 
 ---
 
@@ -156,7 +156,7 @@ The App relies on third-party services to function. Each service receives only t
 | **Across Protocol** | Cross-chain bridging | Token, amount, recipient address |
 | **Jupiter / native DEXs (Uniswap, PancakeSwap, etc.)** | On-chain swap routing | Public transaction data |
 | **WalletConnect / Reown AppKit** | Connect the wallet to external dApps | Public wallet address, session metadata, dApp URL |
-| **Google Generative AI (Gemini) via `@google/genai`** | AI chatbot model inference | The text of your prompt, attached images (if any), and contextual data you authorize (e.g., wallet address, portfolio summary, recent messages — up to the last 8 turns) |
+| **Google Generative AI (Gemini) via `@google/genai`** | AI chatbot model inference | The text of your prompt, attached images (if any), and contextual data you authorize (e.g., wallet address, portfolio summary, recent messages - up to the last 8 turns) |
 | **Speech-to-text service** | Transcribe voice notes in the chatbot | Short base64-encoded audio clip you record |
 | **ipapi.co (or equivalent IP-geolocation provider)** | Map IP to approximate city/country for connected-devices listing | IP address |
 | **Public blockchain RPC providers / block explorers** | Read and broadcast transactions | Wallet addresses and signed transactions (which are inherently public) |
@@ -172,19 +172,19 @@ We do **not** sell your personal information to any third party, and we do **not
 
 If you are in Nigeria, or if your personal data is otherwise processed under the Nigeria Data Protection Act, 2023 ("NDPA"), we rely on the following lawful bases under Section 25 of the NDPA:
 
-- **Performance of a contract** — to provide the features of the App you request.
-- **Legitimate interests** of TIWI Ecosystem — to keep the App secure, prevent fraud and abuse, and improve the service, where these interests are not overridden by your fundamental rights.
-- **Compliance with a legal obligation** to which we are subject under Nigerian law — including anti-money-laundering, counter-terrorist-financing, sanctions, and tax obligations.
-- **Consent** — for optional processing (such as use of notifications, microphone, camera, photo library, and AI chatbot inputs). You may withdraw consent at any time, without affecting the lawfulness of processing carried out before withdrawal.
+- **Performance of a contract** - to provide the features of the App you request.
+- **Legitimate interests** of TIWI Ecosystem - to keep the App secure, prevent fraud and abuse, and improve the service, where these interests are not overridden by your fundamental rights.
+- **Compliance with a legal obligation** to which we are subject under Nigerian law - including anti-money-laundering, counter-terrorist-financing, sanctions, and tax obligations.
+- **Consent** - for optional processing (such as use of notifications, microphone, camera, photo library, and AI chatbot inputs). You may withdraw consent at any time, without affecting the lawfulness of processing carried out before withdrawal.
 
 ### 8.2 EEA / UK / Switzerland (GDPR / UK GDPR)
 
 If you are in the European Economic Area, United Kingdom, or Switzerland, we rely on the following legal bases under Article 6 GDPR:
 
-- **Performance of a contract (Art. 6(1)(b))** — to deliver the features you request (wallet operations, swaps, notifications, chatbot responses, referrals).
-- **Legitimate interests (Art. 6(1)(f))** — to maintain security, prevent fraud and abuse, debug the App, and improve the service. Our legitimate interests are balanced against your rights.
-- **Compliance with a legal obligation (Art. 6(1)(c))** — to comply with sanctions, anti-money-laundering, tax, and other applicable laws.
-- **Consent (Art. 6(1)(a))** — for optional features that require permission (notifications, microphone, camera, media library, AI chatbot inputs). You can withdraw consent at any time without affecting earlier processing.
+- **Performance of a contract (Art. 6(1)(b))** - to deliver the features you request (wallet operations, swaps, notifications, chatbot responses, referrals).
+- **Legitimate interests (Art. 6(1)(f))** - to maintain security, prevent fraud and abuse, debug the App, and improve the service. Our legitimate interests are balanced against your rights.
+- **Compliance with a legal obligation (Art. 6(1)(c))** - to comply with sanctions, anti-money-laundering, tax, and other applicable laws.
+- **Consent (Art. 6(1)(a))** - for optional features that require permission (notifications, microphone, camera, media library, AI chatbot inputs). You can withdraw consent at any time without affecting earlier processing.
 
 ---
 
@@ -192,7 +192,7 @@ If you are in the European Economic Area, United Kingdom, or Switzerland, we rel
 
 TIWI Ecosystem is based in Nigeria, and our service providers operate globally, including in the United States and the European Union. As a result, personal data we collect may be transferred to, stored in, and processed in countries other than the country in which you reside.
 
-When personal data of **Nigerian data subjects** is transferred outside Nigeria, we rely on the safeguards permitted under **Section 41 of the Nigeria Data Protection Act, 2023** — including transfers to jurisdictions recognised as providing an adequate level of protection, transfers subject to binding agreements that incorporate the protections required by the NDPA, or transfers carried out with your explicit consent.
+When personal data of **Nigerian data subjects** is transferred outside Nigeria, we rely on the safeguards permitted under **Section 41 of the Nigeria Data Protection Act, 2023** - including transfers to jurisdictions recognised as providing an adequate level of protection, transfers subject to binding agreements that incorporate the protections required by the NDPA, or transfers carried out with your explicit consent.
 
 When personal data of **EEA, UK, or Swiss** data subjects is transferred to a country that does not provide an adequate level of data protection, we rely on appropriate safeguards such as the European Commission's **Standard Contractual Clauses (SCCs)**, the UK International Data Transfer Addendum, and equivalent mechanisms.
 
@@ -246,23 +246,23 @@ Depending on where you live, you have the following rights with respect to your 
 If you are a data subject in Nigeria, you have the following rights under the Nigeria Data Protection Act, 2023:
 
 - **Right to be informed** about the collection and use of your personal data.
-- **Right of access** — to request confirmation of, and a copy of, the personal data we hold about you.
-- **Right to rectification** — to have inaccurate or incomplete personal data corrected.
+- **Right of access** - to request confirmation of, and a copy of, the personal data we hold about you.
+- **Right to rectification** - to have inaccurate or incomplete personal data corrected.
 - **Right to erasure / deletion**, subject to lawful retention obligations.
 - **Right to restriction of processing**.
 - **Right to object** to processing, including processing based on our legitimate interests.
-- **Right to data portability** — to receive your personal data in a structured, commonly used, machine-readable format.
+- **Right to data portability** - to receive your personal data in a structured, commonly used, machine-readable format.
 - **Right to withdraw consent** at any time, where processing is based on your consent.
 - **Right not to be subject to a decision based solely on automated processing** that produces legal or similarly significant effects on you.
 - **Right to lodge a complaint with the Nigeria Data Protection Commission (NDPC)** if you believe your rights have been infringed.
 
 ### 13.2 GDPR / UK GDPR (EEA / UK / Switzerland)
 
-- **Right of access** — request a copy of the personal data we hold about you.
-- **Right of rectification** — correct inaccurate or incomplete data.
-- **Right of erasure** ("right to be forgotten") — ask us to delete your data, subject to legal retention.
+- **Right of access** - request a copy of the personal data we hold about you.
+- **Right of rectification** - correct inaccurate or incomplete data.
+- **Right of erasure** ("right to be forgotten") - ask us to delete your data, subject to legal retention.
 - **Right to restriction of processing**.
-- **Right to data portability** — receive your data in a structured, machine-readable format.
+- **Right to data portability** - receive your data in a structured, machine-readable format.
 - **Right to object** to processing based on legitimate interests.
 - **Right to withdraw consent** at any time where processing is based on consent.
 - **Right to lodge a complaint** with your local supervisory authority.
@@ -273,8 +273,8 @@ If you are a data subject in Nigeria, you have the following rights under the Ni
 - **Right to access** the specific pieces of personal information collected about you.
 - **Right to delete** personal information, subject to exceptions.
 - **Right to correct** inaccurate personal information.
-- **Right to opt out** of "sale" or "sharing" — **we do not sell or share personal information for cross-context behavioral advertising**.
-- **Right to limit use of sensitive personal information** — we do not use sensitive personal information for purposes that trigger this right.
+- **Right to opt out** of "sale" or "sharing" - **we do not sell or share personal information for cross-context behavioral advertising**.
+- **Right to limit use of sensitive personal information** - we do not use sensitive personal information for purposes that trigger this right.
 - **Right not to receive discriminatory treatment** for exercising your rights.
 
 ### 13.4 Other Jurisdictions
@@ -295,7 +295,7 @@ The App is a native mobile application and does not use browser cookies for its 
 
 ---
 
-## 15. AI Chatbot — Additional Notice
+## 15. AI Chatbot - Additional Notice
 
 When you use the AI chatbot, **your prompt** and, where applicable, the **wallet address, portfolio summary, recent conversation context, and any image or voice clip you attach**, are transmitted to a third-party large-language-model provider (currently Google Generative AI / Gemini, and/or fallback providers as configured) for the sole purpose of generating a response.
 
@@ -311,11 +311,11 @@ This section summarizes the disclosures we provide in the App Store and Play Sto
 
 **Data linked to you (i.e., associated with your identity/device):**
 
-- Identifiers — device ID, installation ID, push token, public wallet address.
-- Usage data — feature interaction signals required to operate notifications, alerts, and referrals.
-- Diagnostics — crash logs and performance data (minimal).
-- User content — text prompts, voice clips, and images you submit to the chatbot.
-- Contact info — your email address, only if you write to us at info@tiwiprotocol.xyz.
+- Identifiers - device ID, installation ID, push token, public wallet address.
+- Usage data - feature interaction signals required to operate notifications, alerts, and referrals.
+- Diagnostics - crash logs and performance data (minimal).
+- User content - text prompts, voice clips, and images you submit to the chatbot.
+- Contact info - your email address, only if you write to us at info@tiwiprotocol.xyz.
 
 **Data not linked to you / collected anonymously:**
 

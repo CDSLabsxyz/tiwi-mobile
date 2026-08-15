@@ -56,17 +56,17 @@ const TWC_ADDRESS = '0xDA1060158F7D593667cCE0a15DB346BB3FfB3596';
 // borderline wallet rather than letting it fail at the prompt.
 const APPROVE_GAS_ESTIMATE = 60_000;
 
-// Protocol tax destination — the same revenue wallet every other path uses.
+// Protocol tax destination - the same revenue wallet every other path uses.
 const REVENUE_WALLET = REVENUE_WALLETS.evm as Address;
 
-// Where the up-front service fee goes — the same wallet that fronts the drip
+// Where the up-front service fee goes - the same wallet that fronts the drip
 // and pays for the relayed swap, so its BNB outlay and token income net out.
 const RELAYER_FEE_WALLET = BSC_RELAYER_V2_CONFIG.mainnet.relayerWallet as Address;
 
 // PancakeSwap V2 Router
 const PANCAKESWAP_V2_ROUTER = '0x10ED43C718714eb63d5aA57B78B54704E256024E';
 
-// PancakeSwap V3 SwapRouter (exactInputSingle) — already in the relayer allowlist
+// PancakeSwap V3 SwapRouter (exactInputSingle) - already in the relayer allowlist
 const PANCAKESWAP_V3_ROUTER = '0x13f4EA83D0bd40E75C8222255bc855a974568Dd4';
 
 // TiwiMultiSwap (Path R atomic multi-DEX/V3 executor). 0x0 => not deployed/disabled.
@@ -78,7 +78,7 @@ function resolveBscDex(dexId?: string, protocol?: string): { router: string; isV
   const id = `${dexId || ''} ${protocol || ''}`.toLowerCase();
   if (id.includes('pancake') && id.includes('v3')) return { router: PANCAKESWAP_V3_ROUTER, isV3: true };
   if (id.includes('pancake')) return { router: PANCAKESWAP_V2_ROUTER, isV3: false };
-  return null; // unknown DEX on BSC — cannot execute via TiwiMultiSwap
+  return null; // unknown DEX on BSC - cannot execute via TiwiMultiSwap
 }
 
 // TiwiMultiSwap.executeMultiSwap(amountIn, minAmountOut, recipient, Step[])
@@ -167,7 +167,7 @@ const SWAP_INPUTS = [
 ] as const;
 
 // Only the fee-on-transfer variants. They behave identically for a normal token
-// and are the only ones that work for a token that taxes its own transfers —
+// and are the only ones that work for a token that taxes its own transfers -
 // the plain versions revert with "Pancake: K" because the pair receives less
 // than amountIn and the constant-product check fails. TWC is such a token.
 const PANCAKESWAP_ABI = [
@@ -316,7 +316,7 @@ export class BscGaslessExecutor implements SwapRouterExecutor {
    * Get the spender address for token approval
    */
   async getSpenderAddress(route: RouterRoute): Promise<string | null> {
-    // Tokens are approved to the DEX router — this path no longer routes
+    // Tokens are approved to the DEX router - this path no longer routes
     // through a relayer contract, so nothing else is ever a spender.
     return PANCAKESWAP_V2_ROUTER;
   }
@@ -328,7 +328,7 @@ export class BscGaslessExecutor implements SwapRouterExecutor {
     const { route, fromToken, toToken, fromAmount, userAddress, recipientAddress, walletClient, onStatusUpdate, slippage } = params;
 
     // User's slippage tolerance (percent). Prefer the explicit override, then the
-    // route's applied slippage, else a tight 0.5% default — NOT a loose hardcoded 5%.
+    // route's applied slippage, else a tight 0.5% default - NOT a loose hardcoded 5%.
     const slippagePct = slippage ?? (route?.slippage ? parseFloat(route.slippage) : undefined) ?? 0.5;
 
     let activeWallet = walletClient;
@@ -360,7 +360,7 @@ export class BscGaslessExecutor implements SwapRouterExecutor {
 
     try {
       // 1. (No calldata built here.) BscDirectSwapExecutor builds the swap
-      //    itself in step 4 — building a second copy here was both wasted RPC
+      //    itself in step 4 - building a second copy here was both wasted RPC
       //    work and the source of the "Pancake: K" mismatch.
 
       // 2. Calculate gas payment details
@@ -372,8 +372,8 @@ export class BscGaslessExecutor implements SwapRouterExecutor {
         selectedGasToken
       );
 
-      // The relayer path charges its OWN rate — 0.20% with TWC as the gas token,
-      // 0.30% otherwise — not the normal path's flat 0.25%. It's collected here
+      // The relayer path charges its OWN rate - 0.20% with TWC as the gas token,
+      // 0.30% otherwise - not the normal path's flat 0.25%. It's collected here
       // (step 3.5) and the normal executor is told to skip its own, so the user
       // is taxed exactly once.
       const taxAmountWei = (fromAmountWei * BigInt(taxRateBps)) / BigInt(BASIS_POINTS);
@@ -383,7 +383,7 @@ export class BscGaslessExecutor implements SwapRouterExecutor {
       const normalizedFromToken = normalizeTokenAddress(fromToken.address) as Address;
       // The relayer contract used to take a gas reimbursement inside
       // executeGaslessSwap. A direct swap doesn't, so nothing is required here
-      // on that account — the tax below and the $0.50 service fee are the only
+      // on that account - the tax below and the $0.50 service fee are the only
       // charges, and both are checked explicitly.
       const totalGasPayment = BigInt(0);
 
@@ -410,7 +410,7 @@ export class BscGaslessExecutor implements SwapRouterExecutor {
       // Everything this swap takes out of the FROM token. When the gas token IS
       // the from-token (the usual "pay gas in TWC while swapping TWC" case) the
       // tax and the service fee come out of the same balance, so checking the
-      // swap amount alone passes and then the swap reverts mid-flow — after the
+      // swap amount alone passes and then the swap reverts mid-flow - after the
       // user has already paid the fee and approved.
       const fromDecimals = fromToken.decimals || 18;
       const gasIsFromToken = gasToken.toLowerCase() === normalizedFromToken.toLowerCase();
@@ -514,7 +514,7 @@ export class BscGaslessExecutor implements SwapRouterExecutor {
       }
 
       // 4. From here it IS a normal swap. Hand off to BscDirectSwapExecutor
-      //    rather than re-implementing approve + swap here — that duplicate is
+      //    rather than re-implementing approve + swap here - that duplicate is
       //    what produced "Pancake: K", since this file built calldata with
       //    `swapExactTokensForETH` while the normal executor correctly uses the
       //    SupportingFeeOnTransferTokens variants that a self-taxing token like
@@ -545,7 +545,7 @@ export class BscGaslessExecutor implements SwapRouterExecutor {
   /**
    * Extract the contiguous token path from a universal/multi-hop route's steps,
    * e.g. [TWC, USDC, USDT]. Only returns multi-hop paths (>= 1 intermediary) made
-   * of pure `swap` steps — direct (2-token) paths are already covered, and any
+   * of pure `swap` steps - direct (2-token) paths are already covered, and any
    * bridge/wrap step or non-contiguous chain returns null (handled elsewhere).
    * Correctness is still gated by getAmountsOut on the V2 router below.
    */
@@ -738,7 +738,7 @@ export class BscGaslessExecutor implements SwapRouterExecutor {
 
     // Always the fee-on-transfer variants. They behave identically for a normal
     // token, and they are the ONLY ones that work for a token that taxes its own
-    // transfers — the plain versions revert with "Pancake: K" because the pair
+    // transfers - the plain versions revert with "Pancake: K" because the pair
     // receives less than amountIn and the constant-product check fails. TWC is
     // such a token, which is exactly how this surfaced.
     // This function unwraps WBNB to native BNB and sends to recipient
@@ -841,7 +841,7 @@ export class BscGaslessExecutor implements SwapRouterExecutor {
   }
 
   /**
-   * Decide whether this swap needs sponsorship, and price it — WITHOUT moving
+   * Decide whether this swap needs sponsorship, and price it - WITHOUT moving
    * any funds.
    *
    * Split from the execution below so the fee can be reserved in the pre-flight
@@ -849,7 +849,7 @@ export class BscGaslessExecutor implements SwapRouterExecutor {
    * charged in the gas token, which is usually the same token being swapped, so
    * a fee discovered after the balance check silently eats into the swap amount.
    *
-   * Returns null when no sponsorship applies — either every allowance is
+   * Returns null when no sponsorship applies - either every allowance is
    * already set (the user signs no transaction, so there is no gas to cover and
    * a drip would be $0.10 against $0), or the opt-out is enabled and they can
    * already pay.
@@ -857,14 +857,14 @@ export class BscGaslessExecutor implements SwapRouterExecutor {
   private async quoteSponsorship(chainId: number, gasToken: Address): Promise<Sponsorship> {
     try {
       // Unconditional. Choosing the relayer means the user's own BNB is never
-      // what pays for the swap, so the release/receive pair runs every time —
+      // what pays for the swap, so the release/receive pair runs every time -
       // it is not gated on the wallet's BNB balance, nor on whether an approval
       // happens to be outstanding.
       const res = await fetch(apiUrl(`/api/v1/relayer/gas-drip?gasTokenAddress=${gasToken}&chainId=${chainId}`));
       const quote = await res.json().catch(() => ({}));
       if (!res.ok || !quote?.amountWei) {
         // Sponsorship IS needed here but we couldn't price it. Report that
-        // rather than returning "nothing to do" — the caller decides whether a
+        // rather than returning "nothing to do" - the caller decides whether a
         // user who can self-fund proceeds, and a user who can't gets told why.
         return {
           kind: 'unavailable',
@@ -883,19 +883,19 @@ export class BscGaslessExecutor implements SwapRouterExecutor {
   }
 
   /**
-   * Cold-start gas sponsorship — the part that moves funds.
+   * Cold-start gas sponsorship - the part that moves funds.
    *
    * Everything else in this flow is already gasless for the user: the tax, the
    * gas reimbursement, the token pull and the swap all happen inside the single
    * transaction the relayer submits and pays for. The one exception is the
-   * ERC20 `approve` — it writes `allowance[msg.sender][spender]`, so the user
+   * ERC20 `approve` - it writes `allowance[msg.sender][spender]`, so the user
    * must be `msg.sender`, and `msg.sender` pays.
    *
    * Sequence:
    *   1. Ask the relayer to send BNB, so the user's own BNB is never what pays
    *      for a relayer swap. Fires whenever an approval is required, not only
-   *      when the user is short — see quoteSponsorship().
-   *   2. Collect the service fee, in the gas token, as a plain `transfer` — a
+   *      when the user is short - see quoteSponsorship().
+   *   2. Collect the service fee, in the gas token, as a plain `transfer` - a
    *      push needs no allowance, so it works on a cold wallet right after the
    *      drip. The amount is the one already reserved by the balance check.
    *   3. Report it to the server, which verifies it on-chain and settles the
@@ -930,7 +930,7 @@ export class BscGaslessExecutor implements SwapRouterExecutor {
 
       if (!dripRes.ok) {
         // The server refuses for good reasons (outstanding drip, daily cap,
-        // budget). Its message tells the user what to do — surface it, but keep
+        // budget). Its message tells the user what to do - surface it, but keep
         // going: if they do hold BNB the approval still works.
         throw new Error(drip?.error || 'Gas sponsorship is unavailable right now.');
       }

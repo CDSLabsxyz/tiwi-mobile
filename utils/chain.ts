@@ -34,7 +34,7 @@ const SYMBOL_TO_CHAIN: Record<string, string> = {
 /**
  * Get display name for a chain ID, falling back to a symbol-based guess.
  *
- * The chain id wins whenever we recognise it — ETH is native on 30+ chains, so
+ * The chain id wins whenever we recognise it - ETH is native on 30+ chains, so
  * the symbol map would label a Base or Arbitrum holding "Ethereum". The symbol
  * fallback exists for CEX/market data that carries no chain id at all.
  */

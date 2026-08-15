@@ -3,7 +3,7 @@
  * (TRON, TON, Cosmos-family).
  *
  * This module deliberately has NO dependency on the wallet store or on
- * SecureStore — it only turns a secret (mnemonic or raw private key) into a
+ * SecureStore - it only turns a secret (mnemonic or raw private key) into a
  * usable signing object. `services/signer/chainSecrets.ts` is the layer that
  * decides *which* secret a wallet holds; `walletCreationService` uses the same
  * helpers at import/creation time so a displayed address is always an address
@@ -11,7 +11,7 @@
  *
  * That last point is the reason this file exists: TON addresses used to be
  * derived with @scure/bip32 (secp256k1, 33-byte pubkey) while signing derived
- * ed25519 — the two never matched, so every TON address the app showed was
+ * ed25519 - the two never matched, so every TON address the app showed was
  * unsignable. Both paths now go through `tonKeyPairFromBip39` here.
  *
  * Every heavy library is imported dynamically so nothing is pulled into the
@@ -64,7 +64,7 @@ export async function tronAddressFromPrivateKey(privateKeyHex: string): Promise<
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * SLIP-0010 ed25519 path for BIP39 phrases — the scheme Trust Wallet uses and
+ * SLIP-0010 ed25519 path for BIP39 phrases - the scheme Trust Wallet uses and
  * the one the swap engine's `deriveTonKeypair` already used. Wallet creation
  * now matches it (it previously used secp256k1, producing dead addresses).
  */

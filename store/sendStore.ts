@@ -28,12 +28,12 @@ interface SendState {
   amount: string;
   usdValue: string;
 
-  // Multi-Send state (legacy single-token model — kept for compatibility)
+  // Multi-Send state (legacy single-token model - kept for compatibility)
   recipients: SendRecipient[];
   amountPerRecipient: string;
   totalRecipients: number;
 
-  // Multi-Send state (per-row multi-token model — the active model)
+  // Multi-Send state (per-row multi-token model - the active model)
   multiSendRows: MultiSendRow[];
 
   // Transaction details
@@ -143,7 +143,7 @@ export const useSendStore = create<SendState>((set, get) => ({
     set((state) => ({
       isContractRecipient: isContract,
       // Drop any stale acknowledgement once a fresh check decides this address
-      // is no longer a contract — keeps the override scoped to the address that
+      // is no longer a contract - keeps the override scoped to the address that
       // actually triggered it.
       acknowledgedContractRecipient: isContract ? state.acknowledgedContractRecipient : false,
     })),

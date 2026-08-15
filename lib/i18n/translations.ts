@@ -2,14 +2,14 @@
  * Translation strings for the application.
  *
  * Two dictionaries are merged at module load:
- *   1. WEB_TRANSLATIONS — ported verbatim from the Tiwi Super App
+ *   1. WEB_TRANSLATIONS - ported verbatim from the Tiwi Super App
  *      (`lib/i18n/translations.ts`). Seven static languages: en, es, fr, de,
  *      zh, ja, ar.
- *   2. RN_TRANSLATIONS — React-Native-specific strings (wallet actions,
+ *   2. RN_TRANSLATIONS - React-Native-specific strings (wallet actions,
  *      onboarding slides, lock screen, referral copy, etc.) that the web app
  *      doesn't have.
  *
- * RN keys override web keys when both define the same one — the RN app's UI
+ * RN keys override web keys when both define the same one - the RN app's UI
  * copy is what the in-app screens expect (e.g. `common.save` is "Save
  * Changes" here, "Save" on web).
  *
@@ -21,7 +21,7 @@
  * `TranslationKey` is kept as `string` rather than a strict literal union:
  * the RN codebase has its own set of keys separate from the web app, and
  * forcing a union would create endless type friction across the 22 call
- * sites. Runtime behaviour is unaffected — missing keys fall back to the
+ * sites. Runtime behaviour is unaffected - missing keys fall back to the
  * key itself.
  */
 export type TranslationKey = string;

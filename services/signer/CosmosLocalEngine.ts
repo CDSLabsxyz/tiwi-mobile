@@ -5,7 +5,7 @@ import { getCosmosSigner } from './chainSecrets';
 import { ExecutionResult, SignerEngine, TransactionRequest } from './SignerTypes';
 
 /**
- * CosmosLocalEngine — signs & broadcasts Cosmos-family sends for on-device
+ * CosmosLocalEngine - signs & broadcasts Cosmos-family sends for on-device
  * wallets via @cosmjs. One standard secp256k1 account (m/44'/118') re-encoded
  * per chain prefix; the sender address is derived inside sendTransaction
  * because it depends on the chain's bech32 prefix.
@@ -34,7 +34,7 @@ export class CosmosLocalEngine implements SignerEngine {
      *
      * Resolves through `getCosmosSigner`, which accepts a mnemonic-derived
      * wallet OR one imported from a raw secp256k1 key (Keplr's "export private
-     * key") — the latter has no EVM address and no phrase, and used to throw
+     * key") - the latter has no EVM address and no phrase, and used to throw
      * here on every transaction.
      */
     private async getSigner(prefix: string, address?: string, addressKey?: AddressKey): Promise<any> {

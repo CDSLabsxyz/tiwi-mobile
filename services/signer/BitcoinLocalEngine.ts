@@ -5,7 +5,7 @@ import { Buffer } from 'buffer';
 import { ExecutionResult, SignerEngine, TransactionRequest } from './SignerTypes';
 
 /**
- * BitcoinLocalEngine — native BTC send for in-app (mnemonic) wallets.
+ * BitcoinLocalEngine - native BTC send for in-app (mnemonic) wallets.
  *
  * Native SegWit (BIP84, bc1q…, m/84'/0'/0'/0/0). Fetches UTXOs + fee rate from
  * mempool.space, does accumulative (largest-first) coin selection for a single

@@ -1,5 +1,5 @@
 /**
- * Pools list — /pool
+ * Pools list - /pool
  * Ported from tiwi-user-app app/pool/page.tsx. Loads active pools
  * (enriched with on-chain reserves + analytics) and renders TVL / 24H Vol /
  * Avg APR summary + a searchable list. Rows deep-link to the pool detail.
@@ -81,7 +81,7 @@ export default function PoolsListScreen() {
               <Text style={styles.heroStatK}>24H Volume</Text>
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.heroStatV, { color: colors.primaryCTA }]}>{summary.avgAprPct > 0 ? `${summary.avgAprPct.toFixed(2)}%` : '—'}</Text>
+              <Text style={[styles.heroStatV, { color: colors.primaryCTA }]}>{summary.avgAprPct > 0 ? `${summary.avgAprPct.toFixed(2)}%` : '-'}</Text>
               <Text style={styles.heroStatK}>Avg APR</Text>
             </View>
           </View>

@@ -207,7 +207,7 @@ export class BscNativeSwapExecutor implements SwapRouterExecutor {
       });
 
       // Estimate gas cost dynamically (gasLimit × gasPrice) with a 20% buffer.
-      // Fall back to 0.0003 BNB (~$0.19) if estimation fails — BSC gas is cheap.
+      // Fall back to 0.0003 BNB (~$0.19) if estimation fails - BSC gas is cheap.
       let gasBuffer: bigint;
       try {
         const [gasPrice, gasEstimate] = await Promise.all([

@@ -67,7 +67,7 @@ const evmClientCache = new Map<string, WalletClient>();
  * viem WalletClient backed by the device's EVM private key.
  *
  * Uses `getChainForId` (registry-backed) rather than the app's older
- * `SignerUtils.getChainById`, which silently returns mainnet for unknown ids —
+ * `SignerUtils.getChainById`, which silently returns mainnet for unknown ids -
  * that would sign a swap with the wrong EIP-155 chainId and it would either
  * revert or be replayable on Ethereum.
  */
@@ -86,7 +86,7 @@ export async function createEvmWalletClient(chainId: number, address?: string): 
         chain,
         // Multi-endpoint ordered failover, so one slow or rate-limited
         // provider can't throttle every signature. (Request batching would cut
-        // more latency but is unsafe across these public endpoints — see the
+        // more latency but is unsafe across these public endpoints - see the
         // note in viem-clients.ts.)
         transport: createSigningTransport(chainId),
         pollingInterval: getPollingInterval(chainId),
@@ -103,14 +103,14 @@ export async function createEvmWalletClient(chainId: number, address?: string): 
  * The ported executors routinely pass `account` as a bare address string, e.g.
  * `walletClient.sendTransaction({ to, data, account: owner, chain: bsc })`.
  * viem parses a hex string into a `json-rpc` account, which means "ask the
- * provider to sign and send" — `wallet_sendTransaction` / `eth_sendTransaction`
+ * provider to sign and send" - `wallet_sendTransaction` / `eth_sendTransaction`
  * / `eth_signTypedData_v4`.
  *
  * On web that is correct: the transport IS the browser wallet. On mobile the
  * transport is a plain RPC node that cannot sign for anyone, so those calls die
  * with `RPC Request failed … wallet_sendTransaction`. (It surfaced as a
  * TiwiDEX approval failure; the engine then fell through to another executor,
- * so the swap still completed — just slower, and via a different route than
+ * so the swap still completed - just slower, and via a different route than
  * the user was quoted.)
  *
  * Rather than edit ~17 call sites across 11 executors and drift from the web
@@ -230,7 +230,7 @@ export async function createSuiSignerMaterial(address?: string): Promise<{ suiKe
 // ============================================================================
 
 /**
- * TON ed25519 keypair at SLIP-0010 m/44'/607'/0' — the scheme Trust Wallet uses
+ * TON ed25519 keypair at SLIP-0010 m/44'/607'/0' - the scheme Trust Wallet uses
  * for BIP39 phrases, and the one the web app settled on (lib/wallet/utils/
  * ton-keys.ts). Wallet creation derives the displayed address through the same
  * helper, so the two can no longer disagree.
@@ -279,7 +279,7 @@ export async function createTronSignerMaterial(address?: string): Promise<{ tron
 }
 
 // ============================================================================
-// Injective (eth_secp256k1 — the EVM key, NOT the m/44'/118' cosmos key)
+// Injective (eth_secp256k1 - the EVM key, NOT the m/44'/118' cosmos key)
 // ============================================================================
 
 export async function createInjectiveSignerMaterial(address?: string): Promise<{
@@ -324,7 +324,7 @@ export async function createCosmosSignerMaterial(
     const cfg = getCosmosConfig(chainId) ?? COSMOS_CHAIN_CONFIG[118];
     if (!cfg) throw new Error(`Cosmos chain ${chainId} is not supported for signing yet.`);
 
-    // Mnemonic-derived or raw-key import — both resolve to a cosmjs signer.
+    // Mnemonic-derived or raw-key import - both resolve to a cosmjs signer.
     const wallet = await getCosmosSigner(cfg.prefix, address, cfg.addressKey);
     const accounts = await wallet.getAccounts();
     if (!accounts.length) throw new Error('Could not derive a Cosmos account from this wallet.');
@@ -363,7 +363,7 @@ export async function buildSignerMaterial(chainId: number, address?: string): Pr
     if (isCosmosChain(chainId) && !SUI_TON_TRON_INJ.has(chainId)) return createCosmosSignerMaterial(chainId, address);
     if (isSolanaChain(chainId)) return createSolanaWalletAdapter(address);
 
-    // Everything else is EVM — the executors read `.sendTransaction` /
+    // Everything else is EVM - the executors read `.sendTransaction` /
     // `.signTypedData` straight off this client.
     return createEvmWalletClient(chainId, address);
 }

@@ -1,5 +1,5 @@
 /**
- * PoolHeaderTools — the pool-detail header row: global pool/token search,
+ * PoolHeaderTools - the pool-detail header row: global pool/token search,
  * an explorer (chart) menu (pool + both tokens), and a share button.
  * Ported from the web pool-detail PoolSearch + PoolRouteActions.
  */
@@ -55,7 +55,7 @@ export function PoolHeaderTools({ pool }: { pool: LiquidityPool }) {
   const shareUrl = `${TIWI_API_BASE_URL}/pool/${pool.chainId}/${pool.pairAddress || pool.id}`;
   const onShare = () => {
     setShowExplorer(false); setShowResults(false);
-    Share.share({ message: `${pool.pair} on TIWI Protocol — ${shareUrl}`, url: shareUrl }).catch(() => {});
+    Share.share({ message: `${pool.pair} on TIWI Protocol - ${shareUrl}`, url: shareUrl }).catch(() => {});
   };
 
   const goPool = (p: LiquidityPool) => {

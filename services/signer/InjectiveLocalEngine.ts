@@ -4,10 +4,10 @@ import { useWalletStore } from '@/store/walletStore';
 import { ExecutionResult, SignerEngine, TransactionRequest } from './SignerTypes';
 
 /**
- * InjectiveLocalEngine — native INJ send for in-app (mnemonic) wallets.
+ * InjectiveLocalEngine - native INJ send for in-app (mnemonic) wallets.
  *
  * Injective is eth_secp256k1 (Ethermint): its account is derived from the
- * ETHEREUM path m/44'/60'/0'/0/0 — the SAME key as the wallet's EVM address —
+ * ETHEREUM path m/44'/60'/0'/0/0 - the SAME key as the wallet's EVM address -
  * NOT the standard Cosmos m/44'/118' key. That's why it can't go through
  * CosmosLocalEngine and gets its own engine using @injectivelabs/sdk-ts.
  *
@@ -52,7 +52,7 @@ export class InjectiveLocalEngine implements SignerEngine {
             const { PrivateKey, MsgSend, MsgBroadcasterWithPk } = await import('@injectivelabs/sdk-ts');
             const { Network } = await import('@injectivelabs/networks');
 
-            // eth_secp256k1 key at the Ethereum path — same account as the EVM address.
+            // eth_secp256k1 key at the Ethereum path - same account as the EVM address.
             const pk = PrivateKey.fromMnemonic(mnemonic, INJECTIVE_ETH_PATH);
             const srcInjectiveAddress = pk.toBech32();
             const privateKeyHex = pk.toPrivateKeyHex().replace(/^0x/, '');

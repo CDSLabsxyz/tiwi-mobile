@@ -23,7 +23,7 @@ const LogoutIcon = require('@/assets/wallet/logout-01.svg');
 const CopyIcon = require('@/assets/wallet/copy-01.svg');
 const IrisScanIcon = require('@/assets/home/iris-scan.svg');
 
-// Every network this wallet has an address on — the shared list, so this screen
+// Every network this wallet has an address on - the shared list, so this screen
 // can't drift from the wallet modal or from what the app actually derives.
 const ALL_NETWORKS = WALLET_NETWORKS;
 
@@ -104,7 +104,7 @@ export default function AccountSettingsScreen() {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         setSelectedNetworkId(network.id);
         // Receive-only rows (no `chain`) show and copy their address but must
-        // not become the active signing chain — see constants/walletNetworks.
+        // not become the active signing chain - see constants/walletNetworks.
         if (!network.chain) return;
         setActiveChain(network.chain, network.id, network.addressKey);
     };
@@ -283,7 +283,7 @@ export default function AccountSettingsScreen() {
                                             { color: isBackupComplete ? colors.primaryCTA : '#FF9900' },
                                         ]}
                                     >
-                                        {isBackupComplete ? 'Backed Up' : 'Not Backed Up — Tap to Backup'}
+                                        {isBackupComplete ? 'Backed Up' : 'Not Backed Up - Tap to Backup'}
                                     </ThemedText>
                                 </View>
                                 {!isBackupComplete && (

@@ -1,5 +1,5 @@
 /**
- * Action row under an AI reply — the mobile counterpart of the web modal's
+ * Action row under an AI reply - the mobile counterpart of the web modal's
  * assistant message footer: the security-validation chip, the "1 credit used"
  * chip, then Share insight / Copy / Retry / thumbs up / thumbs down.
  */

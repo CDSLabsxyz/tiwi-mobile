@@ -6,9 +6,9 @@
  * figures, same sections in the same order:
  *
  *   header (title · symbol · chain · live status) + Pause/Resume
- *   4 stat cards   — Total staked / Current APR / Active stakers / Time remaining
- *   2 meters       — Rewards distributed / Pool duration
- *   Stakers list   — the web's table, as cards (a 6-column table doesn't fit a phone)
+ *   4 stat cards   - Total staked / Current APR / Active stakers / Time remaining
+ *   2 meters       - Rewards distributed / Pool duration
+ *   Stakers list   - the web's table, as cards (a 6-column table doesn't fit a phone)
  *
  * This is the CREATOR-facing view reached from My pools → "Manage pool". The
  * staker-facing screen is /earn/stake/[symbol]; "Manage pool" used to link
@@ -48,6 +48,8 @@ type StakerMap = Record<string, { stakedAmount: number; pendingReward: number }>
 
 const NO_STAKER_CHAIN: StakerMap = {};
 
+const tokenPriceKey = (chainId: number, address: string) => `${chainId}:${address.toLowerCase()}`;
+
 interface Staker {
     userWallet: string;
     stakedAmount: number;
@@ -66,7 +68,7 @@ function formatCompact(value: number): string {
     if (abs >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`;
     if (abs >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
     // Sub-unit reward figures (a 0.024 USDT payout) must not round away to
-    // "0.02" or "0" — on a cross-token pool these are the whole story.
+    // "0.02" or "0" - on a cross-token pool these are the whole story.
     if (abs > 0 && abs < 0.0001) return value.toExponential(2);
     if (abs > 0 && abs < 1) return value.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
     return value.toLocaleString('en-US', { maximumFractionDigits: 2 });
@@ -78,7 +80,7 @@ function formatCompact(value: number): string {
  * a flat "0d".
  */
 function formatDuration(seconds: number): string {
-    if (!Number.isFinite(seconds) || seconds <= 0) return '—';
+    if (!Number.isFinite(seconds) || seconds <= 0) return '-';
     if (seconds >= 86400) {
         const days = seconds / 86400;
         return `${Number.isInteger(days) ? days : days.toFixed(1)}d`;
@@ -91,12 +93,13 @@ function formatDuration(seconds: number): string {
 }
 
 /**
- * APRs here are unbounded — a small `maxTvl` against a large reward pool over a
+ * APRs here are unbounded - a small `maxTvl` against a large reward pool over a
  * short window legitimately produces nine-digit percentages, and printing those
  * in full ("1752000000.0%") overflows the stat card and reads as a glitch.
  */
 function formatPercent(value: number): string {
     if (!Number.isFinite(value)) return '0%';
+    if (value > 0 && value < 0.01) return '<0.01%';
     if (Math.abs(value) >= 1000) return `${formatCompact(value)}%`;
     return `${value.toFixed(2)}%`;
 }
@@ -169,6 +172,7 @@ export default function PoolManageScreen() {
     const [withdrawalError, setWithdrawalError] = useState<string | null>(null);
     const [withdrawalStatus, setWithdrawalStatus] = useState<string | null>(null);
     const [recordedWithdrawal, setRecordedWithdrawal] = useState<RecordedRewardWithdrawal | null>(null);
+    const [aprTokenPrices, setAprTokenPrices] = useState<{ stakingTokenPrice: number; rewardTokenPrice: number } | null>(null);
     // Both keyed by the pool address they were read for, so a result arriving
     // after the screen switched pools is discarded rather than displayed.
     const [clientOnChain, setClientOnChain] = useState<{ address: string; info: MobilePoolOnChain | null } | null>(null);
@@ -215,7 +219,7 @@ export default function PoolManageScreen() {
 
     const loadStakers = useCallback(async () => {
         try {
-            // Every staker in this pool, any status — the web queries
+            // Every staker in this pool, any status - the web queries
             // /api/v1/user-stakes?poolId=… with no wallet filter.
             const data = await api.staking.userStakes({ walletAddress: '', poolId });
             setStakers((data?.stakes || []).map((s: any) => ({
@@ -249,10 +253,10 @@ export default function PoolManageScreen() {
     // expose those values directly; legacy contracts fail only those optional
     // reads and still return the rest of the pool information.
     //
-    //  1. `onChain: null` — the API's enrichment is best-effort, and when the
+    //  1. `onChain: null` - the API's enrichment is best-effort, and when the
     //     backend's RPC calls fail every figure below collapses to a zero that
     //     looks like real data rather than absence.
-    //  2. `onChain` present but with no `rewardTokenDecimals` — that payload
+    //  2. `onChain` present but with no `rewardTokenDecimals` - that payload
     //     came from a backend deployed before the reward-token fix, so its
     //     `poolReward`/`rewardBalance` are formatted with the STAKING token's
     //     decimals and are wrong by 10^(d_reward - d_stake) on a cross-token
@@ -278,7 +282,7 @@ export default function PoolManageScreen() {
     }, [pool]);
 
     const clientRead = clientOnChain?.address === pool?.poolContractAddress ? clientOnChain : null;
-    // The device read wins when it succeeded — it's the one that knows the
+    // The device read wins when it succeeded - it's the one that knows the
     // reward token. Fall back to the server payload otherwise.
     const onChain: MobilePoolOnChain | null = clientRead?.info ?? pool?.onChain ?? null;
     // Read attempted, and it failed, with nothing from the server either.
@@ -290,6 +294,43 @@ export default function PoolManageScreen() {
     // reward pool as "1000.00M TWC".
     const rewardSymbol = onChain?.rewardTokenSymbol || pool?.tokenSymbol || '';
     const isCrossToken = !!onChain?.isCrossToken;
+    const symbol = pool?.tokenSymbol || '';
+    const poolChainId = pool?.chainId;
+    const poolTokenAddress = pool?.tokenAddress;
+
+    useEffect(() => {
+        const stakingToken = onChain?.stakingToken || poolTokenAddress;
+        const rewardToken = onChain?.rewardToken || stakingToken;
+        if (!poolChainId || !stakingToken || !rewardToken) {
+            const resetTimer = setTimeout(() => setAprTokenPrices(null), 0);
+            return () => clearTimeout(resetTimer);
+        }
+
+        let cancelled = false;
+        const resetTimer = setTimeout(() => setAprTokenPrices(null), 0);
+        api.tokens.prices([
+            { address: stakingToken, chainId: poolChainId, symbol },
+            { address: rewardToken, chainId: poolChainId, symbol: rewardSymbol },
+        ]).then((resp) => {
+            if (cancelled) return;
+            const prices = resp.prices || {};
+            const stakingTokenPrice = Number(prices[tokenPriceKey(poolChainId, stakingToken)]) || 0;
+            const rewardTokenPrice = Number(prices[tokenPriceKey(poolChainId, rewardToken)]) || 0;
+            setAprTokenPrices(
+                stakingTokenPrice > 0 && rewardTokenPrice > 0
+                    ? { stakingTokenPrice, rewardTokenPrice }
+                    : null,
+            );
+        }).catch(() => {
+            if (!cancelled) setAprTokenPrices(null);
+        });
+
+        return () => {
+            cancelled = true;
+            clearTimeout(resetTimer);
+        };
+    }, [onChain?.stakingToken, onChain?.rewardToken, poolTokenAddress, poolChainId, rewardSymbol, symbol]);
+
     const stakerWallets = useMemo(() => Array.from(new Set(
         stakers
             .map((staker) => staker.userWallet.toLowerCase())
@@ -297,8 +338,8 @@ export default function PoolManageScreen() {
     )), [stakers]);
 
     // The stakers list is a DB mirror and drifts from the contract (it reported
-    // a wallet holding 5.0K against an on-chain total of 4.9K — a 102% pool
-    // share — and "+0" rewards for a pool that had already paid some out). Read
+    // a wallet holding 5.0K against an on-chain total of 4.9K - a 102% pool
+    // share - and "+0" rewards for a pool that had already paid some out). Read
     // each wallet's real position; the DB row stays as the fallback.
     useEffect(() => {
         let cancelled = false;
@@ -338,7 +379,7 @@ export default function PoolManageScreen() {
         stakerWallets.every((wallet) => Object.prototype.hasOwnProperty.call(stakerByWallet, wallet))
     );
 
-    // Derived figures — identical arithmetic to the web's `data` memo.
+    // Derived figures - identical arithmetic to the web's `data` memo.
     const data = useMemo(() => {
         const oc = onChain;
         const totalStaked = oc ? parseFloat(oc.totalStaked || '0') : 0;
@@ -354,9 +395,15 @@ export default function PoolManageScreen() {
         const maxTvl = oc ? parseFloat(oc.maxTvl || '0') : 0;
         const durationSec = oc?.rewardDurationSeconds || 0;
         const distributed = Math.max(0, poolReward - rewardBalance);
-        const apr = maxTvl > 0 && durationSec > 0 && poolReward > 0
-            ? (poolReward / (maxTvl * durationSec)) * SECONDS_PER_YEAR * 100
+        const rewardPerYearUsd = durationSec > 0
+            ? (poolReward / durationSec) * SECONDS_PER_YEAR * (aprTokenPrices?.rewardTokenPrice || 0)
             : 0;
+        const stakedCapacityUsd = maxTvl * (aprTokenPrices?.stakingTokenPrice || 0);
+        const apr = poolReward <= 0 || maxTvl <= 0 || durationSec <= 0
+            ? 0
+            : stakedCapacityUsd > 0 && rewardPerYearUsd > 0
+                ? (rewardPerYearUsd / stakedCapacityUsd) * 100
+                : null;
 
         const nowSec = Date.now() / 1000;
         const start = oc?.startTime || 0;
@@ -393,12 +440,12 @@ export default function PoolManageScreen() {
             rewardPct: poolReward > 0 ? Math.min(100, Math.round((distributed / poolReward) * 100)) : 0,
             secondsLeft,
             totalDur,
-            // Null when the contract's endTime is unknown — the caller then
+            // Null when the contract's endTime is unknown - the caller then
             // falls back to the server's createdAt-based guess.
             ended: end > 0 ? nowSec >= end : null,
             activeCount,
         };
-    }, [onChain, stakers, stakerByWallet, stakerReadsComplete]);
+    }, [aprTokenPrices, onChain, stakers, stakerByWallet, stakerReadsComplete]);
 
     const isOwnerActionable = !!pool?.poolContractAddress && !!evmAddress;
     const active = onChain?.active ?? (pool?.status === 'active');
@@ -418,20 +465,31 @@ export default function PoolManageScreen() {
     });
     const rewardsWereWithdrawn = recordedWithdrawal !== null || withdrawalStatus !== null;
     const title = pool?.name || nameParam || pool?.tokenSymbol || 'Pool';
-    const symbol = pool?.tokenSymbol || '';
-
     const toggleActive = async () => {
         if (!pool?.poolContractAddress) return;
         setActionError(null);
         if (!requireBackup()) return;
         setIsToggling(true);
+        const nextActive = !active;
         try {
             await setPoolActive({
                 chainId: pool.chainId,
                 poolAddress: pool.poolContractAddress as Address,
-                active: !active,
+                active: nextActive,
                 walletAddress: evmAddress as Address,
             });
+            try {
+                await api.staking.updatePoolRecord({
+                    id: pool.id,
+                    status: nextActive ? 'active' : 'inactive',
+                });
+            } catch (dbError: unknown) {
+                const action = nextActive ? 'resumed' : 'paused';
+                const message = dbError instanceof Error ? dbError.message : 'backend sync failed';
+                setActionError(
+                    `Pool ${action} on-chain, but the staking list did not update: ${message}`,
+                );
+            }
             // Give the chain a moment, then refresh.
             await new Promise(r => setTimeout(r, 1500));
             await loadPool();
@@ -511,7 +569,7 @@ export default function PoolManageScreen() {
                     <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primaryCTA} />
                 }
             >
-                {/* Header — title, symbol · chain, live status */}
+                {/* Header - title, symbol · chain, live status */}
                 <View style={styles.headerBlock}>
                     <Text style={styles.title} numberOfLines={2}>{title}</Text>
                     <View style={styles.subRow}>
@@ -548,7 +606,7 @@ export default function PoolManageScreen() {
 
                 {/* The figures below are all on-chain reads. When neither the
                     server nor the device could reach the pool contract they are
-                    unknown, not zero — say so instead of rendering a screen
+                    unknown, not zero - say so instead of rendering a screen
                     full of convincing 0s. */}
                 {!hasChainData && onChainUnavailable ? (
                     <View style={styles.pendingNote}>
@@ -564,18 +622,14 @@ export default function PoolManageScreen() {
                     <StatCard
                         icon="cash-outline"
                         label="Total staked"
-                        value={hasChainData ? `${formatCompact(data.totalStaked)} ${symbol}` : '—'}
+                        value={hasChainData ? `${formatCompact(data.totalStaked)} ${symbol}` : '-'}
                         sub={hasChainData && data.maxTvl > 0 ? `of ${formatCompact(data.maxTvl)} max` : undefined}
                     />
                     <StatCard
                         icon="trending-up-outline"
-                        // For a "stake A, earn B" pool the ratio is reward
-                        // tokens per staked token — a real APR would need both
-                        // token prices, which this screen doesn't have. Label
-                        // what the number actually is.
-                        label={isCrossToken ? 'Reward rate' : 'Current APR'}
-                        value={hasChainData ? formatPercent(data.apr) : '—'}
-                        sub={isCrossToken && rewardSymbol ? `${rewardSymbol} per ${symbol} / yr` : undefined}
+                        label="Current APR"
+                        value={!hasChainData ? '-' : data.apr === null ? 'Price unavailable' : formatPercent(data.apr)}
+                        sub={isCrossToken && rewardSymbol ? `Paid in ${rewardSymbol}` : undefined}
                     />
                     <StatCard
                         icon="people-outline"
@@ -586,7 +640,7 @@ export default function PoolManageScreen() {
                     <StatCard
                         icon="time-outline"
                         label="Time remaining"
-                        value={!hasChainData ? '—' : isExpired || data.secondsLeft <= 0 ? 'Ended' : formatDuration(data.secondsLeft)}
+                        value={!hasChainData ? '-' : isExpired || data.secondsLeft <= 0 ? 'Ended' : formatDuration(data.secondsLeft)}
                         sub={hasChainData && data.totalDur > 0 ? `${formatDuration(data.totalDur)} total` : undefined}
                     />
                 </View>
@@ -597,14 +651,14 @@ export default function PoolManageScreen() {
                         label="Rewards claimed"
                         value={hasChainData
                             ? `${formatCompact(data.distributed)} / ${formatCompact(data.poolReward)} ${rewardSymbol}`
-                            : '—'}
+                            : '-'}
                         pct={data.rewardPct}
                     />
                     {/* On a cross-token pool the payout asset is not the deposit
                         asset, and reading "1000M TWC" for a pool that pays USDT
                         is worse than no label at all. */}
                     {hasChainData && isCrossToken ? (
-                        <Text style={styles.meterNote}>Paid in {rewardSymbol} — stakers deposit {symbol}</Text>
+                        <Text style={styles.meterNote}>Paid in {rewardSymbol} - stakers deposit {symbol}</Text>
                     ) : null}
                     {hasChainData && data.pendingOnChain !== null && data.pendingOnChain > 0 ? (
                         <Text style={styles.meterNote}>
@@ -613,7 +667,7 @@ export default function PoolManageScreen() {
                     ) : null}
                 </View>
                 <View style={styles.meterCard}>
-                    <Meter label="Pool duration" value={hasChainData ? `${data.timePct}% elapsed` : '—'} pct={data.timePct} />
+                    <Meter label="Pool duration" value={hasChainData ? `${data.timePct}% elapsed` : '-'} pct={data.timePct} />
                 </View>
 
                 <View style={styles.statGrid}>
@@ -621,7 +675,7 @@ export default function PoolManageScreen() {
                         icon="cash-outline"
                         label="Remaining rewards"
                         value={!hasChainData || settlement.remainingRewards === null
-                            ? '—'
+                            ? '-'
                             : `${formatCompact(settlement.remainingRewards)} ${rewardSymbol}`}
                         sub="Unused by stakers"
                     />
@@ -629,14 +683,14 @@ export default function PoolManageScreen() {
                         icon="people-outline"
                         label="Unclaimed rewards"
                         value={!hasChainData || data.pendingOnChain === null
-                            ? '—'
+                            ? '-'
                             : `${formatCompact(data.pendingOnChain)} ${rewardSymbol}`}
                         sub="Reserved for users"
                     />
                     <StatCard
                         icon="wallet-outline"
                         label="Reward balance"
-                        value={hasChainData ? `${formatCompact(data.rewardBalance)} ${rewardSymbol}` : '—'}
+                        value={hasChainData ? `${formatCompact(data.rewardBalance)} ${rewardSymbol}` : '-'}
                         sub="Remaining + unclaimed"
                     />
                 </View>
@@ -689,7 +743,7 @@ export default function PoolManageScreen() {
                     </TouchableOpacity>
                 </View>
 
-                {/* Stakers — the web's table, as cards. A 6-column table can't
+                {/* Stakers - the web's table, as cards. A 6-column table can't
                     fit a phone without horizontal scrolling, so each staker
                     becomes a row carrying the same six values. */}
                 <View style={styles.stakersCard}>
@@ -735,7 +789,7 @@ export default function PoolManageScreen() {
                                         />
                                         <StakerStat
                                             label="Pool share"
-                                            value={share === null ? '—' : `${share.toFixed(1)}%`}
+                                            value={share === null ? '-' : `${share.toFixed(1)}%`}
                                             align="flex-end"
                                         />
                                     </View>

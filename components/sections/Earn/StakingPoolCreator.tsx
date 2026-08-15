@@ -19,6 +19,7 @@ import { api, type PoolFeeSettings } from '@/lib/mobile/api-client';
 import { useWalletBalances } from '@/hooks/useWalletBalances';
 import { formatNumberInput } from '@/utils/formatting';
 import { resolveTokenLogo } from '@/utils/admin-token-logos';
+import { getTokenLogo } from '@/services/tokenLogoService';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -38,6 +39,7 @@ type CreationStep = 'idle' | 'creating' | 'saving';
 type NumericField = 'reward' | 'duration' | 'maxTvl' | 'minStake' | 'maxStake' | 'minLock';
 
 const DURATION_UNIT_SECONDS: Record<DurationUnit, number> = { days: 86400, hours: 3600, minutes: 60 };
+const SECONDS_PER_YEAR = 31_536_000;
 
 const CHAIN_LABELS: Record<number, string> = {
     1: 'Ethereum',
@@ -90,6 +92,7 @@ interface Props {
 }
 
 const isEvmAddress = (v?: string | null) => /^0x[a-fA-F0-9]{40}$/.test(v || '');
+const tokenPriceKey = (chainId: number, address: string) => `${chainId}:${address.toLowerCase()}`;
 const parseNumber = (value: string, fallback = 0) => {
     const n = Number((value || '').replace(/,/g, ''));
     return Number.isFinite(n) ? n : fallback;
@@ -159,6 +162,15 @@ function toPoolToken(t: TokenOption): PoolToken {
     };
 }
 
+function logoForPoolRecord(token: PoolToken): string | undefined {
+    const iconUrl = typeof token.icon === 'string' ? token.icon : undefined;
+    return resolveTokenLogo({
+        address: token.address,
+        chainId: token.chainId,
+        logoURI: iconUrl,
+    }) || getTokenLogo(token.symbol, token.chainId, token.address);
+}
+
 export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, onViewPools, onCreationSuccessOk, scrollRef }: Props) {
     const [rewardMode, setRewardMode] = useState<RewardMode>('same');
     const [poolName, setPoolName] = useState('');
@@ -180,6 +192,7 @@ export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, on
     const [blockingError, setBlockingError] = useState<string | null>(null);
     const [feeSettings, setFeeSettings] = useState<PoolFeeSettings | null>(null);
     const [feeTokenPriceUsd, setFeeTokenPriceUsd] = useState<number | null>(null);
+    const [tokenPrices, setTokenPrices] = useState<Record<string, number>>({});
     // Pool settings are typed on the app's own numpad (the Swap / Send / Pool-create
     // sheet) instead of the OS keyboard. `keypadField` names the field being edited
     // and doubles as the sheet's visibility flag.
@@ -188,7 +201,7 @@ export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, on
     // Name availability, fetched when the preview opens so the submit path can
     // reuse the in-flight promise rather than starting the round trip cold.
     const nameCheck = useRef<{ name: string; promise: Promise<any> } | null>(null);
-    // Each card's y within the settings grid, filled in by its onLayout — the
+    // Each card's y within the settings grid, filled in by its onLayout - the
     // grid wraps into rows, so the third row is ~2 card-heights down.
     const fieldOffsets = useRef<Partial<Record<NumericField, number>>>({});
 
@@ -206,7 +219,7 @@ export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, on
     }, []);
 
     // Lift the field being edited to the top of the viewport when the numpad
-    // opens, so it can't sit behind the sheet — the bottom row (Max stake / Min
+    // opens, so it can't sit behind the sheet - the bottom row (Max stake / Min
     // lock) otherwise stays hidden even with the whole block scrolled up.
     // Mirrors swap.tsx's scroll-on-open, but measured: the grid's position
     // differs between this form's two hosts, and each row needs its own offset.
@@ -228,7 +241,7 @@ export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, on
                     () => { /* measurement is best-effort */ },
                 );
             } catch {
-                /* older/newer arch mismatch — leave the scroll position alone */
+                /* older/newer arch mismatch - leave the scroll position alone */
             }
         }, 50);
         return () => clearTimeout(timer);
@@ -242,6 +255,35 @@ export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, on
 
     const evmReady = isEvmAddress(activeWalletAddress);
     const activeEarnToken = rewardMode === 'same' ? stakeToken : earnToken;
+    const stakeTokenPrice = Number(tokenPrices[tokenPriceKey(stakeToken.chainId, stakeToken.address)]) || 0;
+    const rewardTokenPrice = Number(tokenPrices[tokenPriceKey(activeEarnToken.chainId, activeEarnToken.address)]) || 0;
+
+    useEffect(() => {
+        if (!isEvmAddress(stakeToken.address) || !isEvmAddress(activeEarnToken.address)) {
+            setTokenPrices({});
+            return;
+        }
+
+        let cancelled = false;
+        api.tokens.prices([
+            { address: stakeToken.address, chainId: stakeToken.chainId, symbol: stakeToken.symbol },
+            { address: activeEarnToken.address, chainId: activeEarnToken.chainId, symbol: activeEarnToken.symbol },
+        ]).then((resp) => {
+            if (!cancelled) setTokenPrices(resp.prices || {});
+        }).catch(() => {
+            if (!cancelled) setTokenPrices({});
+        });
+
+        return () => { cancelled = true; };
+    }, [
+        stakeToken.address,
+        stakeToken.chainId,
+        stakeToken.symbol,
+        activeEarnToken.address,
+        activeEarnToken.chainId,
+        activeEarnToken.symbol,
+    ]);
+
     const feeTokenWalletPriceUsd = useMemo(() => {
         if (!feeSettings) return null;
         const rows = (balanceData as any)?.tokens;
@@ -285,7 +327,7 @@ export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, on
         return () => { cancelled = true; };
     }, [feeActive, feeSettings]);
 
-    // Wallet balance of the reward token — the only figure on this form that is a
+    // Wallet balance of the reward token - the only figure on this form that is a
     // share of something the user holds, so it's what the numpad's %/Max act on.
     const rewardTokenBalance = useMemo(() => {
         const rows = (balanceData as any)?.tokens;
@@ -301,14 +343,17 @@ export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, on
     const network = chainName(stakeToken.chainId);
     const isSubmitting = creationStep !== 'idle';
 
-    const estimatedApr = useMemo(() => {
+    const estimatedApr = useMemo((): number | null => {
         const rewardAmountNum = parseNumber(rewardAmount);
         const maxTvlNum = parseNumber(maxTvl, 1);
         const durationNum = Math.max(parseNumber(durationDays, 1), 1);
         const durationSecondsNum = Math.max(durationNum * DURATION_UNIT_SECONDS[durationUnit], 1);
         if (!rewardAmountNum || !maxTvlNum || !durationSecondsNum) return 0;
-        return (rewardAmountNum / (maxTvlNum * durationSecondsNum)) * 31_536_000 * 100;
-    }, [rewardAmount, maxTvl, durationDays, durationUnit]);
+        if (stakeTokenPrice <= 0 || rewardTokenPrice <= 0) return null;
+        const rewardPerYearUsd = (rewardAmountNum / durationSecondsNum) * SECONDS_PER_YEAR * rewardTokenPrice;
+        const stakedCapacityUsd = maxTvlNum * stakeTokenPrice;
+        return stakedCapacityUsd > 0 ? (rewardPerYearUsd / stakedCapacityUsd) * 100 : null;
+    }, [rewardAmount, maxTvl, durationDays, durationUnit, stakeTokenPrice, rewardTokenPrice]);
 
     const handleSelectToken = (t: TokenOption) => {
         const pt = toPoolToken(t);
@@ -374,7 +419,7 @@ export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, on
         const rewardDurationSeconds = Math.round(durationValue * DURATION_UNIT_SECONDS[durationUnit]);
 
         try {
-            // 0. Reserve the name — reject collisions BEFORE deploying on-chain.
+            // 0. Reserve the name - reject collisions BEFORE deploying on-chain.
             //    Usually already in flight from when the preview opened, so this
             //    resolves immediately instead of costing a round trip here.
             try {
@@ -419,8 +464,12 @@ export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, on
                         tokenAddress: stakeToken.address,
                         tokenSymbol: stakeToken.symbol,
                         tokenName: stakeToken.name,
-                        tokenLogo: typeof stakeToken.icon === 'string' ? stakeToken.icon : undefined,
+                        tokenLogo: logoForPoolRecord(stakeToken),
                         decimals: stakingDecimals,
+                        rewardTokenAddress: activeEarnToken.address,
+                        rewardTokenSymbol: activeEarnToken.symbol,
+                        rewardTokenDecimals: rewardDecimals,
+                        rewardTokenLogo: logoForPoolRecord(activeEarnToken),
                         minStakingPeriod: minStakePeriodValue > 0 ? `${minStakePeriodValue} days` : undefined,
                         minStakeAmount: minStakeValue,
                         maxStakeAmount: maxStakeValue > 0 ? maxStakeValue : undefined,
@@ -446,7 +495,7 @@ export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, on
                 );
             }
 
-            // Record the deployment in the activities board — shows as
+            // Record the deployment in the activities board - shows as
             // "Created staking pool" in Activities. Best-effort; never blocks.
             if (activeWalletAddress) {
                 void api.wallet.logTransaction({
@@ -516,7 +565,7 @@ export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, on
                 setPreviewOpen(false);
                 setBlockingError(
                     `Your pool was deployed and saved, but it couldn't be submitted for admin review (${ownershipError}). ` +
-                    `It won't show under My Pools yet — please try again.`,
+                    `It won't show under My Pools yet - please try again.`,
                 );
                 return;
             }
@@ -742,7 +791,7 @@ export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, on
                 onOk={handleSuccessOk}
             />
 
-            {/* Token selector — earn token in cross mode is constrained to the
+            {/* Token selector - earn token in cross mode is constrained to the
                 stake chain. `walletOnly` limits both sides to tokens the
                 creator actually holds: the reward pool is funded out of their
                 own balance, so a token they don't hold is a dead end. */}
@@ -759,7 +808,7 @@ export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, on
             {keypadField ? <View style={{ height: 420 }} /> : null}
 
             {/* In-app numpad. The %/Max pills only make sense on Reward pool
-                (a share of the wallet's reward-token balance) — the other five
+                (a share of the wallet's reward-token balance) - the other five
                 are pool config, so the pills are hidden there. */}
             <SwapKeyboard
                 visible={keypadField !== null}
@@ -778,7 +827,7 @@ export function StakingPoolCreator({ activeWalletAddress, onConnectEvmWallet, on
 // ── Preview modal ────────────────────────────────────────────────────────────
 function PoolPreviewModal(props: {
     open: boolean; onClose: () => void;
-    stakeToken: PoolToken; earnToken: PoolToken; pairLabel: string; network: string; estimatedApr: number;
+    stakeToken: PoolToken; earnToken: PoolToken; pairLabel: string; network: string; estimatedApr: number | null;
     rewardAmount: string; durationDays: string; durationUnit: DurationUnit; maxTvl: string;
     minStake: string; maxStake: string; minStakePeriod: string;
     feeLabel: string;
@@ -792,6 +841,11 @@ function PoolPreviewModal(props: {
     const { bottom } = useSafeAreaInsets();
     const isSubmitting = creationStep !== 'idle';
     const footerBottomPadding = Math.max(bottom + 14, 36);
+    const estimatedAprLabel = estimatedApr === null
+        ? 'Price unavailable'
+        : estimatedApr > 0 && estimatedApr < 0.01
+            ? '<0.01% APR'
+            : `${estimatedApr.toFixed(2)}% APR`;
     // 'creating' covers a two-tx batch (approve, then deploy). Naming the tx in
     // flight makes the wait legible instead of one label stuck for both.
     const submitLabel =
@@ -823,7 +877,7 @@ function PoolPreviewModal(props: {
                                     <Text style={[styles.previewMuted, { marginTop: 4 }]}>{network}</Text>
                                 </View>
                                 <View style={styles.aprChip}>
-                                    <Text style={styles.aprChipText}>{estimatedApr.toFixed(2)}% APR</Text>
+                                    <Text style={styles.aprChipText}>{estimatedAprLabel}</Text>
                                 </View>
                             </View>
 

@@ -84,7 +84,7 @@ export default function StakeScreen() {
     const router = useRouter();
     const { symbol } = useLocalSearchParams<{ symbol: string }>();
 
-    // Backup gate — checked at action-time (stake button press), not on page mount.
+    // Backup gate - checked at action-time (stake button press), not on page mount.
     const { requireBackup, BackupRequiredModal } = useRequireBackup();
     const [stakeType, setStakeType] = useState<StakeType>('Flexible');
     const [amount, setAmount] = useState('');
@@ -113,13 +113,13 @@ export default function StakeScreen() {
     const [errorMsg, setErrorMsg] = useState('');
 
     // Route param is a pool DB UUID for new links and a token symbol for old
-    // ones — never display it directly. Always render the loaded pool's
+    // ones - never display it directly. Always render the loaded pool's
     // tokenSymbol, falling back to the param only if it's not a UUID.
     const looksLikeUuid = !!symbol && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(symbol);
     const displaySymbol = pool?.tokenSymbol || (looksLikeUuid ? 'TWC' : symbol) || 'TWC';
 
     // Get user balance for the active wallet for this specific token.
-    // Staking is scoped to the active wallet — no account selector / multi-
+    // Staking is scoped to the active wallet - no account selector / multi-
     // wallet balance fan-out. Use the resolved token symbol from the loaded
     // pool, since the route param itself is a UUID for new links.
     const selectedWalletToken = React.useMemo(() => {
@@ -172,7 +172,7 @@ export default function StakeScreen() {
     // High-frequency polling for the "Fast-Flow" button.
     // V2 pools: spender is the POOL contract (it calls transferFrom), not the
     // legacy factory. Passing the wrong spender here was the cause of silent
-    // "execution reverted: 0x" on deposit — polled allowance reported a stale
+    // "execution reverted: 0x" on deposit - polled allowance reported a stale
     // factory approval, mobile skipped the approve step, and the token's
     // transferFrom reverted because the pool still had zero allowance.
     const stakingSpender = pool?.poolContractAddress || undefined;
@@ -194,7 +194,7 @@ export default function StakeScreen() {
     const priceUSD = walletPriceUSD || (displaySymbol.toUpperCase() === 'TWC' ? priceData?.priceUSD || 0 : 0);
 
     // The per-wallet cap is consumed by lifetime *deposits*, not current
-    // balance — unstaking never frees headroom. Example: cap 50k, user
+    // balance - unstaking never frees headroom. Example: cap 50k, user
     // stakes 30k then unstakes 15k. userStaked=15k, but they've already
     // burned 30k of their 50k allowance, so remaining is 20k (not 35k).
     // `onChainTotalDeposited` sums the user's Deposit events for this pool;

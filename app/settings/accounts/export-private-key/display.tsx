@@ -34,7 +34,7 @@ export default function ExportPrivateKeyDisplayScreen() {
 
     const [keys, setKeys] = useState<ExportedKey[]>([]);
     const [isLoading, setIsLoading] = useState(true);
-    /** True until the last chain finishes — drives the "more coming" footer. */
+    /** True until the last chain finishes - drives the "more coming" footer. */
     const [isDeriving, setIsDeriving] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [revealed, setRevealed] = useState<Record<string, boolean>>({});
@@ -55,7 +55,7 @@ export default function ExportPrivateKeyDisplayScreen() {
                 if (mnemonic) {
                     // Render each key the moment it resolves. The cheap BIP32
                     // ones land in milliseconds while the Sui/Aptos SDKs take
-                    // the best part of a second to initialise — waiting for all
+                    // the best part of a second to initialise - waiting for all
                     // of them left the screen on a spinner.
                     await deriveExportablePrivateKeys(mnemonic, {
                         onKey: (key) => {
@@ -88,7 +88,7 @@ export default function ExportPrivateKeyDisplayScreen() {
                         symbol: getWalletNetwork(networkId)?.symbol ?? '',
                         privateKey: stored,
                         format: 'As imported',
-                        path: 'Imported directly — not derived from a recovery phrase',
+                        path: 'Imported directly - not derived from a recovery phrase',
                     }]);
                 } else {
                     setError('No private key found for this wallet.');
@@ -315,7 +315,7 @@ export default function ExportPrivateKeyDisplayScreen() {
                         </View>
                     )}
 
-                    {/* Disabled until every chain has resolved — exporting mid-
+                    {/* Disabled until every chain has resolved - exporting mid-
                         derivation would silently write an incomplete key file. */}
                     <TouchableOpacity
                         activeOpacity={0.7}

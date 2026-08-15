@@ -27,7 +27,7 @@ function extractYouTubeId(url: string): string | null {
     const match = trimmed.match(regex);
     if (match && match[1]) return match[1];
 
-    // Fallback — if the URL is just a raw 11-char video ID
+    // Fallback - if the URL is just a raw 11-char video ID
     if (/^[A-Za-z0-9_-]{11}$/.test(trimmed)) return trimmed;
 
     return null;
@@ -55,7 +55,7 @@ export default function TutorialPlayerScreen() {
     console.log('[TutorialPlayer] youtubeId:', youtubeId);
     const isYouTube = !!youtubeId;
 
-    // expo-video player — only initialize for direct video URLs (not YouTube links)
+    // expo-video player - only initialize for direct video URLs (not YouTube links)
     const player = useVideoPlayer(isYouTube ? null : videoUrl, (p) => {
         p.loop = false;
         p.muted = false;

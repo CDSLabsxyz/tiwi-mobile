@@ -1,10 +1,10 @@
 /**
- * Cross-chain escrow (Phase 5) — single source of truth for the TiwiCrossChainOrchestrator
+ * Cross-chain escrow (Phase 5) - single source of truth for the TiwiCrossChainOrchestrator
  * + TiwiCrossChainVault deployments, their ABIs, and per-chain config.
  *
  * Isomorphic (addresses are public): imported by the backend relayer
  * (`lib/backend/relayer/cross-chain-relayer.ts`), the frontend swapAndBridge executor,
- * and the setRelayer admin script — so addresses never drift between them.
+ * and the setRelayer admin script - so addresses never drift between them.
  *
  * ⚠️ These contracts are UNAUDITED. Do not route real user funds through this path until
  * an audit is complete, the relayer is authorized on both vaults, and dest liquidity is
@@ -27,13 +27,13 @@ export interface EscrowChainCfg {
   /** V3 SwapRouter (execution router allowlisted on TiwiMultiSwap). */
   v3Router: Address;
   feeTiers: number[];
-  /** V2 router (allowlisted on TiwiMultiSwap) — used to build the source tokenIn→stable path. */
+  /** V2 router (allowlisted on TiwiMultiSwap) - used to build the source tokenIn→stable path. */
   v2Router: Address;
   /** Wrapped native, as the common intermediary hop when tokenIn→stable has no direct pair. */
   wrappedNative: Address;
 }
 
-// Deployed addresses (2026-07-01). Extend as more chains go live — see the "add a source
+// Deployed addresses (2026-07-01). Extend as more chains go live - see the "add a source
 // chain" recipe in MEMORY: universal-routing-built-but-disabled.
 export const ESCROW_CHAINS: Record<number, EscrowChainCfg> = {
   56: {
@@ -87,7 +87,7 @@ const STEP_TUPLE = {
   ],
 } as const;
 
-/** TiwiCrossChainOrchestrator.swapAndBridge — the one-call source-side entry. */
+/** TiwiCrossChainOrchestrator.swapAndBridge - the one-call source-side entry. */
 export const ORCHESTRATOR_ABI = [
   {
     name: 'swapAndBridge', type: 'function', stateMutability: 'nonpayable',

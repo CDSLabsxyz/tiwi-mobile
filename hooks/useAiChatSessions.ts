@@ -6,7 +6,7 @@
  * with a search filter and a list-vs-project organisation mode.
  *
  * Everything is scoped to the active wallet, matching how the mobile chat
- * already stored its single thread — one wallet's history never leaks into
+ * already stored its single thread - one wallet's history never leaks into
  * another's, and a legacy single-thread payload is migrated into session #1.
  */
 
@@ -36,7 +36,7 @@ const SESSIONS_KEY = (address?: string | null) => `@tiwi/ai_chat_sessions_${scop
 const ACTIVE_KEY = (address?: string | null) => `@tiwi/ai_chat_active_${scope(address)}`;
 const PROJECTS_KEY = (address?: string | null) => `@tiwi/ai_chat_projects_${scope(address)}`;
 const ORGANIZATION_KEY = (address?: string | null) => `@tiwi/ai_chat_org_${scope(address)}`;
-/** The pre-sessions storage key — a single tree (or flat array) per wallet. */
+/** The pre-sessions storage key - a single tree (or flat array) per wallet. */
 const LEGACY_KEY = (address?: string | null) => `@tiwi/ai_chat_${scope(address)}`;
 
 export interface AiChatSessionsApi {
@@ -47,7 +47,7 @@ export interface AiChatSessionsApi {
     projects: ChatProject[];
     activeSessionId: string;
     activeSession: ChatSession | null;
-    /** The active session's message tree — the conversation on screen. */
+    /** The active session's message tree - the conversation on screen. */
     tree: MessageTree;
 
     organizationMode: OrganizationMode;
@@ -160,7 +160,7 @@ export function useAiChatSessions(address?: string | null): AiChatSessionsApi {
     // ── Persist ─────────────────────────────────────────────────────────────
     useEffect(() => {
         if (!hydrated || loadedScopeRef.current !== scope(address)) return;
-        // Never persist a mid-stream node — a reload would resurrect a
+        // Never persist a mid-stream node - a reload would resurrect a
         // half-typed reply.
         const settled = sessions.map((s) => ({ ...s, tree: settleTree(s.tree) }));
         AsyncStorage.multiSet([
@@ -274,7 +274,7 @@ export function useAiChatSessions(address?: string | null): AiChatSessionsApi {
         );
     }, []);
 
-    /** Deleting a project keeps its chats — they fall back to unfiled. */
+    /** Deleting a project keeps its chats - they fall back to unfiled. */
     const deleteProject = useCallback((projectId: string) => {
         setProjects((prev) => prev.filter((p) => p.id !== projectId));
         setSessions((prev) =>

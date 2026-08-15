@@ -8,7 +8,7 @@
  *
  * Every heavy library is imported dynamically and each derivation is wrapped by
  * the caller in try/catch, so a library that fails to load or run under Hermes
- * degrades that one address to `undefined` — it can never break the core 6.
+ * degrades that one address to `undefined` - it can never break the core 6.
  *
  * Re-encode chains (injective, cosmos-family) reuse keys already derived on the
  * device (the EVM / Cosmos accounts), so they carry no runtime risk.
@@ -16,7 +16,7 @@
 
 import { HDKey } from '@scure/bip32';
 
-// ── bech32 re-encodes (no key derivation — reuse existing accounts) ───────────
+// ── bech32 re-encodes (no key derivation - reuse existing accounts) ───────────
 
 /** Re-encode a bech32 address under a different human-readable prefix. */
 export function reEncodeBech32(address: string, targetPrefix: string): string | null {
@@ -31,7 +31,7 @@ export function reEncodeBech32(address: string, targetPrefix: string): string | 
 
 /**
  * Re-encode an EVM `0x…` address as an Injective `inj1…` address.
- * Injective uses eth_secp256k1 — its account is the SAME 20 bytes as the EVM
+ * Injective uses eth_secp256k1 - its account is the SAME 20 bytes as the EVM
  * address, NOT the standard Cosmos key (so it derives off the EVM address).
  */
 export function evmToInjectiveAddress(evmAddress: string): string | null {
@@ -141,13 +141,13 @@ export async function deriveBitcoinCashAddress(seed: Uint8Array): Promise<string
  * reproduces the identical result from the substrate spec directly:
  *
  *   1. mini-secret = PBKDF2-SHA512(BIP39 *entropy*, "mnemonic", 2048)[0..32]
- *      — note it hashes the ENTROPY, not the phrase, so it is NOT the first
+ *      - note it hashes the ENTROPY, not the phrase, so it is NOT the first
  *      32 bytes of the standard BIP39 seed.
  *   2. sr25519 keypair from that mini-secret.
  *   3. SS58 = base58(prefix ‖ pubkey ‖ blake2b("SS58PRE" ‖ payload)[0..2]).
  *
  * Verified byte-for-byte against `Keyring({type:'sr25519', ss58Format:0})
- * .addFromMnemonic(...)` — see scripts/verify-address-parity.mjs.
+ * .addFromMnemonic(...)` - see scripts/verify-address-parity.mjs.
  */
 export async function derivePolkadotAddress(mnemonic: string): Promise<string> {
     const [

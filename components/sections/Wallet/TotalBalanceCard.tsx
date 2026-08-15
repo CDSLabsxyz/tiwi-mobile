@@ -26,7 +26,7 @@ interface TotalBalanceCardProps {
     onToggleVisibility: () => void;
     onTodayPress?: () => void;
     /** True only when a fresh fetch is in flight for a newly-selected or
-     *  newly-imported wallet — not for routine background refetches. */
+     *  newly-imported wallet - not for routine background refetches. */
     isUpdating?: boolean;
 }
 

@@ -79,7 +79,7 @@ export default function LockScreen() {
                 setHasFaceID(isIOS && supportsFace);
 
                 // Auto-trigger only if the device actually has biometrics
-                // enrolled — otherwise we'd loop on the prompt forever.
+                // enrolled - otherwise we'd loop on the prompt forever.
                 if (hasHardware && isEnrolled) {
                     setTimeout(() => {
                         if (!cancelled) handleBiometric();
@@ -158,7 +158,7 @@ export default function LockScreen() {
             const result = await LocalAuthentication.authenticateAsync({
                 promptMessage,
                 fallbackLabel: 'Use Passcode',
-                // Don't fall back to the iOS device passcode — we have our own
+                // Don't fall back to the iOS device passcode - we have our own
                 // in-app passcode UI right here on the lock screen.
                 disableDeviceFallback: true,
                 cancelLabel: 'Cancel',
@@ -210,7 +210,7 @@ export default function LockScreen() {
     return (
         <View style={[styles.container, { paddingTop: top }]}>
             <View style={styles.content}>
-                {/* Face unlock UI — iOS only */}
+                {/* Face unlock UI - iOS only */}
                 {biometricEnabled && isIOS && hasFaceID && (
                     <TouchableOpacity onPress={handleBiometric} style={styles.faceIconContainer} activeOpacity={0.7}>
                         <Animated.View style={[

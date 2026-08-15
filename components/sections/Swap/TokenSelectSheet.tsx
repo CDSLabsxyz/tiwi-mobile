@@ -29,7 +29,7 @@ interface TokenSelectSheetProps {
     onSelect: (token: TokenOption) => void;
     /**
      * Restrict the list to tokens the wallet actually holds. See
-     * {@link buildTokenOptions} — set by the staking pool creator, where a
+     * {@link buildTokenOptions} - set by the staking pool creator, where a
      * token the user doesn't hold can't fund a pool.
      */
     walletOnly?: boolean;
@@ -39,7 +39,7 @@ interface TokenSelectSheetProps {
  * Token selection bottom sheet with real-time search and wallet balances.
  *
  * The list itself is composed by {@link buildTokenOptions}, which ports the
- * web selector's browse/search split — see that file for why the raw
+ * web selector's browse/search split - see that file for why the raw
  * `/api/v1/tokens` index can't be browsed directly.
  */
 export const TokenSelectSheet: React.FC<TokenSelectSheetProps> = ({
@@ -65,7 +65,7 @@ export const TokenSelectSheet: React.FC<TokenSelectSheetProps> = ({
     const tokens = response?.tokens;
     const isLoading = walletOnly ? isLoadingBalances : isLoadingTokens;
 
-    // Per-wallet hidden-token sets — anything the user toggled off in
+    // Per-wallet hidden-token sets - anything the user toggled off in
     // Manage Tokens must also disappear from the selector until re-enabled.
     const { activeGroupId, address } = useWalletStore();
     const walletKey = activeGroupId || address || 'default';
@@ -83,7 +83,7 @@ export const TokenSelectSheet: React.FC<TokenSelectSheetProps> = ({
     }, [hiddenWalletTokens, customTokens, walletKey]);
 
     const chainIconFor = React.useCallback((cid?: number) => {
-        // `logo` isn't on ChainItem but some backend responses carry it —
+        // `logo` isn't on ChainItem but some backend responses carry it -
         // keep the fallback the previous implementation relied on.
         const info = chains?.find((c: ChainItem) => c.id === cid) as
             | (ChainItem & { logo?: string })
@@ -127,7 +127,7 @@ export const TokenSelectSheet: React.FC<TokenSelectSheetProps> = ({
                         <TIWILoader size={60} />
                     </View>
                 ) : options.length === 0 ? (
-                    // walletOnly narrows hard — an empty list is a normal
+                    // walletOnly narrows hard - an empty list is a normal
                     // outcome (no balances at all, or none on the chain the
                     // earn side is pinned to). Say so instead of rendering a
                     // blank sheet that reads as a failed load.

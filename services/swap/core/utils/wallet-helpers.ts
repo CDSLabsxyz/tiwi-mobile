@@ -1,5 +1,5 @@
 /**
- * Wallet Helper Utilities — React Native port.
+ * Wallet Helper Utilities - React Native port.
  *
  * Same exported surface as the web original (lib/frontend/services/swap-executor/
  * utils/wallet-helpers.ts) so every copied executor compiles and behaves the
@@ -9,7 +9,7 @@
  *
  * `ensureCorrectChain` is a deliberate no-op: a local key signs for whatever
  * chainId we put in the transaction, so there is no "wrong network" state to
- * recover from — the chain comes from `getChainForId(chainId)`.
+ * recover from - the chain comes from `getChainForId(chainId)`.
  */
 
 import { type PublicClient, type WalletClient } from 'viem';
@@ -90,7 +90,7 @@ export async function getSolanaConnection(): Promise<Connection> {
     for (const rpcUrl of endpoints) {
         try {
             const connection = new Connection(rpcUrl, 'confirmed');
-            // Liveness probe — a rate-limited provider should fall through
+            // Liveness probe - a rate-limited provider should fall through
             // rather than fail the whole swap on the first real call.
             await connection.getVersion();
             cachedSolanaConnection = connection;
@@ -115,7 +115,7 @@ export async function getSolanaWallet(): Promise<any> {
  * TON signer. The web returns a TonConnect UI here for external wallets; on
  * mobile the executor's INTERNAL path is taken instead (it receives
  * `{ tonKeypair, tonAddress }` via params.walletClient), so this is only hit if
- * that material is missing — surface the real reason rather than "not found".
+ * that material is missing - surface the real reason rather than "not found".
  */
 export async function getTONWallet(): Promise<any> {
     const material = await createTonSignerMaterial();
@@ -132,7 +132,7 @@ export async function getTRONWallet(): Promise<any> {
 }
 
 /**
- * Cosmos wallet. There is no Keplr/Leap on mobile — Cosmos routes go through
+ * Cosmos wallet. There is no Keplr/Leap on mobile - Cosmos routes go through
  * the internal `{ cosmosSigner, cosmosAddress }` path in skip-executor, so
  * reaching here means that material wasn't supplied.
  */

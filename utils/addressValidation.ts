@@ -101,7 +101,7 @@ export const validateAddress = (address: string, chainId: ChainId | null | undef
     return validateSolanaAddress(address);
   }
 
-  // SUI (canonical 101) & Aptos (canonical 637) — both are 0x + 64 hex.
+  // SUI (canonical 101) & Aptos (canonical 637) - both are 0x + 64 hex.
   if (chainIdStr === 'sui' || chainIdStr === '784' || chainIdStr === '101'
       || chainIdStr === 'aptos' || chainIdStr === '637') {
     return validateSuiAddress(address);

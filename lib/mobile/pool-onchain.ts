@@ -5,7 +5,7 @@
  *
  * 1. **`onChain: null` renders as zero.** The `/api/v1/mobile/staking/*` routes
  *    enrich pools with server-side `getPoolInfo` reads, but that read is
- *    best-effort — when the backend's RPC calls fail it returns `onChain: null`
+ *    best-effort - when the backend's RPC calls fail it returns `onChain: null`
  *    and every figure on the manage screen collapses to a `0` that is
  *    indistinguishable from an empty pool. The device has its own RPC path, so
  *    it re-reads rather than displaying a convincing zero.
@@ -13,7 +13,7 @@
  * 2. **A pool has TWO tokens.** `maxTvl` / `totalStaked` / `userInfo.amount` are
  *    in the STAKING token; `poolReward` / `rewardPerSecond` / `rewardBalance` /
  *    `pendingReward` are in the REWARD token (`getPoolInfo()[1]`). They're the
- *    same asset for "stake A, earn A" and nobody notices — for "stake A, earn B"
+ *    same asset for "stake A, earn A" and nobody notices - for "stake A, earn B"
  *    formatting the reward side with the staking token's decimals is a factor of
  *    10^(d_reward - d_stake) error. A 1 USDT (18dp) reward pool read against
  *    TWC's 9dp shows as 1,000,000,000, and that number then feeds the APR, the
@@ -52,7 +52,7 @@ export function getClientForChain(chainId: number): PublicClient {
 const isEvmAddr = (v?: string | null): v is string => !!v && /^0x[a-fA-F0-9]{40}$/.test(v);
 
 // Decimals and symbol are immutable, so one read per token per app session is
-// enough. Keyed by chainId:token — the same address on two chains is two tokens.
+// enough. Keyed by chainId:token - the same address on two chains is two tokens.
 const rewardCache = new Map<string, RewardTokenInfo>();
 
 export interface RewardTokenInfo {
@@ -67,14 +67,14 @@ export interface RewardTokenInfo {
  * Resolve the decimals/symbol to use for a pool's REWARD amounts.
  *
  * Falls back to the staking token's values whenever the reward token is unknown
- * or its metadata can't be read — that's the pre-existing behaviour, so a failed
+ * or its metadata can't be read - that's the pre-existing behaviour, so a failed
  * read is never worse than before.
  */
 export async function resolveRewardToken(params: {
     chainId: number;
     /** Reward token address, e.g. `getPoolInfo()[1]`. */
     rewardTokenAddress?: string;
-    /** The pool's staking token — when it matches, no reads are needed. */
+    /** The pool's staking token - when it matches, no reads are needed. */
     stakingTokenAddress?: string;
     stakingSymbol?: string;
     stakingDecimals: number;
@@ -122,7 +122,7 @@ export async function resolveRewardToken(params: {
         return info;
     } catch (e) {
         console.warn('[pool-onchain] reward token metadata read failed', e);
-        // Still cross-token, we just don't know its metadata — keep the address
+        // Still cross-token, we just don't know its metadata - keep the address
         // so callers can link to it, but don't cache a guess.
         return { ...sameAsStaking, address: rewardTokenAddress, isCrossToken: true };
     }
@@ -153,7 +153,7 @@ export interface PoolOnChainInfo {
 
 /**
  * Read a pool's full on-chain state, with reward figures denominated in the
- * REWARD token. Returns null on failure — treat that as "unknown", not "zero".
+ * REWARD token. Returns null on failure - treat that as "unknown", not "zero".
  */
 export async function readPoolInfoClient(params: {
     chainId: number;
@@ -296,7 +296,7 @@ export async function readPoolRewardWithdrawalClient(params: {
 }
 
 /**
- * Just the lifecycle fields — no token metadata reads. Used where a listing
+ * Just the lifecycle fields - no token metadata reads. Used where a listing
  * needs to say whether a pool is still running without pulling its full state.
  */
 export async function readPoolStatusClient(params: {
@@ -374,7 +374,7 @@ export interface StakerOnChain {
 /**
  * Read one wallet's position. The manage screen uses this so the stakers list
  * reports what the contract holds rather than the `user_stakes` mirror, which
- * drifts — TWC is fee-on-transfer, so a 5000 deposit lands as 4900 and the
+ * drifts - TWC is fee-on-transfer, so a 5000 deposit lands as 4900 and the
  * mirror's 5000 produced a 102% pool share.
  */
 export async function readStakerOnChain(params: {

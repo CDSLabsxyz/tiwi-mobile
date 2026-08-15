@@ -1,5 +1,5 @@
 /**
- * StakeDetailsCard — expandable in-list card for Active Positions / My Stakes.
+ * StakeDetailsCard - expandable in-list card for Active Positions / My Stakes.
  *
  * Port of the super-app's stake-details-card.tsx. Structure:
  *   Header (always visible): token icon, symbol+name, status badge, chevron
@@ -79,7 +79,7 @@ export const StakeDetailsCard: React.FC<Props> = ({ stake, isExpanded, onToggle,
     const [isProcessing, setIsProcessing] = useState(false);
 
     // Baseline from on-chain. We ONLY snap back to the contract's view when
-    // it goes backwards (a claim dropped pending to ~0) or on first read —
+    // it goes backwards (a claim dropped pending to ~0) or on first read -
     // otherwise the 10s wagmi refetch would visibly yank the smoothly-ticking
     // counter forward in chunks. Between resyncs the 100ms tick below
     // accumulates at `earningRate`, so the number counts up like mining.
@@ -111,7 +111,7 @@ export const StakeDetailsCard: React.FC<Props> = ({ stake, isExpanded, onToggle,
     //     badge is 'stopped' (yellow) so they know rewards have frozen but
     //     their funds are still recoverable via Claim + Unstake.
     //   - Only flip to 'withdrawn' when both staked and pending hit zero on
-    //     chain — i.e., the user has fully exited.
+    //     chain - i.e., the user has fully exited.
     //   - If the pool is not yet expired and the user still has principal
     //     (or reads haven't resolved), keep the DB status ('active').
     const effectiveStatus: EffectiveStatus = useMemo(() => {
@@ -134,7 +134,7 @@ export const StakeDetailsCard: React.FC<Props> = ({ stake, isExpanded, onToggle,
 
     const statusStyle = STATUS_STYLES[effectiveStatus];
 
-    // Countdown math — mirrors the web app exactly.
+    // Countdown math - mirrors the web app exactly.
     //
     //   Time Staked       = now - user.stakeTime          (per-user, counts up)
     //   Time Until Unlock = pool.endTime - now            (pool-wide, counts down)
@@ -175,14 +175,14 @@ export const StakeDetailsCard: React.FC<Props> = ({ stake, isExpanded, onToggle,
         };
     }, [pooled.stakeTime, pooled.rewardDurationSeconds, pooled.endTime, stake.createdAt, stake.pool?.minStakingPeriod, stake.pool?.endTime, now]);
 
-    // Display values — live on-chain for active, DB historical for finalized.
+    // Display values - live on-chain for active, DB historical for finalized.
     const displayStaked = useMemo(() => {
         const onChain = Number(pooled.userStakedFormatted || '0');
         return effectiveStatus === 'withdrawn' ? parseFloat(stake.stakedAmount || '0') : onChain;
     }, [pooled.userStakedFormatted, effectiveStatus, stake.stakedAmount]);
 
     const displayPending = effectiveStatus === 'withdrawn' ? 0 : liveRewards;
-    // Prefer whichever source is higher — the DB value can lag (or fail to
+    // Prefer whichever source is higher - the DB value can lag (or fail to
     // record) behind an on-chain claim. Reading cumulative Claim events from
     // the pool contract is authoritative, but the lookback window is bounded,
     // so for very old stakes DB may still be higher.
@@ -212,11 +212,11 @@ export const StakeDetailsCard: React.FC<Props> = ({ stake, isExpanded, onToggle,
 
     const startedLabel = useMemo(() => {
         const ts = pooled.stakeTime > 0 ? pooled.stakeTime * 1000 : (stake.createdAt ? new Date(stake.createdAt).getTime() : 0);
-        return ts ? new Date(ts).toLocaleDateString() : '—';
+        return ts ? new Date(ts).toLocaleDateString() : '-';
     }, [pooled.stakeTime, stake.createdAt]);
 
     const showCountdown = variant === 'active' && effectiveStatus === 'active';
-    // Show Claim/Unstake whenever the user still has funds in the pool —
+    // Show Claim/Unstake whenever the user still has funds in the pool -
     // including 'stopped' rows on the My Stakes tab, since that's the only
     // path back to their principal + unclaimed rewards once the pool ends.
     const showActions = effectiveStatus !== 'withdrawn';
@@ -249,7 +249,7 @@ export const StakeDetailsCard: React.FC<Props> = ({ stake, isExpanded, onToggle,
         : '';
     const canUnstake = !unstakeLockInfo.isLocked;
 
-    // Action handlers — all PATCH bookkeeping lives in the hook's handleTxConfirmed.
+    // Action handlers - all PATCH bookkeeping lives in the hook's handleTxConfirmed.
     // After each write resolves we also refetch the DB-backed stake list from
     // the store so the card re-renders with the updated Claimed / staked
     // totals instead of waiting for the 30s poll.
@@ -508,7 +508,7 @@ function splitDuration(totalSec: number) {
 }
 
 // "Reward Duration" / progress label. Sub-day pools previously rounded up to
-// "1 days" via Math.ceil — show the actual d/h/m breakdown instead so a 45-minute
+// "1 days" via Math.ceil - show the actual d/h/m breakdown instead so a 45-minute
 // pool reads "45m" and matches the web app.
 function formatDurationLabel(totalSec: number): string {
     if (!Number.isFinite(totalSec) || totalSec <= 0) return '0min';

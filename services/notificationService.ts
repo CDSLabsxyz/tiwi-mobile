@@ -40,7 +40,7 @@ class NotificationService {
     /**
      * One-shot startup: install the Android channel, request permissions, and
      * make sure the foreground handler is live. Safe to call without a wallet
-     * address — registration of the push token still happens later in
+     * address - registration of the push token still happens later in
      * `registerForPushNotifications` once the user is signed in.
      */
     async initNotifications(): Promise<void> {
@@ -173,7 +173,7 @@ class NotificationService {
     /**
      * Save/Update the Expo push token directly in Supabase. The
      * `notifications` insert trigger inside Postgres handles fan-out
-     * to Expo's push relay — no backend round-trip needed.
+     * to Expo's push relay - no backend round-trip needed.
      */
     private async saveTokenToBackend(walletAddress: string, token: string) {
         try {
@@ -324,7 +324,7 @@ class NotificationService {
             await Notifications.scheduleNotificationAsync({
                 content: {
                     title: `${symbol} Price Update`,
-                    body: `${symbol} is ${direction} ${formattedChange}% — now at ${formattedPrice}`,
+                    body: `${symbol} is ${direction} ${formattedChange}% - now at ${formattedPrice}`,
                     data: { type: 'price_alert', symbol, changePercent, currentPrice },
                     sound: 'default',
                 },
@@ -341,7 +341,7 @@ class NotificationService {
      * Uses a per-token baseline snapshot (persisted in AsyncStorage) and
      * compares the current unit price against it. When |delta| crosses the
      * user-configured threshold AND the cooldown has elapsed, an alert is
-     * sent and the baseline is reset to the current price — so each alert
+     * sent and the baseline is reset to the current price - so each alert
      * represents a fresh move rather than a lingering 24h value.
      *
      * First-seen tokens simply have their baseline recorded silently.
@@ -356,7 +356,7 @@ class NotificationService {
 
             // Always track these majors even if the wallet doesn't hold them
             const ALWAYS_TRACK = ['BTC', 'ETH', 'BNB', 'TWC'];
-            // Never alert on stablecoins — they barely move and spam notifications
+            // Never alert on stablecoins - they barely move and spam notifications
             const STABLECOINS = new Set(['USDT', 'USDC', 'DAI', 'BUSD', 'TUSD', 'FRAX', 'USDP', 'GUSD', 'LUSD', 'FDUSD', 'PYUSD']);
 
             const baselinesRaw = await AsyncStorage.getItem(PRICE_BASELINES_KEY);
@@ -431,7 +431,7 @@ class NotificationService {
 
     /**
      * Sync the user's currently held tokens to Supabase so the server-side
-     * price-alert cron knows what to watch. Idempotent — upserts on the
+     * price-alert cron knows what to watch. Idempotent - upserts on the
      * unique key (user_wallet, chain_id, token_address). Stale rows for
      * tokens the user no longer holds are deleted in the same call.
      */

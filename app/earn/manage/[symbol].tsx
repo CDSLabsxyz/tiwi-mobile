@@ -348,7 +348,7 @@ export default function ManageStakeScreen() {
                 if (needsApproval) {
                     // Approve only. The next press of this button (now showing
                     // "Add to Stake" because allowance is sufficient) is what
-                    // actually stakes — matching the web app's two-step flow.
+                    // actually stakes - matching the web app's two-step flow.
                     // The previous setTimeout-based auto-stake was the cause of
                     // "I claimed and all my tokens got staked": if the user
                     // opened Claim while the approval was confirming, the
@@ -639,7 +639,7 @@ export default function ManageStakeScreen() {
                 modal is open. Without this, a tap that lands on the modal's
                 "Claim Yield" can also register on this button (depending on
                 z-order on some Android builds), which would fire stake() with
-                whatever amount is currently in the input — exactly the
+                whatever amount is currently in the input - exactly the
                 "I claimed and all my tokens got staked" symptom users hit. */}
             {!isClaimModalVisible && !isUnstakeModalVisible && (
                 <View style={[styles.bottomBar, { paddingBottom: bottom + 12 }]}>

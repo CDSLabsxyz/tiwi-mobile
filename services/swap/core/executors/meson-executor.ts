@@ -1,16 +1,16 @@
 /**
- * Meson Executor — the non-CCTP stablecoin bridge rail (one signature, gasless fill).
+ * Meson Executor - the non-CCTP stablecoin bridge rail (one signature, gasless fill).
  *
  * Flow (verified live 2026-07-14):
  *   1. Approve the source stablecoin → Meson contract (one-time; the relayer transferFroms via it).
  *   2. POST /api/v1/swap {from, to, amount, fromAddress, recipient} → { encoded, fee, signingRequest }.
- *   3. User signs (personal_sign) `encoded + fromAddress` — the Meson initiator signature.
+ *   3. User signs (personal_sign) `encoded + fromAddress` - the Meson initiator signature.
  *   4. POST /api/v1/swap/{encoded} { fromAddress, recipient, signature } → Meson posts on the source
  *      (pulling via the allowance) and fills the destination. The user does NOTHING on the dest.
  *   5. Poll GET /api/v1/swap/{encoded} for the source deposit tx / final status.
  *
  * So the user signs once (plus a one-time approval). Destination may be any Meson chain incl.
- * Tron/Solana — the user only signs on the EVM source. INERT unless NEXT_PUBLIC_MESON_ENABLED.
+ * Tron/Solana - the user only signs on the EVM source. INERT unless NEXT_PUBLIC_MESON_ENABLED.
  */
 import { getAddress, parseUnits, type Address, type Hex } from 'viem';
 import type { SwapRouterExecutor, SwapExecutionParams, SwapExecutionResult } from '../types';
@@ -88,7 +88,7 @@ export class MesonExecutor implements SwapRouterExecutor {
         message: { raw: signData },
       });
 
-      // 4) Submit — Meson posts on source (via allowance) and fills the destination.
+      // 4) Submit - Meson posts on source (via allowance) and fills the destination.
       onStatusUpdate?.({ stage: 'submitting', message: 'Submitting to Meson relayer...' });
       const submit = await mesonFetch(`/swap/${encoded}`, {
         method: 'POST', headers: { 'content-type': 'application/json' },
@@ -111,7 +111,7 @@ export class MesonExecutor implements SwapRouterExecutor {
 
       onStatusUpdate?.({
         stage: 'completed',
-        message: `Bridging ${fromToken.symbol} via Meson — funds arrive on the destination in ~1–2 minutes.`,
+        message: `Bridging ${fromToken.symbol} via Meson - funds arrive on the destination in ~1–2 minutes.`,
         txHash: srcTx || undefined,
       });
       return { success: true, txHash: srcTx || encoded, txHashes: srcTx ? [srcTx] : [], receipt: undefined };

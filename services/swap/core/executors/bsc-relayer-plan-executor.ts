@@ -1,5 +1,5 @@
 /**
- * BSC Relayer (plan API) Executor — mobile
+ * BSC Relayer (plan API) Executor - mobile
  *
  * The relayer path, driven by the server instead of by this file.
  *
@@ -15,10 +15,10 @@
  * and signs them. Relayer economics now change server-side.
  *
  * The model is unchanged:
- *   1. The relayer releases $0.10 of BNB to the user — server-side, inside the
+ *   1. The relayer releases $0.10 of BNB to the user - server-side, inside the
  *      plan call, before this file sees anything.
- *   2. The relayer receives $0.50 of the selected token — the `fee` step.
- *   3. The swap goes forward — the `tax`, `approve` and `swap` steps.
+ *   2. The relayer receives $0.50 of the selected token - the `fee` step.
+ *   3. The swap goes forward - the `tax`, `approve` and `swap` steps.
  *
  * This is an opt-in rollout path. The current web-compatible gasless executor
  * remains the default and the fallback while the plan API is proven in mobile.
@@ -92,7 +92,7 @@ export class BscRelayerPlanExecutor implements SwapRouterExecutor {
 
     /**
      * BSC same-chain, ERC20 in, and a gas token that isn't BNB. Choosing BNB
-     * means the user pays their own gas at the flat 0.25% — the direct path.
+     * means the user pays their own gas at the flat 0.25% - the direct path.
      */
     canHandle(route: RouterRoute): boolean {
         if (!isRelayerPlanApiEnabled()) return false;
@@ -100,7 +100,7 @@ export class BscRelayerPlanExecutor implements SwapRouterExecutor {
         if (route.fromToken.chainId !== BSC_CHAIN_ID) return false;
         if (route.toToken.chainId !== BSC_CHAIN_ID) return false;
 
-        // Native BNB has no ERC20 interface — the native executor owns that case.
+        // Native BNB has no ERC20 interface - the native executor owns that case.
         if (isNativeToken(route.fromToken.address)) return false;
 
         const { selectedGasTokenType } = useSwapStore.getState();
@@ -139,7 +139,7 @@ export class BscRelayerPlanExecutor implements SwapRouterExecutor {
 
         try {
             // 1. Ask the server for the plan. It performs the balance checks,
-            //    prices the fee, quotes the route and releases the drip — so by
+            //    prices the fee, quotes the route and releases the drip - so by
             //    the time it returns, the wallet can pay for the signatures below.
             const plan = await this.requestPlan({
                 userWallet: userAddress,

@@ -4,7 +4,7 @@
  * `CrossChainPostSwapExecutor` bridges to a stable on the destination chain and then swaps that
  * stable into the taxed token locally. The bridge is asynchronous (minutes), so the app can be
  * backgrounded, killed, or simply time out while waiting. Without a record the user is left
- * holding USDT on the destination chain with nothing pointing at the unfinished second hop —
+ * holding USDT on the destination chain with nothing pointing at the unfinished second hop -
  * which is the exact failure this whole executor exists to prevent.
  *
  * So the record is written the moment leg 1 confirms, and only cleared once leg 2 succeeds.
@@ -14,7 +14,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const STORAGE_KEY = 'tiwi.swap.pendingSecondLeg.v1';
 
-/** Records older than this are dropped on read — the stable is still in the user's wallet. */
+/** Records older than this are dropped on read - the stable is still in the user's wallet. */
 const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 export interface PendingSecondLeg {
@@ -23,7 +23,7 @@ export interface PendingSecondLeg {
   createdAt: number;
   /** Chain the stable lands on and where the final swap runs. */
   destChainId: number;
-  /** OUR address on the destination chain — holds the bridged stable and signs leg 2. */
+  /** OUR address on the destination chain - holds the bridged stable and signs leg 2. */
   destAddress: string;
   /** Where the final token goes. Differs from `destAddress` only for a user-set recipient. */
   finalRecipient: string;

@@ -1,21 +1,21 @@
 /**
- * Cetus Swap Executor — Sui same-chain swaps.
+ * Cetus Swap Executor - Sui same-chain swaps.
  *
  * Executes `router: 'cetus'` routes on Sui (chainId 101). The quote adapter
  * (lib/backend/routers/adapters/cetus-adapter.ts) only prices the swap; the
  * signable transaction is built HERE with the Cetus aggregator SDK, then signed
  * by whichever wallet controls the Sui address:
  *
- *   • Internal (seed-phrase) wallet — params.walletClient carries an ed25519
+ *   • Internal (seed-phrase) wallet - params.walletClient carries an ed25519
  *     keypair (see internal-sui-signer.ts). We sign+submit via @mysten/sui's
  *     SuiClient.
- *   • External Sui wallet (Slush/Suiet/…) — params.walletClient is absent; we
+ *   • External Sui wallet (Slush/Suiet/…) - params.walletClient is absent; we
  *     re-discover the Wallet-Standard wallet and drive its
  *     sui:signAndExecuteTransaction feature (see external-sui-wallet.ts).
  *
  * The SDK's `fastRouterSwap` selects the user's input coins, performs the multi-
  * DEX swap (DeepBook/Aftermath/Turbos/Kriya/FlowX), and routes the output back
- * to the signer — all in a single PTB.
+ * to the signer - all in a single PTB.
  */
 
 import { parseUnits } from 'viem';
@@ -88,7 +88,7 @@ export class CetusExecutor implements SwapRouterExecutor {
           : parseFloat(route.slippage || '1');
       const slippage = Math.min(Math.max(isFinite(slippagePct) ? slippagePct : 1, 0.05), 50) / 100;
 
-      // Build the swap PTB via the Cetus aggregator SDK (dynamically imported —
+      // Build the swap PTB via the Cetus aggregator SDK (dynamically imported -
       // it's a heavy Sui/gRPC dependency we keep out of the main bundle).
       const { AggregatorClient, Env } = await import('@cetusprotocol/aggregator-sdk');
       const { Transaction } = await import('@mysten/sui-v2/transactions');
@@ -115,7 +115,7 @@ export class CetusExecutor implements SwapRouterExecutor {
       await client.fastRouterSwap({ router: routerData, txb: txb as any, slippage });
 
       // fastRouterSwap builds the PTB with CoinWithBalance INTENTS, which can't be
-      // serialized without a Sui client — an external wallet calls toJSON() with no
+      // serialized without a Sui client - an external wallet calls toJSON() with no
       // client and fails ("Client must be provided ... CoinWithBalance intents").
       // Resolve the intents against a client here (this does NOT select gas, so it
       // works for any funded wallet), producing a plain Transaction both the

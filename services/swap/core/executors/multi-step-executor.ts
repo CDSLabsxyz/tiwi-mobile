@@ -87,7 +87,7 @@ export class MultiStepExecutor implements SwapRouterExecutor {
     if (!isMultiStep) return false;
 
     // This executor drives every leg with EVM clients (ensureCorrectChain / viem). It CANNOT handle
-    // a non-EVM source or leg — attempting to throws "Chain <id> is not an EVM chain". Decline those
+    // a non-EVM source or leg - attempting to throws "Chain <id> is not an EVM chain". Decline those
     // so canExecute() is false and useSwapQuote falls back to a VM-aware aggregator (relay/rubic/…).
     if (isNonEvmChain(route.fromToken.chainId)) return false;
     if (isNonEvmChain(route.toToken.chainId)) return false;

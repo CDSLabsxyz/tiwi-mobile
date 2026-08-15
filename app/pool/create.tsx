@@ -1,5 +1,5 @@
 /**
- * Create / Add Liquidity wizard — /pool/create
+ * Create / Add Liquidity wizard - /pool/create
  * Ported from tiwi-user-app app/pool/create/page.tsx (3-stage flow).
  *  Stage 1: choose token pair + fee level
  *  Stage 2: starting price + price range + deposit amounts
@@ -44,7 +44,7 @@ const DEPOSIT_PERCENTS = [25, 50, 75, 100];
 
 /**
  * A value the `numeric` columns will accept, or undefined. Anything the DB
- * can't parse — "∞", "", a stray symbol — becomes undefined (→ NULL) rather
+ * can't parse - "∞", "", a stray symbol - becomes undefined (→ NULL) rather
  * than being posted and rejected.
  */
 function finiteOrUndefined(value: string): string | undefined {
@@ -52,7 +52,7 @@ function finiteOrUndefined(value: string): string | undefined {
   return Number.isFinite(n) ? String(n) : undefined;
 }
 
-/** Format a number as a plain decimal string — never scientific notation. */
+/** Format a number as a plain decimal string - never scientific notation. */
 function toPlainDecimal(n: number): string {
   if (!isFinite(n) || n === 0) return '0';
   if (Math.abs(n) >= 1) return parseFloat(n.toFixed(8)).toString();
@@ -111,7 +111,7 @@ export default function CreatePoolScreen() {
 
   const [priceLoading, setPriceLoading] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  /** Pool is live on-chain but its DB record didn't save — shown on stage 3. */
+  /** Pool is live on-chain but its DB record didn't save - shown on stage 3. */
   const [recordWarning, setRecordWarning] = useState<string | null>(null);
   const [result, setResult] = useState<{ pairAddress: string; lpTokens: string; tradable: boolean } | null>(null);
 
@@ -152,7 +152,7 @@ export default function CreatePoolScreen() {
     );
   };
 
-  /** Display only — a float can't hold an 18-significant-digit balance. */
+  /** Display only - a float can't hold an 18-significant-digit balance. */
   const balanceOf = (t: WizToken | null): number => {
     const row = balanceRowOf(t);
     return row ? parseFloat(row.balanceFormatted || row.balance || '0') : 0;
@@ -262,7 +262,7 @@ export default function CreatePoolScreen() {
   };
 
   // "Use Market Price": existing pools lock to the live ratio; new pools derive
-  // from the two tokens' USD prices — selector price → wallet feed → backend.
+  // from the two tokens' USD prices - selector price → wallet feed → backend.
   const useMarketPrice = async () => {
     if (poolRatio > 0) { setStartingPrice(toPlainDecimal(poolRatio)); return; }
     if (!tokenA || !tokenB) return;
@@ -296,7 +296,7 @@ export default function CreatePoolScreen() {
     }
   };
 
-  // Swap the token order (and price / amounts) — mirrors the web swap button.
+  // Swap the token order (and price / amounts) - mirrors the web swap button.
   const invertTokens = () => {
     const t = tokenA; setTokenA(tokenB); setTokenB(t);
     const a = amountA; setAmountA(amountB); setAmountB(a);
@@ -362,7 +362,7 @@ export default function CreatePoolScreen() {
       }
 
       // The pool is ALREADY deployed and seeded by this point, so a failure
-      // below must not read as "nothing happened" — that invites a retry that
+      // below must not read as "nothing happened" - that invites a retry that
       // deploys a second pool and spends the tokens twice. Anything from here
       // on is bookkeeping: it is caught, surfaced as a warning on the success
       // screen, and never rethrown.
@@ -382,7 +382,7 @@ export default function CreatePoolScreen() {
         seedAmountB: amountB,
         startingPrice: price,
         // min_price/max_price are numeric(38,18) and nullable. An unbounded
-        // side must be sent as undefined so the column stays NULL — posting
+        // side must be sent as undefined so the column stays NULL - posting
         // the "∞" the UI shows was rejected outright ("invalid input syntax
         // for type numeric") and failed every create. Note "custom" alone
         // isn't enough of a guard: switching to the custom tab without
@@ -406,7 +406,7 @@ export default function CreatePoolScreen() {
         });
       }
 
-      // Record in the activities board — only for real on-chain pools (a
+      // Record in the activities board - only for real on-chain pools (a
       // recorded-only pool has no tx to point at). Reflects create vs top-up.
       if (txHash) {
         void api.wallet.logTransaction({
@@ -420,7 +420,7 @@ export default function CreatePoolScreen() {
           toTokenSymbol: tokenB.symbol,
           amount: amountA,
           amountFormatted: `${amountA} ${tokenA.symbol}`,
-          // The B-side amount, same as the web records — without it the
+          // The B-side amount, same as the web records - without it the
           // activity row shows only half the deposit.
           toAmountFormatted: amountB,
           routerName: pair,
@@ -430,7 +430,7 @@ export default function CreatePoolScreen() {
       }
 
       // No tx means nothing was deployed (record-only chain), so a failed
-      // record leaves nothing behind — that IS a plain failure, and retrying
+      // record leaves nothing behind - that IS a plain failure, and retrying
       // is the right move. With a tx, the pool exists on-chain regardless.
       if (recordFailure && !txHash) {
         setSubmitError(recordFailure);
@@ -666,14 +666,14 @@ export default function CreatePoolScreen() {
                 </View>
               </View>
 
-              {/* Deployed, but not recorded. Say so plainly — the danger is a
+              {/* Deployed, but not recorded. Say so plainly - the danger is a
                   user reading "failed", running it again, and paying for a
                   second identical pool. */}
               {recordWarning ? (
                 <View style={styles.successWarn}>
                   <Ionicons name="warning-outline" size={16} color="#E8A838" />
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.successWarnTitle}>Pool created — but not saved to your list</Text>
+                    <Text style={styles.successWarnTitle}>Pool created - but not saved to your list</Text>
                     <Text style={styles.successWarnDesc}>
                       Your funds are deposited and the pool is live on-chain, so do NOT create it
                       again. It just may not appear under Pools yet. {recordWarning}
@@ -762,7 +762,7 @@ function RangeCard({ label, value, unit, editable, onChange, onStep }: {
           <Ionicons name="remove" size={15} color={editable ? colors.titleText : colors.mutedText} />
         </TouchableOpacity>
         <TextInput
-          // "Max price" carries a literal "∞" on a full-range pool — grouping
+          // "Max price" carries a literal "∞" on a full-range pool - grouping
           // only applies to values that are actually numbers.
           value={/\d/.test(value) ? formatNumberInput(value) : value}
           onChangeText={(t) => onChange(parseNumberInput(t))}
@@ -789,7 +789,7 @@ function DepositCard({ token, amount, balance, priceUsd, onPercent, onInputPress
     <View style={[styles.depositCard, active && styles.depositCardActive]}>
       <View style={styles.depositTopRow}>
         <Text style={styles.depositAmountLbl}>Amount</Text>
-        {/* Opens the in-app numpad rather than the OS keyboard — the value is
+        {/* Opens the in-app numpad rather than the OS keyboard - the value is
             display-only here, every edit arrives through onKeyPress. */}
         <TouchableOpacity activeOpacity={0.7} onPress={onInputPress} style={styles.depositInputBtn}>
           <Text

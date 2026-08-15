@@ -1,5 +1,5 @@
 /**
- * Project settings — mobile counterpart of the web modal's
+ * Project settings - mobile counterpart of the web modal's
  * `renderProjectSettings`. Rename the project, see its chat count, and toggle
  * its pinned state.
  */

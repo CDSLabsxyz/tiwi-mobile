@@ -102,7 +102,7 @@ class ActivityService {
             if (error) throw error;
             return true;
         } catch (error: any) {
-            // Duplicate key — transaction already logged, not an error
+            // Duplicate key - transaction already logged, not an error
             if (error?.code === '23505' || error?.message?.includes('duplicate key')) {
                 return true;
             }
@@ -164,14 +164,14 @@ class ActivityService {
     }
 
     /**
-     * Mark as read — no-op (tiwi_transactions has no is_read column)
+     * Mark as read - no-op (tiwi_transactions has no is_read column)
      */
     async markAsRead(_activityId: string): Promise<boolean> {
         return true;
     }
 
     /**
-     * Mark all as read — no-op (tiwi_transactions has no is_read column)
+     * Mark all as read - no-op (tiwi_transactions has no is_read column)
      */
     async markAllAsRead(_walletAddress: string): Promise<boolean> {
         return true;
@@ -215,7 +215,7 @@ class ActivityService {
     }
 
     /**
-     * Helper: Log a security activity — no-op for tiwi_transactions
+     * Helper: Log a security activity - no-op for tiwi_transactions
      * Security events don't fit the transaction schema
      */
     async logSecurityEvent(

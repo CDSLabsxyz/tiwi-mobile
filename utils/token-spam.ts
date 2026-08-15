@@ -4,11 +4,11 @@
  * Direct port of `isSpamToken` in
  * tiwi-user-app/components/swap/token-selector-modal.tsx. The web selector is
  * the reference implementation for what a token picker may show, so keep the
- * two in sync — if a rule changes there, change it here too.
+ * two in sync - if a rule changes there, change it here too.
  *
  * Why this exists: `/api/v1/tokens` is a raw index, not a curated list. A
  * plain `chains=56&limit=50` browse returns "01", "100¥", "1ART", "赵长娥"
- * and fifteen different tokens all calling themselves "BSC" — and it marks
+ * and fifteen different tokens all calling themselves "BSC" - and it marks
  * several of them `verified: true` while leaving BNB/USDT/USDC unverified.
  * `verified` alone is therefore useless as a gate.
  */
@@ -109,7 +109,7 @@ export function isSpamToken(
     const impersonationPatterns = /^(usdt|usdc|eth|bnb|sol)\d+$/i;
     if (impersonationPatterns.test(symbol)) return true;
 
-    // Symbols that are just numbers or a single char — this is what catches
+    // Symbols that are just numbers or a single char - this is what catches
     // the "01" / "1" style index junk.
     if (/^\d+$/.test(symbol) || symbol.length <= 1) return true;
 

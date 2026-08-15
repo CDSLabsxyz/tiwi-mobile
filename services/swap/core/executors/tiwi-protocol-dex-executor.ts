@@ -5,15 +5,15 @@
  *
  * Flow:
  *   First swap with token X:
- *     1. approve(X → TiwiProtocolDEX)   — Sign 1
- *     2. TiwiProtocolDEX.swap(...)       — Sign 2
+ *     1. approve(X → TiwiProtocolDEX)   - Sign 1
+ *     2. TiwiProtocolDEX.swap(...)       - Sign 2
  *
  *   All subsequent swaps with token X:
- *     1. TiwiProtocolDEX.swap(...)       — Sign 1 (ONLY!)
+ *     1. TiwiProtocolDEX.swap(...)       - Sign 1 (ONLY!)
  *
  *   Gasless mode:
  *     First time: approve (Sign 1) + EIP-712 sign (Sign 2, FREE)
- *     After:      EIP-712 sign (Sign 1, FREE — zero gas!)
+ *     After:      EIP-712 sign (Sign 1, FREE - zero gas!)
  *
  * Tax is collected from fromToken (0.25%). No separate gas token approval.
  */
@@ -45,14 +45,14 @@ const BSC_CHAIN_ID = 56;
 
 const WBNB_ADDRESS = '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c';
 
-// TiwiProtocolDEX contract — deployed on BSC mainnet 2026-03-31
+// TiwiProtocolDEX contract - deployed on BSC mainnet 2026-03-31
 const TIWI_DEX_CONTRACT = (process.env.EXPO_PUBLIC_TIWI_DEX_CONTRACT ||
   '0xee5f20b22eD5788680711B529E92994AE9d1872A') as Address;
 
 // PancakeSwap V2 Router (whitelisted in contract, NOT the multicall)
 const PANCAKESWAP_V2_ROUTER = '0x10ED43C718714eb63d5aA57B78B54704E256024E';
 
-// BLACKLISTED: PancakeSwap Multicall V3 — known malicious contract
+// BLACKLISTED: PancakeSwap Multicall V3 - known malicious contract
 const BLACKLISTED_CONTRACTS = new Set([
   '0xac1ce734566f390a94b4571ce386795b52a5a288', // PancakeSwap Multicall V3
   '0x556b9306565093c855aea9ae92a594704c2cd59e', // PancakeSwap Multicall V2
@@ -258,7 +258,7 @@ export class TiwiProtocolDEXExecutor implements SwapRouterExecutor {
   }
 
   /**
-   * Background viability check — call during quote fetching (fire-and-forget).
+   * Background viability check - call during quote fetching (fire-and-forget).
    * Tests if the TiwiDEX contract can execute a swap at all.
    * Result is cached for 5 minutes.
    */
@@ -280,7 +280,7 @@ export class TiwiProtocolDEXExecutor implements SwapRouterExecutor {
 
     try {
       const client = getCachedPublicClient(BSC_CHAIN_ID);
-      // Quick check: call calculateTax — if contract is functional, this works
+      // Quick check: call calculateTax - if contract is functional, this works
       await Promise.race([
         client.readContract({
           address: TIWI_DEX_CONTRACT,
@@ -332,7 +332,7 @@ export class TiwiProtocolDEXExecutor implements SwapRouterExecutor {
     // ── Instant skip if background check already determined contract is non-viable ──
     if (TiwiProtocolDEXExecutor.contractViable === false &&
         Date.now() - TiwiProtocolDEXExecutor.lastViabilityCheck < TiwiProtocolDEXExecutor.VIABILITY_TTL) {
-      console.log('[TiwiDEX] Skipping — contract non-viable (cached)');
+      console.log('[TiwiDEX] Skipping - contract non-viable (cached)');
       return false;
     }
 
@@ -364,14 +364,14 @@ export class TiwiProtocolDEXExecutor implements SwapRouterExecutor {
       userAddress, recipientAddress, walletClient, onStatusUpdate,
     } = params;
 
-    // Get wallet client — use provided one or fetch from connected wallet
+    // Get wallet client - use provided one or fetch from connected wallet
     let activeWalletClient = walletClient;
     if (!activeWalletClient) {
       try {
         const { getEVMWalletClient } = await import('../utils/wallet-helpers');
         activeWalletClient = await getEVMWalletClient(fromToken.chainId || BSC_CHAIN_ID);
       } catch (e: any) {
-        throw new Error('Wallet required — please connect a BSC wallet');
+        throw new Error('Wallet required - please connect a BSC wallet');
       }
     }
 
@@ -457,13 +457,13 @@ export class TiwiProtocolDEXExecutor implements SwapRouterExecutor {
         });
       }
 
-      // 3. Estimate gas with fallback — don't let estimation failures block valid swaps
+      // 3. Estimate gas with fallback - don't let estimation failures block valid swaps
       onStatusUpdate?.({
         stage: 'confirming',
-        message: needsApproval ? 'Transaction 2 of 2 — Confirm Swap' : 'Approve Swap',
+        message: needsApproval ? 'Transaction 2 of 2 - Confirm Swap' : 'Approve Swap',
       });
 
-      // Gas estimation — if it reverts, the contract WILL fail on-chain.
+      // Gas estimation - if it reverts, the contract WILL fail on-chain.
       // Do NOT send a tx that will revert (wastes user gas).
       let gasLimit: bigint;
       try {
@@ -495,7 +495,7 @@ export class TiwiProtocolDEXExecutor implements SwapRouterExecutor {
         gas: gasLimit,
       });
 
-      // CRITICAL: Check receipt status — a reverted tx still returns a hash
+      // CRITICAL: Check receipt status - a reverted tx still returns a hash
       const receipt = await this.publicClient.waitForTransactionReceipt({ hash, timeout: 120_000 });
 
       if (receipt.status === 'reverted') {
@@ -631,7 +631,7 @@ export class TiwiProtocolDEXExecutor implements SwapRouterExecutor {
 
     // NOTE: Router calldata sends output to THIS contract temporarily,
     // then contract verifies and the router sends directly to recipient.
-    // Actually — PancakeSwap sends directly to `to` address in the calldata.
+    // Actually - PancakeSwap sends directly to `to` address in the calldata.
     // So `to` = recipient here.
     let routerCalldata: Hex;
     if (isNativeOutput) {
@@ -668,7 +668,7 @@ export class TiwiProtocolDEXExecutor implements SwapRouterExecutor {
 
   /**
    * Ensure user has approved TiwiProtocolDEX. Approves max/infinite so a (token, spender)
-   * pair is only ever signed ONCE — later swaps of the same token reuse the allowance.
+   * pair is only ever signed ONCE - later swaps of the same token reuse the allowance.
    * The allowance is only permission; each swap still moves exactly its own amountIn.
    */
   private async ensureApproval(
@@ -689,7 +689,7 @@ export class TiwiProtocolDEXExecutor implements SwapRouterExecutor {
       return; // Already has sufficient allowance
     }
 
-    onStatusUpdate?.({ stage: 'approving', message: 'Transaction 1 of 2 — Approving token...' });
+    onStatusUpdate?.({ stage: 'approving', message: 'Transaction 1 of 2 - Approving token...' });
 
     const data = encodeFunctionData({
       abi: ERC20_ABI,
@@ -706,7 +706,7 @@ export class TiwiProtocolDEXExecutor implements SwapRouterExecutor {
 
     await this.publicClient.waitForTransactionReceipt({ hash, timeout: 60_000 });
 
-    // Quick verify — receipt already confirmed the tx, just one fast check
+    // Quick verify - receipt already confirmed the tx, just one fast check
     for (let i = 0; i < 2; i++) {
       const newAllowance = await this.publicClient.readContract({
         address: token,

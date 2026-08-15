@@ -233,7 +233,7 @@ export function chainColor(chainId?: number): string {
 /** APR as a green ▲ chip, or a muted dash when unavailable. */
 export function AprChip({ value }: { value?: number | null }) {
   if (typeof value !== 'number' || !isFinite(value) || value <= 0) {
-    return <Text style={s.dash}>—</Text>;
+    return <Text style={s.dash}>-</Text>;
   }
   return (
     <View style={s.aprChip}>

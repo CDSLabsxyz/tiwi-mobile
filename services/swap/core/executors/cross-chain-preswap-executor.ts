@@ -2,7 +2,7 @@
  * Cross-Chain Pre-Swap Executor (Phase 4a)
  *
  * Handles cross-chain swaps FROM a fee-on-transfer (taxed) token like TWC, which
- * aggregators (LiFi/Relay) can't bridge directly — their source swap reverts on the
+ * aggregators (LiFi/Relay) can't bridge directly - their source swap reverts on the
  * transfer tax. We split it into two legs, each a proven path:
  *
  *   Leg 1: swap  TWC -> USDT   on the SOURCE chain   (our Path R executors, FoT-safe)
@@ -10,9 +10,9 @@
  *
  * The aggregator owns asynchronous destination delivery in leg 2, so there is NO
  * synchronous dest-chain swap (which is why the old multi-step swap→bridge→swap flow
- * couldn't work — bridges take minutes to land).
+ * couldn't work - bridges take minutes to land).
  *
- * Non-taxed source tokens never hit this executor — they route directly through the
+ * Non-taxed source tokens never hit this executor - they route directly through the
  * aggregator executors as before.
  */
 import { getAddress, parseUnits, type Address } from 'viem';
@@ -37,7 +37,7 @@ const TIWI_DEX_DEPLOYED =
  * Decide which leg of a cross-chain pre-swap collects the single Tiwi fee.
  *
  * Returns true → collect the fee on leg 2 (skip leg 1). This is correct ONLY when leg 1 would
- * otherwise charge the fee via a SEPARATE tax-transfer signature — the BscDirect path: BSC
+ * otherwise charge the fee via a SEPARATE tax-transfer signature - the BscDirect path: BSC
  * source + BNB gas + the in-contract TiwiDEX not deployed. In every other case leg 1 folds the
  * fee inline in-contract (TiwiDEX / relayer) and keeps it, so leg 2 must skip to avoid
  * double-charging.
@@ -89,11 +89,11 @@ export class CrossChainPreSwapExecutor implements SwapRouterExecutor {
       const stableAddr = getAddress(stable.address) as Address;
 
       // Pre-flight: reject dust cross-chain swaps BEFORE any transaction. Bridges have
-      // minimums + relayer fees that make sub-~$3 bridges refund — don't waste the user's
+      // minimums + relayer fees that make sub-~$3 bridges refund - don't waste the user's
       // gas/signatures on a swap that can't complete on the destination.
       const inputUSD = parseFloat((route.fromToken as any).amountUSD || '0');
       if (inputUSD > 0 && inputUSD < MIN_CROSS_CHAIN_USD) {
-        const msg = `Amount too small for a cross-chain swap (~$${inputUSD.toFixed(2)}). Cross-chain bridges need at least ~$${MIN_CROSS_CHAIN_USD} — try a larger amount.`;
+        const msg = `Amount too small for a cross-chain swap (~$${inputUSD.toFixed(2)}). Cross-chain bridges need at least ~$${MIN_CROSS_CHAIN_USD} - try a larger amount.`;
         onStatusUpdate?.({ stage: 'failed', message: msg, error: new Error(msg) });
         return { success: false, txHash: '', error: new Error(msg) };
       }
@@ -101,7 +101,7 @@ export class CrossChainPreSwapExecutor implements SwapRouterExecutor {
       // ── Tax placement: charge the 0.25% fee on EXACTLY ONE leg, on the leg that can do it
       // without a dedicated tax signature. ──
       //  • Leg 1 (BSC source swap) only does a SEPARATE tax transfer (its own signature) on the
-      //    BscDirect path — BNB gas + the TiwiDEX contract not deployed. In that case skip leg-1
+      //    BscDirect path - BNB gas + the TiwiDEX contract not deployed. In that case skip leg-1
       //    tax and collect once on leg 2, where Relay folds it inline (no signature).
       //  • Otherwise leg 1 folds the fee inline in-contract (TiwiDEX / relayer), so leg 1 keeps
       //    the fee and leg 2 must skip it (avoids double-charging).
@@ -151,7 +151,7 @@ export class CrossChainPreSwapExecutor implements SwapRouterExecutor {
       }
       if (leg1.txHash) allTxHashes.push(leg1.txHash);
 
-      // Actual stable received (balance delta) — robust to fees/slippage.
+      // Actual stable received (balance delta) - robust to fees/slippage.
       const stableAfter = await publicClient.readContract({
         address: stableAddr, abi: ERC20_BALANCE_ABI, functionName: 'balanceOf', args: [getAddress(userAddress) as Address],
       }) as bigint;
@@ -174,7 +174,7 @@ export class CrossChainPreSwapExecutor implements SwapRouterExecutor {
       } as any);
 
       // Leg 2 must DELIVER the final token cross-chain (bridge + destination swap).
-      // Across is a pure same-token bridge — it can't output ARB, only USDT — so we
+      // Across is a pure same-token bridge - it can't output ARB, only USDT - so we
       // prefer Relay/LiFi, which do the destination swap. Fall back only if neither exists.
       const leg2Candidates = [leg2Resp?.route, ...(leg2Resp?.alternatives || [])].filter(Boolean) as RouterRoute[];
       const leg2Route =
@@ -202,7 +202,7 @@ export class CrossChainPreSwapExecutor implements SwapRouterExecutor {
       });
       if (leg2.txHash) allTxHashes.push(leg2.txHash);
       if (!leg2.success) {
-        // Leg 1 succeeded: user holds the stable on the source chain — no funds lost.
+        // Leg 1 succeeded: user holds the stable on the source chain - no funds lost.
         return { success: false, txHash: leg2.txHash || '', txHashes: allTxHashes, error: leg2.error || new Error(`Bridge failed; your ${stable.symbol} is safe on the source chain`) };
       }
 

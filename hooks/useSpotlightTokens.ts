@@ -117,7 +117,7 @@ export function useSpotlightTokens(activeOnly: boolean = true) {
                 };
             }
 
-            // No match in the unified list — use server-side enriched fields
+            // No match in the unified list - use server-side enriched fields
             // from the spotlight response so we don't render $0.00 / +0.00%.
             return {
                 ...t,

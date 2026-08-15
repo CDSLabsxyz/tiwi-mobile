@@ -42,12 +42,12 @@ function isInternalTonWalletClient(wc: unknown): wc is InternalTonWalletClient {
  * TON executor.
  *
  * Two distinct paths:
- *  • STON.fi same-chain swaps (`router === 'stonfi'`) — the quote adapter only
+ *  • STON.fi same-chain swaps (`router === 'stonfi'`) - the quote adapter only
  *    prices the swap; the signable transaction is BUILT HERE with @ston-fi/sdk
  *    (RouterV1) against a TonClient, then signed by whichever wallet controls the
  *    TON address (internal ed25519 keypair via WalletContractV4, or external
  *    TonConnect).
- *  • Cross-chain routes that LAND on TON (Rubic/Relay, etc.) — those adapters put
+ *  • Cross-chain routes that LAND on TON (Rubic/Relay, etc.) - those adapters put
  *    a ready-to-send TonConnect message in `route.raw.transaction`; we forward it
  *    to TonConnect unchanged (legacy behavior, preserved).
  */
@@ -259,7 +259,7 @@ export class TONExecutor implements SwapRouterExecutor {
                 const now = await contract.getSeqno();
                 if (now > prev) return;
             } catch {
-                // transient RPC error — keep polling until the deadline
+                // transient RPC error - keep polling until the deadline
             }
         }
         // Timeout doesn't necessarily mean failure (mirrors the multi-send runner);

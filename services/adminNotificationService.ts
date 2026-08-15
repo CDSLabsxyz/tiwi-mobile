@@ -45,7 +45,7 @@ class AdminNotificationService {
             };
         } catch (error: any) {
             // This runs on a background poll, so a dropped request is expected
-            // when the device is offline — warn instead of raising a red box.
+            // when the device is offline - warn instead of raising a red box.
             logNetworkAwareError('[AdminNotificationService] Exception fetching notifications:', error);
             return { notifications: [], unreadCount: 0 };
         }

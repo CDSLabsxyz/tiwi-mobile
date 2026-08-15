@@ -1,22 +1,22 @@
 /**
- * Cross-Chain Post-Swap Executor — the destination-side mirror of `CrossChainPreSwapExecutor`.
+ * Cross-Chain Post-Swap Executor - the destination-side mirror of `CrossChainPreSwapExecutor`.
  *
  * Aggregators quote cross-chain swaps INTO a fee-on-transfer token (TWC) happily, but they can't
  * settle them: the destination swap is a plain router call that reverts on the transfer tax. The
- * bridge then refunds in whatever currency was actually deposited — and for a Solana source that
+ * bridge then refunds in whatever currency was actually deposited - and for a Solana source that
  * deposit is USDC, because the aggregator's origin transaction swaps SOL → USDC before depositing.
  * Net effect: the user asks for SOL → TWC and ends up holding USDC on Solana.
  *
  * So we split it, each leg a proven path:
  *
- *   Leg 1: swap  fromToken(src) -> stable(dest)   (LiFi/Relay/Rubic — a normal, supported crossing)
+ *   Leg 1: swap  fromToken(src) -> stable(dest)   (LiFi/Relay/Rubic - a normal, supported crossing)
  *   Leg 2: swap  stable(dest)   -> taxedToken     (our FoT-safe BSC executors, same chain)
  *
- * Leg 2 can only run once the bridge lands, which takes minutes — so leg 1 is persisted the moment
+ * Leg 2 can only run once the bridge lands, which takes minutes - so leg 1 is persisted the moment
  * it confirms (see `pending-second-leg`). If the wait times out or the app dies, the stable is
  * sitting safely in the user's destination wallet and the swap can be finished later.
  *
- * Non-taxed destinations never reach this executor — they route straight through the aggregators.
+ * Non-taxed destinations never reach this executor - they route straight through the aggregators.
  */
 import { getAddress, type Address } from 'viem';
 import type { SwapRouterExecutor, SwapExecutionParams, SwapExecutionResult, SwapExecutionStatus } from '../types';
@@ -85,15 +85,15 @@ export class CrossChainPostSwapExecutor implements SwapRouterExecutor {
     // NOTE: everything below runs inside this try, and failures RESOLVE as `{ success: false }`
     // rather than throwing. That is load-bearing: `SwapExecutor.execute` falls through to the
     // next candidate on a throw, and the next candidate for this route is the very aggregator
-    // executor we're intercepting — so a throw here would re-run the swap the broken way.
+    // executor we're intercepting - so a throw here would re-run the swap the broken way.
     try {
       const { swapExecutor } = await import('../index');
 
       // Leg 2 is signed ON the destination chain, so the intermediate stable must land on an
-      // address WE hold the key for — a user-set recipient can be a third party we can't sign
+      // address WE hold the key for - a user-set recipient can be a third party we can't sign
       // as. For a non-EVM source `userAddress` is not an 0x address, so fall back to the
       // wallet's own EVM address. The final token still goes to `finalRecipient`, which leg 2
-      // delivers to directly (the FoT-safe router call takes an explicit `to`) — no extra hop.
+      // delivers to directly (the FoT-safe router call takes an explicit `to`) - no extra hop.
       const destAddress = [getEvmAddress(), userAddress].find(isEvmAddress);
       if (!destAddress) {
         const msg = `This swap needs an EVM wallet on the destination network to complete the ${toToken.symbol || 'final'} step. Please add or unlock one and try again.`;
@@ -106,7 +106,7 @@ export class CrossChainPostSwapExecutor implements SwapRouterExecutor {
       // sub-~$3 crossing refund, and a refund is exactly the outcome we're here to avoid.
       const inputUSD = parseFloat((route.fromToken as any).amountUSD || '0');
       if (inputUSD > 0 && inputUSD < MIN_CROSS_CHAIN_USD) {
-        const msg = `Amount too small for a cross-chain swap (~$${inputUSD.toFixed(2)}). Cross-chain bridges need at least ~$${MIN_CROSS_CHAIN_USD} — try a larger amount.`;
+        const msg = `Amount too small for a cross-chain swap (~$${inputUSD.toFixed(2)}). Cross-chain bridges need at least ~$${MIN_CROSS_CHAIN_USD} - try a larger amount.`;
         onStatusUpdate?.({ stage: 'failed', message: msg, error: new Error(msg) });
         return { success: false, txHash: '', error: new Error(msg) };
       }
@@ -122,7 +122,7 @@ export class CrossChainPostSwapExecutor implements SwapRouterExecutor {
       try {
         stableBefore = await readStableBalance(destChain, stable.address, destAddress);
       } catch (e: any) {
-        // Distinguish "can't read the destination chain" from a routing/bridge failure —
+        // Distinguish "can't read the destination chain" from a routing/bridge failure -
         // otherwise both surface as the same opaque mapped message.
         console.error('[CrossChainPostSwap] destination balance read failed:', e);
         throw new Error(`Couldn't reach the destination network to prepare your ${toToken.symbol} swap. Please try again.`);
@@ -158,10 +158,10 @@ export class CrossChainPostSwapExecutor implements SwapRouterExecutor {
         fromAmount,
         userAddress,
         recipientAddress: destAddress,
-        walletClient,          // source-chain signer — leg 1 signs on the source chain
+        walletClient,          // source-chain signer - leg 1 signs on the source chain
         slippage,
         // The single Tiwi fee is charged here, exactly as it would be on a normal one-leg
-        // cross-chain swap — unless an outer leg already charged it (a taxed→taxed pair nests
+        // cross-chain swap - unless an outer leg already charged it (a taxed→taxed pair nests
         // this executor inside the pre-swap one). Leg 2 always skips, so it's charged once.
         skipTax: skipTax === true,
         onStatusUpdate: (s) => onStatusUpdate?.({ ...s, message: `Step 1/3: ${s.message}` }),
@@ -197,7 +197,7 @@ export class CrossChainPostSwapExecutor implements SwapRouterExecutor {
       if (arrived === null) {
         const msg =
           `Your ${fromToken.symbol} is on its way to ${stable.symbol} on the destination network, but it hasn't landed yet. ` +
-          `Nothing is lost — reopen Swap once it arrives and we'll finish the ${toToken.symbol} step for you.`;
+          `Nothing is lost - reopen Swap once it arrives and we'll finish the ${toToken.symbol} step for you.`;
         onStatusUpdate?.({ stage: 'failed', message: msg, error: new Error(msg) });
         return { success: false, txHash: leg1.txHash || '', txHashes: allTxHashes, error: new Error(msg) };
       }
@@ -208,13 +208,13 @@ export class CrossChainPostSwapExecutor implements SwapRouterExecutor {
       );
       if (leg2.txHash) allTxHashes.push(leg2.txHash);
       if (!leg2.success) {
-        // Leg 1 landed: the user holds the stable on the destination chain — no funds lost, and
+        // Leg 1 landed: the user holds the stable on the destination chain - no funds lost, and
         // the pending record is deliberately left in place so this can be retried.
         return {
           success: false,
           txHash: leg2.txHash || '',
           txHashes: allTxHashes,
-          error: leg2.error || new Error(`Your ${stable.symbol} arrived safely — the final ${toToken.symbol} swap can be retried from the Swap screen.`),
+          error: leg2.error || new Error(`Your ${stable.symbol} arrived safely - the final ${toToken.symbol} swap can be retried from the Swap screen.`),
         };
       }
 
@@ -256,7 +256,7 @@ export class CrossChainPostSwapExecutor implements SwapRouterExecutor {
           return formatUnitsSafe(delta, pending.stable.decimals);
         }
       } catch (e) {
-        // A flaky RPC read must not abort a swap that's mid-flight — just try again.
+        // A flaky RPC read must not abort a swap that's mid-flight - just try again.
         console.warn('[CrossChainPostSwap] Balance poll failed, retrying:', e);
       }
 
@@ -278,7 +278,7 @@ export class CrossChainPostSwapExecutor implements SwapRouterExecutor {
 /**
  * Run the taxed second leg: stable → taxed token, on the destination chain.
  *
- * `walletClient` is deliberately left unset — the caller's client is bound to the SOURCE chain
+ * `walletClient` is deliberately left unset - the caller's client is bound to the SOURCE chain
  * (and for a Solana source isn't even an EVM client). Every BSC executor self-fetches a client
  * for `fromToken.chainId` when none is passed, which is exactly the destination chain here.
  */
@@ -319,7 +319,7 @@ export async function runSecondLeg(
     userAddress: destAddress,
     recipientAddress: finalRecipient,
     slippage,
-    // The Tiwi fee was already charged on leg 1 — charging again would double-bill.
+    // The Tiwi fee was already charged on leg 1 - charging again would double-bill.
     skipTax: true,
     onStatusUpdate,
   });
@@ -343,7 +343,7 @@ export async function listReadySecondLegs(): Promise<ReadySecondLeg[]> {
     try {
       const now = await readStableBalance(record.destChainId, record.stable.address, record.destAddress);
       const delta = now - BigInt(record.stableBefore);
-      // Never try to swap more than the wallet currently holds — the user may have spent some
+      // Never try to swap more than the wallet currently holds - the user may have spent some
       // of it in the meantime, which would make leg 2 revert on transferFrom.
       const usable = delta > now ? now : delta;
       if (usable > BigInt(0)) {

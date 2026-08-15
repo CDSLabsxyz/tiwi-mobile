@@ -1,5 +1,5 @@
 /**
- * TIWI Protocol — Mobile API Client
+ * TIWI Protocol - Mobile API Client
  *
  * A typed, isomorphic HTTP client for all /api/v1/* endpoints.
  * Works in React Native / Expo (no dependency on `window.location`).
@@ -18,7 +18,7 @@
 /**
  * Production base URL. Override per environment.
  *
- * MUST be `lite.` — that is where tiwi-user-app (the backend serving every
+ * MUST be `lite.` - that is where tiwi-user-app (the backend serving every
  * /api/v1 route) is deployed. `app.tiwiprotocol.xyz` is an older deployment
  * that 404s on the balance routes (`mobile/portfolio`, `evm-direct-balances`,
  * `cosmos-direct-balances`, …), which silently drops the app onto its legacy
@@ -89,7 +89,7 @@ export interface TokenItem {
     totalSupply?: number;
     /**
      * Whether the indexer considers the token verified. NOT a trust signal on
-     * its own — the index marks junk like "01" and "100¥" verified while
+     * its own - the index marks junk like "01" and "100¥" verified while
      * leaving BNB/USDT/USDC unverified. Treat it as one input to the spam
      * filter, never as a standalone allow/deny.
      */
@@ -97,10 +97,21 @@ export interface TokenItem {
     isHoneypot?: boolean;
 }
 
+export interface TokenPriceRequestToken {
+    address: string;
+    chainId: number;
+    symbol?: string;
+    coingeckoId?: string;
+}
+
+export interface TokenPricesResponse {
+    prices: Record<string, number>;
+}
+
 /**
  * An entry from the admin-curated swap default list
  * (`/api/v1/swap-default-tokens`). This is the same list the web token
- * selector browses — roughly 5 headline tokens per chain, TWC pinned at
+ * selector browses - roughly 5 headline tokens per chain, TWC pinned at
  * rank 1. `address: null` / the "PLACEHOLDER" sentinel marks a coming-soon
  * stub that renders but can't be routed.
  */
@@ -295,6 +306,8 @@ export interface StakingPool {
     tokenSymbol?: string;
     tokenName?: string;
     tokenLogo?: string;
+    rewardTokenSymbol?: string;
+    rewardTokenLogo?: string;
     decimals?: number;
     minStakeAmount: number;
     maxStakeAmount?: number;
@@ -321,7 +334,7 @@ export interface StakingPoolsResponse {
 // the mobile client doesn't need any BigInt handling for rendering.
 
 export interface MobilePoolOnChain {
-    /** In the REWARD token — NOT the staking token. See `rewardTokenDecimals`. */
+    /** In the REWARD token - NOT the staking token. See `rewardTokenDecimals`. */
     poolReward: string;
     rewardDurationSeconds: number;
     /** In the STAKING token. */
@@ -343,7 +356,7 @@ export interface MobilePoolOnChain {
     active: boolean;
     funded: boolean;
     // Reward-token identity. Optional because a backend deployed before the
-    // reward-token fix doesn't send them — callers must fall back to the
+    // reward-token fix doesn't send them - callers must fall back to the
     // staking token, which is what every pool did before cross-token existed.
     stakingToken?: string;
     rewardToken?: string;
@@ -355,7 +368,7 @@ export interface MobilePoolOnChain {
 
 export interface MobilePool {
     id: string;
-    /** Admin-set pool name. Optional — the mobile staking route doesn't
+    /** Admin-set pool name. Optional - the mobile staking route doesn't
      *  currently project it, so callers must fall back to `tokenSymbol`. */
     name?: string;
     chainId: number;
@@ -364,6 +377,8 @@ export interface MobilePool {
     tokenSymbol: string;
     tokenName: string;
     tokenLogo?: string;
+    rewardTokenSymbol?: string;
+    rewardTokenLogo?: string;
     decimals: number;
     apy?: number;
     minStakeAmount: number;
@@ -384,7 +399,7 @@ export interface MobilePositionOnChain {
     stakeTime: number;            // unix seconds
     userRewardPerSecond: string;  // REWARD tokens / sec
     poolEndTime: number;          // unix seconds
-    // Reward-token identity — `pendingReward` is denominated in it, not the
+    // Reward-token identity - `pendingReward` is denominated in it, not the
     // staking token. Optional: absent from a pre-fix backend.
     rewardToken?: string;
     rewardTokenSymbol?: string;
@@ -393,8 +408,8 @@ export interface MobilePositionOnChain {
 }
 
 export interface MobilePosition {
-    id: string;           // user_stakes row id — use as `stakeId` for /record
-    poolDbId: string;     // staking_pools row id — use as `poolId` for /tx
+    id: string;           // user_stakes row id - use as `stakeId` for /record
+    poolDbId: string;     // staking_pools row id - use as `poolId` for /tx
     userWallet: string;
     stakedAmount: string;
     rewardsEarned: string;
@@ -467,10 +482,8 @@ export interface UserStakingPool {
     createdAt: string;
     /**
      * Snapshot of the figures the creator chose, mirrored onto the ownership
-     * row. `rewardTokenSymbol` is the ONLY place the earn token is recorded
-     * for a cross-token pool ("stake TWC, earn USDT") — `staking_pools` only
-     * carries the staking token — so reward figures must be labelled from
-     * here, not from `pool.tokenSymbol`.
+     * row. Reward token metadata is also present on the joined pool when the
+     * public staking row has been saved with cross-token details.
      */
     settings?: {
         tokenSymbol?: string;
@@ -490,6 +503,10 @@ export interface UserStakingPool {
         tokenSymbol?: string;
         tokenName?: string;
         tokenLogo?: string;
+        rewardTokenAddress?: string;
+        rewardTokenSymbol?: string;
+        rewardTokenDecimals?: number;
+        rewardTokenLogo?: string;
         decimals?: number;
         apy?: number;
         maxTvl?: number;
@@ -609,6 +626,14 @@ class TokensModule {
             '/api/v1/swap-default-tokens',
             options?.signal ? { signal: options.signal } : undefined,
         );
+    }
+
+    /** POST /api/v1/token-prices */
+    prices(tokens: TokenPriceRequestToken[]): Promise<TokenPricesResponse> {
+        return apiFetch(this.base, '/api/v1/token-prices', {
+            method: 'POST',
+            body: JSON.stringify({ tokens }),
+        });
     }
 }
 
@@ -747,7 +772,7 @@ class WalletModule {
     /**
      * Token balances for a wallet address.
      *
-     * Routes directly to Nexxend — the TIWI super-app backend's own
+     * Routes directly to Nexxend - the TIWI super-app backend's own
      * /api/v1/wallet/balances currently returns `{ balances: [] }` for
      * every wallet (server-side regression). When the backend is fixed,
      * either remove the Nexxend short-circuit or keep it as primary.
@@ -810,7 +835,7 @@ class WalletModule {
         amount: string;
         amountFormatted: string;
         /** Output amount, human-readable. Lands in `to_amount_formatted`, which
-         *  is what a pool's Transactions table renders as the "→ TOKEN" side —
+         *  is what a pool's Transactions table renders as the "→ TOKEN" side -
          *  omit it and the row shows an arrow with no number. */
         toAmountFormatted?: string;
         usdValue?: number;
@@ -865,7 +890,7 @@ class StakingModule {
 
     // ─── Mobile-first staking API (/api/v1/mobile/staking/*) ────────────────
     //
-    // Prefer these over `.list()` / `.userStakes()` — they return pre-enriched
+    // Prefer these over `.list()` / `.userStakes()` - they return pre-enriched
     // DB + on-chain data and build unsigned transaction calldata so the mobile
     // client doesn't need to hold contract ABIs.
     //
@@ -920,7 +945,7 @@ class StakingModule {
      * POST /api/v1/mobile/staking/tx
      *
      * Returns 1–2 unsigned transaction steps. Execute in order, waiting for
-     * each receipt before the next. Every step has a `chainId` — switch the
+     * each receipt before the next. Every step has a `chainId` - switch the
      * active wallet chain before submitting if needed.
      */
     buildTx(
@@ -963,6 +988,10 @@ class StakingModule {
         tokenName?: string;
         tokenLogo?: string;
         decimals?: number;
+        rewardTokenAddress?: string;
+        rewardTokenSymbol?: string;
+        rewardTokenDecimals?: number;
+        rewardTokenLogo?: string;
         minStakeAmount: number;
         maxStakeAmount?: number;
         minStakingPeriod?: string;
@@ -981,6 +1010,22 @@ class StakingModule {
     }): Promise<any> {
         return apiFetch(this.base, '/api/v1/staking-pools', {
             method: 'POST',
+            body: JSON.stringify(body),
+        });
+    }
+
+    /**
+     * PATCH /api/v1/staking-pools
+     *
+     * Update the public pool row. Pause/resume uses this to keep the DB
+     * visibility flag aligned with the contract's `setActive(bool)` state.
+     */
+    updatePoolRecord(body: {
+        id: string;
+        status?: 'active' | 'inactive' | 'archived';
+    }): Promise<any> {
+        return apiFetch(this.base, '/api/v1/staking-pools', {
+            method: 'PATCH',
             body: JSON.stringify(body),
         });
     }
@@ -1243,7 +1288,7 @@ class ChartsModule {
             chainId: params.chainId,
             baseChainId: params.baseChainId,
             quoteChainId: params.quoteChainId,
-            // No default resolution — the server picks one to match `range`.
+            // No default resolution - the server picks one to match `range`.
             // Hard-coding 15m made a 1Y request ask for 15-minute bars, which
             // the upstream caps long before it reaches a year.
             resolution: params.resolution,
@@ -1271,14 +1316,14 @@ class LiveStatusModule {
  *
  * The user signs an EIP-712 `GaslessSwap` struct; the relayer wallet submits it
  * and pays the BNB gas, deducting the equivalent in the chosen gas token. The
- * swap engine's BscGaslessExecutor drives this — these methods exist so other
+ * swap engine's BscGaslessExecutor drives this - these methods exist so other
  * screens (and diagnostics) can reach the same endpoints.
  */
 class GaslessSwapModule {
     constructor(private base: string) { }
 
     /**
-     * POST /api/v1/gasless-swap — submit a signed swap request.
+     * POST /api/v1/gasless-swap - submit a signed swap request.
      * Body must carry the full request struct plus `signature: {v, r, s}`.
      */
     execute(body: any): Promise<{
@@ -1295,7 +1340,7 @@ class GaslessSwapModule {
     }
 
     /**
-     * GET /api/v1/gasless-swap?user=0x… — the user's current relayer nonce.
+     * GET /api/v1/gasless-swap?user=0x… - the user's current relayer nonce.
      * Must be read fresh for every signature; a stale nonce is rejected
      * on-chain, not by the API.
      */
@@ -1385,8 +1430,8 @@ class TranslateModule {
 /**
  * Multi-chain portfolio discovery.
  *
- * Fans out (server-side) to every balance source the web app uses — Nexxend
- * majors + the long-tail `*-direct-balances` readers — merges + reprices, and
+ * Fans out (server-side) to every balance source the web app uses - Nexxend
+ * majors + the long-tail `*-direct-balances` readers - merges + reprices, and
  * returns one flat `balances[]`. Replaces the mobile hook's per-address
  * `wallet.balances` fan-out with a single call; the hook still owns
  * dedup / spam-filter / portfolio-metrics.
@@ -1396,7 +1441,7 @@ export interface PortfolioAddresses {
     SOLANA?: string;
     TRON?: string;
     TON?: string;
-    /** cosmos1… — one key fans out to the whole Cosmos family server-side. */
+    /** cosmos1… - one key fans out to the whole Cosmos family server-side. */
     COSMOS?: string;
     OSMOSIS?: string;
     SUI?: string;
@@ -1429,7 +1474,7 @@ class PortfolioModule {
 }
 
 /**
- * Liquidity Hub — reads (pools/positions/swaps), metadata records (after the
+ * Liquidity Hub - reads (pools/positions/swaps), metadata records (after the
  * device signs on-chain), and the address registry. Write transactions are
  * encoded + signed on-device via hooks/useLiquidityHub.ts (not here).
  */
@@ -1490,7 +1535,7 @@ class LiquidityModule {
         } as any);
     }
 
-    /** POST /api/v1/pools — record a pool after createPair/addLiquidity confirmed. */
+    /** POST /api/v1/pools - record a pool after createPair/addLiquidity confirmed. */
     createPool(body: CreateLiquidityPoolInput): Promise<{ success: boolean; pool: LiquidityPool }> {
         return apiFetch(this.base, '/api/v1/pools', { method: 'POST', body: JSON.stringify(body) });
     }
@@ -1515,17 +1560,17 @@ class LiquidityModule {
         } as any);
     }
 
-    /** POST /api/v1/pool-positions — record/top-up a position after addLiquidity confirmed. */
+    /** POST /api/v1/pool-positions - record/top-up a position after addLiquidity confirmed. */
     createPosition(body: CreateLiquidityPositionInput): Promise<{ success: boolean; position: LiquidityPosition; isUpdate: boolean }> {
         return apiFetch(this.base, '/api/v1/pool-positions', { method: 'POST', body: JSON.stringify(body) });
     }
 
-    /** PATCH /api/v1/pool-positions — e.g. mark withdrawn after removeLiquidity. */
+    /** PATCH /api/v1/pool-positions - e.g. mark withdrawn after removeLiquidity. */
     updatePosition(body: UpdateLiquidityPositionInput): Promise<{ success: boolean; position: LiquidityPosition }> {
         return apiFetch(this.base, '/api/v1/pool-positions', { method: 'PATCH', body: JSON.stringify(body) });
     }
 
-    /** GET /api/v1/liquidity-addresses — factory/router address maps per chain. */
+    /** GET /api/v1/liquidity-addresses - factory/router address maps per chain. */
     addresses(): Promise<{ factories: Record<string, string>; routers: Record<string, string> }> {
         return apiFetch(this.base, '/api/v1/liquidity-addresses');
     }
@@ -1552,12 +1597,14 @@ export interface AiChatRequest {
     history?: { role: 'user' | 'assistant'; content: string }[];
     /** `data:image/...;base64,...` URLs. The server accepts up to 4. */
     images?: string[];
+    /** True only when local free credits are gone and the server should spend paid credits. */
+    chargePaidCredit?: boolean;
     credits?: { available?: number; monthlyLeft?: number; paidLeft?: number };
 }
 
 /**
  * The wallet's shared credit balance. Owned by the server so the same wallet
- * reads the same number on web and mobile — clients never compute it.
+ * reads the same number on web and mobile - clients never compute it.
  */
 export interface AiCreditBalance {
     freeLimit: number;
@@ -1606,7 +1653,7 @@ class AiModule {
     constructor(private base: string) { }
 
     /**
-     * POST /api/v1/ai/chat — the full TIWI AI pipeline (knowledge base + live
+     * POST /api/v1/ai/chat - the full TIWI AI pipeline (knowledge base + live
      * market lookups + site grounding + security validation + brand scrubbing).
      */
     chat(body: AiChatRequest, signal?: AbortSignal): Promise<AiChatResponse> {
@@ -1617,13 +1664,13 @@ class AiModule {
         });
     }
 
-    /** GET /api/v1/ai-credit-settings — admin-managed allowance + TWC packs. */
+    /** GET /api/v1/ai-credit-settings - admin-managed allowance + TWC packs. */
     creditSettings(): Promise<{ settings: AiCreditSettings }> {
         return apiFetch(this.base, '/api/v1/ai-credit-settings', { cache: 'no-store' } as RequestInit);
     }
 
     /**
-     * GET /api/v1/ai/credits — the wallet's shared balance. This is the same
+     * GET /api/v1/ai/credits - the wallet's shared balance. This is the same
      * ledger the web app spends from, so a credit used there shows up here.
      */
     creditBalance(walletAddress?: string | null): Promise<{
@@ -1637,7 +1684,7 @@ class AiModule {
     }
 
     /**
-     * POST /api/v1/ai/credits/claim — grant a pack after its payment is
+     * POST /api/v1/ai/credits/claim - grant a pack after its payment is
      * verified on-chain by the server. Idempotent per transaction hash.
      */
     claimCredits(body: {
@@ -1659,7 +1706,7 @@ class AiModule {
     }
 
     /**
-     * POST /api/v1/ai/credits/purchase — server-priced quote for a pack. The
+     * POST /api/v1/ai/credits/purchase - server-priced quote for a pack. The
      * price is ALWAYS resolved server-side, so a tampered client can't buy a
      * pack cheaper than the admin set.
      */
@@ -1769,7 +1816,7 @@ export class TiwiApiClient {
     }
 }
 
-/** Shared singleton — import this in your mobile screens */
+/** Shared singleton - import this in your mobile screens */
 export const api = new TiwiApiClient(TIWI_API_BASE_URL);
 
 // Re-export modules just in case manual instantiation is needed

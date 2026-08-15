@@ -103,7 +103,7 @@ export const BSC_RELAYER_V2_CONFIG = {
     chainId: 56,
     // V2.1 Contract: 0x6011D1b2f97361528749635632E5d477b9AA395f (deployed 2026-08-09).
     // The previous default here, 0xfCa2E4468bb376F5b74834F75D76714390b4540A, was
-    // V2 and is dead — it is what the hand-ported gasless executor was pointing
+    // V2 and is dead - it is what the hand-ported gasless executor was pointing
     // at. relayerWallet below is still the live fee/drip wallet and is read by
     // the server, so only the contract address was stale.
     relayerContract: process.env.EXPO_PUBLIC_BSC_RELAYER_V2_CONTRACT || '0x6011D1b2f97361528749635632E5d477b9AA395f',
@@ -218,7 +218,7 @@ export function getTaxRate(chainId: number, gasTokenType?: GasTokenType): number
 /**
  * Integrator (inline) fee for a chain: the same Tiwi tax rate, packaged for an
  * aggregator's native fee parameter (LiFi `fee`, Relay `appFees`, OpenOcean `referrerFee`).
- * When a router collects this inline, the fee is skimmed INSIDE the swap tx — no separate
+ * When a router collects this inline, the fee is skimmed INSIDE the swap tx - no separate
  * transfer signature. `bps` is basis points; `recipient` is the chain's revenue wallet.
  */
 export function getIntegratorFee(
@@ -235,7 +235,7 @@ export function getIntegratorFee(
  * Whether a router should collect the Tiwi fee INLINE (folded into the swap via the
  * aggregator's integrator-fee param) instead of as a separate transfer signature.
  *
- * Controlled by NEXT_PUBLIC_INLINE_FEE_ROUTERS — a comma-separated list of router names
+ * Controlled by NEXT_PUBLIC_INLINE_FEE_ROUTERS - a comma-separated list of router names
  * (e.g. "relay,openocean"). Empty/unset → every router keeps the current separate-transfer
  * behavior, so this is a safe, reversible, per-router rollout switch.
  */

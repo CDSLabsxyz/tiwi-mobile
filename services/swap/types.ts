@@ -37,7 +37,7 @@ export interface SwapQuote {
     transactionRequest?: any;
     /**
      * The backend's normalized RouterRoute, kept verbatim. This is what the
-     * swap engine (services/swap/core) actually executes — every field above is
+     * swap engine (services/swap/core) actually executes - every field above is
      * a display-only projection of it. Always present: quotes come from one
      * source (/api/v1/route), exactly like the web app.
      */

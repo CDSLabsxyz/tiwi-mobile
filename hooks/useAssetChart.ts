@@ -7,7 +7,7 @@ import { useQuery } from '@tanstack/react-query';
  *
  * `filled=false` is deliberate: the chart endpoint will otherwise pad thin or
  * missing series with synthesised bars (`chart-data-filler`), and a made-up
- * price line is worse than no line. What this returns is what actually traded —
+ * price line is worse than no line. What this returns is what actually traded -
  * an empty array means we say so on screen.
  */
 
@@ -21,7 +21,7 @@ const RANGE_BY_PERIOD: Record<ChartTimePeriod, string> = {
     'All': 'ALL',
 };
 
-/** Longer windows can stay cached far longer — a daily bar moves once a day. */
+/** Longer windows can stay cached far longer - a daily bar moves once a day. */
 const STALE_MS_BY_PERIOD: Record<ChartTimePeriod, number> = {
     '1D': 60_000,
     '1W': 5 * 60_000,

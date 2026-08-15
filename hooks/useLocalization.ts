@@ -5,7 +5,7 @@
  * every caller picks up the full super-app i18n system (200+ languages via
  * MyMemory) without needing to change its import path.
  *
- * `usePrice` stays here — it's a wallet-app concern, not part of the web i18n.
+ * `usePrice` stays here - it's a wallet-app concern, not part of the web i18n.
  */
 
 import { useMemo } from 'react';

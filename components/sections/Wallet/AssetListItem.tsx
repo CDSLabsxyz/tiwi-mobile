@@ -75,7 +75,7 @@ export const AssetListItem: React.FC<AssetListItemProps> = ({
     const sparkData = useMemo(() => generateSparklineData(asset.change24h), [asset.change24h]);
 
     // Wrapped natives (WBNB/WETH/WSOL/…) get a bold UNWRAP pill instead of the
-    // decorative sparkline — holding one is nearly always an unintended leftover.
+    // decorative sparkline - holding one is nearly always an unintended leftover.
     const wrapped = useMemo(
         () => getWrappedNative(asset.chainId, asset.address, asset.symbol),
         [asset.chainId, asset.address, asset.symbol],

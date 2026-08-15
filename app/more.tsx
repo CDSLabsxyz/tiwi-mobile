@@ -19,7 +19,7 @@ interface MoreAction {
 }
 
 // All actions available in the More page. The `recommended` group is a
-// superset of the home screen's two quick-action rows — anything reachable
+// superset of the home screen's two quick-action rows - anything reachable
 // from home is reachable here too.
 const allActions: MoreAction[] = [
     // Recommended
@@ -386,7 +386,7 @@ const styles = StyleSheet.create({
         fontSize: 12,
         color: colors.mutedText, // #7C7C7C
     },
-    // Wraps to as many rows as needed — five fixed-width columns per row, so a
+    // Wraps to as many rows as needed - five fixed-width columns per row, so a
     // partial last row stays left-aligned under the one above it.
     gridContainer: {
         flexDirection: 'row',
@@ -415,7 +415,7 @@ const styles = StyleSheet.create({
     },
     // 12px, matching the home screen's secondary quick-action row. At 14px the
     // longest labels ("Campaigns", "Multisend") overflow a 5-column grid and
-    // React Native breaks them mid-word — "Campaign" / "s" on two lines.
+    // React Native breaks them mid-word - "Campaign" / "s" on two lines.
     actionLabel: {
         fontFamily: 'Manrope-Medium',
         fontSize: 12,

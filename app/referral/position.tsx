@@ -18,7 +18,7 @@ const imgFrameReferral = require('../../assets/home/frame-referral.png');
 const imgCopy01 = require('../../assets/referral/copy-01.svg');
 const imgShare01 = require('../../assets/referral/share-01.svg');
 
-// Static leaderboard tier data — mirrors the web app's Rebate Level table.
+// Static leaderboard tier data - mirrors the web app's Rebate Level table.
 const rebateTierData = [
     { level: 1, volumeRange: '<=$100.0000', rebateShare: '30%', color: '#B1F128' },
     { level: 2, volumeRange: '>$100.0000', rebateShare: '35%', color: '#B1F128' },
@@ -382,7 +382,7 @@ export default function ReferralPositionScreen() {
                                 const wallet = item.walletAddress || '';
                                 const truncated = wallet.length >= 10
                                     ? `${wallet.slice(0, 6)}...${wallet.slice(-4)}`
-                                    : (wallet || '—');
+                                    : (wallet || '-');
                                 // Backend canonical field is `rewardInUsdt`;
                                 // older callers read `rewards`. Accept both.
                                 const rewardsNum = Number(

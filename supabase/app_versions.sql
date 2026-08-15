@@ -25,7 +25,7 @@ create policy "Anyone can read app versions"
   using (true);
 
 -- 4. Only service role can insert/update (GitHub Actions uses service key)
--- No policy needed — service role bypasses RLS automatically
+-- No policy needed - service role bypasses RLS automatically
 
 -- 5. Create index for fast lookups (latest version first)
 create index if not exists idx_app_versions_created_at

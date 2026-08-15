@@ -4,11 +4,11 @@
  * Skip's `cosmos_tx.msgs` come as `{ msg_type_url, msg }` where `msg` is either a
  * JSON string or an object. Injective can't be signed through cosmjs (eth_secp256k1
  * pubkey/account), so its swaps are built with the Injective SDK's own message
- * classes and broadcast via the SDK — see `skip-executor.ts` `executeInjective`.
+ * classes and broadcast via the SDK - see `skip-executor.ts` `executeInjective`.
  *
  * Supported today (covers Skip's Injective routes):
- *   - `/cosmwasm.wasm.v1.MsgExecuteContract` — same-chain wasm DEX swaps (Helix/…)
- *   - `/ibc.applications.transfer.v1.MsgTransfer` — cross-chain IBC out of Injective
+ *   - `/cosmwasm.wasm.v1.MsgExecuteContract` - same-chain wasm DEX swaps (Helix/…)
+ *   - `/ibc.applications.transfer.v1.MsgTransfer` - cross-chain IBC out of Injective
  */
 
 import { base64ToBytes } from '@/services/swap/core/utils/base64-bytes';
@@ -81,7 +81,7 @@ export async function buildInjectiveMsgs(skipMsgs: AnyRecord[]): Promise<unknown
     if (typeUrl === MSG_TRANSFER) {
       // timeout_timestamp is uint64 nanoseconds. Number() loses sub-256ns
       // precision at that magnitude, which is immaterial for a packet timeout
-      // that sits minutes in the future — but keep the note here in case a
+      // that sits minutes in the future - but keep the note here in case a
       // future msg type needs exact 64-bit handling.
       const rawStr = typeof m.msg === 'string' ? m.msg : JSON.stringify(m.msg ?? {});
       const tsMatch = rawStr.match(/"timeout_timestamp"\s*:\s*"?(\d+)"?/);

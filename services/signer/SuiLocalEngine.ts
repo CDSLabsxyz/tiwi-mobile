@@ -4,9 +4,9 @@ import { useWalletStore } from '@/store/walletStore';
 import { ExecutionResult, SignerEngine, TransactionRequest } from './SignerTypes';
 
 /**
- * SuiLocalEngine — signs & broadcasts Sui transactions for in-app (mnemonic)
+ * SuiLocalEngine - signs & broadcasts Sui transactions for in-app (mnemonic)
  * wallets. The keypair is re-derived from the group's stored mnemonic on demand
- * (ed25519, m/44'/784'/0'/0'/0'), matching deriveSuiAddress — no separate Sui
+ * (ed25519, m/44'/784'/0'/0'/0'), matching deriveSuiAddress - no separate Sui
  * private key is persisted (mirrors SolanaLocalEngine).
  *
  * This tranche handles the NATIVE SUI transfer built from `tx.to` + `tx.value`

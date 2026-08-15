@@ -1,5 +1,5 @@
 /**
- * RedeemSuccessModal — success screen shown after redeeming (withdrawing) a
+ * RedeemSuccessModal - success screen shown after redeeming (withdrawing) a
  * liquidity position. Mirrors the create-flow Stage 3 success surface.
  */
 import { colors } from '@/constants/colors';

@@ -4,7 +4,7 @@
 export const NATIVE_TOKEN_ADDRESS = '0x0000000000000000000000000000000000000000';
 export const MORALIS_NATIVE_ADDRESS = '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
 /**
- * Native SOL — Solana's System Program, the address the routers and balance
+ * Native SOL - Solana's System Program, the address the routers and balance
  * pipeline both carry a lamport balance under. NOT `So111…112`: that mint is
  * WRAPPED SOL, a distinct SPL holding.
  */

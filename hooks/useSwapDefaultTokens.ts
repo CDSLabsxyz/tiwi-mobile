@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 export const SWAP_DEFAULT_TOKENS_QUERY_KEY = ['swap-default-tokens'] as const;
 
 /**
- * The admin-curated token list (`/api/v1/swap-default-tokens`) — roughly five
+ * The admin-curated token list (`/api/v1/swap-default-tokens`) - roughly five
  * headline tokens per chain with TWC pinned at rank 1.
  *
  * This is what the web token selector browses. `/api/v1/tokens` is a raw

@@ -7,7 +7,7 @@
  * is the single place that translates a canonical chainId into "which address
  * signs this, and what secret material do we need to load".
  *
- * Nothing here prompts the user — biometric/passcode gating happens once in the
+ * Nothing here prompts the user - biometric/passcode gating happens once in the
  * swap screen before execution starts, then the signer engines run with
  * `skipAuthorize` so a 3-leg swap doesn't ask three times.
  */
@@ -19,7 +19,7 @@ import { useWalletStore, type WalletGroup } from '@/store/walletStore';
  * Canonical chainId → the `addresses` key it is stored under.
  *
  * Mirrors the mapping the swap screen uses. Kept here so executors, the balance
- * layer and the screen can't drift apart — a wrong key silently signs with the
+ * layer and the screen can't drift apart - a wrong key silently signs with the
  * wrong account.
  */
 export function addressKeyForChain(chainId: number | string | undefined): string {
@@ -76,7 +76,7 @@ export function getAddressForChain(chainId: number | string | undefined): string
         || '';
 }
 
-/** The active wallet's EVM address — the key every derived chain hangs off. */
+/** The active wallet's EVM address - the key every derived chain hangs off. */
 export function getEvmAddress(): string {
     const group = getActiveWalletGroup();
     return group?.addresses?.EVM || useWalletStore.getState().address || '';

@@ -108,7 +108,7 @@ export const useTransactionExecution = () => {
                     });
                 }
                 if (hash && params) {
-                    // Broadcast ≠ success — wait for the receipt before logging.
+                    // Broadcast ≠ success - wait for the receipt before logging.
                     // A reverted tx would otherwise be recorded as a Transfer
                     // that never happened.
                     const mined = await waitForReceiptSuccess({ hash, chainId: params.chainId });
@@ -167,7 +167,7 @@ export const useTransactionExecution = () => {
                 if (result.status === 'success') {
                     // Confirm the disperse actually mined successfully before
                     // logging. Approve can land fine but the disperse call
-                    // revert (allowance race, OOG, bad recipient) — we don't
+                    // revert (allowance race, OOG, bad recipient) - we don't
                     // want that to show up as "Sent Successfully".
                     const mined = await waitForReceiptSuccess({ hash: result.hash, chainId: params.chainId });
                     if (mined === false) {
@@ -224,14 +224,14 @@ export const useTransactionExecution = () => {
                     });
                 }
 
-                // Log to backend — only after we know the tx actually landed.
+                // Log to backend - only after we know the tx actually landed.
                 if (hash) {
                     const mined = await waitForReceiptSuccess({ hash, chainId: params.chainId });
                     if (mined === false) {
                         throw new Error('Multi-send reverted on-chain');
                     }
                     if (mined !== true) {
-                        // Unknown — skip logging. Tx hash is still returned
+                        // Unknown - skip logging. Tx hash is still returned
                         // so the caller can show a pending state if desired.
                         setLastHash(hash);
                         return hash;
@@ -294,7 +294,7 @@ export const useTransactionExecution = () => {
                 return result;
             }
 
-            // ---- External wallet (wagmi) — EVM only ----
+            // ---- External wallet (wagmi) - EVM only ----
             const hashes: MultiSendResult['hashes'] = [];
             const failedGroups: MultiSendResult['failedGroups'] = [];
             const total = groups.length;

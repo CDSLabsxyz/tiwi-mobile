@@ -43,7 +43,7 @@ export default function SendScreen() {
     const router = useRouter();
     const pathname = usePathname();
 
-    // Backup gate — checked at action-time (button press), not on page mount.
+    // Backup gate - checked at action-time (button press), not on page mount.
     const { requireBackup, BackupRequiredModal } = useRequireBackup();
 
     // Custom numeric keyboard visibility (lifted from SendForm/MultiSendForm

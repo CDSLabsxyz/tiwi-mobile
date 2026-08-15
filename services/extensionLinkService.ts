@@ -1,12 +1,12 @@
 /**
  * Extension Link Service
  *
- * Pairs this device with TIWI Wallet Core — the browser extension in
+ * Pairs this device with TIWI Wallet Core - the browser extension in
  * `tiwi-wallet-core`. The extension's "Mobile sync" screen renders a QR code
  * carrying `tiwi://mobile-sync?code=<nonce>&expires=<epoch-ms>`; the mobile app
  * scans it, checks it hasn't expired, and records the pairing.
  *
- * NOTE: the extension side currently only displays the code and waits — there
+ * NOTE: the extension side currently only displays the code and waits - there
  * is no server-side handshake to complete yet, so `linkExtension` records the
  * pairing locally. When the sync endpoint exists, that is the single place to
  * post the code from.

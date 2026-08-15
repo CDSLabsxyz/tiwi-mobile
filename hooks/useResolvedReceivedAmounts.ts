@@ -18,7 +18,7 @@ function directionFor(item: UnifiedActivity): TxDirection | null {
     const cat = (item.category || '').toLowerCase();
     const title = (item.title || '').toLowerCase();
     if (cat === 'received' || cat === 'receive' || title.includes('received')) return 'received';
-    // Swaps show the output token (what the user got) — same side as a receive.
+    // Swaps show the output token (what the user got) - same side as a receive.
     if (cat === 'swap' || title.includes('swapped')) return 'received';
     if (cat === 'sent' || cat === 'send' || cat === 'transfer' || title.includes('sent')) return 'sent';
     return null;
@@ -27,7 +27,7 @@ function directionFor(item: UnifiedActivity): TxDirection | null {
 function needsResolve(item: UnifiedActivity): boolean {
     if (!directionFor(item)) return false;
     if (!item.hash || !item.chainId) return false;
-    // Always resolve — loggers are inconsistent about what they store
+    // Always resolve - loggers are inconsistent about what they store
     // (some write the input amount for a swap, some write 0, some omit the
     // symbol entirely). Pulling the receipt is cheap (cached by hash) and
     // ground-truth; the render site decides whether to prefer on-chain

@@ -178,14 +178,14 @@ export interface ReferralLeaderboardEntry {
     rank: number;
     walletAddress: string;
     invites: number;
-    /** Backend canonical field — USDT-denominated rebate earned. */
+    /** Backend canonical field - USDT-denominated rebate earned. */
     rewardInUsdt?: number;
     /** Optional pass-through fields the backend already returns. */
     level?: number;
     totalInviteSwapVolume?: number;
     taxTotal?: number;
     rebatePercentage?: number;
-    /** Legacy/alias — older code reads `rewards` so we keep it for back-compat.
+    /** Legacy/alias - older code reads `rewards` so we keep it for back-compat.
      *  Prefer `rewardInUsdt` going forward; fall back to this when missing. */
     rewards?: number;
 }
@@ -398,6 +398,8 @@ export interface APIStakingPool {
     tokenName: string;
     apy: number;
     tokenLogo?: string;
+    rewardTokenSymbol?: string;
+    rewardTokenLogo?: string;
     minStakeAmount?: number;
     maxStakeAmount?: number;
     contractAddress: string;
@@ -628,7 +630,7 @@ class TiwiApiClient {
     /**
      * Get balances for a wallet across specified chains.
      *
-     * Routed through Nexxend — the TIWI super-app backend's own
+     * Routed through Nexxend - the TIWI super-app backend's own
      * /api/v1/wallet/balances currently returns `{ balances: [] }` for
      * every wallet. Keep this in sync with WalletModule.balances() in
      * lib/mobile/api-client.ts when the backend is restored.
@@ -1079,7 +1081,7 @@ class TiwiApiClient {
     /**
      * Resolve a DB pool UUID.
      * Accepts either an on-chain numeric poolId (legacy factory architecture)
-     * or a DB UUID itself (V2 pool-per-contract architecture — there's no
+     * or a DB UUID itself (V2 pool-per-contract architecture - there's no
      * numeric on-chain id to resolve, so the caller passes the UUID through).
      */
     async resolvePoolUuid(identifier: number | string): Promise<string | null> {
@@ -1188,7 +1190,7 @@ class TiwiApiClient {
             const isAddressMalformed = !token.address || token.address.length < 30 || token.address.includes('...');
 
             // Try to find direct pairs first. `/latest/dex/tokens/<address>` is
-            // address-scoped but NOT chain-scoped — the same address string is a
+            // address-scoped but NOT chain-scoped - the same address string is a
             // live token on several chains (Solana and Fogo both use
             // `So111…112`), so when we already know the chain we only accept
             // that chain's pairs. Otherwise the first pair in the response,
@@ -1264,7 +1266,7 @@ class TiwiApiClient {
             }
 
             const dsChainId = primaryPair.chainId;
-            // The token's own chain wins — the pair is already known to be on it,
+            // The token's own chain wins - the pair is already known to be on it,
             // and DexScreener's slug map spells Solana with the other of its two
             // ids, which would silently renumber the chain out from under callers.
             const mappedChainId = token.chainId || DEXSCREENER_CHAIN_MAP[dsChainId] || 56;
@@ -1366,7 +1368,7 @@ const canonicalChainId = (id?: number): number | undefined =>
 
 /**
  * True when a DexScreener pair belongs to the token's chain. An unknown chain on
- * either side means "can't tell" and is allowed through — only a KNOWN mismatch
+ * either side means "can't tell" and is allowed through - only a KNOWN mismatch
  * rejects, so this never removes coverage, it only blocks cross-chain mix-ups.
  */
 export const isSameChain = (pairChainId?: number, tokenChainId?: number): boolean => {

@@ -1,5 +1,5 @@
 /**
- * AI credits / TWC billing sheet — mobile counterpart of the web modal's
+ * AI credits / TWC billing sheet - mobile counterpart of the web modal's
  * billing popover. Shows the free allowance left, paid TWC credits left, the
  * wallet's on-chain payment-token balance, and the admin-configured packs.
  * Buying a pack transfers the pack price to the treasury; credits are granted
@@ -116,7 +116,7 @@ export function AiCreditsSheet({
                                     {busy ? (
                                         <ActivityIndicator size="small" color={colors.primaryCTA} />
                                     ) : (
-                                        // Grouped, not abbreviated — a price the
+                                        // Grouped, not abbreviated - a price the
                                         // user is about to pay must be exact.
                                         <Text style={styles.packPrice} numberOfLines={1}>
                                             {pack.twcAmount.toLocaleString(undefined, {

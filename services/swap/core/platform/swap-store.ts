@@ -2,7 +2,7 @@
  * Swap-store bridge.
  *
  * The copied executors read exactly ONE thing off the web's Zustand swap store:
- * `selectedGasTokenType` — the BSC relayer's gas-token tier, which sets the tax
+ * `selectedGasTokenType` - the BSC relayer's gas-token tier, which sets the tax
  * rate (TWC 0.20% / BNB 0.25% / other BEP-20 0.30%) and which relayer path runs.
  *
  * Rather than fork every executor, this module exposes a `useSwapStore`-shaped

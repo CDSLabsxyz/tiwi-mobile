@@ -1,11 +1,14 @@
 import { ERC20_ABI, STAKING_FACTORY_ABI, STAKING_POOL_V2_ABI } from '@/constants/abis';
 import { MOCK_STAKING_POOLS, MOCK_USER_STAKES } from '@/constants/mockData';
 import { formatCompactNumber } from '@/utils/formatting';
-import { createPublicClient, formatUnits, http } from 'viem';
+import { createPublicClient, formatUnits } from 'viem';
 import { bsc } from 'viem/chains';
-import { api, type MobilePool, StakingPool as SDKStakingPool } from '@/lib/mobile/api-client';
-import type { APIStakingPool, APIUserStake } from '@/services/apiClient';
-import { RPC_CONFIG, RPC_TRANSPORT_OPTIONS, createBscFallbackTransport } from '@/constants/rpc';
+import { api, type MobilePool, type TokenPriceRequestToken } from '@/lib/mobile/api-client';
+import { resolveRewardToken } from '@/lib/mobile/pool-onchain';
+import type { APIStakingPool } from '@/services/apiClient';
+import { createBscFallbackTransport } from '@/constants/rpc';
+import { getTokenLogo } from '@/services/tokenLogoService';
+import { ensureAdminTokenLogoOverrides, normalizeTokenLogoUrl } from '@/utils/admin-token-logos';
 
 // Toggle this to enable/disable mocks globally for staking
 const USE_MOCK_FALLBACK = false;
@@ -20,7 +23,7 @@ const SECONDS_PER_YEAR = 31536000;
 /**
  * Byte-for-byte copy of the web Earn page's local `formatCompact`
  * (tiwi-user-app/app/earn/page.tsx). Deliberately NOT `formatCompactNumber`
- * from @/utils/formatting — that one trims trailing zeros ("40T", not
+ * from @/utils/formatting - that one trims trailing zeros ("40T", not
  * "40.00T"), so it would drift from the web on round numbers. Any change to
  * the suffix ladder or the decimal count has to land on both sides together.
  */
@@ -57,6 +60,8 @@ export interface StakingPool extends APIStakingPool {
      * `Date.now()/1000 >= endTime`, the pool stops emitting rewards on-chain.
      */
     endTime?: number;
+    /** Contract `active` flag when available. False means creator paused it. */
+    onChainActive?: boolean;
 }
 
 export interface UserStake {
@@ -92,7 +97,7 @@ class StakingService {
         batch: { multicall: { wait: 16 } },
     });
 
-    /** Cache of last successful global stats — used to avoid rendering a
+    /** Cache of last successful global stats - used to avoid rendering a
      *  partial-failure result if even one pool's on-chain read fails. */
     private lastGoodStats: StakingStats | null = null;
 
@@ -105,18 +110,63 @@ class StakingService {
      * pull-to-refresh landing together don't double up either.
      */
     private inflight = new Map<string, { promise: Promise<any>; at: number }>();
+    private tokenPriceCache = new Map<string, { price: number; at: number }>();
 
     private coalesce<T>(key: string, ttlMs: number, run: () => Promise<T>): Promise<T> {
         const hit = this.inflight.get(key);
         if (hit && Date.now() - hit.at < ttlMs) return hit.promise as Promise<T>;
 
         const promise = run().catch((e) => {
-            // Never cache a failure — the next caller should retry.
+            // Never cache a failure - the next caller should retry.
             this.inflight.delete(key);
             throw e;
         });
         this.inflight.set(key, { promise, at: Date.now() });
         return promise;
+    }
+
+    private priceKey(chainId: number, address: string): string {
+        return `${chainId}:${(address || '').toLowerCase()}`;
+    }
+
+    private async getTokenPrices(tokens: TokenPriceRequestToken[]): Promise<Map<string, number>> {
+        const now = Date.now();
+        const out = new Map<string, number>();
+        const missing: TokenPriceRequestToken[] = [];
+        const seen = new Set<string>();
+
+        for (const token of tokens) {
+            if (!token.address || !token.chainId) continue;
+            const key = this.priceKey(token.chainId, token.address);
+            if (seen.has(key)) continue;
+            seen.add(key);
+
+            const cached = this.tokenPriceCache.get(key);
+            if (cached && now - cached.at < 60_000) {
+                out.set(key, cached.price);
+            } else {
+                missing.push(token);
+            }
+        }
+
+        if (missing.length > 0) {
+            try {
+                const resp = await api.tokens.prices(missing);
+                const prices = resp.prices || {};
+                for (const token of missing) {
+                    const key = this.priceKey(token.chainId, token.address);
+                    const price = Number(prices[key]) || 0;
+                    if (price > 0) {
+                        out.set(key, price);
+                        this.tokenPriceCache.set(key, { price, at: now });
+                    }
+                }
+            } catch (e) {
+                console.warn('[StakingService] token price lookup failed', e);
+            }
+        }
+
+        return out;
     }
 
     /** Full stake list (all pools, all wallets), fetched at most once per 15s. */
@@ -154,8 +204,8 @@ class StakingService {
     }
 
     /**
-     * Raw stake rows for one wallet. The Earn screen asks twice per load —
-     * once for Active Positions, once for My Stakes — with identical request
+     * Raw stake rows for one wallet. The Earn screen asks twice per load -
+     * once for Active Positions, once for My Stakes - with identical request
      * params, so they share a single HTTP call.
      */
     private getWalletStakesRaw(walletAddress: string): Promise<any[]> {
@@ -172,7 +222,7 @@ class StakingService {
      * Active-only is the web's definition: its pool card reads
      * `/api/v1/user-stakes?status=active&poolId=…` and counts distinct
      * wallets in the response. Counting every status instead (what this did)
-     * inflated the number by wallets that had already fully withdrawn — 62
+     * inflated the number by wallets that had already fully withdrawn - 62
      * on mobile against the web's 60 for Diamond Hands Club Staking Pool 1.
      */
     private async getStakerCountsByPool(): Promise<Map<string, number>> {
@@ -189,20 +239,48 @@ class StakingService {
         return new Map([...wallets].map(([poolId, set]) => [poolId, set.size]));
     }
 
-    /**
-     * Utility to calculate APR for a pool based on on-chain config
-     */
-    private calculateAPRFromPoolConfig(
+    private formatDbApy(apy: unknown): string {
+        const parsed = typeof apy === 'number' || typeof apy === 'string' ? Number(apy) : NaN;
+        return Number.isFinite(parsed) ? `~${parsed.toFixed(2)}%` : 'N/A';
+    }
+
+    private resolvePoolLogo(symbol?: string, chainId?: number, address?: string, suppliedLogo?: string): string | undefined {
+        return normalizeTokenLogoUrl(suppliedLogo) || getTokenLogo(symbol, chainId, address);
+    }
+
+    private calculateLegacyAPRFromPoolConfig(
         poolReward: number,
         totalStakedTokens: number,
-        rewardDurationSeconds: number
+        rewardDurationSeconds: number,
     ): string {
-        if (totalStakedTokens <= 0 || rewardDurationSeconds <= 0) return '0.00%';
+        if (poolReward <= 0 || totalStakedTokens <= 0 || rewardDurationSeconds <= 0) return '~0.00%';
+        const rewardPerYearTokens = (poolReward / rewardDurationSeconds) * SECONDS_PER_YEAR;
+        const apr = (rewardPerYearTokens / totalStakedTokens) * 100;
 
-        // Formula: reward / (staked * time) * year
-        const rewardRatePerTokenPerSecond = poolReward / (totalStakedTokens * rewardDurationSeconds);
-        const apr = rewardRatePerTokenPerSecond * SECONDS_PER_YEAR * 100;
+        if (!Number.isFinite(apr) || apr < 0) return '~0.00%';
+        if (apr > 0 && apr < 0.01) return '<0.01%';
+        return `~${apr.toFixed(2)}%`;
+    }
 
+    private calculateUsdAPRFromPoolConfig(
+        poolReward: number,
+        totalStakedTokens: number,
+        rewardDurationSeconds: number,
+        rewardTokenPrice: number,
+        stakingTokenPrice: number,
+    ): string {
+        if (poolReward <= 0 || totalStakedTokens <= 0 || rewardDurationSeconds <= 0) return '~0.00%';
+        if (rewardTokenPrice <= 0 || stakingTokenPrice <= 0) {
+            return this.calculateLegacyAPRFromPoolConfig(poolReward, totalStakedTokens, rewardDurationSeconds);
+        }
+
+        const rewardPerYearTokens = (poolReward / rewardDurationSeconds) * SECONDS_PER_YEAR;
+        const rewardPerYearUsd = rewardPerYearTokens * rewardTokenPrice;
+        const stakedCapacityUsd = totalStakedTokens * stakingTokenPrice;
+        const apr = (rewardPerYearUsd / stakedCapacityUsd) * 100;
+
+        if (!Number.isFinite(apr) || apr < 0) return '~0.00%';
+        if (apr > 0 && apr < 0.01) return '<0.01%';
         return `~${apr.toFixed(2)}%`;
     }
 
@@ -210,10 +288,16 @@ class StakingService {
      * Helper to map pool to UI format with on-chain enrichment
      */
     private async mapPool(pool: APIStakingPool): Promise<StakingPool> {
-        let apyValue = typeof pool.apy === 'number' ? `~${pool.apy.toFixed(2)}%` : 'N/A';
+        await ensureAdminTokenLogoOverrides().catch(() => {});
+
+        let apyValue = this.formatDbApy(pool.apy);
         let tvl = pool.tvl || 'N/A';
         let activeStakers = pool.activeStakers || '0';
         let endTime = 0;
+        let onChainActive: boolean | undefined;
+        let resolvedRewardTokenSymbol = pool.rewardTokenSymbol;
+        let resolvedTokenLogo = this.resolvePoolLogo(pool.tokenSymbol, pool.chainId, pool.tokenAddress, pool.tokenLogo);
+        let resolvedRewardTokenLogo = normalizeTokenLogoUrl(pool.rewardTokenLogo);
 
         // ON-CHAIN ENRICHMENT: Fetch real-time TVL and APY. Two architectures:
         //   - V2 pool-per-contract: read `poolContractAddress` directly.
@@ -228,6 +312,8 @@ class StakingService {
                 let maxTvl = 0;
                 let rewardDuration = 0;
                 let stakingTokenAddr: string | undefined;
+                let rewardTokenAddr: string | undefined;
+                let rewardTokenSymbol: string | undefined;
 
                 // Preferred path: the server already read this pool's
                 // getPoolInfo for us. Skips a device-side RPC round trip.
@@ -240,6 +326,11 @@ class StakingService {
                     maxTvl = Number(chain.maxTvl) || 0;
                     endTime = Number(chain.endTime) || 0;
                     totalStaked = Number(chain.totalStaked) || 0;
+                    onChainActive = chain.active;
+                    stakingTokenAddr = chain.stakingToken || pool.tokenAddress;
+                    rewardTokenAddr = chain.rewardToken || pool.tokenAddress;
+                    rewardTokenSymbol = chain.rewardTokenSymbol || pool.tokenSymbol;
+                    resolvedRewardTokenSymbol = resolvedRewardTokenSymbol || rewardTokenSymbol;
                 } else if (hasV2) {
                     // V2: getPoolInfo returns a 13-tuple, no args.
                     const info = await this.bscClient.readContract({
@@ -249,10 +340,21 @@ class StakingService {
                     }) as any;
                     stakingTokenAddr = info?.[0];
                     const decimals = pool.decimals || (stakingTokenAddr?.toLowerCase() === TWC_ADDRESS_BSC.toLowerCase() ? 9 : 18);
-                    poolReward = Number(formatUnits(info[3] ?? 0n, decimals));
+                    const rewardInfo = await resolveRewardToken({
+                        chainId: pool.chainId || 56,
+                        rewardTokenAddress: info?.[1],
+                        stakingTokenAddress: stakingTokenAddr,
+                        stakingSymbol: pool.tokenSymbol,
+                        stakingDecimals: decimals,
+                    });
+                    rewardTokenAddr = rewardInfo.address || info?.[1];
+                    rewardTokenSymbol = rewardInfo.symbol || pool.tokenSymbol;
+                    resolvedRewardTokenSymbol = resolvedRewardTokenSymbol || rewardTokenSymbol;
+                    poolReward = Number(formatUnits(info[3] ?? 0n, rewardInfo.decimals));
                     rewardDuration = Number(info[4] ?? 0n);
                     maxTvl = Number(formatUnits(info[5] ?? 0n, decimals));
                     endTime = Number(info[8] ?? 0n);
+                    onChainActive = Boolean(info[9]);
                     totalStaked = Number(formatUnits(info[10] ?? 0n, decimals));
                 } else {
                     const poolInfo = await this.bscClient.readContract({
@@ -267,16 +369,45 @@ class StakingService {
                     const state = poolInfo[1];
                     stakingTokenAddr = config.stakingToken;
                     const decimals = pool.decimals || (stakingTokenAddr?.toLowerCase() === TWC_ADDRESS_BSC.toLowerCase() ? 9 : 18);
+                    const rewardInfo = await resolveRewardToken({
+                        chainId: pool.chainId || 56,
+                        rewardTokenAddress: config.rewardToken,
+                        stakingTokenAddress: stakingTokenAddr,
+                        stakingSymbol: pool.tokenSymbol,
+                        stakingDecimals: decimals,
+                    });
+                    rewardTokenAddr = rewardInfo.address || config.rewardToken;
+                    rewardTokenSymbol = rewardInfo.symbol || pool.tokenSymbol;
+                    resolvedRewardTokenSymbol = resolvedRewardTokenSymbol || rewardTokenSymbol;
                     totalStaked = Number(formatUnits(state.totalStaked, decimals));
-                    poolReward = Number(formatUnits(config.poolReward, decimals));
+                    poolReward = Number(formatUnits(config.poolReward, rewardInfo.decimals));
                     maxTvl = Number(formatUnits(config.maxTvl, decimals));
                     rewardDuration = Number(config.rewardDurationSeconds);
                     endTime = Number(config.endTime ?? state.endTime ?? 0);
+                    onChainActive = Boolean(config.active ?? config[10]);
                 }
 
                 tvl = formatCompactNumber(totalStaked, { decimals: 2 });
                 const tvlForCalculation = maxTvl > 0 ? maxTvl : (totalStaked > 0 ? totalStaked : 1);
-                apyValue = this.calculateAPRFromPoolConfig(poolReward, tvlForCalculation, rewardDuration);
+                const actualChainId = pool.chainId || 56;
+                const stakingAddress = stakingTokenAddr || pool.tokenAddress;
+                const rewardAddress = rewardTokenAddr || pool.tokenAddress;
+                resolvedTokenLogo = resolvedTokenLogo || this.resolvePoolLogo(pool.tokenSymbol, actualChainId, stakingAddress);
+                resolvedRewardTokenLogo = resolvedRewardTokenLogo || this.resolvePoolLogo(rewardTokenSymbol, actualChainId, rewardAddress);
+                const tokenPrices = await this.getTokenPrices([
+                    { address: stakingAddress, chainId: actualChainId, symbol: pool.tokenSymbol },
+                    { address: rewardAddress, chainId: actualChainId, symbol: rewardTokenSymbol || pool.tokenSymbol },
+                ]);
+                const stakingTokenPrice = Number(tokenPrices.get(this.priceKey(actualChainId, stakingAddress))) || 0;
+                const rewardTokenPrice = Number(tokenPrices.get(this.priceKey(actualChainId, rewardAddress))) || 0;
+                const priceApr = this.calculateUsdAPRFromPoolConfig(
+                    poolReward,
+                    tvlForCalculation,
+                    rewardDuration,
+                    rewardTokenPrice,
+                    stakingTokenPrice,
+                );
+                apyValue = priceApr;
 
                 // Staker count comes from the shared all-stakes snapshot rather
                 // than one HTTP call per pool. Enriching 19 pools used to fire
@@ -302,12 +433,16 @@ class StakingService {
 
         return {
             ...pool,
+            tokenLogo: resolvedTokenLogo,
+            rewardTokenLogo: resolvedRewardTokenLogo,
             displayApy: apyValue,
             displayLimits,
             minStakingPeriod: pool.minStakingPeriod || undefined,
+            rewardTokenSymbol: resolvedRewardTokenSymbol,
             tvl: tvl,
             activeStakers: activeStakers,
             endTime,
+            onChainActive,
         };
     }
 
@@ -329,7 +464,7 @@ class StakingService {
         // The web Earn page is the source of truth for these six numbers,
         // so the inputs (the same two endpoints), the math, and the compact
         // formatter must all stay identical to it. Do not "improve" this
-        // with on-chain reads or row de-duplication — both were tried here
+        // with on-chain reads or row de-duplication - both were tried here
         // and both made the mobile card disagree with the web:
         //   • on-chain `totalStaked` reports what is staked RIGHT NOW, but
         //     TOTAL TWC STAKED is the lifetime peak summed off `user_stakes`
@@ -338,7 +473,7 @@ class StakingService {
         //   • de-duplicating pool rows that share one contract address
         //     dropped the pool counts from 41 to 33 inactive.
         // If a number here looks wrong, fix it on the web page first and
-        // port the change back — never diverge locally.
+        // port the change back - never diverge locally.
         // ─────────────────────────────────────────────────────────────────
         const empty: StakingStats = {
             overallTvl: '0',
@@ -351,7 +486,7 @@ class StakingService {
         };
         try {
             // Both feeds degrade independently, exactly like the web's
-            // Promise.allSettled — one endpoint failing must not blank the
+            // Promise.allSettled - one endpoint failing must not blank the
             // stats the other one can still produce.
             const [allPools, allStakes] = await Promise.all([
                 (async () => {
@@ -365,20 +500,28 @@ class StakingService {
                 })(),
                 // No wallet/status filter: all-time stakers and the TWC total
                 // are computed across every row. Shared with mapPool's staker
-                // counts — one request, not N+1.
+                // counts - one request, not N+1.
                 this.getAllStakes(),
             ]);
+            const enrichedById = await this.getEnrichedPoolSnapshot();
 
             // A pool is inactive when the operator flipped its DB status OR
             // its reward window (createdAt + rewardDurationSeconds) elapsed.
             // Mirrors the web's isExpiredStakingPool/isActiveStakingPool.
             const isExpired = (p: any): boolean => {
+                const enriched = enrichedById.get(p.id);
+                if (enriched?.isExpired === true) return true;
                 if (!p.rewardDurationSeconds || !p.createdAt) return false;
                 const createdAtMs = new Date(p.createdAt).getTime();
                 if (Number.isNaN(createdAtMs)) return false;
                 return Date.now() > createdAtMs + p.rewardDurationSeconds * 1000;
             };
-            const isActive = (p: any): boolean => (p.status || 'active') === 'active' && !isExpired(p);
+            const isActive = (p: any): boolean => {
+                const enriched = enrichedById.get(p.id);
+                return (p.status || 'active') === 'active'
+                    && enriched?.onChain?.active !== false
+                    && !isExpired(p);
+            };
             const activePools = allPools.filter(isActive);
 
             // Overall TVL = sum of every pool's configured maxTvl cap.
@@ -419,7 +562,7 @@ class StakingService {
                 allTimeStakersCount: allTimeWallets.size.toLocaleString(),
             };
 
-            // Both feeds down (airplane mode, backend outage) — the numbers
+            // Both feeds down (airplane mode, backend outage) - the numbers
             // would all be 0, which reads as "everything reset". Keep the last
             // good snapshot instead. The web has no equivalent because a
             // desktop reload is cheap; a phone losing signal mid-poll is not.
@@ -449,7 +592,11 @@ class StakingService {
 
             // Map and enrich sequentially to avoid RPC spam, though Promise.all is faster
             const enrichedPools = await Promise.all((pools || []).map((pool: any) => this.mapPool(pool as APIStakingPool)));
-            return enrichedPools;
+            const nowSec = Date.now() / 1000;
+            return enrichedPools.filter(pool =>
+                pool.onChainActive !== false &&
+                !(pool.endTime && pool.endTime > 0 && nowSec >= pool.endTime)
+            );
         } catch (error) {
             console.error('[StakingService] Error fetching active pools:', error);
             if (USE_MOCK_FALLBACK) {
@@ -484,7 +631,7 @@ class StakingService {
                 const duration = (enrichedPool as any)?.rewardDurationSeconds || 1;
 
                 // Zero out the displayed emission rate once the pool's on-chain
-                // endTime has passed — the contract's `_secondsElapsed` caps
+                // endTime has passed - the contract's `_secondsElapsed` caps
                 // at endTime so no further rewards accrue.
                 const poolEndTime = (enrichedPool as any)?.endTime || 0;
                 const isExpired = poolEndTime > 0 && Date.now() / 1000 >= poolEndTime;
@@ -542,7 +689,7 @@ class StakingService {
      * Resolve a route param that may be either a pool DB id (UUID) OR a token
      * symbol (legacy deep links). Multiple pools share the same token symbol
      * (e.g., Genesis 1 and Genesis 2 are both TWC), so symbol-based lookup
-     * collapses them onto the first match — that was why tapping Genesis 1
+     * collapses them onto the first match - that was why tapping Genesis 1
      * always opened Genesis 2. Prefer id when it looks like a UUID.
      */
     async getPoolByIdOrSymbol(idOrSymbol: string): Promise<StakingPool | undefined> {
@@ -567,7 +714,7 @@ class StakingService {
      * (the pool calls `transferFrom`), NOT the legacy factory. Callers that
      * omit `spenderAddress` fall back to the legacy factory for back-compat
      * with old factory-style pools, but any V2 caller should pass its pool
-     * contract address — otherwise `needsApproval` will read the wrong
+     * contract address - otherwise `needsApproval` will read the wrong
      * allowance and the subsequent deposit reverts with "0x" when the
      * token's `transferFrom` fails.
      */
@@ -656,7 +803,7 @@ class StakingService {
                             earningRate: 0 // Will be calculated by store
                         } as UserStake;
                     }
-                } catch (e) {
+                } catch {
                     // Fail silently for individual pools
                 }
                 return null;

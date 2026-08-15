@@ -53,8 +53,8 @@ export const RPC_CONFIG: Record<number, string[]> = {
   ],
 
   // BSC / Binance Smart Chain (56)
-  // Note: bsc-dataseed.binance.org is CORS-blocked in browsers — do not add back.
-  // llamarpc has been intermittently unreachable from browsers — keep publicnode as primary.
+  // Note: bsc-dataseed.binance.org is CORS-blocked in browsers - do not add back.
+  // llamarpc has been intermittently unreachable from browsers - keep publicnode as primary.
   56: [
     process.env.EXPO_PUBLIC_BSC_RPC_URL || 'https://bsc-rpc.publicnode.com',
     'https://bsc.drpc.org',
@@ -116,7 +116,7 @@ export const RPC_CONFIG: Record<number, string[]> = {
   // Solana mainnet (synthetic chainId 7565164). dRPC (via getDrpcUrl) is prepended as primary
   // when dRPC_API_Key is set; this public endpoint is the fallback (rate-limited under load).
   7565164: ['https://api.mainnet-beta.solana.com'],
-  // --- Additional EVM chains (dRPC public endpoint preferred — CORS-friendly —
+  // --- Additional EVM chains (dRPC public endpoint preferred - CORS-friendly -
   //     with the official RPC as fallback). Native data lives in the registry. ---
   255: ['https://kroma.drpc.org', 'https://api.kroma.network'],                         // Kroma
   4200: ['https://merlin.drpc.org', 'https://rpc.merlinchain.io'],                      // Merlin Chain
@@ -177,7 +177,7 @@ export const RPC_CONFIG: Record<number, string[]> = {
  * preferred as the primary RPC when `dRPC_API_Key` is set.
  *
  * IMPORTANT: `dRPC_API_Key` has NO NEXT_PUBLIC_ prefix, so it is undefined in the
- * browser bundle — the authenticated dRPC URL (which embeds the paid key) is only
+ * browser bundle - the authenticated dRPC URL (which embeds the paid key) is only
  * ever built server-side. Client code transparently falls back to the public list.
  */
 const DRPC_NETWORKS: Record<number, string> = {
@@ -185,7 +185,7 @@ const DRPC_NETWORKS: Record<number, string> = {
   8453: 'base', 43114: 'avalanche', 250: 'fantom', 59144: 'linea', 534352: 'scroll',
   81457: 'blast', 100: 'gnosis', 42220: 'celo', 25: 'cronos', 324: 'zksync',
   1284: 'moonbeam', 1285: 'moonriver', 5000: 'mantle',
-  7565164: 'solana', // Solana mainnet (synthetic chainId) — dRPC ?network=solana&dkey=…
+  7565164: 'solana', // Solana mainnet (synthetic chainId) - dRPC ?network=solana&dkey=…
 };
 
 function getDrpcUrl(chainId: number): string | undefined {

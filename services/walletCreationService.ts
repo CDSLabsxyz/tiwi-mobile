@@ -78,19 +78,19 @@ export const DERIVATION_PATHS: Record<ChainType, string> = {
     EVM: "m/44'/60'/0'/0/0",
     SOLANA: "m/44'/501'/0'/0'",
     TRON: "m/44'/195'/0'/0/0",
-    // ed25519 (SLIP-0010) — see chainKeys.TON_BIP39_PATH. NEVER feed this to
+    // ed25519 (SLIP-0010) - see chainKeys.TON_BIP39_PATH. NEVER feed this to
     // derivePrivateKeyFromMnemonic, which is secp256k1 and would produce a key
     // that cannot sign for the TON address the app displays.
     TON: "m/44'/607'/0'",
     COSMOS: "m/44'/118'/0'/0/0",
     OSMOSIS: "m/44'/118'/0'/0/0",
-    // ed25519 chains — signed by their own engines (SuiLocalEngine / AptosLocalEngine),
+    // ed25519 chains - signed by their own engines (SuiLocalEngine / AptosLocalEngine),
     // NOT via the secp256k1 derivePrivateKeyFromMnemonic path. Paths are informational
     // + match deriveMultiChainAddressesFromMnemonic.
     SUI: "m/44'/784'/0'/0'/0'",
     APTOS: "m/44'/637'/0'/0'/0'",
     // Injective shares the EVM key (eth path); Bitcoin BIP84; Starknet Stark curve.
-    // Informational — signed by their own engines, not derivePrivateKeyFromMnemonic.
+    // Informational - signed by their own engines, not derivePrivateKeyFromMnemonic.
     INJECTIVE: "m/44'/60'/0'/0/0",
     BITCOIN: "m/84'/0'/0'/0/0",
     STARKNET: "m/44'/9004'/0'/0/0",
@@ -99,7 +99,7 @@ export const DERIVATION_PATHS: Record<ChainType, string> = {
 /**
  * Cosmos-family bech32 prefixes keyed by the `addresses` slot they fill.
  * All of them share ONE secp256k1 account (m/44'/118'), so an address for any
- * of them is the same account re-encoded — see `reEncodeBech32`.
+ * of them is the same account re-encoded - see `reEncodeBech32`.
  */
 export const COSMOS_FAMILY_PREFIXES: Partial<Record<AddressKey, string>> = {
     COSMOS: 'cosmos',
@@ -184,7 +184,7 @@ export async function deriveMultiChainAddressesFromMnemonic(mnemonic: string): P
     //
     // This MUST use the same ed25519 derivation the signer uses. It previously
     // used @scure/bip32 (secp256k1), feeding a 33-byte key to a contract that
-    // needs a 32-byte ed25519 key — the address shown could never be signed for.
+    // needs a 32-byte ed25519 key - the address shown could never be signed for.
     try {
         const tonKeys = await tonKeyPairFromBip39(trimmedMnemonic);
         addresses.TON = await tonAddressFromPublicKey(tonKeys.publicKey);
@@ -225,17 +225,17 @@ export async function deriveMultiChainAddressesFromMnemonic(mnemonic: string): P
     }
     await yieldToUI();
 
-    // ── Extra chains (web parity — balance/display only, NOT signing) ─────────
+    // ── Extra chains (web parity - balance/display only, NOT signing) ─────────
     // Each is isolated: a library that fails to load/run under Hermes degrades
     // that one address to undefined and never breaks the core 6 above.
 
-    // 7. Injective — the EVM address re-encoded as inj1… (eth_secp256k1).
+    // 7. Injective - the EVM address re-encoded as inj1… (eth_secp256k1).
     if (addresses.EVM) {
         const inj = evmToInjectiveAddress(addresses.EVM);
         if (inj) addresses.INJECTIVE = inj;
     }
 
-    // 8. Standard-secp256k1 Cosmos-family — the COSMOS account re-encoded under
+    // 8. Standard-secp256k1 Cosmos-family - the COSMOS account re-encoded under
     //    each chain's bech32 prefix (same key, different prefix).
     if (addresses.COSMOS) {
         for (const [key, prefix] of Object.entries(COSMOS_FAMILY_PREFIXES) as [AddressKey, string][]) {
@@ -394,7 +394,7 @@ export function getCompatibleChains(input: string): ChainType[] {
     if (/^[0-9a-fA-F]{64}$/.test(cleanHex)) {
         compatible.push('EVM', 'TRON', 'COSMOS', 'OSMOSIS', 'TON');
     } else if (/^[0-9a-fA-F]{128}$/.test(cleanHex)) {
-        // 64-byte ed25519 secret key — TON only.
+        // 64-byte ed25519 secret key - TON only.
         compatible.push('TON');
     }
     if (validatePrivateKey(text, 'SOLANA')) {
@@ -505,7 +505,7 @@ export async function importWalletByPrivateKey(
 
     const addresses: Partial<Record<AddressKey, string>> = { [chain]: address };
 
-    // One Cosmos secp256k1 account is every Cosmos-family account — the same key
+    // One Cosmos secp256k1 account is every Cosmos-family account - the same key
     // re-encoded under each chain's prefix. Fan it out so the imported wallet
     // shows (and can send from) Osmosis, Celestia, dYdX, … not just one row.
     if (chain === 'COSMOS' || chain === 'OSMOSIS') {
@@ -524,8 +524,8 @@ export async function importWalletByPrivateKey(
 
 /**
  * Import a native TON wallet from its 24-word TON mnemonic (Tonkeeper, TonHub,
- * MyTonWallet). This is NOT a BIP39 phrase — it has its own checksum and its own
- * key derivation — so it produces a TON-only wallet rather than a multi-chain one.
+ * MyTonWallet). This is NOT a BIP39 phrase - it has its own checksum and its own
+ * key derivation - so it produces a TON-only wallet rather than a multi-chain one.
  */
 export async function importWalletByTonMnemonic(mnemonic: string): Promise<CreatedWallet> {
     const trimmed = mnemonic.trim().toLowerCase().replace(/\s+/g, ' ');

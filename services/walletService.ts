@@ -382,7 +382,7 @@ export interface AssetActivity {
   usdAmount?: number; // Numeric USD value for regional conversion
   timestamp: number;
   date: string; // Formatted date, e.g., "Jan 4, 2024"
-  hash?: string; // On-chain tx hash — used to dedupe duplicates across sources
+  hash?: string; // On-chain tx hash - used to dedupe duplicates across sources
 }
 
 /**
@@ -567,7 +567,7 @@ const ASSET_DETAIL_CACHE_TTL = 30000; // 30 seconds
 
 /**
  * Every balance the active wallet holds, across every ecosystem it has a
- * derived address for — the same server route the wallet screen uses. Falls
+ * derived address for - the same server route the wallet screen uses. Falls
  * back to the single-address Nexxend read if the portfolio route is down.
  */
 const fetchAllBalancesForActiveWallet = async (activeAddress: string): Promise<any[]> => {
@@ -614,7 +614,7 @@ const fetchAllBalancesForActiveWallet = async (activeAddress: string): Promise<a
  * Fetches detailed asset information by ID
  * Returns asset-specific data based on the assetId
  *
- * `chainId` is REQUIRED to identify a token — an address alone does not. The
+ * `chainId` is REQUIRED to identify a token - an address alone does not. The
  * same address string is a different token on different chains (forks share
  * address spaces: Solana and Fogo both mint their wrapped native at
  * `So111…112`), so matching a held balance on address alone returned whichever
@@ -647,7 +647,7 @@ export const fetchAssetDetail = async (assetId: string, chainId?: number | strin
         const searchChain = hasChainPrefix ? Number(assetId.split('-')[0]) : Number(chainId);
 
         // Fetch all balances to find this specific one. Go through the portfolio
-        // route with the wallet's FULL address set — `wallet.balances` takes a
+        // route with the wallet's FULL address set - `wallet.balances` takes a
         // single address, and passing the EVM one meant no Solana/TON/TRON/…
         // holding was ever found here (every non-EVM asset fell through to the
         // fallback below).
@@ -703,7 +703,7 @@ export const fetchAssetDetail = async (assetId: string, chainId?: number | strin
     }
 
     // FINAL FALLBACK: the balance lookup found nothing for this (chain, address).
-    // Return an EMPTY shell that keeps the requested identity — the old fallback
+    // Return an EMPTY shell that keeps the requested identity - the old fallback
     // claimed the asset was ETH at $1,800 with a fabricated chart, which then
     // merged into whatever token the user was actually looking at.
     const fallbackAddr = assetId.includes('-') ? assetId.split('-').slice(1).join('-') : assetId;

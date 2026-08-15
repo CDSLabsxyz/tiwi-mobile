@@ -16,7 +16,7 @@ export class SquidExecutor implements SwapRouterExecutor {
     canHandle(route: RouterRoute): boolean {
         // ONLY real Squid routes. The old `|| chainId === 118` catch-all pre-dates
         // the Skip integration and wrongly grabbed Cosmos (ATOM/OSMO/…) routes
-        // built by the `skip` router — which carry `raw.operations`, not the
+        // built by the `skip` router - which carry `raw.operations`, not the
         // Squid-shaped `raw.transaction.messages` this executor reads. That made
         // executeCosmosTrade sign an EMPTY message set (Keplr: "0 Messages"),
         // and the chain rejected it with code 18 "must contain at least one

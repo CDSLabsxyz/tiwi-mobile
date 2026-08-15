@@ -22,24 +22,24 @@ These Terms form a binding agreement between you and TIWI Ecosystem, a company o
 
 The App is a **self-custodial, non-custodial multi-chain digital asset wallet and decentralized finance ("DeFi") interface**. The App's primary features include, but are not limited to:
 
-- **Wallet creation and import** — generation, import, backup, and management of cryptographic keys and recovery phrases ("Seed Phrases") for multiple blockchain networks, including EVM-compatible chains (Ethereum, BNB Smart Chain, Polygon, Arbitrum, Optimism, Base, Avalanche and others), Solana, TRON, TON, and Cosmos-based networks.
-- **Swap and bridge functionality** — non-custodial routing of token swaps and cross-chain transfers via third-party decentralized aggregators and bridges, including LI.FI, Relay Protocol, Across Protocol, Jupiter, and native automated market makers.
-- **Staking and earn modules** — interaction with third-party smart contracts to stake digital assets and claim on-chain rewards.
-- **NFT viewing** — display of NFTs associated with the User's wallet addresses.
-- **In-app dApp browser** — a Web3-enabled browser for visiting and interacting with decentralized applications using the User's wallet.
-- **WalletConnect integration** — pairing the App with external decentralized applications via the WalletConnect / Reown AppKit protocol.
-- **Market data, watchlists and price alerts** — display of token prices, market information, and user-configurable price notifications.
-- **AI assistant ("Chatbot")** — a conversational interface that answers questions about markets, transactions, and general App functionality.
-- **Referral program** — voluntary participation in a referral system that rewards users for inviting others.
-- **Push and local notifications** — alerts about transactions, price movements, and security events on the User's device.
+- **Wallet creation and import** - generation, import, backup, and management of cryptographic keys and recovery phrases ("Seed Phrases") for multiple blockchain networks, including EVM-compatible chains (Ethereum, BNB Smart Chain, Polygon, Arbitrum, Optimism, Base, Avalanche and others), Solana, TRON, TON, and Cosmos-based networks.
+- **Swap and bridge functionality** - non-custodial routing of token swaps and cross-chain transfers via third-party decentralized aggregators and bridges, including LI.FI, Relay Protocol, Across Protocol, Jupiter, and native automated market makers.
+- **Staking and earn modules** - interaction with third-party smart contracts to stake digital assets and claim on-chain rewards.
+- **NFT viewing** - display of NFTs associated with the User's wallet addresses.
+- **In-app dApp browser** - a Web3-enabled browser for visiting and interacting with decentralized applications using the User's wallet.
+- **WalletConnect integration** - pairing the App with external decentralized applications via the WalletConnect / Reown AppKit protocol.
+- **Market data, watchlists and price alerts** - display of token prices, market information, and user-configurable price notifications.
+- **AI assistant ("Chatbot")** - a conversational interface that answers questions about markets, transactions, and general App functionality.
+- **Referral program** - voluntary participation in a referral system that rewards users for inviting others.
+- **Push and local notifications** - alerts about transactions, price movements, and security events on the User's device.
 
 The features available may vary depending on your jurisdiction, device, operating system version, network conditions, and the availability of third-party services.
 
 ---
 
-## 3. Self-Custody — You Control Your Keys
+## 3. Self-Custody - You Control Your Keys
 
-**TIWI is non-custodial.** You — and only you — control your wallet, your Seed Phrase, and your private keys. We do not:
+**TIWI is non-custodial.** You - and only you - control your wallet, your Seed Phrase, and your private keys. We do not:
 
 - store, hold, transmit, or have access to your Seed Phrase, private keys, or digital assets at any time;
 - have the ability to recover, reset, freeze, reverse, or modify any wallet, transaction, or asset;
@@ -197,7 +197,7 @@ The App may, with your consent, send push notifications and local notifications 
 
 If you downloaded the App from the Apple App Store, you acknowledge and agree that:
 
-- These Terms are concluded between you and TIWI Ecosystem only — not with Apple. TIWI Ecosystem is solely responsible for the App and its content.
+- These Terms are concluded between you and TIWI Ecosystem only - not with Apple. TIWI Ecosystem is solely responsible for the App and its content.
 - The license granted to you for the App is limited to a non-transferable license to use the App on any Apple-branded products that you own or control, and as permitted by the Usage Rules in the Apple Media Services Terms.
 - Apple has no obligation to furnish maintenance or support services for the App.
 - In the event of any failure of the App to conform to any applicable warranty, you may notify Apple, and Apple will refund the purchase price of the App (if any). To the maximum extent permitted by law, Apple has no other warranty obligation whatsoever with respect to the App.
@@ -299,7 +299,7 @@ These Terms, and any non-contractual obligations arising out of or in connection
 
 **Arbitration.** Any dispute, claim, or controversy arising out of or relating to these Terms or the App that cannot be resolved through good-faith negotiation will be **finally settled by binding arbitration administered under the Arbitration and Mediation Act, 2023 of Nigeria** (or its successor legislation), conducted in **Lagos, Nigeria**, in the **English language**, by a **single arbitrator** appointed in accordance with that Act. The seat of arbitration shall be Lagos, Nigeria. The award of the arbitrator shall be final and binding on the parties, and judgment on the award may be entered in any court of competent jurisdiction. Each party retains the right to seek interim, injunctive, or other equitable relief in any court of competent jurisdiction (including the Federal High Court of Nigeria) to prevent the actual or threatened infringement, misappropriation, or violation of intellectual property rights, or to enforce any arbitral award.
 
-**Courts of Nigeria — non-exclusive submission.** Where arbitration is not available or is not permitted by applicable law in a particular jurisdiction, you and TIWI Ecosystem submit to the **non-exclusive jurisdiction of the courts of the Federal Republic of Nigeria sitting in Lagos**.
+**Courts of Nigeria - non-exclusive submission.** Where arbitration is not available or is not permitted by applicable law in a particular jurisdiction, you and TIWI Ecosystem submit to the **non-exclusive jurisdiction of the courts of the Federal Republic of Nigeria sitting in Lagos**.
 
 **Mandatory local law for consumers.** Nothing in these Terms removes or limits any mandatory consumer-protection right you may have under the laws of the country where you reside, where such rights cannot be waived by contract. Where such mandatory rights apply, they prevail over any inconsistent provision of these Terms only to the extent strictly required.
 

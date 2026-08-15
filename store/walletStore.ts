@@ -9,7 +9,7 @@ export type ChainType = 'EVM' | 'SOLANA' | 'TRON' | 'TON' | 'COSMOS' | 'OSMOSIS'
 
 /**
  * Extra chains whose addresses we DERIVE for balance discovery / display only.
- * They are NOT part of ChainType (which drives on-device signing) — mirrors the
+ * They are NOT part of ChainType (which drives on-device signing) - mirrors the
  * web app's split between its 27-entry `MultiChainAddresses` bag and its signing
  * chains. Re-encode chains (INJECTIVE, cosmos-family) reuse the EVM/Cosmos keys.
  */
@@ -44,7 +44,7 @@ export interface WalletGroup {
   addressSchemaVersion?: number;
 }
 
-/** Current derivation revision — see `WalletGroup.addressSchemaVersion`. */
+/** Current derivation revision - see `WalletGroup.addressSchemaVersion`. */
 export const ADDRESS_SCHEMA_VERSION = 2;
 
 interface WalletState {
@@ -98,7 +98,7 @@ interface WalletState {
   _hasHydrated: boolean;
   setHasHydrated: (state: boolean) => void;
 
-  // Persisted balance cache — shows instantly on app open
+  // Persisted balance cache - shows instantly on app open
   cachedBalances: Record<string, { tokens: any[]; totalNetWorthUsd: string; portfolioChange: { amount: string; percent: string }; updatedAt: number }>;
   setCachedBalances: (key: string, data: { tokens: any[]; totalNetWorthUsd: string; portfolioChange: { amount: string; percent: string } }) => void;
 
@@ -208,7 +208,7 @@ export const useWalletStore = create<WalletState>()(
         const updatedGroups = [
           ...uniqueGroups.filter(g => g.id !== newGroup.id),
           // A group created right now used the current derivation, so stamp it
-          // — otherwise the migration below would pointlessly re-derive it.
+          // - otherwise the migration below would pointlessly re-derive it.
           { ...newGroup, addressSchemaVersion: newGroup.addressSchemaVersion ?? ADDRESS_SCHEMA_VERSION },
         ];
 
@@ -218,7 +218,7 @@ export const useWalletStore = create<WalletState>()(
           activeAddress: primaryAddr || null,
           activeChain: newGroup.primaryChain,
           // Without this the freshly imported wallet inherits the previous
-          // wallet's network id — a SOLANA import stamped 'ETH'.
+          // wallet's network id - a SOLANA import stamped 'ETH'.
           activeNetworkId: defaultNetworkIdForChain(newGroup.primaryChain, newGroup.addresses),
           isConnected: true,
           // Legacy sync
@@ -346,7 +346,7 @@ export const useWalletStore = create<WalletState>()(
         // Chain-only phrase imports (a native 24-word TON mnemonic) are NOT
         // BIP39 and derive exactly one account. Running the multi-chain
         // derivation over one would mint junk addresses for every other chain
-        // and — worse — overwrite the real TON address with a BIP39-path one.
+        // and - worse - overwrite the real TON address with a BIP39-path one.
         // A BIP39 wallet always has an EVM address; a chain-only one never does.
         if (!activeGroup.addresses.EVM) return;
 
@@ -362,7 +362,7 @@ export const useWalletStore = create<WalletState>()(
         ];
         const missingChains = allChains.filter(c => !activeGroup.addresses[c]);
         // Wallets stamped with an older derivation revision re-derive even when
-        // nothing is missing — a corrected chain (TON) must overwrite the stale
+        // nothing is missing - a corrected chain (TON) must overwrite the stale
         // address, not be skipped because a value is present.
         const isStale = (activeGroup.addressSchemaVersion ?? 1) < ADDRESS_SCHEMA_VERSION;
         if (missingChains.length === 0 && !isStale) return;
@@ -373,7 +373,7 @@ export const useWalletStore = create<WalletState>()(
             const derived = await deriveMultiChainAddressesFromMnemonic(mnemonic);
 
             // Drop chains that failed to derive (each is individually caught and
-            // returns undefined) — merging them would wipe a good address.
+            // returns undefined) - merging them would wipe a good address.
             const newAddresses = Object.fromEntries(
               Object.entries(derived).filter(([, v]) => !!v)
             ) as Partial<Record<AddressKey, string>>;
@@ -423,7 +423,7 @@ export const useWalletStore = create<WalletState>()(
           if (!hydrated) return;
 
           // Repair state persisted before `activeNetworkId` was kept on the
-          // same chain as `activeChain` — existing installs already hold e.g.
+          // same chain as `activeChain` - existing installs already hold e.g.
           // { activeChain: 'SOLANA', activeNetworkId: 'ETH' } and would keep
           // rendering the wrong badge until the user switched networks.
           if (!isNetworkOnChain(hydrated.activeNetworkId, hydrated.activeChain)) {

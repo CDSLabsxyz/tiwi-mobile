@@ -7,7 +7,7 @@ import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-nati
 
 const TiwiLogo = require('@/assets/logo/tiwi-logo.svg');
 
-// Real network logos — the same assets the wallet/receive/network sheets use,
+// Real network logos - the same assets the wallet/receive/network sheets use,
 // so a chain looks identical everywhere in the app.
 const CHAIN_META: { chain: ChainType; label: string; icon: any }[] = [
     { chain: 'EVM', label: 'Ethereum', icon: require('@/assets/home/chains/ethereum.svg') },

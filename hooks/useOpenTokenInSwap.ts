@@ -9,7 +9,7 @@ import { useCallback } from 'react';
 /**
  * Open the swap screen with `token` pre-filled as the "From" side.
  *
- * Used by every token row the user can tap outside the wallet — the Market
+ * Used by every token row the user can tap outside the wallet - the Market
  * screen, the home Market section and the home Spotlight chips.
  *
  * Two kinds of row arrive here:

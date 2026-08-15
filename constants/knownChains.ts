@@ -9,7 +9,7 @@
  * dropped every long-tail token the server portfolio route discovers.
  *
  * Keep in sync when the web registry gains a chain. `hooks/useChains.ts` fetches
- * the live registry from the backend for names/logos — this static copy exists
+ * the live registry from the backend for names/logos - this static copy exists
  * so filtering works offline and before that query resolves.
  */
 export const KNOWN_CHAIN_NAMES: Record<number, string> = {
@@ -123,9 +123,9 @@ export const KNOWN_CHAIN_NAMES: Record<number, string> = {
 /**
  * Legacy / alternate ids that reach us from upstream providers and must stay
  * renderable even though they aren't the canonical registry id.
- *  • 7777777 — Nexxend tags Injective vouchers with this (it's Zora's real id,
+ *  • 7777777 - Nexxend tags Injective vouchers with this (it's Zora's real id,
  *    already above); the canonical Injective id is 8000001.
- *  • 10000004 / 136105027 — older Osmosis / TON ids still present in some
+ *  • 10000004 / 136105027 - older Osmosis / TON ids still present in some
  *    provider payloads.
  */
 export const ALIAS_CHAIN_NAMES: Record<number, string> = {
@@ -145,7 +145,7 @@ export const KNOWN_CHAIN_IDS: ReadonlySet<number> = new Set<number>([
  * that CLAIMS a native symbol on a chain where that asset isn't native (the
  * classic "BNB on TON" / "TON on BSC" airdrop-spam shape).
  *
- * It must list EVERY legitimate home chain or real balances get dropped — ETH
+ * It must list EVERY legitimate home chain or real balances get dropped - ETH
  * alone is native on 31 chains, which is why a hand-maintained 5-entry list was
  * hiding genuine L2 balances.
  */

@@ -57,7 +57,7 @@ const CHAIN_CONFIGS: Record<number, Chain> = {
 
 /**
  * True when the route already collects the Tiwi fee INLINE (the aggregator skims it inside
- * the swap tx). In that case executors must NOT send a separate tax transfer — doing so would
+ * the swap tx). In that case executors must NOT send a separate tax transfer - doing so would
  * double-charge the user and add a redundant signature.
  */
 export function isTaxInline(route: SwapExecutionParams['route']): boolean {
@@ -66,7 +66,7 @@ export function isTaxInline(route: SwapExecutionParams['route']): boolean {
 
 /**
  * Whether this execution must NOT collect a separate Tiwi tax:
- *  - `skipTax` was set by the caller (e.g. the 2nd leg of a multi-leg swap — tax is charged
+ *  - `skipTax` was set by the caller (e.g. the 2nd leg of a multi-leg swap - tax is charged
  *    once, on leg 1), or
  *  - the route already collects the fee inline (aggregator skims it inside the swap).
  * Centralized so every tax collector (this helper + the LiFi/EVM-DEX copies) agrees.

@@ -8,7 +8,7 @@
 
 import { fallback, http, type Transport } from 'viem';
 
-/** Alchemy endpoints — kept as the FALLBACK behind dRPC (see DRPC_CONFIG). */
+/** Alchemy endpoints - kept as the FALLBACK behind dRPC (see DRPC_CONFIG). */
 export const RPC_CONFIG: Record<number, string> = {
     1: 'https://eth-mainnet.g.alchemy.com/v2/WLJoFMJfcDSAUbsnhlyCl',
     42161: 'https://arb-mainnet.g.alchemy.com/v2/WLJoFMJfcDSAUbsnhlyCl',
@@ -23,7 +23,7 @@ export const RPC_CONFIG: Record<number, string> = {
 };
 
 /**
- * dRPC — the PRIMARY provider (authenticated, higher limits). Statically
+ * dRPC - the PRIMARY provider (authenticated, higher limits). Statically
  * reference the env var so Expo inlines it at build time. dRPC's load-balanced
  * endpoint is `https://lb.drpc.org/ogrpc?network=<slug>&dkey=<KEY>`.
  */
@@ -53,7 +53,7 @@ function drpcUrl(chainId: number): string | undefined {
  *
  * The authenticated dRPC endpoint goes FIRST when a key is configured. This
  * list previously started with the hardcoded Alchemy URL, which meant every
- * BSC read led with a provider whose free-tier monthly quota is exhausted —
+ * BSC read led with a provider whose free-tier monthly quota is exhausted -
  * it answers `429 Monthly capacity limit exceeded`, so viem burned a retry
  * cycle on it before rotating, on every single call. Alchemy is now last so
  * it is still available if the quota resets, without being on the hot path.
@@ -74,11 +74,11 @@ const BSC_RPC_URLS = [
 ].filter(Boolean) as string[];
 
 /**
- * Per-chain fallback endpoint lists — our Alchemy key first (lowest latency),
+ * Per-chain fallback endpoint lists - our Alchemy key first (lowest latency),
  * then well-known keyless public providers. Without these, a single free-tier
  * Alchemy 429 (e.g. the nonce lookup during a send) would fail the whole tx.
  * A multi-send loop hammers one key in quick succession, so this matters most
- * there — but every EVM read/write benefits.
+ * there - but every EVM read/write benefits.
  */
 const CHAIN_RPC_FALLBACKS: Record<number, string[]> = {
     1: [
@@ -155,7 +155,7 @@ export const RPC_TRANSPORT_OPTIONS = {
  * Build a health-ranked, retrying fallback transport from a list of endpoints.
  * `rank` makes viem probe latency/health each minute and prefer the fastest
  * healthy endpoint, so one provider rate-limiting (429) or going down no longer
- * fails calls — viem rotates + retries across the rest.
+ * fails calls - viem rotates + retries across the rest.
  */
 function createFallbackTransport(urls: string[]): Transport {
     return fallback(
@@ -182,7 +182,7 @@ export function createBscFallbackTransport(): Transport {
 }
 
 /**
- * Standard transport selector — use this anywhere a chainId is known. Returns a
+ * Standard transport selector - use this anywhere a chainId is known. Returns a
  * multi-provider fallback transport (survives Alchemy 429s) for every chain we
  * have a fallback list for; other chains get a single http endpoint but still
  * with a retry so a transient blip doesn't hard-fail.

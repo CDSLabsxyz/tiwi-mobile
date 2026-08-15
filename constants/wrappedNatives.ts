@@ -2,18 +2,18 @@
  * Wrapped-native token registry.
  *
  * Every entry here is a token that is redeemable 1:1 for its chain's native
- * coin — WBNB → BNB, WETH → ETH, WSOL → SOL. Holding one is almost always an
+ * coin - WBNB → BNB, WETH → ETH, WSOL → SOL. Holding one is almost always an
  * accident (a leftover swap leg, a bridge output), so the wallet surfaces a
  * bold "Unwrap" action wherever one of these shows up.
  *
- * Matching is by (chainId, address) ONLY — never by symbol. A token that
+ * Matching is by (chainId, address) ONLY - never by symbol. A token that
  * merely calls itself "WETH" on some chain we don't list here simply gets no
  * unwrap button, which is the safe failure mode. `services/unwrapService.ts`
  * additionally simulates `withdraw()` before signing, so a mis-registered
  * address surfaces as an error instead of a burned transaction.
  *
  * EVM entries all follow the canonical WETH9 interface (deposit/withdraw).
- * Solana's WSOL is not a contract — it is unwrapped by closing the associated
+ * Solana's WSOL is not a contract - it is unwrapped by closing the associated
  * token account, which is why `family` is carried on every row.
  */
 
@@ -36,7 +36,7 @@ export interface WrappedNativeInfo {
 /** Solana's canonical chain id in this app (see constants/knownChains.ts). */
 export const SOLANA_CHAIN_ID = 7565164;
 
-/** Native SOL mint — the "wrapped SOL" SPL token. */
+/** Native SOL mint - the "wrapped SOL" SPL token. */
 export const NATIVE_SOL_MINT = 'So11111111111111111111111111111111111111112';
 
 const evm = (
@@ -114,7 +114,7 @@ const ALL_BY_KEY = new Map<string, WrappedNativeInfo>(
 /**
  * The unwrap-eligible subset: EVM entries the local signer has a real chain
  * definition for. `getChainById` falls back to Ethereum mainnet, so an unlisted
- * chain would be signed with chainId 1 — better to show no unwrap button than to
+ * chain would be signed with chainId 1 - better to show no unwrap button than to
  * broadcast a withdrawal against the wrong network.
  */
 const BY_KEY = new Map<string, WrappedNativeInfo>(
@@ -146,7 +146,7 @@ export function getWrappedNative(
 }
 
 /**
- * True when `(chainId, address)` is a canonical wrapped native — regardless of
+ * True when `(chainId, address)` is a canonical wrapped native - regardless of
  * whether we can *sign* on that chain.
  *
  * This is the DISPLAY-side question, and it is deliberately not gated on signer

@@ -1,5 +1,5 @@
 /**
- * Address validation per chain family. viem's `isAddress` only knows EVM —
+ * Address validation per chain family. viem's `isAddress` only knows EVM -
  * for Solana, Cosmos, TRON, TON, etc. we apply chain-specific format checks.
  *
  * These checks are *format-level*, not on-chain existence. They mirror the

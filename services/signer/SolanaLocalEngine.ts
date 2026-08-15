@@ -29,7 +29,7 @@ export class SolanaLocalEngine implements SignerEngine {
     }
 
     /**
-     * The app's shared, probed Solana endpoint — the same one callers build
+     * The app's shared, probed Solana endpoint - the same one callers build
      * transactions against. Broadcasting on this engine's own hardcoded
      * `api.mainnet-beta.solana.com` while the caller fetched its blockhash from
      * the configured (Helius) endpoint meant preflight ran on a node that had
@@ -61,12 +61,12 @@ export class SolanaLocalEngine implements SignerEngine {
 
     /**
      * Resolve a Solana keypair for `solAddress`. Three import paths exist and
-     * each writes a different secret to SecureStore — try them in this order:
+     * each writes a different secret to SecureStore - try them in this order:
      *
      *   1. Direct SOL private-key import (e.g. user pasted a Phantom secret).
      *      Stored at `tiwi_wallet_priv_SOLANA_<addr>` as a base58 string,
      *      either a 32-byte seed or a 64-byte secret-key. NO mnemonic exists,
-     *      and the wallet group has no EVM address — the previous EVM-only
+     *      and the wallet group has no EVM address - the previous EVM-only
      *      lookup threw "No EVM address found to derive Solana key" here.
      *
      *   2. Mnemonic-derived multi-chain wallet. The mnemonic is keyed by the
@@ -84,7 +84,7 @@ export class SolanaLocalEngine implements SignerEngine {
             : undefined)
             ?? walletGroups.find(g => g.id === activeGroupId);
 
-        // Path 1: imported SOL private key. Use the actual SOL address — the
+        // Path 1: imported SOL private key. Use the actual SOL address - the
         // wallet group may not even carry an EVM key for SOL-only imports.
         const senderAddr = solAddress ?? group?.addresses?.SOLANA;
         if (senderAddr) {
@@ -102,7 +102,7 @@ export class SolanaLocalEngine implements SignerEngine {
         }
 
         // Path 2: mnemonic-derived. Needs the group's EVM address as the
-        // SecureStore key — this is the standard path for in-app multichain
+        // SecureStore key - this is the standard path for in-app multichain
         // wallets created via "Generate Phrase".
         if (!group?.addresses?.EVM) {
             throw new Error('No private key or mnemonic found for this Solana wallet');
@@ -128,7 +128,7 @@ export class SolanaLocalEngine implements SignerEngine {
      * Public accessor for the derived keypair.
      *
      * The swap engine's Solana executors (Jupiter, Rubic) expect a wallet
-     * *adapter* — `{ publicKey, signTransaction }` — rather than a fire-and-
+     * *adapter* - `{ publicKey, signTransaction }` - rather than a fire-and-
      * forget send, because they build and partially sign multi-instruction
      * transactions (tax transfer + swap) before broadcasting. Reuses the exact
      * same three-path key resolution as `sendTransaction`.
@@ -160,7 +160,7 @@ export class SolanaLocalEngine implements SignerEngine {
      * Broadcast, translating web3.js's `SendTransactionError` into something a
      * user can act on. Its default message is just "Transaction simulation
      * failed" with an empty log array whenever preflight fails *before* any
-     * program runs — an unfunded fee payer, an unknown blockhash — so pull the
+     * program runs - an unfunded fee payer, an unknown blockhash - so pull the
      * real reason out of `getLogs()` / the error cause instead of showing that.
      */
     private async sendRaw(connection: Connection, raw: Uint8Array): Promise<string> {
@@ -180,7 +180,7 @@ export class SolanaLocalEngine implements SignerEngine {
             } else if (!detail && /blockhash not found/i.test(reason)) {
                 detail = 'The transaction expired before it reached the network. Try again.';
             }
-            throw new Error(detail ? `${reason || 'Transaction failed'} — ${detail}` : (reason || 'Transaction failed'));
+            throw new Error(detail ? `${reason || 'Transaction failed'} - ${detail}` : (reason || 'Transaction failed'));
         }
     }
 
@@ -199,7 +199,7 @@ export class SolanaLocalEngine implements SignerEngine {
 
                 // Parse first, THEN send. Wrapping the send in the same try as the
                 // versioned parse meant a failed broadcast fell through to the
-                // legacy branch and broadcast a second time — a double-send risk,
+                // legacy branch and broadcast a second time - a double-send risk,
                 // and the second failure masked the first one's reason.
                 let raw: Uint8Array;
                 try {

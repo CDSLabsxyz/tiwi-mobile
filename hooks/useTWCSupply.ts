@@ -6,14 +6,14 @@ import { getCachedPublicClient } from '@/services/swap/core/platform/viem-client
 /**
  * useTWCSupply Hook
  *
- * Pulls live TWC supply numbers from the TIWI ecosystem API — the same
+ * Pulls live TWC supply numbers from the TIWI ecosystem API - the same
  * source the super-app reads for its "Total Supply" tile. The endpoint
  * already returns human-readable values (i.e. it has divided by the 9
  * token decimals), so callers just `parseFloat` and format.
  *
  * When that endpoint is unreachable we read `totalSupply()` straight off the
  * BSC contract, matching the super-app's fallback. TWC is deflationary, so the
- * genesis constant below is a last resort only — it does NOT reflect burns and
+ * genesis constant below is a last resort only - it does NOT reflect burns and
  * will read high (905T vs the ~895T actually outstanding).
  *
  * Persists to AsyncStorage so the tile renders instantly on cold start.
@@ -25,7 +25,7 @@ const TWC_ADDRESS = '0xDA1060158F7D593667cCE0a15DB346BB3FfB3596';
 const TWC_CHAIN_ID = 56;
 const TWC_DECIMALS = 9;
 
-// 905T — genesis supply. Last resort only; prefer the on-chain read.
+// 905T - genesis supply. Last resort only; prefer the on-chain read.
 const FALLBACK_TOTAL_SUPPLY = 905_000_000_000_000;
 
 const ERC20_TOTAL_SUPPLY_ABI = [
@@ -39,7 +39,7 @@ const ERC20_TOTAL_SUPPLY_ABI = [
 ] as const;
 
 /**
- * Live `totalSupply()` read on BSC — the source of truth whenever the
+ * Live `totalSupply()` read on BSC - the source of truth whenever the
  * off-chain supply API is down.
  */
 async function fetchOnChainTotalSupply(): Promise<number | null> {

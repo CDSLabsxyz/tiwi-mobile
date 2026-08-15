@@ -76,7 +76,7 @@ export default function AppUpdatesCacheScreen() {
             return;
         }
 
-        // Update found — start download automatically
+        // Update found - start download automatically
         const uri = await updateService.downloadUpdate();
         if (uri) {
             await updateService.installUpdate();
@@ -147,7 +147,7 @@ export default function AppUpdatesCacheScreen() {
         switch (updateStatus) {
             case 'checking': return 'Checking for updates...';
             case 'downloading': return `Downloading update... ${downloadProgress}%`;
-            case 'ready-to-install': return 'Update ready — tap to install';
+            case 'ready-to-install': return 'Update ready - tap to install';
             case 'installing': return 'Opening installer...';
             case 'update-available': return `Version ${latestVersion?.version} available`;
             case 'no-update': return `You're on the latest version`;

@@ -35,7 +35,7 @@ export default function SecuritySettingsScreen() {
 
     const securityItems = [
         { label: 'Change PIN', icon: ResetPasswordIcon, route: '/settings/security/change-pin' },
-        // Face Unlock — iOS only (Android uses system fingerprint)
+        // Face Unlock - iOS only (Android uses system fingerprint)
         ...(Platform.OS === 'ios' ? [{
             label: 'Face Unlock',
             icon: FaceUnlockIcon,

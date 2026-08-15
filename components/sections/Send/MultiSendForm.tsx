@@ -1,5 +1,5 @@
 /**
- * Multi-Send Form (mobile) — per-row multi-token model.
+ * Multi-Send Form (mobile) - per-row multi-token model.
  *
  * Each recipient row carries its own address + amount + token. Supports
  * Add User, Bulk Add (many addresses / one amount+token), and Attach CSV
@@ -90,7 +90,7 @@ export const MultiSendForm: React.FC<MultiSendFormProps> = () => {
   return (
     <View style={{ width: "100%", gap: 22, paddingTop: 24 }}>
       <Text style={{ fontFamily: "Manrope-Medium", fontSize: 15, lineHeight: 22, color: colors.bodyText }}>
-        Add recipients — each row can send a different amount and token.
+        Add recipients - each row can send a different amount and token.
       </Text>
 
       <MultiSendRowsForm
@@ -108,7 +108,7 @@ export const MultiSendForm: React.FC<MultiSendFormProps> = () => {
         <Text style={{ fontFamily: "Manrope-Medium", fontSize: 14, color: colors.bodyText }}>Attach CSV / Text File</Text>
       </TouchableOpacity>
       <Text style={{ fontFamily: "Manrope-Regular", fontSize: 12, lineHeight: 18, color: colors.bodyText }}>
-        CSV format: address, amount, token — one recipient per line. Header rows are auto-skipped.
+        CSV format: address, amount, token - one recipient per line. Header rows are auto-skipped.
       </Text>
 
       <BulkAddModal

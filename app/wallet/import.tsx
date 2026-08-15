@@ -88,7 +88,7 @@ export default function ImportWalletScreen() {
     // A native TON phrase (Tonkeeper/TonHub) is 24 words from the BIP39
     // wordlist but has its OWN checksum, so `validateMnemonic` rejects it and
     // the user would be told their perfectly good phrase is invalid. Validating
-    // it needs @ton/crypto, which is async — so it runs as an effect and
+    // it needs @ton/crypto, which is async - so it runs as an effect and
     // upgrades the verdict when it lands.
     const [isTonPhrase, setIsTonPhrase] = useState(false);
     useEffect(() => {
@@ -162,7 +162,7 @@ export default function ImportWalletScreen() {
                 primaryChain,
                 addresses: importedWallet.addresses,
                 source: 'imported',
-                // Imported wallets already have a seed/key stored externally — no in-app backup needed.
+                // Imported wallets already have a seed/key stored externally - no in-app backup needed.
                 isBackupComplete: true,
             });
 
@@ -184,7 +184,7 @@ export default function ImportWalletScreen() {
                 api.wallet.balances({ address: tronAddr, chains: [728126428] }).catch(() => null);
             }
 
-            // Navigate immediately — don't wait for balance fetch
+            // Navigate immediately - don't wait for balance fetch
             if (mode === 'additional' || setupPhase === 'COMPLETED') {
                 router.replace('/(tabs)' as any);
             } else {
@@ -192,7 +192,7 @@ export default function ImportWalletScreen() {
                 router.push('/security' as any);
             }
         } catch (error: any) {
-            // Previously this only hit the console — the screen just stopped
+            // Previously this only hit the console - the screen just stopped
             // loading with no explanation of why the import didn't take.
             console.error('Import failed', error);
             setImportError(error?.message || 'Could not import this wallet. Please check the phrase or key and try again.');

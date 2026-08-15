@@ -4,7 +4,7 @@
  * The server portfolio route only knows 6 address keys, so the newly-derived
  * chains (Sui, Aptos, Injective, Bitcoin, Cosmos-family) have no balances. This
  * reads their NATIVE balance directly from public RPC/REST endpoints and prices
- * them via CoinGecko simple/price — fully on-device, no backend. Returns rows in
+ * them via CoinGecko simple/price - fully on-device, no backend. Returns rows in
  * the same shape as /api/v1/wallet/balances so useWalletBalances can merge them.
  *
  * Native only. Every reader is isolated (failures degrade to "no row"), so one

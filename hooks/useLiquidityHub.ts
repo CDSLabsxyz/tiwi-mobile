@@ -1,10 +1,10 @@
 /**
- * useLiquidityHub (mobile) — faithful port of tiwi-user-app hooks/useLiquidityHub.ts.
+ * useLiquidityHub (mobile) - faithful port of tiwi-user-app hooks/useLiquidityHub.ts.
  *
  * Writes are encoded on-device and signed via `signerController` (the same path
  * mobile staking uses); reads use chain-pinned viem public clients. Every write
  * waits for its receipt before the next step. minAmounts are 0 (the pair/router
- * enforce ratio internally), deadline is +30min — matching the web hook.
+ * enforce ratio internally), deadline is +30min - matching the web hook.
  *
  * Supported/wrapped-native chains: 1, 56, 137, 42161, 10, 8453, 43114.
  */

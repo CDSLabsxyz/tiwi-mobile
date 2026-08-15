@@ -55,7 +55,7 @@ async function getNexxendBalances(address, chainIds) {
     return { address: json.data.address, balances: flat, totalUSD: (json.data.totalValueUsd ?? 0).toFixed(2), chains: chainIds, timestamp: json.data.lastUpdated ?? Date.now() };
 }
 
-// From hooks/useWalletBalances.ts — verbatim
+// From hooks/useWalletBalances.ts - verbatim
 const ALL_SUPPORTED_CHAIN_IDS = [1, 56, 137, 42161, 8453, 10, 43114, 59144, 250, 42220, 100, 7565164, 1100];
 const KNOWN_CHAIN_IDS = new Set([...ALL_SUPPORTED_CHAIN_IDS, 728126428]);
 const BLACKLISTED_SYMBOLS = ['SN3', 'BSB'];
@@ -135,7 +135,7 @@ for (const c of CASES) {
         const resp = await getNexxendBalances(c.address, c.chains);
         console.log(`  Nexxend reported totalUSD: $${resp.totalUSD}  (${resp.balances.length} raw tokens)`);
 
-        // Dedupe — mirrors useWalletBalances.ts:332-339
+        // Dedupe - mirrors useWalletBalances.ts:332-339
         const dedupedMap = new Map();
         resp.balances.forEach(b => {
             if (!b) return;
@@ -155,7 +155,7 @@ for (const c of CASES) {
         }
 
         if (c.expectMin === -1) {
-            // expect zero — empty wallet
+            // expect zero - empty wallet
             if (totalUsdToday === 0) { console.log(`  ✓ PASS (empty as expected)`); pass++; }
             else { console.log(`  ✗ FAIL: expected $0, got $${totalUsdToday}`); fail++; }
         } else if (totalUsdToday >= c.expectMin) {

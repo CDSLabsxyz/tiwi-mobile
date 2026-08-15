@@ -12,12 +12,12 @@
  * → `The contract function "balanceOf" returned no data ("0x")`.
  *
  * This restores the user's token identity on the route before executor selection.
- * `steps`/`raw` are untouched — the swap still has to trade through the wrapper.
+ * `steps`/`raw` are untouched - the swap still has to trade through the wrapper.
  *
  * Ported from tiwi-user-app. The only difference is the wrapped-native lookup:
  * this app's registry exposes `isKnownWrappedNative(chainId, address)` in place of
- * the web app's `isWrappedNativeAddress`. Both are keyed by (chainId, address) —
- * never by symbol — because chains that fork each other share mint addresses.
+ * the web app's `isWrappedNativeAddress`. Both are keyed by (chainId, address) -
+ * never by symbol - because chains that fork each other share mint addresses.
  */
 
 import type { RouterRoute } from '@/services/swap/core/router-types';
@@ -61,7 +61,7 @@ export function alignRouteTokensWithParams(params: SwapExecutionParams): RouterR
     if (!fixFrom && !fixTo) return route;
 
     console.warn(
-        '[SwapExecutor] Route labelled with wrapped native — restoring the user-selected token(s) ' +
+        '[SwapExecutor] Route labelled with wrapped native - restoring the user-selected token(s) ' +
         'so executor selection matches what is actually being spent/received:',
         {
             from: fixFrom ? `${route.fromToken.address} → ${fromToken.address}` : undefined,

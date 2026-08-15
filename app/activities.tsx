@@ -153,7 +153,7 @@ export default function ActivitiesScreen() {
             : null;
         const onChain = key ? resolvedReceived[key] : null;
 
-        // Numeric-prefix extraction — some loggers write "1000000", some
+        // Numeric-prefix extraction - some loggers write "1000000", some
         // "1000000 TWC", some "1000000 TWC TWC". Collapse to the number.
         const numericMatch = String(item.amount ?? '').match(/^\s*([0-9]+(?:\.[0-9]+)?)/);
         const storedNumeric = numericMatch ? numericMatch[1] : '';
@@ -177,7 +177,7 @@ export default function ActivitiesScreen() {
 
         // Relabel rows whose stored category disagrees with on-chain truth.
         // The resolver tries 'received' first and falls back to 'sent', so
-        // resolvedDirection='sent' means there was NO received leg — a row
+        // resolvedDirection='sent' means there was NO received leg - a row
         // stored as 'Swap' in that case is really just a Send (which is
         // exactly the mis-logged-send → Swap bug). Receives similarly get
         // corrected if they ended up under another label.
@@ -192,7 +192,7 @@ export default function ActivitiesScreen() {
         const effectiveCategoryLower = effectiveCategory.toLowerCase();
         const isReceived = effectiveCategoryLower === 'received' || effectiveCategoryLower.includes('received');
         const amountColor = isReceived ? '#498F00' : colors.titleText;
-        // Broadened — matches "Sent", "Send", "Transfer", "Sent USDT",
+        // Broadened - matches "Sent", "Send", "Transfer", "Sent USDT",
         // "Transfer to ...", title-based "sent", etc. Any historical row
         // the user considers a Send should get a Receipt affordance.
         const isSent =
@@ -256,7 +256,7 @@ export default function ActivitiesScreen() {
 
         return (
             <View style={styles.activityItem}>
-                {/* Left Side: Type and Date — tap to open explorer */}
+                {/* Left Side: Type and Date - tap to open explorer */}
                 <TouchableOpacity
                     style={styles.leftContent}
                     activeOpacity={0.7}
@@ -276,7 +276,7 @@ export default function ActivitiesScreen() {
                     </TouchableOpacity>
                 </View>
 
-                {/* Right Side: Amount and USD Value — tap to open explorer */}
+                {/* Right Side: Amount and USD Value - tap to open explorer */}
                 <TouchableOpacity
                     style={styles.rightContent}
                     activeOpacity={0.7}

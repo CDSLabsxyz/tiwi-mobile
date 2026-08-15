@@ -214,7 +214,7 @@ export class RelayExecutor {
                     let hash: string;
 
                     if (isSolanaStep) {
-                        // Solana transaction — Relay returns serialized tx in data field
+                        // Solana transaction - Relay returns serialized tx in data field
                         // The data may be base64 encoded transaction, or in tx.transaction/tx.psbt
                         const solTxData = tx.data || tx.transaction || item.transaction || '';
 
@@ -239,7 +239,7 @@ export class RelayExecutor {
                         }
                         hash = result.hash;
                     } else {
-                        // EVM transaction — must have 'to' address
+                        // EVM transaction - must have 'to' address
                         if (!tx.to) {
                             console.error(`[RelayExecutor] Step[${i}].Item[${j}] missing "to" address`);
                             throw new Error('Relay did not provide valid transaction data.');

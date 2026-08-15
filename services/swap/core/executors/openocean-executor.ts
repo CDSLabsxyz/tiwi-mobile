@@ -10,7 +10,7 @@
  *   3. collects the Tiwi protocol tax (same as other EVM executors),
  *   4. sends the pre-built swap tx.
  *
- * NOTE: this does NOT extend EVMDEXExecutor — that base is hard-wired for
+ * NOTE: this does NOT extend EVMDEXExecutor - that base is hard-wired for
  * Uniswap/Pancake V2 path swaps (it requires route.raw.path + getAmountsOut),
  * which an aggregator's pre-encoded calldata doesn't have.
  */
@@ -51,7 +51,7 @@ export class OpenOceanExecutor implements SwapRouterExecutor {
     const tx = route.raw?.tx;
     if (!tx?.to || !tx?.data) {
       throw new SwapExecutionError(
-        'OpenOcean route is missing executable tx data — reconnect the wallet and retry.',
+        'OpenOcean route is missing executable tx data - reconnect the wallet and retry.',
         SwapErrorCode.INVALID_ROUTE,
         'openocean',
       );
@@ -73,7 +73,7 @@ export class OpenOceanExecutor implements SwapRouterExecutor {
     if (!isNativeAddr(fromAddr)) {
       const spender = (route.raw?.routerAddress || tx.to) as Address;
       const token = fromAddr as Address;
-      // amountIn is always the user-entered amount — never the wallet balance/allowance.
+      // amountIn is always the user-entered amount - never the wallet balance/allowance.
       const neededWei = resolveSpendAmountWei(route.fromToken.amount || '0', route.fromToken.decimals || 18);
 
       let allowance = BigInt(0);
@@ -86,7 +86,7 @@ export class OpenOceanExecutor implements SwapRouterExecutor {
           args: [userAddress as Address, spender],
         })) as bigint;
       } catch {
-        // If the allowance read fails, fall through and attempt an approval —
+        // If the allowance read fails, fall through and attempt an approval -
         // the swap tx would revert anyway without one.
       }
 

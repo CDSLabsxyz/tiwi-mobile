@@ -1,5 +1,5 @@
 /**
- * Recipient ("To") address sheet — port of the web app's to-address flow
+ * Recipient ("To") address sheet - port of the web app's to-address flow
  * (components/swap/to-address-modal.tsx).
  *
  * Lets the user send the OUTPUT of a swap to an address other than their own.
@@ -34,7 +34,7 @@ export interface RecipientAddressSheetProps {
     onSave: (address: string | null) => void;
     /** Currently applied recipient, if the user set one. */
     currentAddress?: string | null;
-    /** Destination chain — the address is validated against this. */
+    /** Destination chain - the address is validated against this. */
     toChainId?: number;
     /** Destination chain name, for copy. */
     toChainName?: string;
@@ -65,7 +65,7 @@ export const RecipientAddressSheet: React.FC<RecipientAddressSheetProps> = ({
 
     /**
      * Every wallet on this device that can actually receive on the destination
-     * chain — same source the Send screen's address book uses (walletGroups ×
+     * chain - same source the Send screen's address book uses (walletGroups ×
      * their per-chain addresses), narrowed to the one key this chain uses.
      *
      * Narrowed deliberately: listing a wallet's Solana address as an option for
@@ -89,7 +89,7 @@ export const RecipientAddressSheet: React.FC<RecipientAddressSheetProps> = ({
                 isActive: g.id === activeGroupId,
             });
         }
-        // Active wallet first — it's the default destination.
+        // Active wallet first - it's the default destination.
         return [...out.filter((w) => w.isActive), ...out.filter((w) => !w.isActive)];
     }, [walletGroups, activeGroupId, addressNicknames, toChainId]);
 
@@ -105,7 +105,7 @@ export const RecipientAddressSheet: React.FC<RecipientAddressSheetProps> = ({
 
     /**
      * Recents minus anything already listed above, and minus anything invalid
-     * for this chain — a recent EVM address is meaningless on a Solana payout.
+     * for this chain - a recent EVM address is meaningless on a Solana payout.
      */
     const recentOnly = useMemo(() => {
         const shown = new Set([
@@ -149,7 +149,7 @@ export const RecipientAddressSheet: React.FC<RecipientAddressSheetProps> = ({
         if (!trimmed) return;
 
         // Validate against the DESTINATION chain, not just "looks like an
-        // address" — sending to a well-formed address of the wrong family is
+        // address" - sending to a well-formed address of the wrong family is
         // unrecoverable.
         if (toChainId && !isAddressChainCompatible(trimmed, toChainId)) {
             setError(`That is not a valid ${toChainName || 'destination chain'} address.`);
@@ -209,7 +209,7 @@ export const RecipientAddressSheet: React.FC<RecipientAddressSheetProps> = ({
                     showsVerticalScrollIndicator={false}
                 >
                     {/* Every wallet on this device that can receive on the
-                        destination chain — same source as the Send screen's
+                        destination chain - same source as the Send screen's
                         address book. */}
                     {deviceWallets.length > 0 && (
                         <>
@@ -276,7 +276,7 @@ export const RecipientAddressSheet: React.FC<RecipientAddressSheetProps> = ({
                         </>
                     )}
 
-                    {/* Nothing to pick from — the wallet has no key on this
+                    {/* Nothing to pick from - the wallet has no key on this
                         chain and no saved address fits it. Pasting is the way. */}
                     {deviceWallets.length === 0 && savedContacts.length === 0 && recentOnly.length === 0 && (
                         <Text style={styles.emptyText}>

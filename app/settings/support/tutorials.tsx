@@ -87,7 +87,7 @@ const FALLBACK_TUTORIALS: Tutorial[] = [
 ];
 
 /**
- * Tutorial Card Component — single column, full width
+ * Tutorial Card Component - single column, full width
  */
 function TutorialCard({ item, onPress }: { item: Tutorial; onPress: () => void }) {
     return (
@@ -156,7 +156,7 @@ export default function TutorialsScreen() {
 
             return { tutorials: mapped };
         },
-        staleTime: 5 * 60 * 1000, // 5 min — tutorials don't change often
+        staleTime: 5 * 60 * 1000, // 5 min - tutorials don't change often
     });
 
     const tutorialList = useMemo(() => {

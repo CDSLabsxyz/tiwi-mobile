@@ -1,5 +1,5 @@
 /**
- * TiwiMultiSwap Executor (Path R, Phase 3b — client-side)
+ * TiwiMultiSwap Executor (Path R, Phase 3b - client-side)
  *
  * Executes universal / multi-hop routes (V2, V3, or mixed DEXes) on ANY EVM chain
  * where TiwiMultiSwap is deployed, by calling its atomic executeMultiSwap() directly.
@@ -10,7 +10,7 @@
  * contract isn't deployed yet (falls through to other executors).
  *
  * Step data (router/feeTier/dexId) comes from route.steps, populated by the backend
- * route-converter from the dex-registry — so no DEX addresses are hardcoded here.
+ * route-converter from the dex-registry - so no DEX addresses are hardcoded here.
  */
 import { getAddress, encodeFunctionData, parseUnits, type Address, type Hex } from 'viem';
 import type { SwapRouterExecutor, SwapExecutionParams, SwapExecutionResult } from '../types';
@@ -78,7 +78,7 @@ export class TiwiMultiSwapExecutor implements SwapRouterExecutor {
     const toChain = route.toToken.chainId;
     if (fromChain !== toChain) return false;            // same-chain only
     if (!getMultiSwapAddress(fromChain)) return false;  // not deployed on this chain
-    if (isNative(route.fromToken.address)) return false; // native input needs transferFrom — unsupported
+    if (isNative(route.fromToken.address)) return false; // native input needs transferFrom - unsupported
     // Universal / multi-hop routes only (single-DEX-direct is handled by the dedicated executors)
     const r = route.router || '';
     const isUniversal = r.startsWith('universal') || r === 'multi-hop' || (route.steps?.length || 0) > 1;

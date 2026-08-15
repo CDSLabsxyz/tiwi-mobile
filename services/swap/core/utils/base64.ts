@@ -2,7 +2,7 @@
  * Lenient base64 → bytes decode for aggregator-returned Solana transactions.
  *
  * The browser's strict `atob()` throws "The string to be decoded is not correctly encoded" on
- * URL-safe base64 (`-`/`_`), embedded whitespace/newlines, or missing padding — all of which
+ * URL-safe base64 (`-`/`_`), embedded whitespace/newlines, or missing padding - all of which
  * various swap APIs (Rubic, Relay, …) emit. Normalize to the standard alphabet + pad first.
  */
 export function base64ToBytes(input: string): Uint8Array {

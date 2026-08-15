@@ -54,7 +54,7 @@ const WalletOutlineIcon = require('../../assets/home/wallet-03.svg');
 const DownloadIcon = require('../../assets/home/download-04.svg');
 
 type ModalMode = 'MAIN' | 'ADD_OPTIONS';
-// Every network the wallet derives an address for — shared with Account
+// Every network the wallet derives an address for - shared with Account
 // Settings and the receive screen so the three can't drift apart.
 const ALL_NETWORKS = WALLET_NETWORKS;
 
@@ -226,7 +226,7 @@ export const WalletModal: React.FC<WalletModalProps> = (props) => {
     // The list is ~38 rows now that every derived chain is shown, so the search
     // box that used to be a decorative placeholder actually filters.
     //
-    // MUST stay above the early return below — this component bails out with
+    // MUST stay above the early return below - this component bails out with
     // `null` while hidden, so a hook placed after that point runs only on the
     // renders where the modal is open. That is exactly the "rendered more hooks
     // than during the previous render" crash.
@@ -377,7 +377,7 @@ export const WalletModal: React.FC<WalletModalProps> = (props) => {
                                             onPress={() => {
                                                 if (!hasAddress) return;
                                                 setSelectedNetworkId(network.id);
-                                                // Receive-only rows carry no `chain` — they display and
+                                                // Receive-only rows carry no `chain` - they display and
                                                 // copy their address but never become the signing chain.
                                                 if (!network.chain) return;
                                                 setActiveChain(network.chain, network.id, network.addressKey);

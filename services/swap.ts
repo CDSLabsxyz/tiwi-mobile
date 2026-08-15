@@ -1,15 +1,15 @@
 /**
- * Swap service — a direct port of the web app's quote + execution pipeline.
+ * Swap service - a direct port of the web app's quote + execution pipeline.
  *
  * `fetchSwapQuote` mirrors `tiwi-user-app/hooks/useSwapQuote.ts` and
  * `executeSwap` mirrors `tiwi-user-app/hooks/useSwapExecution.ts`. Behaviour is
- * intentionally identical, so keep them in sync — the differences that used to
+ * intentionally identical, so keep them in sync - the differences that used to
  * exist here all produced worse routes on mobile than on web:
  *
  *   • Quotes came from THREE sources (a Relay-vs-backend race, Jupiter direct,
  *     Skip direct) instead of one. Only the backend route carries fee mode,
  *     per-step dexIds/router addresses and expiry, and only it considers all
- *     ~30 routers — so mobile silently skipped better routes and lost the
+ *     ~30 routers - so mobile silently skipped better routes and lost the
  *     inline-fee signal.
  *   • Same-chain quotes were rewritten to `router: 'dex'` client-side, which
  *     threw away the backend's chosen router.
@@ -47,7 +47,7 @@ const isBscOnlySwap = (from?: TokenMinimal | null, to?: TokenMinimal | null): bo
 
 /**
  * Cross-chain routers that deliver the destination token in ONE user signature.
- * Copied from useSwapQuote — keep the two lists identical.
+ * Copied from useSwapQuote - keep the two lists identical.
  */
 const ONE_SIG_AGGREGATORS = new Set([
     'lifi', 'relay', 'mayan', 'squid', 'across', 'wormhole', 'thorchain',
@@ -80,7 +80,7 @@ export function formatToSixDecimals(value: string): string {
  *
  * ONE source of truth: `/api/v1/route`. The backend runs every router adapter
  * (LiFi, Relay, Jupiter, Skip, Cetus, Meson, CCTP, the Tiwi contracts, …) and
- * returns a normalized `RouterRoute` — the exact object the executor engine
+ * returns a normalized `RouterRoute` - the exact object the executor engine
  * settles. Nothing is quoted client-side.
  */
 export async function fetchSwapQuote(
@@ -98,7 +98,7 @@ export async function fetchSwapQuote(
 
     const { selectedGasTokenType, isAutoSlippage, pinnedPoolAddress, preferredRouter } = useSwapStore.getState();
 
-    // Addresses are only sent when they're valid on the relevant chain — a
+    // Addresses are only sent when they're valid on the relevant chain - a
     // 0x… "recipient" on a Solana route makes the backend quote for an address
     // that can't receive, and the executor would then deliver there.
     let validFromAddress: string | undefined;
@@ -114,7 +114,7 @@ export async function fetchSwapQuote(
     }
 
     // Pair liquidity, computed exactly as useSwapQuote does: the MINIMUM of the
-    // two tokens when both are known (conservative — the route has to work for
+    // two tokens when both are known (conservative - the route has to work for
     // both legs), otherwise whichever one we have.
     //
     // Sending this is the single biggest lever on quote latency. When it's
@@ -170,7 +170,7 @@ export async function fetchSwapQuote(
 
     const response: any = await api.route.get(routeReq, { signal: options?.signal });
 
-    // "No route" is a VALID outcome (illiquid / unsupported pair) — the API
+    // "No route" is a VALID outcome (illiquid / unsupported pair) - the API
     // returns { noRoute: true } on HTTP 200. Give the honest, chain-specific
     // message instead of a generic failure.
     if (response?.noRoute || (!response?.route && !response?.error)) {
@@ -183,7 +183,7 @@ export async function fetchSwapQuote(
         throw new Error(
             response?.reason === 'unsupported_pair'
                 ? `[NO_LIQUIDITY] This swap isn't supported on ${chainName}.`
-                : `[NO_LIQUIDITY] No liquidity for ${sym} on ${chainName} — this token has no tradeable pool here.`,
+                : `[NO_LIQUIDITY] No liquidity for ${sym} on ${chainName} - this token has no tradeable pool here.`,
         );
     }
 

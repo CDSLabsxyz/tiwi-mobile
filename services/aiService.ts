@@ -1,15 +1,17 @@
 /**
  * AI Service for Tiwi Mobile App
  * Primary: TIWI super-app backend (knowledge base + live data + brand scrubbing)
- * Fallback chain: OpenAI direct → Gemini → legacy backend
+ * Guest fallback chain: OpenAI direct → Gemini → legacy backend
  */
 
-import { api, type AiCreditBalance, type AiValidationResult } from '@/lib/mobile/api-client';
+import { api, TIWI_API_BASE_URL, type AiCreditBalance, type AiValidationResult } from '@/lib/mobile/api-client';
 
 const OPENAI_API_KEY = process.env.EXPO_PUBLIC_OPENAI_API_KEY || '';
 const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
 const BACKEND_URL = process.env.EXPO_PUBLIC_AI_BACKEND_URL || 'https://tiwiprotocol-ai.vercel.app/api/chat';
-const SUPERAPP_AI_URL = process.env.EXPO_PUBLIC_SUPERAPP_AI_URL || 'https://app.tiwiprotocol.xyz/api/v1/ai/chat';
+const SUPERAPP_AI_URL =
+  process.env.EXPO_PUBLIC_SUPERAPP_AI_URL ||
+  `${TIWI_API_BASE_URL.replace(/\/$/, '')}/api/v1/ai/chat`;
 const OPENAI_STREAM_URL = 'https://api.openai.com/v1/chat/completions';
 const GEMINI_STREAM_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse&key=${GEMINI_API_KEY}`;
 
@@ -17,9 +19,11 @@ export interface AIChatContext {
   walletAddress?: string | null;
   portfolio?: {
     totalUsd: string;
-    tokens: Array<{ symbol: string; balance: string; usdValue: string }>;
+    tokens: { symbol: string; balance: string; usdValue: string }[];
   };
-  history?: Array<{ role: 'user' | 'assistant'; content: string }>;
+  history?: { role: 'user' | 'assistant'; content: string }[];
+  /** True only when local free credits are gone and the server should spend paid credits. */
+  chargePaidCredit?: boolean;
   /** Client-side credit balance, mirrored to the server for logging/telemetry. */
   credits?: { available?: number; monthlyLeft?: number; paidLeft?: number };
 }
@@ -32,7 +36,7 @@ export interface AIAttachment {
 
 /**
  * Everything the reply carries beyond its text. The super-app backend returns
- * a security-validation verdict and whether the answer cost a credit — the
+ * a security-validation verdict and whether the answer cost a credit - the
  * chat UI renders both as chips under the bubble (parity with the web app).
  * Fallback providers can't produce these, so `source` tells the UI which
  * pipeline actually answered.
@@ -40,10 +44,11 @@ export interface AIAttachment {
 export interface AIChatMeta {
   validation?: AiValidationResult;
   creditCharged: boolean;
+  creditReason?: string;
   source: 'superapp' | 'openai' | 'gemini' | 'backend';
   /**
    * The wallet's balance AFTER this request, straight from the shared ledger.
-   * The server spends the credit, so this is the authoritative number — the
+   * The server spends the credit, so this is the authoritative number - the
    * client mirrors it rather than deducting anything itself.
    */
   balance?: AiCreditBalance | null;
@@ -70,7 +75,7 @@ export interface StreamAIOptions {
   onError?: (error: Error) => void;
 }
 
-const SYSTEM_PROMPT = `You are TIWI AI, the intelligent assistant for TIWI Protocol — a multichain DeFi super-app.
+const SYSTEM_PROMPT = `You are TIWI AI, the intelligent assistant for TIWI Protocol - a multichain DeFi super-app.
 
 You have access to LIVE real-time market data that is injected into the conversation. When market data is provided in a [LIVE MARKET DATA] block, use it to answer the user's question with specific numbers. Present prices, market caps, volumes, and changes clearly.
 
@@ -185,7 +190,7 @@ async function fetchMarketContext(tokens: string[]): Promise<string> {
       const markets = response.markets || [];
       if (markets.length === 0) return '';
 
-      let context = '[LIVE MARKET DATA — Top Trending Tokens]\n';
+      let context = '[LIVE MARKET DATA - Top Trending Tokens]\n';
       markets.forEach((m: any, i: number) => {
         context += `${i + 1}. ${m.symbol}: Price $${m.price || m.priceUSD || '?'} | 24h Change: ${(m.priceChange24h || 0).toFixed(2)}% | Vol: $${formatCompact(m.volume24h || 0)} | MCap: $${formatCompact(m.marketCap || 0)}\n`;
       });
@@ -240,7 +245,7 @@ async function fetchMarketContext(tokens: string[]): Promise<string> {
         results.push(
           `${symbol}:\n` +
           `  Name: ${name}\n` +
-          `  Price: $${match.price || match.priceUSD || '?'}\n` +
+          `  Price: $${match.price || '?'}\n` +
           `  24h Change: ${(match.priceChange24h || 0).toFixed(2)}%\n` +
           `  24h Volume: $${formatCompact(match.volume24h || 0)}\n` +
           `  Market Cap: $${formatCompact(match.marketCap || 0)}\n` +
@@ -272,7 +277,7 @@ async function fetchMarketContext(tokens: string[]): Promise<string> {
 
     if (results.length === 0) return '';
 
-    return `[LIVE MARKET DATA — fetched just now]\n${results.join('\n')}[END MARKET DATA]\n`;
+    return `[LIVE MARKET DATA - fetched just now]\n${results.join('\n')}[END MARKET DATA]\n`;
   } catch (err) {
     console.warn('[AIService] Market data fetch failed:', err);
     return '';
@@ -315,30 +320,35 @@ const imageUriToBase64 = async (uri: string): Promise<string> => {
  * Stream AI response.
  *
  * Strategy order:
- *  1. TIWI super-app backend — has the knowledge base, live market data,
+ *  1. TIWI super-app backend - has the knowledge base, live market data,
  *     site scraping, portfolio injection, and brand scrubbing
- *  2. OpenAI direct — client-side fallback if backend unreachable
- *  3. Gemini — secondary fallback
- *  4. Legacy backend — last resort
+ *  2. OpenAI direct - client-side fallback for unmetered/guest chats only
+ *  3. Gemini - secondary unmetered fallback
+ *  4. Legacy backend - last unmetered resort
  */
 export const streamAIResponse = async (options: StreamAIOptions): Promise<void> => {
   const { prompt, images = [], context, abortSignal, onChunk, onComplete, onError } = options;
   const first = images[0];
+  const requiresPaidCredit = context?.chargePaidCredit === true;
 
   // A fallback provider answered, so there's no server-side validation verdict
-  // and nothing was charged — the UI shows no chips for these.
+  // and nothing was charged - the UI shows no chips for these.
   const fallbackComplete = (source: AIChatMeta['source']) =>
     (text: string) => onComplete?.(text, { creditCharged: false, source });
 
-  // 1. Super-app backend (primary) — handles enrichment server-side
+  // 1. Super-app backend (primary) - handles enrichment server-side
   try {
     await streamFromSuperApp(prompt, images, onChunk, onComplete, abortSignal, context);
     return;
   } catch (e: any) {
     if (abortSignal?.aborted) return;
-    // Being out of credits is a verdict, not an outage — don't route around it.
+    // Being out of credits is a verdict, not an outage - don't route around it.
     if (e instanceof OutOfCreditsError) {
       onError?.(e);
+      return;
+    }
+    if (requiresPaidCredit) {
+      onError?.(new Error(e?.message || 'AI credit validation is temporarily unavailable. Please try again.'));
       return;
     }
     console.warn('[AIService] Super-app backend failed, falling back to OpenAI:', e?.message);
@@ -424,7 +434,7 @@ async function streamFromSuperApp(
   abortSignal: AbortSignal | undefined,
   context: AIChatContext | undefined,
 ): Promise<void> {
-  // Every attachment goes up, not just the first — the backend's vision prompt
+  // Every attachment goes up, not just the first - the backend's vision prompt
   // is written for multiple images (charts + a portfolio screenshot together).
   const images: string[] = [];
   for (const attachment of attachments.slice(0, MAX_BACKEND_IMAGES)) {
@@ -433,6 +443,7 @@ async function streamFromSuperApp(
 
   const body: Record<string, unknown> = { message: prompt };
   if (context?.walletAddress) body.walletAddress = context.walletAddress;
+  if (context?.chargePaidCredit) body.chargePaidCredit = true;
   if (context?.portfolio) body.portfolio = context.portfolio;
   if (context?.history?.length) body.history = context.history.slice(-8);
   if (context?.credits) body.credits = context.credits;
@@ -447,7 +458,7 @@ async function streamFromSuperApp(
 
   // 402 = the shared credit ledger says this wallet is out. Surface it as its
   // own error so the caller can open the billing sheet instead of silently
-  // falling through to a fallback provider — that would hand out free answers.
+  // falling through to a fallback provider - that would hand out free answers.
   if (response.status === 402) {
     const json = await response.json().catch(() => null);
     throw new OutOfCreditsError(
@@ -457,7 +468,8 @@ async function streamFromSuperApp(
   }
 
   if (!response.ok) {
-    throw new Error(`Super-app AI returned ${response.status}`);
+    const json = await response.json().catch(() => null);
+    throw new Error(json?.error || `Super-app AI returned ${response.status}`);
   }
 
   const json = await response.json();
@@ -468,6 +480,7 @@ async function streamFromSuperApp(
   onComplete?.(reply, {
     validation: json?.validation,
     creditCharged: Boolean(json?.credits?.charged),
+    creditReason: json?.credits?.reason,
     source: 'superapp',
     balance: json?.balance ?? null,
   });

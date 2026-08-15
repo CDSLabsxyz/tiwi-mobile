@@ -1,5 +1,5 @@
 /**
- * Positions — /pool/positions
+ * Positions - /pool/positions
  * Ported from tiwi-user-app app/pool/positions/page.tsx.
  * Lists a wallet's open LP positions with LP/share stats + filter tabs, and
  * wires Add / Withdraw (on-chain removeLiquidity) / Manage per position.
@@ -79,7 +79,7 @@ export default function PositionsScreen() {
           pairAddress: pool!.pairAddress as Address,
           liquidity: formatUnits(BigInt(lpBalance!), 18),
         });
-        // Record in the activities board — "Removed liquidity". Best-effort.
+        // Record in the activities board - "Removed liquidity". Best-effort.
         if (txHash && wallet) {
           void api.wallet.logTransaction({
             walletAddress: wallet,

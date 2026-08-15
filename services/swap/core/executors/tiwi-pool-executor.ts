@@ -2,7 +2,7 @@
  * TIWI Pool Executor
  *
  * Executes a swap directly against a TIWI Liquidity Hub pool (a deployed
- * `TiwiLiquidityPair` — Uniswap-V2-style constant-product AMM). This settles the
+ * `TiwiLiquidityPair` - Uniswap-V2-style constant-product AMM). This settles the
  * "swap through this pool" flow launched from a pool page's Swap button and
  * routed by the backend TiwiPoolAdapter (router === 'tiwi-pool').
  *
@@ -10,8 +10,8 @@
  * takes `tokenIn` instead), so this is a standalone executor rather than an
  * EVMDEXExecutor subclass:
  *
- *   approve(tokenIn → pair)                                    — Sign 1 (first time only)
- *   pair.swapExactTokensForTokens(tokenIn, amountIn, minOut, to, deadline) — Sign 2
+ *   approve(tokenIn → pair)                                    - Sign 1 (first time only)
+ *   pair.swapExactTokensForTokens(tokenIn, amountIn, minOut, to, deadline) - Sign 2
  *
  * ERC20 <-> ERC20, same-chain, any EVM chain the pool lives on. The pool takes
  * its own LP fee (feeBps) inside the swap; no separate platform tax is charged
@@ -167,7 +167,7 @@ export class TiwiPoolExecutor implements SwapRouterExecutor {
       const deadline = BigInt(Math.floor(Date.now() / 1000) + 60 * 20); // 20 min
 
       // Determine the TRUE deliverable output by SIMULATING the real swap. This runs
-      // the actual transferFrom — so for fee-on-transfer / taxed tokens (e.g. TWC) the
+      // the actual transferFrom - so for fee-on-transfer / taxed tokens (e.g. TWC) the
       // pool sees the post-tax amount and returns the real output. Using getAmountOut
       // on the full amountIn instead would over-estimate and make amountOutMin too high
       // → the pair reverts with INSUFFICIENT_OUTPUT. Retry a couple times to ride out
@@ -191,7 +191,7 @@ export class TiwiPoolExecutor implements SwapRouterExecutor {
           break;
         } catch (simErr: any) {
           const msg = simErr?.shortMessage || simErr?.message || '';
-          // Approval may not be indexed yet — wait and retry.
+          // Approval may not be indexed yet - wait and retry.
           if (attempt < 2 && /allowance|TRANSFER_FROM_FAILED|insufficient/i.test(msg)) {
             await sleep(1500);
             continue;
@@ -240,7 +240,7 @@ export class TiwiPoolExecutor implements SwapRouterExecutor {
         args: [tokenIn, amountIn, amountOutMin, swapTo, deadline],
       });
 
-      // For native-out we unwrap exactly the WETH the swap delivered — snapshot the
+      // For native-out we unwrap exactly the WETH the swap delivered - snapshot the
       // signer's WETH balance before the swap to measure the delta afterwards.
       let wethBefore = BigInt(0);
       if (nativeOut && weth) {
@@ -280,7 +280,7 @@ export class TiwiPoolExecutor implements SwapRouterExecutor {
 
       if (receipt.status === 'reverted') {
         throw new SwapExecutionError(
-          `Transaction reverted (${txHash}). The pool price may have moved or liquidity is too thin — try again or reduce the amount.`,
+          `Transaction reverted (${txHash}). The pool price may have moved or liquidity is too thin - try again or reduce the amount.`,
           SwapErrorCode.TRANSACTION_FAILED,
           route.router,
         );
@@ -311,7 +311,7 @@ export class TiwiPoolExecutor implements SwapRouterExecutor {
           if (unwrapReceipt.status === 'reverted') {
             // Swap already succeeded; the user holds WETH. Surface a clear message
             // rather than failing the whole swap.
-            console.warn('[TiwiPoolExecutor] Unwrap reverted — user holds wrapped native');
+            console.warn('[TiwiPoolExecutor] Unwrap reverted - user holds wrapped native');
           }
         }
       }

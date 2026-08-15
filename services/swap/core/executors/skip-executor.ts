@@ -1,5 +1,5 @@
 /**
- * Skip Executor — Cosmos / IBC swaps.
+ * Skip Executor - Cosmos / IBC swaps.
  *
  * The Skip router (lib/backend/routers/adapters/skip-adapter.ts) can QUOTE any
  * Cosmos-SDK pair (dYdX, Neutron, Osmosis, Celestia, …), but a quote is not
@@ -7,7 +7,7 @@
  * broadcast Cosmos transaction:
  *
  *   1. Derive one user address per chain the route touches (all standard
- *      secp256k1 Cosmos chains share the account — we re-encode the signer's
+ *      secp256k1 Cosmos chains share the account - we re-encode the signer's
  *      source address to each chain's bech32 prefix; see cosmos-chains.ts).
  *   2. Ask Skip's /v2/fungible/msgs (via our server proxy) for the actual
  *      Cosmos messages, given the route's operations + that address list.
@@ -16,13 +16,13 @@
  *      Skip's smart-relay deliver the destination leg.
  *
  * Scope: single-transaction Cosmos routes (`txs_required: 1`), which covers all
- * cross-chain IBC swaps — the source leg is one MsgTransfer whose PFM/IBC-hooks
+ * cross-chain IBC swaps - the source leg is one MsgTransfer whose PFM/IBC-hooks
  * memo carries any downstream swap. Multi-transaction routes and EVM/SVM legs
  * throw an honest, specific error rather than silently failing.
  *
  * Injective (eth_secp256k1 / Ethermint) has a DEDICATED path (`executeInjective`)
  * that uses `@injectivelabs/sdk-ts` instead of cosmjs, and DOES support same-chain
- * wasm (MsgExecuteContract) DEX swaps in addition to IBC — for both internal and
+ * wasm (MsgExecuteContract) DEX swaps in addition to IBC - for both internal and
  * external (Keplr/Leap) wallets. See injective-msg.ts / injective-broadcast.ts.
  */
 
@@ -47,12 +47,12 @@ function isInternalInjectiveWalletClient(wc: any): wc is InternalInjectiveWallet
   return !!wc && typeof wc === 'object' && wc.injective === true && 'injectivePrivateKey' in wc;
 }
 
-/** Injective's canonical chainId (eth_secp256k1 — handled outside cosmjs). */
+/** Injective's canonical chainId (eth_secp256k1 - handled outside cosmjs). */
 const INJECTIVE_CHAIN_ID = 8000001;
 
 // Skip/IBC chain-id (string) → our canonical numeric chainId. Mirrors
 // CANONICAL_TO_SKIP_CHAIN_ID in skip-adapter.ts (kept local to avoid importing a
-// server module into client code — keep the two in sync).
+// server module into client code - keep the two in sync).
 const IBC_CHAIN_ID_TO_CANONICAL: Record<string, number> = {
   'cosmoshub-4': 118,
   'osmosis-1': 249339,
@@ -71,7 +71,7 @@ const IBC_CHAIN_ID_TO_CANONICAL: Record<string, number> = {
 };
 
 // Per-chain RPC endpoints + gas price for broadcasting. Values mirror
-// COSMOS_MULTISEND_CONFIG (lib/wallet/utils/multi-send-cosmos.ts) — keep in sync.
+// COSMOS_MULTISEND_CONFIG (lib/wallet/utils/multi-send-cosmos.ts) - keep in sync.
 const COSMOS_EXEC_CONFIG: Record<number, { registryName: string; gasPrice: string; extraRpcs?: string[] }> = {
   118: { registryName: 'cosmoshub', gasPrice: '0.025uatom', extraRpcs: ['https://cosmos-rpc.publicnode.com:443'] },
   249339: { registryName: 'osmosis', gasPrice: '0.025uosmo', extraRpcs: ['https://osmosis-rpc.publicnode.com:443'] },
@@ -90,8 +90,8 @@ const COSMOS_EXEC_CONFIG: Record<number, { registryName: string; gasPrice: strin
 function rpcUrlsFor(chainId: number): string[] {
   const cfg = COSMOS_EXEC_CONFIG[chainId];
   if (!cfg) return [];
-  // Broadcast through our SAME-ORIGIN backend proxy first. Public Cosmos RPCs —
-  // Secret especially — don't send CORS headers, so a browser POST is blocked
+  // Broadcast through our SAME-ORIGIN backend proxy first. Public Cosmos RPCs -
+  // Secret especially - don't send CORS headers, so a browser POST is blocked
   // ("No 'Access-Control-Allow-Origin'"), and rpc.cosmos.directory frequently
   // 502s. The proxy forwards server-side (no CORS) to a healthy node. The direct
   // RPCs stay as a fallback for non-browser callers / CORS-friendly chains.
@@ -110,7 +110,7 @@ interface InternalCosmosWalletClient {
   cosmosChainId: number;
   // The wallet's Injective (`inj1…`) recipient, derived from its EVM key. Present
   // when the route may hop through / land on Injective (eth_secp256k1), which
-  // can't be re-encoded from the cosmos source address. Only a recipient — the
+  // can't be re-encoded from the cosmos source address. Only a recipient - the
   // source-chain signature is still the standard-secp cosmos one above.
   injectiveAddress?: string;
 }
@@ -139,7 +139,7 @@ export class SkipExecutor implements SwapRouterExecutor {
 
       const sourceChainId = route.fromToken.chainId;
 
-      // Injective uses eth_secp256k1 (Ethermint) — cosmjs can't build/sign its
+      // Injective uses eth_secp256k1 (Ethermint) - cosmjs can't build/sign its
       // txs, so it has a dedicated SDK-based path (internal or external wallet).
       if (sourceChainId === INJECTIVE_CHAIN_ID) {
         return await this.executeInjective(params, raw);
@@ -224,7 +224,7 @@ export class SkipExecutor implements SwapRouterExecutor {
    * can't use cosmjs's SigningStargateClient (wrong pubkey/account types). We
    * fetch the Skip Cosmos msgs, convert them to `@injectivelabs/sdk-ts` messages
    * (MsgExecuteContract for same-chain wasm DEX swaps, MsgTransfer for IBC), and
-   * broadcast via the SDK — with the internal wallet's private key or an external
+   * broadcast via the SDK - with the internal wallet's private key or an external
    * Keplr/Leap signer.
    */
   private async executeInjective(
@@ -347,9 +347,9 @@ export class SkipExecutor implements SwapRouterExecutor {
   /** POST our server proxy → Skip msgs; return the single cosmos_tx or throw honestly. */
   /**
    * Best-effort recipient addresses for eth_secp256k1 hop chains (Injective, …),
-   * keyed by bech32 prefix. Derived from the wallet's EVM key — the internal
+   * keyed by bech32 prefix. Derived from the wallet's EVM key - the internal
    * wallet passes `injectiveAddress` on the client; an external Keplr/Leap
-   * exposes it via getKey('injective-1'). Never throws — an unavailable address
+   * exposes it via getKey('injective-1'). Never throws - an unavailable address
    * just means the server refuses that hop (unchanged behaviour).
    */
   private async resolveEthSecpAddresses(params: SwapExecutionParams): Promise<Record<string, string>> {
@@ -360,14 +360,14 @@ export class SkipExecutor implements SwapRouterExecutor {
       return out;
     }
     // External Cosmos wallet (Keplr/Leap): read the inj1 account if the wallet
-    // has Injective enabled. Best-effort — ignore if unavailable.
+    // has Injective enabled. Best-effort - ignore if unavailable.
     try {
       const provider = await getCosmosWallet();
       await provider.enable('injective-1');
       const key = await provider.getKey('injective-1');
       if (key?.bech32Address?.startsWith('inj1')) out.inj = key.bech32Address;
     } catch {
-      /* wallet doesn't expose Injective — leave it out, server will refuse the hop */
+      /* wallet doesn't expose Injective - leave it out, server will refuse the hop */
     }
     return out;
   }
@@ -435,7 +435,7 @@ export class SkipExecutor implements SwapRouterExecutor {
 
     if (typeUrl === '/ibc.applications.transfer.v1.MsgTransfer') {
       // timeout_timestamp is a uint64 in nanoseconds that exceeds
-      // Number.MAX_SAFE_INTEGER — JSON.parse would corrupt it, so pull it out of
+      // Number.MAX_SAFE_INTEGER - JSON.parse would corrupt it, so pull it out of
       // the raw string and carry it as a bigint.
       const tsMatch = rawMsg.match(/"timeout_timestamp"\s*:\s*"?(\d+)"?/);
       const timeoutTimestamp = tsMatch ? BigInt(tsMatch[1]) : BigInt(0);
@@ -468,7 +468,7 @@ export class SkipExecutor implements SwapRouterExecutor {
     // types need registries this build doesn't ship. Fail honestly instead of
     // masking as a generic error.
     throw new SwapExecutionError(
-      `Skip returned an unsupported message type (${typeUrl}). Same-chain Cosmos DEX swaps aren’t executable in-app yet — try a cross-chain (IBC) route.`,
+      `Skip returned an unsupported message type (${typeUrl}). Same-chain Cosmos DEX swaps aren’t executable in-app yet - try a cross-chain (IBC) route.`,
       SwapErrorCode.UNSUPPORTED_ROUTER,
       'skip',
     );

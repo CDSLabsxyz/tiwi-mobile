@@ -154,7 +154,7 @@ export function useUnifiedActivities(limit = 100) {
 
                 // Map Local Activities. The local rows stash amount/symbol
                 // inside `metadata` (see activityService.logTransaction call
-                // sites), so pull them out here — otherwise the row renders
+                // sites), so pull them out here - otherwise the row renders
                 // "0" even though the equivalent global entry has the amount.
                 const mappedLocal: UnifiedActivity[] = localData.map(act => {
                     const meta: any = act.metadata || {};
@@ -188,7 +188,7 @@ export function useUnifiedActivities(limit = 100) {
                 // Interleave, then collapse entries that describe the same
                 // transaction. The global log and local log assign different
                 // `id`s for the same on-chain tx, so we dedupe on `hash` (when
-                // present) and keep the richer record — prefer the one that
+                // present) and keep the richer record - prefer the one that
                 // actually carries an amount so the list never shows "0".
                 const all = [...mappedGlobal, ...mappedNFT, ...mappedLocal];
                 const byHash = new Map<string, UnifiedActivity>();

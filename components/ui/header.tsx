@@ -39,7 +39,7 @@ const ChainIcons = {
 // Network-specific icon + label, keyed by activeNetworkId so EVM networks
 // (ETH vs BNB vs BASE, …) each show their own badge instead of a shared
 // Ethereum icon. Resolved from the shared network list, so a network added
-// there is immediately correct here — the old hand-written map covered 11 of
+// there is immediately correct here - the old hand-written map covered 11 of
 // the wallet's networks and everything else fell back to the chain icon.
 
 import { defaultNetworkIdForChain, getWalletNetwork, isNetworkOnChain } from '@/constants/walletNetworks';
@@ -49,7 +49,7 @@ import { useRouter } from 'expo-router';
 
 /**
  * The network row to badge with. `activeNetworkId` is only honoured when it
- * belongs to the active chain — a stale pair (a Solana wallet still carrying
+ * belongs to the active chain - a stale pair (a Solana wallet still carrying
  * networkId 'ETH') falls back to the chain's own canonical network rather than
  * badging a SOL address "ETH".
  */

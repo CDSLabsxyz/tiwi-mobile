@@ -6,11 +6,9 @@
 import { colors } from '@/constants/colors';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import React from 'react';
-import { StyleSheet, Text, View, ActivityIndicator } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { PoolCard } from './PoolCard';
 import type { StakingPool } from '@/services/stakingService';
-
-const TWCIcon = require('../../../assets/home/tiwicat.svg');
 
 interface RecommendedPoolsProps {
     pools: StakingPool[];
@@ -46,7 +44,10 @@ export const RecommendedPools: React.FC<RecommendedPoolsProps> = ({
                         <PoolCard
                             key={pool.id}
                             tokenName={pool.name || pool.tokenSymbol}
-                            tokenIcon={pool.tokenLogo ? { uri: pool.tokenLogo } : TWCIcon}
+                            tokenSymbol={pool.tokenSymbol}
+                            tokenIcon={pool.tokenLogo ? { uri: pool.tokenLogo } : undefined}
+                            rewardTokenSymbol={pool.rewardTokenSymbol}
+                            rewardTokenIcon={pool.rewardTokenLogo ? { uri: pool.rewardTokenLogo } : undefined}
                             apy={pool.displayApy}
                             onPress={() => onPoolClick?.(pool)}
                         />

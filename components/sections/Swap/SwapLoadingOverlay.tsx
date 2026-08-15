@@ -17,7 +17,7 @@ interface SwapLoadingOverlayProps {
  * Filler copy for the silent stretches.
  *
  * The engine only emits a status when something changes, so between "Submitting"
- * and "Confirming" there can be a long quiet gap — waiting on a block, on a
+ * and "Confirming" there can be a long quiet gap - waiting on a block, on a
  * bridge relayer, on the second leg of a multi-step route. A frozen caption
  * during those gaps reads as a hung app, so this rotates while we wait.
  */
@@ -26,7 +26,7 @@ const WAITING_MESSAGES = [
     'Talking to the chain...',
     'Locking in your rate...',
     'Almost there...',
-    'Still working — do not close the app...',
+    'Still working - do not close the app...',
 ];
 
 const ROTATE_MS = 2600;
@@ -76,7 +76,7 @@ export const SwapLoadingOverlay: React.FC<SwapLoadingOverlayProps> = ({
             <BlurView intensity={20} tint="dark" style={styles.blur}>
                 {/* TIWILoader's own container is `flex: 1`, so dropping it in a
                     column makes it eat all the free height and push whatever
-                    follows to the bottom of the screen — which is exactly where
+                    follows to the bottom of the screen - which is exactly where
                     the caption was ending up. Pin it to its real size so the
                     caption sits directly under the mark. */}
                 <View style={styles.stack}>

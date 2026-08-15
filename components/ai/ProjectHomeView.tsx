@@ -1,5 +1,5 @@
 /**
- * Project home — mobile counterpart of the web modal's `renderProjectHome`.
+ * Project home - mobile counterpart of the web modal's `renderProjectHome`.
  * Shows the project title, a "new chat in this project" composer (with voice),
  * and the project's chats with a preview + last-updated date.
  */

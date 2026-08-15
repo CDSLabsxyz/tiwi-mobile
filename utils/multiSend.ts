@@ -21,7 +21,7 @@ export type MultiSendRow = {
   id: string;
   address: string;
   amount: string;
-  /** The per-row token — carries chainId + decimals + address. */
+  /** The per-row token - carries chainId + decimals + address. */
   token: TokenOption | null;
 };
 
@@ -117,7 +117,7 @@ export function chainFamilyLabel(family: MsChainFamily): string {
   }
 }
 
-/** Every recognized family is deliverable — EVM via disperse, others via a
+/** Every recognized family is deliverable - EVM via disperse, others via a
  * per-recipient loop through the chain's single-send engine. */
 export function isMultiSendSupported(family: MsChainFamily): boolean {
   return family !== "unknown";
@@ -238,7 +238,7 @@ export function preflightMultiSend(groups: MultiSendTokenGroup[]): PreflightResu
         level: "error",
         token: label,
         chainId,
-        message: `Chain ${chainId} is not recognized — remove ${label} recipients.`,
+        message: `Chain ${chainId} is not recognized - remove ${label} recipients.`,
       });
       continue;
     }
@@ -282,7 +282,7 @@ export function preflightMultiSend(groups: MultiSendTokenGroup[]): PreflightResu
         level: "warning",
         token: label,
         chainId,
-        message: `${label}: ${dupes} duplicate recipient address${dupes > 1 ? "es" : ""} — each receives a separate transfer.`,
+        message: `${label}: ${dupes} duplicate recipient address${dupes > 1 ? "es" : ""} - each receives a separate transfer.`,
       });
     }
   }
@@ -293,14 +293,14 @@ export function preflightMultiSend(groups: MultiSendTokenGroup[]): PreflightResu
 }
 
 // ============================================================================
-// CSV parsing — `address,amount,tokenSymbol` per line
+// CSV parsing - `address,amount,tokenSymbol` per line
 // ============================================================================
 
 /**
  * Parse CSV/TXT content into MultiSendRow[]. Expected line: `address,amount,symbol`.
  * - `#`-prefixed lines are comments.
  * - Any line whose first column isn't a valid address (for the resolved token's
- *   chain, or any chain when the symbol is unknown) is skipped — covers header
+ *   chain, or any chain when the symbol is unknown) is skipped - covers header
  *   rows ("address,amount,token"), labels, and blank spreadsheet cells.
  */
 export function parseMultiSendCsv(

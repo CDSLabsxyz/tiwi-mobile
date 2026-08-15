@@ -1,7 +1,7 @@
 /**
  * Global, draggable AI assistant bubble. Mounted once at the root layout so
  * it's reachable from every authenticated screen. Position is preserved
- * across navigation via module-scoped shared values — navigating away and
+ * across navigation via module-scoped shared values - navigating away and
  * back doesn't reset the user's placement.
  */
 

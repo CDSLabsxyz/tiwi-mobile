@@ -31,9 +31,6 @@ import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react'
 import { Alert, AppState, Linking, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-// Mock token icon - in production, use actual token logo
-const TWCIcon = require('../../assets/home/tiwicat.svg');
-
 type StakingSubTab = 'stake' | 'active' | 'my-stakes' | 'create-pool' | 'my-pools';
 
 const TABLET_BREAKPOINT = 700;
@@ -116,7 +113,7 @@ export default function EarnScreen() {
     // Unread admin/agent replies on the user's staking-support chat. Drives
     // the bell badge on the Staking Support entry card above the stats box.
     // Polling only runs while the Earn screen is focused AND the app is in
-    // the foreground — backgrounded tabs do nothing.
+    // the foreground - backgrounded tabs do nothing.
     const [supportUnread, setSupportUnread] = useState(0);
     const [isScreenFocused, setIsScreenFocused] = useState(false);
     useFocusEffect(
@@ -171,7 +168,7 @@ export default function EarnScreen() {
         try {
             // Fetch core data and global stats via store
             if (walletAddress) {
-                // fetchInitialData already pulls global stats — calling
+                // fetchInitialData already pulls global stats - calling
                 // fetchGlobalStats() alongside it duplicated the whole
                 // per-pool on-chain crawl on every single load.
                 await Promise.all([
@@ -180,7 +177,7 @@ export default function EarnScreen() {
                 ]);
                 // NOTE: the on-chain discoverPositions() crawler is intentionally
                 // not called here. The DB is the source of truth for Active
-                // Positions — mirrors the super-app which never merges phantom
+                // Positions - mirrors the super-app which never merges phantom
                 // on-chain rows into the list. If the user wants to inspect
                 // on-chain state for a specific pool, the manage screen reads
                 // from the contract directly.
@@ -205,7 +202,7 @@ export default function EarnScreen() {
     };
 
     // Initial load fires once per wallet. Tab and sub-tab switching are pure
-    // UI filters over already-loaded state — `activeTab` was in this dep array
+    // UI filters over already-loaded state - `activeTab` was in this dep array
     // and made every tab tap refetch the entire staking dataset.
     useEffect(() => {
         loadData();
@@ -299,7 +296,7 @@ export default function EarnScreen() {
                         { maxWidth: isTabletLayout ? TABLET_CONTENT_MAX_WIDTH : PHONE_CONTENT_MAX_WIDTH },
                     ]}
                 >
-                    {/* Top Level Category Tabs hidden — only Staking is active for now
+                    {/* Top Level Category Tabs hidden - only Staking is active for now
                     <View style={{ marginBottom: 8, width: '100%' }}>
                         <EarnTabSwitcher activeTab={activeTab} onTabChange={setActiveTab} />
                     </View>
@@ -308,7 +305,7 @@ export default function EarnScreen() {
                     {/* Staking Tab Content */}
                     {activeTab === 'staking' && (
                         <View style={styles.tabContent}>
-                            {/* Staking Support entry point — sits above the stats card so
+                            {/* Staking Support entry point - sits above the stats card so
                                 users can jump to the help chat from the top of the page.
                                 When there are unread admin/agent replies, a bell + counter
                                 surfaces on the right. */}
@@ -352,7 +349,7 @@ export default function EarnScreen() {
                                 </Text>
                             </TouchableOpacity>
 
-                            {/* Create Pool entry point — launches the deployer flow. */}
+                            {/* Create Pool entry point - launches the deployer flow. */}
                             <TouchableOpacity
                                 activeOpacity={0.85}
                                 onPress={() => router.push('/earn/create' as any)}
@@ -486,6 +483,9 @@ export default function EarnScreen() {
                                                     name={pool.name}
                                                     tokenSymbol={pool.tokenSymbol}
                                                     tokenName={pool.tokenName}
+                                                    tokenIcon={pool.tokenLogo ? { uri: pool.tokenLogo } : undefined}
+                                                    rewardTokenSymbol={pool.rewardTokenSymbol}
+                                                    rewardTokenIcon={pool.rewardTokenLogo ? { uri: pool.rewardTokenLogo } : undefined}
                                                     minStakingPeriod={pool.minStakingPeriod}
                                                     onStakePress={() => router.push(`/earn/stake/${pool.id}` as any)}
                                                 />

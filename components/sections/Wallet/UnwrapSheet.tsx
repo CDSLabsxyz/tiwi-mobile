@@ -2,7 +2,7 @@
  * Unwrap bottom sheet.
  *
  * One job, stated bluntly: turn a wrapped token back into the chain's native
- * coin. There is no destination picker — the output is always the native coin,
+ * coin. There is no destination picker - the output is always the native coin,
  * 1:1. Every chain takes a partial amount, including Solana: SPL has no partial
  * unwrap, so the service expresses it as close-then-re-wrap in one transaction
  * (see unwrapService) and the note under the amount says so.
@@ -33,7 +33,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface UnwrapSheetProps {
     visible: boolean;
-    /** `null` renders nothing — lets callers mount the sheet unconditionally. */
+    /** `null` renders nothing - lets callers mount the sheet unconditionally. */
     info: WrappedNativeInfo | null;
     /** Logo of the wrapped token, when the caller already has one. */
     logoURI?: string;
@@ -142,7 +142,7 @@ export const UnwrapSheet: React.FC<UnwrapSheetProps> = ({ visible, info, logoURI
     }, []);
 
     /**
-     * Confirm inline rather than via the global toast — that renders outside the
+     * Confirm inline rather than via the global toast - that renders outside the
      * Modal's native window and would be covered by this sheet.
      */
     const handleCopyHash = (hash: string) => {
@@ -164,11 +164,11 @@ export const UnwrapSheet: React.FC<UnwrapSheetProps> = ({ visible, info, logoURI
         }
     }, [visible, info?.address, reset]);
 
-    // Solana defaults to the whole balance (the common case — close the account
+    // Solana defaults to the whole balance (the common case - close the account
     // and be done), but the amount is editable like every other chain.
     useEffect(() => {
         if (visible && isSolana && !amount) setAmount(balance.formatted);
-        // Seeding only — re-running on `amount` would fight the user's typing.
+        // Seeding only - re-running on `amount` would fight the user's typing.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [visible, isSolana, balance.formatted]);
 
@@ -187,13 +187,13 @@ export const UnwrapSheet: React.FC<UnwrapSheetProps> = ({ visible, info, logoURI
     const canSubmit = !!info && !!owner && amountWei > 0n && !exceedsBalance && !isPending;
 
     /**
-     * Percentage of the balance. Computed on the raw bigint — going through a
+     * Percentage of the balance. Computed on the raw bigint - going through a
      * float would round the last few wei off "Max" and leave dust behind.
      */
     const handlePercent = (percent: number) => {
         if (!info) return;
         if (percent >= 100) {
-            // Max must be exact — trimming here would strand dust in the wrapper,
+            // Max must be exact - trimming here would strand dust in the wrapper,
             // which is the whole thing you're trying to get rid of.
             setAmount(formatUnits(balance.raw, info.decimals));
         } else {
@@ -320,9 +320,9 @@ export const UnwrapSheet: React.FC<UnwrapSheetProps> = ({ visible, info, logoURI
                             <View style={styles.inputRow}>
                                 <TextInput
                                     // A full-precision "Max" on an 18-decimal token
-                                    // is still long — step the size down so it fits
+                                    // is still long - step the size down so it fits
                                     // instead of running under the symbol.
-                                    // Measure the string that is actually rendered —
+                                    // Measure the string that is actually rendered -
                                     // grouping separators take up width too.
                                     style={[styles.input, formatNumberInput(amountFieldValue).length > 13 && styles.inputCompact]}
                                     value={formatNumberInput(amountFieldValue)}
@@ -377,7 +377,7 @@ export const UnwrapSheet: React.FC<UnwrapSheetProps> = ({ visible, info, logoURI
 
                         <Text style={styles.note}>
                             {solanaPartial
-                                ? `1 ${info.wrappedSymbol} = 1 ${info.nativeSymbol}. Solana has no partial unwrap, so this closes your ${info.wrappedSymbol} account and re-wraps the remaining ${trimAmount(formatUnits(balance.raw - amountWei, info.decimals))} ${info.wrappedSymbol} in the same transaction. The account rent comes back and is paid straight in again — you only pay the network fee.`
+                                ? `1 ${info.wrappedSymbol} = 1 ${info.nativeSymbol}. Solana has no partial unwrap, so this closes your ${info.wrappedSymbol} account and re-wraps the remaining ${trimAmount(formatUnits(balance.raw - amountWei, info.decimals))} ${info.wrappedSymbol} in the same transaction. The account rent comes back and is paid straight in again - you only pay the network fee.`
                                 : isSolana
                                     ? `1 ${info.wrappedSymbol} = 1 ${info.nativeSymbol}. Your entire ${info.wrappedSymbol} account is closed and returned as ${info.nativeSymbol}.`
                                     : `1 ${info.wrappedSymbol} = 1 ${info.nativeSymbol}. Only a network fee applies.`}
@@ -463,7 +463,7 @@ const styles = StyleSheet.create({
         fontFamily: 'Manrope-ExtraBold',
         fontSize: 21,
         // Sentence case doesn't need the letter-spacing that made the old
-        // all-caps version legible — it just looks loose.
+        // all-caps version legible - it just looks loose.
         letterSpacing: -0.2,
         color: colors.titleText,
     },

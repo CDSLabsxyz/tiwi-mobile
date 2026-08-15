@@ -1,4 +1,4 @@
-// Standalone BSC scan — no viem, just fetch + raw RPC. More resilient.
+// Standalone BSC scan - no viem, just fetch + raw RPC. More resilient.
 const POOL = '0xb9F9bA56bCd4287694c9526E6F4EE4D03F652E70';
 const URLS = [
   'https://bsc-dataseed1.binance.org/',
@@ -76,11 +76,11 @@ function decodeBool(hexStr, slot) {
 const code = await rpc('eth_getCode', [POOL, 'latest']);
 console.log(`\nBytecode length at ${POOL}: ${code.length} chars`);
 if (code === '0x' || code.length <= 2) {
-  console.log('No code — not a contract.');
+  console.log('No code - not a contract.');
   process.exit(0);
 }
 
-// 2) getPoolInfo() — V2 layout
+// 2) getPoolInfo() - V2 layout
 let poolInfo;
 try {
   poolInfo = await ethCall(POOL, SEL_GET_POOL_INFO);

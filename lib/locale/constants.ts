@@ -15,7 +15,7 @@ export interface RegionOption {
   dateFormat: "MM/DD/YY" | "DD/MM/YY" | "YYYY-MM-DD";
 }
 
-/** Languages selectable across all regions — comprehensive world languages */
+/** Languages selectable across all regions - comprehensive world languages */
 export const LANGUAGES: LanguageOption[] = [
   { code: "aa", name: "Afar" },
   { code: "ab", name: "Abkhazian" },

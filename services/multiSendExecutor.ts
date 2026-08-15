@@ -53,7 +53,7 @@ export type MultiSendExecOptions = {
 };
 
 /**
- * Execute every group. Groups are independent — a failure in one never blocks
+ * Execute every group. Groups are independent - a failure in one never blocks
  * the others, and partially-sent per-recipient groups report how much landed so
  * the UI can warn the user not to re-send those recipients.
  */
@@ -88,7 +88,7 @@ export async function executeMultiSendGroups(
       failedGroups.push({
         token: symbol,
         chainId,
-        error: `Multi-send on ${chainFamilyLabel(family)} isn't available — skipped ${symbol}.`,
+        error: `Multi-send on ${chainFamilyLabel(family)} isn't available - skipped ${symbol}.`,
       });
       report();
       continue;
@@ -115,9 +115,9 @@ export async function executeMultiSendGroups(
           hashes.push({ token: symbol, hash: res.hash, chainId });
           onGroupComplete?.(group, res.hash);
         } else {
-          // Fall back to per-recipient — the disperse contract may not be
+          // Fall back to per-recipient - the disperse contract may not be
           // deployed at the recorded address on this chain.
-          onStatus?.(`Batch transfer unavailable for ${label} — sending per recipient...`);
+          onStatus?.(`Batch transfer unavailable for ${label} - sending per recipient...`);
           await sendPerRecipient(group, isNative, hashes, failedGroups, onStatus, onGroupComplete);
         }
       } else {
@@ -182,7 +182,7 @@ async function sendPerRecipient(
         chainId,
         error:
           sent > 0
-            ? `${base} — ${sent} of ${totalCount} already sent; do NOT re-send those recipients.`
+            ? `${base} - ${sent} of ${totalCount} already sent; do NOT re-send those recipients.`
             : base,
         sentCount: sent,
         totalCount,

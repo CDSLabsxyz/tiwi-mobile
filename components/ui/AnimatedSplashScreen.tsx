@@ -3,7 +3,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Dimensions, Easing, StyleSheet } from 'react-native';
 
 // Rasterized from assets/NEWSPLASH.svg (that 7.2 MB pure-vector SVG rendered
-// wrong under expo-image — its heavy paths, incl. the green arc, got dropped).
+// wrong under expo-image - its heavy paths, incl. the green arc, got dropped).
 // This 1179×2556 (3×, 393×852 @3) PNG is pixel-perfect and loads instantly.
 const SplashImage = require('../../assets/newsplash.png');
 const { width, height } = Dimensions.get('window');
@@ -31,7 +31,7 @@ export const AnimatedSplashScreen: React.FC<AnimatedSplashScreenProps> = ({ isRe
             Animated.timing(progress, {
                 toValue: 1,
                 duration: 650,
-                easing: Easing.bezier(0.22, 1, 0.36, 1), // easeOutQuint — soft, decelerating
+                easing: Easing.bezier(0.22, 1, 0.36, 1), // easeOutQuint - soft, decelerating
                 useNativeDriver: true,
             }).start(() => {
                 setAnimationFinished(true);

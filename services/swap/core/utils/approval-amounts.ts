@@ -4,11 +4,11 @@
  * Two invariants live here so they can be enforced consistently and unit-tested:
  *
  * 1. APPROVAL amount is always max/infinite. A given (token, spender) pair is then
- *    signed exactly ONCE, ever — repeat swaps and multi-send reuse the same allowance
+ *    signed exactly ONCE, ever - repeat swaps and multi-send reuse the same allowance
  *    instead of prompting another approval. This is standard practice (Uniswap et al.).
  *
  * 2. SPEND amount (what a swap/transfer is actually authorized to move) is derived
- *    ONLY from the user-entered amount — never from the wallet balance and never from
+ *    ONLY from the user-entered amount - never from the wallet balance and never from
  *    the allowance. Infinite approval grants *permission* to move up to max, but each
  *    swap must still move exactly `amountIn`. These two are deliberately decoupled:
  *    `getStandardApprovalAmount()` (permission) vs `resolveSpendAmountWei()` (spend).
@@ -22,7 +22,7 @@ export const MAX_UINT256 = BigInt(
 
 /**
  * Standard approval amount for every EVM swap/multi-send approval: max uint256.
- * Intentionally independent of the amount being swapped — the swap amount is bounded
+ * Intentionally independent of the amount being swapped - the swap amount is bounded
  * by {@link resolveSpendAmountWei}, not by the allowance.
  */
 export function getStandardApprovalAmount(): bigint {
@@ -31,7 +31,7 @@ export function getStandardApprovalAmount(): bigint {
 
 /**
  * The amount a swap/transfer is authorized to move, in the token's smallest unit.
- * This is ALWAYS the user-entered `requestedAmount` — the function has no access to
+ * This is ALWAYS the user-entered `requestedAmount` - the function has no access to
  * (and must never be given) the wallet balance or the current allowance.
  *
  * @param requestedAmount Human-readable amount the user asked to swap, e.g. "10".

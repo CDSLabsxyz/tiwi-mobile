@@ -54,7 +54,7 @@ function labelForType(type: string): string {
     return LINK_TYPE_LABELS[type] || type.charAt(0).toUpperCase() + type.slice(1);
 }
 
-/** Address-shaped identifiers only — market rows put a symbol in the address slot. */
+/** Address-shaped identifiers only - market rows put a symbol in the address slot. */
 const ADDRESS_RE =
     /^(0x[a-fA-F0-9]{40}|0x[a-fA-F0-9]{64}|[1-9A-HJ-NP-Za-km-z]{32,44}|T[1-9A-HJ-NP-Za-km-z]{33})$/;
 
@@ -66,7 +66,7 @@ function shorten(address: string): string {
 /**
  * The admin-curated token overview shown beneath the swap CTA.
  *
- * Only rendered for tokens opened from the Listing / Spotlight tabs — the swap
+ * Only rendered for tokens opened from the Listing / Spotlight tabs - the swap
  * screen gates this on the `infoSource` route param.
  */
 export default function TokenOverviewCard({
@@ -85,7 +85,7 @@ export default function TokenOverviewCard({
     const trimmedAbout = (about || '').trim();
 
     /**
-     * Admin-curated links first — their order is deliberate — then any provider
+     * Admin-curated links first - their order is deliberate - then any provider
      * social the admin didn't already cover, deduped by URL.
      */
     const validLinks = useMemo(() => {

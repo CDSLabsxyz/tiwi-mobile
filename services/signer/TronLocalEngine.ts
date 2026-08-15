@@ -5,7 +5,7 @@ import { getTronPrivateKey } from './chainSecrets';
 import { ExecutionResult, SignerEngine, TransactionRequest } from './SignerTypes';
 
 /**
- * TronLocalEngine — signs & broadcasts TRON transfers for on-device wallets.
+ * TronLocalEngine - signs & broadcasts TRON transfers for on-device wallets.
  *
  * Handles both native TRX and TRC-20 tokens. The key comes from
  * `getTronPrivateKey`, so it works for a mnemonic wallet (derived at
@@ -52,7 +52,7 @@ export class TronLocalEngine implements SignerEngine {
         return JSON.stringify(signed);
     }
 
-    /** Build the unsigned tx — native transfer or TRC-20 `transfer(address,uint256)`. */
+    /** Build the unsigned tx - native transfer or TRC-20 `transfer(address,uint256)`. */
     private async buildTransaction(tronWeb: any, tx: TransactionRequest, from: string): Promise<any> {
         const amount = tx.value || '0';
         const contract = (tx.data || '').trim();

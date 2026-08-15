@@ -36,7 +36,7 @@ const STATIC_FALLBACK: Record<string, number> = {
     TRY: 32.1,
 };
 
-// Currency symbol lookup — used when the locale store no longer owns a
+// Currency symbol lookup - used when the locale store no longer owns a
 // currencies array. Covers the common ISO 4217 codes our price feeds return.
 const CURRENCY_SYMBOLS: Record<string, string> = {
     USD: '$', EUR: '€', GBP: '£', JPY: '¥', CNY: '¥', HKD: 'HK$', SGD: 'S$',

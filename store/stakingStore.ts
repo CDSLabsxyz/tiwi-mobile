@@ -27,7 +27,7 @@ interface StakingState {
      * Wallet that the latest in-flight per-wallet fetch was started for.
      * Reset by swapWallet(). Pending fetches whose tag no longer matches
      * this value at the time their promise resolves must not apply their
-     * results — that's how we discard stale wallet-A responses after the
+     * results - that's how we discard stale wallet-A responses after the
      * user has already switched to wallet B.
      */
     pendingFetchWallet: string | null;
@@ -41,7 +41,7 @@ interface StakingState {
     stopMining: () => void;
     syncRewardsWithChain: (walletAddress: string) => Promise<void>;
     /**
-     * Atomic wallet transition — synchronously swaps the per-wallet view to
+     * Atomic wallet transition - synchronously swaps the per-wallet view to
      * the new wallet's cached positions/history (from in-memory mirror of
      * the disk cache). Single set() call, no empty intermediate frame, no
      * badge flicker. Pass null on disconnect.
@@ -62,7 +62,7 @@ const CACHE_HISTORY_PREFIX = '@tiwi/staking-history-';
  * In-memory mirror of the disk cache. Populated once at module load from
  * AsyncStorage, kept in sync on every persistPools / persistStats /
  * persistPositions / persistHistory call. The store reads from this mirror
- * synchronously during a wallet switch — that's how the swap can be a
+ * synchronously during a wallet switch - that's how the swap can be a
  * single atomic set() with no empty intermediate frame.
  */
 const memCache = {
@@ -105,7 +105,7 @@ const loadMemCache = (async () => {
             } catch {}
         }
     } catch {
-        // Cache load failures are non-fatal — fetches will populate from network.
+        // Cache load failures are non-fatal - fetches will populate from network.
     } finally {
         memCache.loaded = true;
     }
@@ -186,7 +186,7 @@ export const useStakingStore = create<StakingState>((set, get) => ({
             pendingFetchWallet: wallet,
         };
 
-        // Global state — apply the cache only when in-memory state hasn't
+        // Global state - apply the cache only when in-memory state hasn't
         // been populated yet (first mount on this app session). Subsequent
         // wallet switches keep whatever fresh values are already on screen.
         if (s.activePools.length === 0 && memCache.pools && memCache.pools.length > 0) {
@@ -196,7 +196,7 @@ export const useStakingStore = create<StakingState>((set, get) => ({
             patch.globalStats = memCache.stats;
         }
 
-        // Per-wallet state — always swap, even if memCache has no entry for
+        // Per-wallet state - always swap, even if memCache has no entry for
         // this wallet (in which case the lists become []), so we never show
         // the previous wallet's positions while waiting on the network.
         if (wallet) {
@@ -221,7 +221,7 @@ export const useStakingStore = create<StakingState>((set, get) => ({
 
         set(patch);
 
-        // If the disk-to-memCache loader hasn't completed yet (rare — only
+        // If the disk-to-memCache loader hasn't completed yet (rare - only
         // possible on a cold-start that lands directly on Earn before module
         // boot finishes the AsyncStorage read), apply once it does. Guard
         // against a wallet switch that happened in the meantime.
@@ -259,7 +259,7 @@ export const useStakingStore = create<StakingState>((set, get) => ({
     },
 
     fetchGlobalStats: async () => {
-        // Only show the skeleton on the very first load — once we have real
+        // Only show the skeleton on the very first load - once we have real
         // numbers, background refreshes swap values in silently so the card
         // never flashes blank on the 30s poll tick.
         const hasLoaded = get().globalStats.overallTvl !== '...';
@@ -269,7 +269,7 @@ export const useStakingStore = create<StakingState>((set, get) => ({
             const prev = get().globalStats;
             const hadRealData = prev.overallTvl !== '...';
             if (hadRealData && isDegradedStats(stats)) {
-                // Transient on-chain read failure — keep prior values, don't
+                // Transient on-chain read failure - keep prior values, don't
                 // persist zeros to disk, just clear the loading flag.
                 set({ isGlobalStatsLoading: false });
             } else {
@@ -310,7 +310,7 @@ export const useStakingStore = create<StakingState>((set, get) => ({
 
             // Stale-fetch guard: bail if the wallet has changed (or the user
             // disconnected) while this request was in flight. Pools and stats
-            // are global so we still persist those — only the per-wallet
+            // are global so we still persist those - only the per-wallet
             // positions get dropped.
             const stillCurrent = get().pendingFetchWallet === activeWallet;
 
@@ -322,7 +322,7 @@ export const useStakingStore = create<StakingState>((set, get) => ({
                 (s) => s.userWallet?.toLowerCase() === activeWallet
             );
 
-            // Drop stakes whose pool's on-chain endTime has passed — the
+            // Drop stakes whose pool's on-chain endTime has passed - the
             // contract has stopped emitting, so they belong in My Stakes
             // (the user still needs to claim/unstake), not in Active Positions.
             const nowSec = Date.now() / 1000;
@@ -331,7 +331,7 @@ export const useStakingStore = create<StakingState>((set, get) => ({
                 return !(endTime > 0 && nowSec >= endTime);
             });
 
-            // Apply + persist pools and stats — they're global. Guard against
+            // Apply + persist pools and stats - they're global. Guard against
             // a degraded stats payload (all-zero pools/TVL from a transient
             // BSC RPC failure during the wallet-switch refetch storm) so we
             // don't overwrite prior good values with zeros.
@@ -339,7 +339,7 @@ export const useStakingStore = create<StakingState>((set, get) => ({
             const hadRealStats = prevStats.overallTvl !== '...';
             const statsAreDegraded = hadRealStats && isDegradedStats(stats);
             // Pools list is degraded if it's empty AND we previously had pools
-            // — same RPC-blip story (api.staking.list fail returns []).
+            // - same RPC-blip story (api.staking.list fail returns []).
             const prevPools = get().activePools;
             const poolsAreDegraded = prevPools.length > 0 && pools.length === 0;
 
@@ -355,7 +355,7 @@ export const useStakingStore = create<StakingState>((set, get) => ({
             set(patch);
 
             if (!stillCurrent) {
-                // Wallet has changed — write this wallet's positions to its
+                // Wallet has changed - write this wallet's positions to its
                 // own cache slot (so a future switch back is instant) but do
                 // NOT touch the visible activePositions / liveRewards state.
                 persistPositions(activeWallet, stillActive);
@@ -385,7 +385,7 @@ export const useStakingStore = create<StakingState>((set, get) => ({
 
     /**
      * Fetch past stakes (status !== 'active') and group by pool.
-     * Multiple history rows per pool get merged — stakedAmount peak is summed,
+     * Multiple history rows per pool get merged - stakedAmount peak is summed,
      * rewardsEarned/totalClaimed are summed, and the latest updatedAt wins for status.
      */
     fetchHistoricalStakes: async (walletAddress: string) => {
@@ -400,7 +400,7 @@ export const useStakingStore = create<StakingState>((set, get) => ({
             );
             // Mirror super-app's My Stakes filter: include both rows the user
             // has explicitly exited AND active rows whose pool's on-chain
-            // endTime has passed (still funded but no longer earning — user
+            // endTime has passed (still funded but no longer earning - user
             // needs to claim + unstake from here).
             const nowSec = Date.now() / 1000;
             const inactive = owned.filter((s) => {
@@ -438,7 +438,7 @@ export const useStakingStore = create<StakingState>((set, get) => ({
             const historicalStakes = Array.from(grouped.values());
 
             // Always persist this wallet's history to its own cache slot,
-            // even if the user has switched away — that way switching back
+            // even if the user has switched away - that way switching back
             // hits cache instantly. But only apply to the visible state if
             // we're still looking at this wallet.
             persistHistory(activeWallet, historicalStakes);

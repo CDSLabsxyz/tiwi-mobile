@@ -10,8 +10,8 @@
  *     1. POST /api/v1/mobile/staking/tx { action: 'create', … } → unsigned steps
  *     2. Sign + broadcast each step in order (local signer, or wagmi for external)
  *     3. Decode `PoolDeployed` from the createPool receipt → new pool address
- *   payCreationFee:        ERC20 transfer(treasury, amount) — device-signed
- *   emergencyWithdrawRewards: pool.emergencyWithdrawRewards(to) — device-signed
+ *   payCreationFee:        ERC20 transfer(treasury, amount) - device-signed
+ *   emergencyWithdrawRewards: pool.emergencyWithdrawRewards(to) - device-signed
  *
  * The server never holds keys; it only assembles calldata (or the client encodes
  * a trivial ERC20/pool call). Signing happens on-device through `signerController`
@@ -45,7 +45,7 @@ const CHAIN_MAP: Record<number, any> = {
 };
 
 /**
- * Gas limit for a batched `createPool` — the one call we can't estimate, because
+ * Gas limit for a batched `createPool` - the one call we can't estimate, because
  * it's broadcast before its approve has mined. A real BSC creation with a
  * fee-on-transfer reward token (TWC) used 1,912,180, so this is ~1.8x headroom.
  * Unused gas is refunded; only the wallet's BNB balance has to cover the limit.
@@ -140,7 +140,7 @@ const POOL_REMAINING_REWARDS_ABI = [
     },
 ] as const;
 
-/** `TiwiStakingPool.setActive(bool)` — owner-only pause / resume. */
+/** `TiwiStakingPool.setActive(bool)` - owner-only pause / resume. */
 const POOL_SET_ACTIVE_ABI = [
     {
         name: 'setActive',
@@ -193,7 +193,7 @@ export type CreatePoolStatus = 'idle' | 'building' | 'approving' | 'creating' | 
  *    (sub-second blocks) each of the two txs sat idle for most of its wait. The
  *    tx isn't slow; the polling was.
  *  - Transport. This built a bare single-endpoint `http(RPC_CONFIG[chainId])`,
- *    which has no failover — one 429 or timeout from that provider stalls every
+ *    which has no failover - one 429 or timeout from that provider stalls every
  *    poll until the wait gives up. The shared health-ranked fallback rotates.
  */
 function publicClientFor(chainId: number) {
@@ -352,7 +352,7 @@ export function useStakingDeployer() {
             try {
                 await switchChainAsync({ chainId: step.chainId });
             } catch {
-                /* wallet may already be on-chain, or reject — surface at send time */
+                /* wallet may already be on-chain, or reject - surface at send time */
             }
             hash = await sendTransactionAsync({
                 to: step.to as Address,
@@ -420,7 +420,7 @@ export function useStakingDeployer() {
             // every first-time creation; nonce ordering already guarantees the
             // approve executes first. Consequence: createPool can't be gas-estimated
             // while the allowance is still short (the estimate reverts), so the
-            // batched create carries an explicit limit — see CREATE_POOL_GAS_LIMIT.
+            // batched create carries an explicit limit - see CREATE_POOL_GAS_LIMIT.
             const batched = steps.length > 1;
             let baseNonce: number | undefined;
             if (batched) {
@@ -441,7 +441,7 @@ export function useStakingDeployer() {
             for (let i = 0; i < steps.length; i++) {
                 const isCreateStep = i === steps.length - 1;
                 setStatus(isCreateStep ? 'creating' : 'approving');
-                // One biometric prompt covers the batch — authorize on the final
+                // One biometric prompt covers the batch - authorize on the final
                 // (create) step only.
                 const { hash, receipt } = await signAndSend(
                     steps[i], signerAddress, isLocal, {
@@ -588,7 +588,7 @@ export function useStakingDeployer() {
 
     /**
      * Pause / resume a pool the caller owns. Mirrors the web's
-     * `usePoolStaking().setActive` — a paused pool stops accepting deposits
+     * `usePoolStaking().setActive` - a paused pool stops accepting deposits
      * while existing positions keep their accrued rewards.
      */
     const setPoolActive = useCallback(async (params: {

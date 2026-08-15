@@ -1,7 +1,7 @@
 /**
  * Resolves the actual amount + token for a user's transaction by reading
  * on-chain. Back-fills activity rows (Received / Sent / Swap) whose stored
- * amount is 0 or missing — typically txs the app didn't originate, or
+ * amount is 0 or missing - typically txs the app didn't originate, or
  * swaps where the router/aggregator wrote the outbound leg and never
  * captured the received leg.
  *
@@ -10,7 +10,7 @@
  *     `tx.from === user` with a non-zero value (sent).
  *   - ERC-20: decode `Transfer(from, to, value)` logs. Sums all legs that
  *     match the user on the requested side ('received' / 'sent') and picks
- *     the token with the largest total — for a swap this naturally
+ *     the token with the largest total - for a swap this naturally
  *     selects the output token on 'received' and the input token on 'sent'.
  *
  * Cached in-memory by (chainId, hash, user, direction) so repeated renders
@@ -35,8 +35,8 @@ export interface ReceivedAmountResult {
     tokenSymbol: string; // e.g. "TWC" or "BNB"
     /**
      * The on-chain side that actually carried value for this user:
-     *   - 'received' — user is the `to` of the winning Transfer (or tx.to).
-     *   - 'sent'     — user is the `from` of the winning Transfer (or tx.from).
+     *   - 'received' - user is the `to` of the winning Transfer (or tx.to).
+     *   - 'sent'     - user is the `from` of the winning Transfer (or tx.from).
      * Set regardless of what direction the caller asked for so consumers
      * can re-label mis-categorized rows (e.g. a send mislabeled as a Swap).
      */
@@ -103,7 +103,7 @@ export async function resolveReceivedAmount(params: {
     chainId: number;
     userAddress: string;
     /**
-     * Preferred direction. The resolver ALWAYS tries both sides — if the
+     * Preferred direction. The resolver ALWAYS tries both sides - if the
      * preferred side has no matching Transfer/native-value, it falls back
      * to the other side and reports the real direction in `resolvedDirection`.
      * This self-healing behavior is what lets us re-label rows that loggers
@@ -149,7 +149,7 @@ export async function resolveReceivedAmount(params: {
                     if (from === user) {
                         sums.sent.set(tokenAddr, (sums.sent.get(tokenAddr) ?? 0n) + value);
                     }
-                } catch { /* non-Transfer event on a similar signature — skip */ }
+                } catch { /* non-Transfer event on a similar signature - skip */ }
             }
 
             const pickWinner = (bucket: Map<string, bigint>) => {
@@ -183,7 +183,7 @@ export async function resolveReceivedAmount(params: {
             const secondaryResult = await tryBuild(secondary);
             if (secondaryResult) return secondaryResult;
 
-            // Native transfer fallback — check both sides.
+            // Native transfer fallback - check both sides.
             const tx = await client.getTransaction({ hash: hash as `0x${string}` });
             if (tx.value > 0n) {
                 if (tx.to?.toLowerCase() === user) {

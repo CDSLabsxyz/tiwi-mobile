@@ -3,22 +3,27 @@
  * A smaller card for grid layouts, matching web's recommended pools
  */
 
-import { colors } from '@/constants/colors';
-import { Image } from 'expo-image';
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { PoolTokenIcon } from './PoolTokenIcon';
 
 interface PoolCardProps {
     tokenName: string;
+    tokenSymbol?: string;
     tokenIcon?: any;
+    rewardTokenSymbol?: string;
+    rewardTokenIcon?: any;
     apy: string;
     onPress?: () => void;
 }
 
 export const PoolCard: React.FC<PoolCardProps> = ({
     tokenName,
+    tokenSymbol,
     tokenIcon,
+    rewardTokenSymbol,
+    rewardTokenIcon,
     apy,
     onPress,
 }) => {
@@ -30,17 +35,13 @@ export const PoolCard: React.FC<PoolCardProps> = ({
         >
             <View style={styles.header}>
                 <View style={styles.tokenInfo}>
-                    <View style={styles.iconContainer}>
-                        {tokenIcon ? (
-                            <Image
-                                source={tokenIcon}
-                                style={styles.fullImage}
-                                contentFit="cover"
-                            />
-                        ) : (
-                            <View style={styles.placeholderIcon} />
-                        )}
-                    </View>
+                    <PoolTokenIcon
+                        tokenIcon={tokenIcon}
+                        tokenSymbol={tokenSymbol || tokenName}
+                        rewardTokenIcon={rewardTokenIcon}
+                        rewardTokenSymbol={rewardTokenSymbol}
+                        size={28}
+                    />
                     <Text style={styles.tokenName} numberOfLines={1}>
                         {tokenName}
                     </Text>
@@ -75,21 +76,6 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         gap: 6,
         flex: 1,
-    },
-    iconContainer: {
-        width: 28,
-        height: 28,
-        borderRadius: 14,
-        overflow: 'hidden',
-    },
-    fullImage: {
-        width: '100%',
-        height: '100%',
-    },
-    placeholderIcon: {
-        width: '100%',
-        height: '100%',
-        backgroundColor: colors.bgStroke,
     },
     tokenName: {
         fontFamily: 'Manrope-SemiBold',

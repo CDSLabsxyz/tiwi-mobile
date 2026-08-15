@@ -1,5 +1,5 @@
 /**
- * Staking Support — mobile chat screen.
+ * Staking Support - mobile chat screen.
  *
  * Mirrors the super-app's <StakingSupportChat />:
  *   • One chat per wallet (get-or-created server side).
@@ -61,7 +61,7 @@ const SUGGESTED_PROMPTS = [
   "My stake isn't showing up in Active Positions",
   "I sent a stake but it's still pending",
   'How do I claim my staking rewards?',
-  'I want to unstake — when can I withdraw?',
+  'I want to unstake - when can I withdraw?',
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

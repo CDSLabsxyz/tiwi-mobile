@@ -1,12 +1,12 @@
 /**
- * BSC gas-token selector — React Native port of the web's bsc-gas-selector.
+ * BSC gas-token selector - React Native port of the web's bsc-gas-selector.
  *
  * On BSC the user chooses which token the protocol fee (and, on the relayer
  * paths, the gas) is denominated in. The choice is not cosmetic:
  *
- *   TWC   → 0.20% — cheapest tier
- *   BNB   → 0.25% — standard; the user pays their own BNB gas
- *   Other → 0.30% — any BEP-20, gas deducted by the relayer
+ *   TWC   → 0.20% - cheapest tier
+ *   BNB   → 0.25% - standard; the user pays their own BNB gas
+ *   Other → 0.30% - any BEP-20, gas deducted by the relayer
  *
  * The tier is sent with the quote request (the routing engine prices the fee
  * server-side) AND read back by the executors at execution time, so quoting and

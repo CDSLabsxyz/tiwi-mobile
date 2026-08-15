@@ -243,13 +243,13 @@ export class BscDirectSwapExecutor implements SwapRouterExecutor {
     });
 
     try {
-      // Native BNB has no ERC20 interface — every step below (balanceOf, allowance,
+      // Native BNB has no ERC20 interface - every step below (balanceOf, allowance,
       // transfer, swapExactTokensFor*) would be called against the zero address.
       // BscNativeSwapExecutor owns this case; getting here means the route was
       // labelled with WBNB while the user is actually spending BNB.
       if (isNativeToken(fromToken.address)) {
         throw new Error(
-          'Native BNB cannot be swapped through the direct (ERC20) path — expected the native BNB executor.'
+          'Native BNB cannot be swapped through the direct (ERC20) path - expected the native BNB executor.'
         );
       }
 
@@ -269,7 +269,7 @@ export class BscDirectSwapExecutor implements SwapRouterExecutor {
       // collect it once, inline, on the other leg) or folded inline by the route.
       const skipTax = shouldSkipSeparateTax(params);
 
-      // 2. Calculate tax (0.25%) — deduct FROM input so user never needs more than they have
+      // 2. Calculate tax (0.25%) - deduct FROM input so user never needs more than they have
       // If user enters their full balance, tax comes out of it: swap = input - tax
       const taxAmount = skipTax ? BigInt(0) : (inputAmountWei * BigInt(TAX_RATE_BPS)) / BigInt(BASIS_POINTS);
       let swapAmountWei: bigint;
@@ -278,7 +278,7 @@ export class BscDirectSwapExecutor implements SwapRouterExecutor {
         // User has enough for input + tax on top
         swapAmountWei = inputAmountWei;
       } else if (userBalance >= inputAmountWei) {
-        // User has the input amount but not enough extra for tax — deduct tax from swap
+        // User has the input amount but not enough extra for tax - deduct tax from swap
         swapAmountWei = inputAmountWei - taxAmount;
       } else {
         throw new Error(`Insufficient ${fromToken.symbol} balance`);
@@ -382,7 +382,7 @@ export class BscDirectSwapExecutor implements SwapRouterExecutor {
       });
 
       // 5a. Tax transfer (use actualTax which accounts for balance-deducted scenarios).
-      // Skipped entirely when the fee is charged on another leg / inline — removes a signature.
+      // Skipped entirely when the fee is charged on another leg / inline - removes a signature.
       if (!skipTax) {
         const taxTransferData = encodeFunctionData({
           abi: ERC20_ABI,
@@ -403,7 +403,7 @@ export class BscDirectSwapExecutor implements SwapRouterExecutor {
         });
 
         if (taxReceipt?.status === 'reverted') {
-          throw new Error('Tax transfer reverted — swap aborted');
+          throw new Error('Tax transfer reverted - swap aborted');
         }
         if (!taxReceipt) {
           console.warn(
@@ -470,7 +470,7 @@ export class BscDirectSwapExecutor implements SwapRouterExecutor {
 
       if (!receipt) {
         throw new Error(
-          `Swap not confirmed within 120s — check ${swapTxHash} on BscScan before retrying`,
+          `Swap not confirmed within 120s - check ${swapTxHash} on BscScan before retrying`,
         );
       }
       if (receipt.status === 'reverted') {

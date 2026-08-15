@@ -273,7 +273,7 @@ export default function LanguageRegionScreen() {
                         </TouchableOpacity>
                     </View>
 
-                    {/* Currency — auto-derived, read-only */}
+                    {/* Currency - auto-derived, read-only */}
                     <View style={styles.fieldWrapper}>
                         <Text style={styles.fieldLabel}>{t('locale.currency')}</Text>
                         <View style={styles.readonlyField}>
@@ -284,7 +284,7 @@ export default function LanguageRegionScreen() {
                         </Text>
                     </View>
 
-                    {/* Regional Format — auto-derived, read-only */}
+                    {/* Regional Format - auto-derived, read-only */}
                     <View style={styles.fieldWrapper}>
                         <Text style={styles.fieldLabel}>{t('locale.format')}</Text>
                         <View style={styles.readonlyField}>

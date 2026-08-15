@@ -1,9 +1,9 @@
-# Staking — backend integration
+# Staking - backend integration
 
 The backend at `https://app.tiwiprotocol.xyz` exposes `/api/v1/mobile/staking/*`
 with everything this app needs: DB + on-chain enriched reads, unsigned tx
 calldata, and post-confirmation bookkeeping. **No contract ABIs are needed on
-the mobile side** — the server builds calldata.
+the mobile side** - the server builds calldata.
 
 The typed client lives in [`lib/mobile/api-client.ts`](lib/mobile/api-client.ts)
 under `api.staking.*`. New methods:
@@ -39,14 +39,14 @@ const { positions } = await api.staking.positionsMobile({
 ```
 
 `effectiveStatus`:
-- **`active`** — still earning; green badge.
-- **`stopped`** — pool expired but the user still holds principal; yellow badge + "please claim + unstake" banner.
-- **`completed`** — DB-marked completed.
-- **`withdrawn`** — fully exited; gray badge.
+- **`active`** - still earning; green badge.
+- **`stopped`** - pool expired but the user still holds principal; yellow badge + "please claim + unstake" banner.
+- **`completed`** - DB-marked completed.
+- **`withdrawn`** - fully exited; gray badge.
 
 ---
 
-## Write flow — unsigned steps → existing signer → record
+## Write flow - unsigned steps → existing signer → record
 
 For every action, the API returns 1–2 `MobileTxStep` objects:
 
@@ -94,7 +94,7 @@ async function stakeExternal(
     lastHash = hash;
   }
 
-  // Only the final step is the deposit — record it.
+  // Only the final step is the deposit - record it.
   await api.staking.record({
     action: 'stake',
     userWallet,
@@ -232,15 +232,15 @@ the `TransactionRequest`, so the engine routes to the right chain itself.
 
 ## Where to plug in
 
-Suggested wiring into the existing codebase (non-destructive — both paths can
+Suggested wiring into the existing codebase (non-destructive - both paths can
 coexist while you migrate):
 
 | File | Change |
 | --- | --- |
-| [`services/stakingService.ts`](services/stakingService.ts) | Replace the pool/position fetchers with `api.staking.poolsMobile()` / `.positionsMobile()`. Drop the on-chain enrichment code — the server already did it. |
+| [`services/stakingService.ts`](services/stakingService.ts) | Replace the pool/position fetchers with `api.staking.poolsMobile()` / `.positionsMobile()`. Drop the on-chain enrichment code - the server already did it. |
 | [`hooks/useStakingPool.ts`](hooks/useStakingPool.ts) | Replace the deposit/claim/unstake paths that call contract ABIs directly with `api.staking.buildTx()` + the signer loop above. Remove the ABI imports once migrated. |
-| [`store/stakingStore.ts`](store/stakingStore.ts) | Store `MobilePool[]` / `MobilePosition[]` directly — they already carry `effectiveStatus`, `isPoolExpired`, and `onChain.*` in render-ready string form. |
-| Earn screens under [`app/earn/`](app/earn/) | When rendering a `stopped` position, show a yellow banner: "Rewards have stopped — please claim and unstake." |
+| [`store/stakingStore.ts`](store/stakingStore.ts) | Store `MobilePool[]` / `MobilePosition[]` directly - they already carry `effectiveStatus`, `isPoolExpired`, and `onChain.*` in render-ready string form. |
+| Earn screens under [`app/earn/`](app/earn/) | When rendering a `stopped` position, show a yellow banner: "Rewards have stopped - please claim and unstake." |
 
 ---
 
@@ -248,7 +248,7 @@ coexist while you migrate):
 
 `positionsMobile` does RPC reads on every call. Debounce to ~15 s when polling
 to stay inside RPC rate limits. After any write, call `positionsMobile` once
-immediately to refresh the UI — the record endpoint has already committed the
+immediately to refresh the UI - the record endpoint has already committed the
 DB state by the time it resolves.
 
 ---
@@ -257,7 +257,7 @@ DB state by the time it resolves.
 
 The backend allowlists `https://app.tiwiprotocol.xyz`, `https://tiwiprotocol.xyz`,
 and localhost origins. In React Native `fetch` runs native and isn't subject
-to CORS — no action needed. For Expo web dev, add your origin via
+to CORS - no action needed. For Expo web dev, add your origin via
 `MOBILE_API_ALLOWED_ORIGINS=...` on the server if needed.
 
 `EXPO_PUBLIC_TIWI_BACKEND_URL` in `.env` already points at

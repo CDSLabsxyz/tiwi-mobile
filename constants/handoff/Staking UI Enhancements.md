@@ -1019,7 +1019,7 @@ In our mobile app, we can simplify this by using the **"Reward Duration"** as th
 *   **Fixed**: Any pool where `rewardDurationSeconds > 0` and the user is within the lock window.
 *   **Flexible**: Pools with `rewardDurationSeconds = 0` or pools where the lock timer has already expired. 
 
-By unifying the UI as shown in the screenshot, we don't even need a separate "Flexible" tab—the **Progress Bar** and **Countdown** will naturally tell the user's story based on their specific stake.
+By unifying the UI as shown in the screenshot, we don't even need a separate "Flexible" tab-the **Progress Bar** and **Countdown** will naturally tell the user's story based on their specific stake.
 
 **Next Steps Reasoning**:
 We should focus on converting the current [ManageStakeScreen](cci:1://file:///Users/a1234/Desktop/tiwiapp/tiwi-protocol-dex/app/earn/manage/%5Bsymbol%5D.tsx:47:0-495:1) logic into a reusable `ActiveStakeCard` component that can be dropped into the [Earn](cci:2://file:///Users/a1234/Desktop/tiwiapp/tiwi-super-app/app/earn/page.tsx:26:0-26:71) tab list. This will drastically reduce friction and make the mobile app feel as "Advanced" as the web version.
@@ -1233,7 +1233,7 @@ Here is the feedback and the system I have built:
 ### 2. **The Command Center (`StakingStore.ts`)**
 *   **The Problem in Web**: The Super App calculates rewards at the component level. If you navigate away and come back, the logic has to re-initialize, which can cause jittery numbers.
 *   **The Achieved Solution**: I created a global **Zustand Staking Store**. This store now owns the "Mining Engine". 
-*   **Global Mining**: The mining ticker (100ms interval) now runs at the top level of the app. This means if you have an active position, your rewards are **mining in the background** across the whole app. When you switch back to the "Active Positions" tab, the rewards haven't just "reset"—they've actually grown while you were away.
+*   **Global Mining**: The mining ticker (100ms interval) now runs at the top level of the app. This means if you have an active position, your rewards are **mining in the background** across the whole app. When you switch back to the "Active Positions" tab, the rewards haven't just "reset"-they've actually grown while you were away.
 
 ### 3. **Real-Time Integration (UI Feed)**
 *   **What I did**: I updated the `EarnScreen.tsx` (mobile) to pipe data directly from this new Store.

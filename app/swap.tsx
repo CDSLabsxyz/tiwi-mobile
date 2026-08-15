@@ -82,7 +82,7 @@ export default function SwapScreen() {
     const router = useRouter();
     const pathname = usePathname();
 
-    // Backup gate — checked at action-time (swap button press), not on page mount.
+    // Backup gate - checked at action-time (swap button press), not on page mount.
     const { requireBackup, BackupRequiredModal } = useRequireBackup();
     const params = useLocalSearchParams<{
         assetId?: string;
@@ -111,12 +111,12 @@ export default function SwapScreen() {
         /**
          * Set by the Market / Spotlight lists. Those rows come from the
          * aggregate market feed, where `address` is a provider slug
-         * ("bitcoin") and `chainId` is always 1 — not something the engine can
+         * ("bitcoin") and `chainId` is always 1 - not something the engine can
          * quote. `1` means "look this asset up before seeding it".
          */
         needsResolve?: string;
         /**
-         * 'listing' | 'spotlight' — set only when the row was tapped from a
+         * 'listing' | 'spotlight' - set only when the row was tapped from a
          * curated tab. Gates the admin-authored token overview below the CTA.
          */
         infoSource?: string;
@@ -172,7 +172,7 @@ export default function SwapScreen() {
     } = useSwapStore();
 
     const [fromFiatAmount, setFromFiatAmount] = useState('$0.00');
-    /** The input amount the current quote was fetched for — see the From-fiat effect. */
+    /** The input amount the current quote was fetched for - see the From-fiat effect. */
     const [quotedFromAmount, setQuotedFromAmount] = useState('');
     const queryClient = useQueryClient();
 
@@ -206,7 +206,7 @@ export default function SwapScreen() {
     /**
      * Optional "send to" override. null = deliver to my own wallet.
      * This is what makes cross-VM swaps possible when the wallet has no address
-     * on the destination chain — the engine's cross-VM guard needs a recipient
+     * on the destination chain - the engine's cross-VM guard needs a recipient
      * that is valid there or it refuses the swap.
      */
     const [recipientAddress, setRecipientAddress] = useState<string | null>(null);
@@ -273,7 +273,7 @@ export default function SwapScreen() {
      *
      * A user-set recipient wins; otherwise it's our own address on the
      * destination chain (which may be '' when the wallet has no key for that
-     * chain — in that case the swap needs a pasted recipient and the engine
+     * chain - in that case the swap needs a pasted recipient and the engine
      * will say so rather than deliver somewhere unrecoverable).
      */
     // A recipient is only valid for the chain it was entered for. If the user
@@ -299,7 +299,7 @@ export default function SwapScreen() {
     const { data: balanceData } = useWalletBalances();
 
     // Tokens the user toggled off in Manage Tokens must read as zero-balance
-    // on the swap card — surfacing the real balance would let them Max-in a
+    // on the swap card - surfacing the real balance would let them Max-in a
     // position they're intentionally treating as unavailable.
     const hiddenWalletTokens = useCustomTokenStore(s => s.hiddenWalletTokens);
     const customTokensByWallet = useCustomTokenStore(s => s.tokensByWallet);
@@ -426,7 +426,7 @@ export default function SwapScreen() {
                     // `liquidity` is carried through as well as the price: it's
                     // sent to the route API as liquidityUSD, and without it the
                     // very first quote a user sees (the default BNB→TWC pair)
-                    // pays for a server-side DexScreener lookup — seconds, not
+                    // pays for a server-side DexScreener lookup - seconds, not
                     // milliseconds. This response already contains it.
                     // Re-read the CURRENT selection before writing. `fromToken`
                     // in this closure is whatever was selected when the effect
@@ -523,7 +523,7 @@ export default function SwapScreen() {
             }
         };
         // Merge onto the LIVE token, and only while it is still the one this
-        // link asked for — the user may have picked something else meanwhile.
+        // link asked for - the user may have picked something else meanwhile.
         const stillSelected = (side: 'from' | 'to', addr: string) => {
             const t = side === 'from' ? useSwapStore.getState().fromToken : useSwapStore.getState().toToken;
             return t && (t.address || '').toLowerCase() === addr.toLowerCase() ? t : null;
@@ -554,8 +554,8 @@ export default function SwapScreen() {
     //
     // Those rows describe an *asset* (BTC, XRP), not a token: the aggregate
     // market feed reports `address` as the provider's slug and `chainId` as 1
-    // for everything. So the row is seeded straight away — the user sees what
-    // they tapped, immediately — while `resolveMarketToken` finds the real
+    // for everything. So the row is seeded straight away - the user sees what
+    // they tapped, immediately - while `resolveMarketToken` finds the real
     // (chain, contract) behind it. Resolution takes a round-trip or two, but
     // the "To" side is deliberately cleared here, so no quote can fire before
     // the real token has landed.
@@ -573,7 +573,7 @@ export default function SwapScreen() {
 
     /**
      * The overview shows whenever this token's (chainId, address) matches a
-     * Listing or Spotlight row — wherever it was opened from. The API only
+     * Listing or Spotlight row - wherever it was opened from. The API only
      * returns `about`/`links` for curated rows, so their presence IS the match;
      * the `infoSource` route param is no longer what decides it.
      */
@@ -583,12 +583,12 @@ export default function SwapScreen() {
 
     const resolveAppliedRef = React.useRef(false);
     const [isResolvingMarketToken, setIsResolvingMarketToken] = useState(false);
-    /** Measured height of the pinned CTA footer — reserved as scroll padding. */
+    /** Measured height of the pinned CTA footer - reserved as scroll padding. */
     const [footerHeight, setFooterHeight] = useState(0);
     /**
      * Tied to unmount, not to the effect. The effect re-runs whenever the chain
      * registry refetches, and a per-run cleanup flag would abandon an in-flight
-     * resolution — leaving the From card stuck on the unresolved seed.
+     * resolution - leaving the From card stuck on the unresolved seed.
      */
     const resolveCancelledRef = React.useRef(false);
     useEffect(() => () => { resolveCancelledRef.current = true; }, []);
@@ -607,7 +607,7 @@ export default function SwapScreen() {
                 chainId: params.chainId ? Number(params.chainId) : undefined,
                 logoURI: params.logo,
             }) || params.logo,
-            // No address yet — deliberately. An unresolved row must never look
+            // No address yet - deliberately. An unresolved row must never look
             // routable to the quote/balance code.
             address: '',
             chainId: 0,
@@ -680,7 +680,7 @@ export default function SwapScreen() {
                 setFromToken(applied);
 
                 // The index's search results don't always carry decimals, and
-                // the 18 above is only a placeholder — a wrong value mis-scales
+                // the 18 above is only a placeholder - a wrong value mis-scales
                 // the amount, so the quote would be for the wrong size entirely.
                 // The by-address lookup is a different server path and usually
                 // has them.
@@ -746,7 +746,7 @@ export default function SwapScreen() {
                 setToToken(null);
 
                 // The deep-link params carry no `liquidity` and no real
-                // `decimals` — the 18 above is a placeholder. Enrich from the
+                // `decimals` - the 18 above is a placeholder. Enrich from the
                 // token list (the same source the asset sheet uses):
                 //   • `liquidity` → sent as liquidityUSD, without which every
                 //     quote for this token pays a slow server-side lookup.
@@ -885,8 +885,8 @@ export default function SwapScreen() {
 
         // On Max, leave room for the protocol fee. The engine transfers it ON
         // TOP of the swap amount, so a true 100% would leave nothing to pay it
-        // with. Rate comes from the same config the executors charge from — not
-        // a hardcoded number — and only applies where a SEPARATE fee transfer
+        // with. Rate comes from the same config the executors charge from - not
+        // a hardcoded number - and only applies where a SEPARATE fee transfer
         // actually happens (ERC-20 input on an EVM chain).
         if (percentage === 100) {
             const chainId = Number(fromChain?.id) || 56;
@@ -905,7 +905,7 @@ export default function SwapScreen() {
      * Where the drag slider's knob sits: the typed amount as a share of balance.
      * Max lands a hair under 100% on chains where the protocol fee is reserved
      * out of the balance (see handlePercentagePress), so treat "within a
-     * rounding whisker of the reservable max" as a full 100 — otherwise the knob
+     * rounding whisker of the reservable max" as a full 100 - otherwise the knob
      * would stick at 99% right after tapping Max.
      */
     const fromHasBalance = useMemo(
@@ -943,7 +943,7 @@ export default function SwapScreen() {
         }
 
         // Duplicate-request guard (ported from useSwapQuote). The pair MUST be
-        // part of the key — otherwise changing one token while keeping the same
+        // part of the key - otherwise changing one token while keeping the same
         // amount produces an identical key, the fetch is skipped, and the
         // previous pair's quote stays on screen. The pinned pool belongs in the
         // key too: arriving from a pool page onto an already-quoted pair must
@@ -964,7 +964,7 @@ export default function SwapScreen() {
 
         // Staged progress copy, ported from useSwapQuote. Routing genuinely
         // takes a few seconds on thin pairs, and a silent skeleton reads as a
-        // hung screen — this tells the user what the router is doing.
+        // hung screen - this tells the user what the router is doing.
         const stepTimers: any[] = [];
         setQuoteStep('Searching routes...');
         stepTimers.push(setTimeout(() => setQuoteStep('Scanning DEXes...'), 1200));
@@ -983,7 +983,7 @@ export default function SwapScreen() {
         try {
             const fromAddr = getAddressForChain(fromToken.chainId);
             const toAddr = resolveRecipient(toToken.chainId);
-            // No token-specific client-side overrides here — the web app has
+            // No token-specific client-side overrides here - the web app has
             // none. Fee-on-transfer tokens (TWC and friends) are handled where
             // they should be: the backend routes them, and the executors run
             // with isFeeOnTransfer so they call the
@@ -1021,7 +1021,7 @@ export default function SwapScreen() {
                 }
             }
         } catch (error: any) {
-            // An abort is not a failure — a newer quote replaced this one.
+            // An abort is not a failure - a newer quote replaced this one.
             if (abortController.signal.aborted || error?.name === 'AbortError') return;
 
             console.error('Failed to fetch quote:', error);
@@ -1051,7 +1051,7 @@ export default function SwapScreen() {
         return () => clearTimeout(timer);
     }, [fromAmount, fromToken, toToken, slippage, updateQuote]);
 
-    // 60-second Heartbeat Auto-Refresh — fires only after the user has been
+    // 60-second Heartbeat Auto-Refresh - fires only after the user has been
     // idle for 60s. Including fromAmount/fromToken/toToken/slippage in deps
     // means every keystroke or token change resets the clock, so the heartbeat
     // never fights with active typing or interrupts mid-input.
@@ -1068,14 +1068,14 @@ export default function SwapScreen() {
 
     // Update From Fiat whenever amount or token changes.
     //
-    // Prefer the route's own `fromAmountUSD` — the same figure the "To" side
+    // Prefer the route's own `fromAmountUSD` - the same figure the "To" side
     // already uses, and what the web card shows (app/swap/page.tsx's
     // fromTokenUSD). A local `amount × priceUSD` multiply comes from the balance
     // store's price feed, which is a DIFFERENT source than the router's, so on a
     // taxed token in a thin pool (TWC) the two disagree and the From value reads
     // wrong while the quoted To value reads right. The multiply stays as the
     // fallback for when there's no quote yet, or the amount has been edited
-    // since — an in-flight quote's USD belongs to the previous amount.
+    // since - an in-flight quote's USD belongs to the previous amount.
     useEffect(() => {
         const amountNum = parseFloat(fromAmount || '0');
         if (!fromAmount || !(amountNum > 0)) {
@@ -1214,7 +1214,7 @@ export default function SwapScreen() {
             return;
         }
 
-        // Quote expiry — the backend emits `expiresAt` in unix SECONDS.
+        // Quote expiry - the backend emits `expiresAt` in unix SECONDS.
         const expiresAt = swapQuote.expiresAt ?? swapQuote.route?.expiresAt;
         if (expiresAt && Math.floor(Date.now() / 1000) >= Number(expiresAt)) {
             setSwapErrorMessage('Quote has expired. Please get a new quote.');
@@ -1396,7 +1396,7 @@ export default function SwapScreen() {
                 }
             }
 
-            // No receipt re-verification here — matching the web app. Every
+            // No receipt re-verification here - matching the web app. Every
             // executor already waits for its own confirmation (and reverts are
             // raised from inside it), so a second 60s wait only added latency,
             // and on non-EVM chains it was looking up an EVM receipt for a
@@ -1520,7 +1520,7 @@ export default function SwapScreen() {
                 />
 
                 {/* Gas-token picker for the BSC "Other" fee tier. Opens straight
-                    on BSC's token list — the tier only applies to BEP-20s. */}
+                    on BSC's token list - the tier only applies to BEP-20s. */}
                 <UnifiedAssetSelectSheet
                     visible={isGasTokenSheetVisible}
                     initialStep="tokens"
@@ -1659,10 +1659,10 @@ export default function SwapScreen() {
                                     isStale={isStale}
                                     quoteStep={quoteStep}
                                     // Destination address is picked from the "To"
-                                    // label itself — same place the destination
+                                    // label itself - same place the destination
                                     // token/chain is chosen.
                                     onRecipientPress={() => setIsRecipientSheetVisible(true)}
-                                    // Always show where the output actually lands —
+                                    // Always show where the output actually lands -
                                     // the custom recipient if set, otherwise our own
                                     // address on the destination chain.
                                     recipientLabel={(() => {
@@ -1761,7 +1761,7 @@ export default function SwapScreen() {
                     </View>
                 </ScrollView>
 
-                {/* CTA pinned to the bottom of the screen — the content above
+                {/* CTA pinned to the bottom of the screen - the content above
                     scrolls behind it. Rendered before SwapKeyboard so the custom
                     keypad still overlays it when open. */}
                 <View

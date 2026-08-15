@@ -118,7 +118,7 @@ export interface RouteStep {
   protocol?: string;                   // e.g., "Uniswap V3", "Stargate"
   description?: string;                // Human-readable step description
   dexId?: string;                      // Registry dexId (e.g. 'uniswap-v3', 'pancakeswap') for execution
-  feeTier?: number;                    // V3 pool fee tier (e.g. 500) — required to execute a V3 hop
+  feeTier?: number;                    // V3 pool fee tier (e.g. 500) - required to execute a V3 hop
   routerAddress?: string;              // On-chain DEX router for executing this hop (from dex-registry)
 }
 
@@ -162,7 +162,7 @@ export interface RouteRequest {
   // the swap through that specific TiwiLiquidityPair (falling back to normal aggregator
   // routing only if the pool can't serve the pair).
   poolAddress?: string;                 // TiwiLiquidityPair contract address to swap through
-  preferredRouter?: string;             // e.g. 'tiwi-pool' — force this router over best-price
+  preferredRouter?: string;             // e.g. 'tiwi-pool' - force this router over best-price
 }
 
 // ============================================================================

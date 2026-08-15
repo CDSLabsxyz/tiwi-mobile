@@ -1,5 +1,5 @@
 /**
- * Markdown renderer for TIWI AI replies — the React Native counterpart of the
+ * Markdown renderer for TIWI AI replies - the React Native counterpart of the
  * web app's `components/ai/markdown-renderer.tsx`. Same supported subset, so a
  * reply looks the same in both apps:
  *
@@ -25,7 +25,7 @@ const MONOSPACE = Platform.OS === 'ios' ? 'Menlo' : 'monospace';
 
 function openLink(url: string) {
     Linking.openURL(url).catch(() => {
-        /* invalid or unhandled scheme — nothing to do */
+        /* invalid or unhandled scheme - nothing to do */
     });
 }
 
@@ -99,7 +99,7 @@ function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
             break;
         }
         if (nextSpecial === 0) {
-            // Orphan marker — emit it literally.
+            // Orphan marker - emit it literally.
             nodes.push(<Text key={`${keyPrefix}-t${i++}`}>{remaining[0]}</Text>);
             remaining = remaining.slice(1);
         } else {
@@ -176,7 +176,7 @@ function parseBlocks(markdown: string): Block[] {
             continue;
         }
 
-        // Paragraph — consume until a blank line or another block starts.
+        // Paragraph - consume until a blank line or another block starts.
         const paragraphLines: string[] = [];
         while (
             i < lines.length &&

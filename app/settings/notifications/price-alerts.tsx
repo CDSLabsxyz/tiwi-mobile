@@ -179,7 +179,7 @@ export default function PriceAlertsScreen() {
                             <View style={{ flex: 1 }}>
                                 <ThemedText style={styles.rowLabel}>Enable Price Alerts</ThemedText>
                                 <ThemedText style={styles.rowSub}>
-                                    Get a push when one of your tokens moves significantly — even when the app is closed.
+                                    Get a push when one of your tokens moves significantly - even when the app is closed.
                                 </ThemedText>
                             </View>
                             <ToggleSwitch value={enabled} onValueChange={handleToggle} />

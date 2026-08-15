@@ -1,5 +1,5 @@
 /**
- * Cross-Chain Orchestrator Executor (Phase 5 — one-sign escrow cross-chain, EVM↔EVM)
+ * Cross-Chain Orchestrator Executor (Phase 5 - one-sign escrow cross-chain, EVM↔EVM)
  *
  * For cross-chain swaps between chains where TIWI runs its own escrow corridor
  * (TiwiCrossChainOrchestrator on the source + TiwiCrossChainVault on the dest), this does
@@ -50,14 +50,14 @@ const ESCROW_ENABLED = process.env.EXPO_PUBLIC_ESCROW_ENABLED === 'true';
 export class CrossChainOrchestratorExecutor implements SwapRouterExecutor {
   canHandle(route: RouterRoute): boolean {
     if (!ESCROW_ENABLED) return false;                       // inert until go-live flag is set
-    // Only execute routes explicitly produced for the TIWI escrow bridge — never hijack an
+    // Only execute routes explicitly produced for the TIWI escrow bridge - never hijack an
     // aggregator route (lifi/relay/rubic) that happens to span the same two chains.
     if (route.router !== 'tiwi-bridge') return false;
     const fromChain = route.fromToken.chainId;
     const toChain = route.toToken.chainId;
     if (fromChain === toChain) return false;                 // cross-chain only
     if (!isEscrowSource(fromChain) || !isEscrowDest(toChain)) return false; // both must be escrow chains
-    if (isNative(route.fromToken.address)) return false;     // native input needs transferFrom — unsupported
+    if (isNative(route.fromToken.address)) return false;     // native input needs transferFrom - unsupported
     if (isNative(route.toToken.address)) return false;       // dest must be an ERC20 the vault can deliver
     const src = getEscrowChain(fromChain);
     if (!src) return false;
@@ -93,7 +93,7 @@ export class CrossChainOrchestratorExecutor implements SwapRouterExecutor {
         })) as readonly bigint[];
         const out = amounts[amounts.length - 1];
         if (out > BigInt(0) && (!best || out > best.out)) best = { path, out };
-      } catch { /* path has no pool — try next */ }
+      } catch { /* path has no pool - try next */ }
     }
     if (!best) return null;
     const steps: Step[] = [];
@@ -148,7 +148,7 @@ export class CrossChainOrchestratorExecutor implements SwapRouterExecutor {
         (m: string) => onStatusUpdate?.({ stage: 'approving', message: m }), wallet,
       );
 
-      // 4) One call: swapAndBridge. Explicit gas — nested calls under-estimate and revert.
+      // 4) One call: swapAndBridge. Explicit gas - nested calls under-estimate and revert.
       onStatusUpdate?.({ stage: 'signing', message: 'Confirming the cross-chain swap in your wallet...' });
       const data = encodeFunctionData({
         abi: ORCHESTRATOR_ABI,
@@ -175,7 +175,7 @@ export class CrossChainOrchestratorExecutor implements SwapRouterExecutor {
 
       onStatusUpdate?.({
         stage: 'confirming',
-        message: `Bridging to ${toToken.symbol} — the relayer will deliver on the destination chain shortly.`,
+        message: `Bridging to ${toToken.symbol} - the relayer will deliver on the destination chain shortly.`,
         txHash,
       });
       return { success: true, txHash, txHashes: [txHash], receipt };

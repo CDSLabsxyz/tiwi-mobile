@@ -31,7 +31,7 @@ export function getCachedClient(chainId: number): PublicClient {
         chain,
         pollingInterval: getPollingInterval(chainId),
         transport: fallback(
-          // `rank` is a fallback() option, not an http() one — the web copy
+          // `rank` is a fallback() option, not an http() one - the web copy
           // passes it here where it's simply ignored. Dropped so it typechecks
           // against the mobile viem version (ranking is off by default anyway).
           customRpcUrls.map(url => http(url, { ...RPC_TRANSPORT_OPTIONS, timeout: 10000 }))

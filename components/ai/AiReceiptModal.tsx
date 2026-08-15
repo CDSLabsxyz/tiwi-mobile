@@ -1,5 +1,5 @@
 /**
- * AI credit purchase receipt — mobile counterpart of the web modal's receipt.
+ * AI credit purchase receipt - mobile counterpart of the web modal's receipt.
  *
  * Same content and actions: a CONFIRMED header, the credits/amount summary,
  * pack / network / from / treasury / tx hash / reference / date rows, a QR to
@@ -55,7 +55,7 @@ export function AiReceiptModal({ visible, receipt, onClose, onCopied }: AiReceip
 
     /**
      * Capture the card as a PNG. `download` isn't a thing on mobile, so both
-     * Download and Share funnel into the OS share sheet — the user picks
+     * Download and Share funnel into the OS share sheet - the user picks
      * "Save Image" or a target app from there.
      */
     const captureAndShare = async () => {

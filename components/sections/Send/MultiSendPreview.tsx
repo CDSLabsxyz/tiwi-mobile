@@ -46,7 +46,7 @@ export const MultiSendPreview: React.FC = () => {
       {invalidCount > 0 && (
         <View style={{ backgroundColor: "rgba(255,179,71,0.1)", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 }}>
           <Text style={{ fontFamily: "Manrope-Regular", fontSize: 11, color: "#FFB347" }}>
-            {invalidCount} row{invalidCount === 1 ? "" : "s"} incomplete — fix or delete below.
+            {invalidCount} row{invalidCount === 1 ? "" : "s"} incomplete - fix or delete below.
           </Text>
         </View>
       )}

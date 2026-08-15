@@ -1,5 +1,5 @@
 /**
- * Meson bridge config — the non-CCTP stablecoin rail.
+ * Meson bridge config - the non-CCTP stablecoin rail.
  *
  * Meson moves USDT/USDC across ~40 chains via an atomic-swap + LP model (no liquidity from us).
  * It fills the gap CCTP/LiFi/Relay leave: Tron, Core, and many long-tail chains. Combined with
@@ -14,7 +14,7 @@
  *   Poll GET /api/v1/swap/{encoded} for status. One approval + one signature; no dest action.
  *
  * v1 SCOPE: EVM SOURCE only (the user signs an EVM message). Destination may be any Meson chain,
- * including non-EVM (Tron/Solana) — the user only signs on the EVM source, Meson delivers to the
+ * including non-EVM (Tron/Solana) - the user only signs on the EVM source, Meson delivers to the
  * dest address. Non-EVM as SOURCE (e.g. USDT on Tron → …) is a later addition (needs Tron signing).
  */
 
@@ -29,7 +29,7 @@ export interface MesonChainConfig {
 export const MESON_RELAYER_API = 'https://relayer.meson.fi/api/v1';
 
 /**
- * The Meson contract — approval spender for the source stablecoin. Verified deployed at this same
+ * The Meson contract - approval spender for the source stablecoin. Verified deployed at this same
  * address on BSC/Arbitrum/Base/Polygon/Optimism/Avalanche/Linea (deterministic, like CCTP). The
  * signature flow lets Meson's relayer transferFrom the user via this allowance.
  */
@@ -60,7 +60,7 @@ export const MESON_CHAINS: Record<number, MesonChainConfig> = {
   60808: { chainId: 60808, mesonId: 'bob', isEVM: true, usdt: '0x1217bfe6c773eec6cc4a38b5dc45b92292b6e189', usdc: '0xe75d0fb2c24a55ca1e3f96781a2bcc7bdba058f0' },
   534352: { chainId: 534352, mesonId: 'scroll', isEVM: true, usdt: '0xf55bec9cafdbe8730f096aa55dad6d22d44099df', usdc: '0x06efdbff2a14a7c8e15944d1f4a48f9f95f663a4' },
 
-  // High-value non-EVM DESTINATIONS (v1: dest-only — user signs on the EVM source).
+  // High-value non-EVM DESTINATIONS (v1: dest-only - user signs on the EVM source).
   // Token addresses are the app's canonical representations, used to match a chosen token.
   728126428: { chainId: 728126428, mesonId: 'tron', isEVM: false, usdt: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t' },
   7565164: { chainId: 7565164, mesonId: 'solana', isEVM: false, usdc: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', usdt: 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB' },
@@ -96,7 +96,7 @@ export function mesonSwapId(chainId: number, token: 'usdt' | 'usdc'): string | n
 }
 
 /**
- * Master gate — dormant until the executor is verified with a real small transfer, mirroring
+ * Master gate - dormant until the executor is verified with a real small transfer, mirroring
  * NEXT_PUBLIC_CCTP_ENABLED. Set MESON_ENABLED / NEXT_PUBLIC_MESON_ENABLED = 'true' to activate.
  */
 export function isMesonEnabled(): boolean {

@@ -1,5 +1,5 @@
 /**
- * TIWI CCTP Executor — source side of the CCTP any-to-any rail (relayer-driven, one signature).
+ * TIWI CCTP Executor - source side of the CCTP any-to-any rail (relayer-driven, one signature).
  *
  * For a cross-chain 'tiwi-cctp' route it does the WHOLE source side, then hands off to the relayer:
  *   Leg 1 (only if source token isn't already USDC): swap source token → USDC on the source chain
@@ -74,13 +74,13 @@ export class TiwiCctpExecutor implements SwapRouterExecutor {
 
     if (!src || !dst) return { success: false, txHash: '', error: new Error('Not a CCTP chain pair') };
     // The relayer's mintRecipient is resolved in the DESTINATION chain's address form (EVM address,
-    // or the relayer's USDC ATA for a Solana dest — CCTP mints into a token account there).
+    // or the relayer's USDC ATA for a Solana dest - CCTP mints into a token account there).
     const mintRecipient = resolveCctpMintRecipient(dst.vm);
     if (!mintRecipient) return { success: false, txHash: '', error: new Error('CCTP relayer not configured for destination chain') };
     if (!finality) return { success: false, txHash: '', error: new Error('CCTP route missing finality selection') };
 
     // Solana SOURCE (Solana→EVM): the entire source side (Jupiter swap → USDC + deposit_for_burn)
-    // runs on Solana with the user's Solana wallet — a different signer/tx model than EVM. Delegated
+    // runs on Solana with the user's Solana wallet - a different signer/tx model than EVM. Delegated
     // to a dedicated path; the EVM source flow below is structurally untouched. Imports stay lazy so
     // the live EVM→Solana path never loads Solana deps unless a Solana-source swap runs.
     if (src.vm === 'svm') {
@@ -170,7 +170,7 @@ export class TiwiCctpExecutor implements SwapRouterExecutor {
       const eta = finality.mode === 'fast' ? '~1 minute' : '~15 minutes';
       onStatusUpdate?.({
         stage: 'completed',
-        message: `Bridging USDC to ${toToken.symbol} via Circle CCTP — the relayer will deliver on ${toChain} in ${eta}.`,
+        message: `Bridging USDC to ${toToken.symbol} via Circle CCTP - the relayer will deliver on ${toChain} in ${eta}.`,
         txHash: burnTx,
       });
       return { success: true, txHash: burnTx, txHashes: allTxHashes, receipt };
@@ -184,7 +184,7 @@ export class TiwiCctpExecutor implements SwapRouterExecutor {
    * Solana SOURCE side (Solana→EVM): Jupiter swap → USDC on Solana, then deposit_for_burn, signed by
    * the user's browser Solana wallet. The relayer mints on the EVM destination (existing evm dest
    * adapter). depositForBurn mechanics are proven on-chain; the browser-wallet SIGNING path is
-   * verified only in-app (not headless) — test with a real Solana wallet before wide use.
+   * verified only in-app (not headless) - test with a real Solana wallet before wide use.
    */
   private async executeSvmSource(
     params: SwapExecutionParams,
@@ -241,7 +241,7 @@ export class TiwiCctpExecutor implements SwapRouterExecutor {
       }
 
       const eta = finality.mode === 'fast' ? '~1 minute' : '~15 minutes';
-      onStatusUpdate?.({ stage: 'completed', message: `Bridging USDC to ${toToken.symbol} via Circle CCTP — the relayer will deliver on ${toChain} in ${eta}.`, txHash: srcTxHash });
+      onStatusUpdate?.({ stage: 'completed', message: `Bridging USDC to ${toToken.symbol} via Circle CCTP - the relayer will deliver on ${toChain} in ${eta}.`, txHash: srcTxHash });
       return { success: true, txHash: srcTxHash };
     } catch (error: any) {
       onStatusUpdate?.({ stage: 'failed', message: error?.message || 'Solana-source CCTP transfer failed', error });

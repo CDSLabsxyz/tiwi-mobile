@@ -4,7 +4,7 @@
  * For every key the export screen shows, re-derive the address FROM THE KEY
  * ALONE and compare it to the address the wallet displays for that chain. A
  * mismatch means we would hand the user a key that does not open the account
- * they are looking at — the worst possible outcome for an export feature.
+ * they are looking at - the worst possible outcome for an export feature.
  *
  * Run:  node scripts/verify-exported-keys.mjs
  */
@@ -41,7 +41,7 @@ const ADDRESSES = {
 
 /**
  * The Cosmos-family accounts. Every one is the SAME secp256k1 account as
- * COSMOS, re-encoded under its own bech32 prefix — so the single exported
+ * COSMOS, re-encoded under its own bech32 prefix - so the single exported
  * Cosmos key must open all of them. Checked explicitly so "one key covers 13
  * chains" is a verified claim rather than a comment.
  */

@@ -59,7 +59,7 @@ export function formatErrorMessage(error: unknown): string {
   const lowerMessage = rawMessage.toLowerCase();
 
   if (isOutputShortageMessage(lowerMessage)) {
-    return "Price moved beyond the protected minimum — refresh the quote and try again";
+    return "Price moved beyond the protected minimum - refresh the quote and try again";
   }
 
   // 1. GLOBAL REJECTION CHECK (The most important one)
@@ -83,7 +83,7 @@ export function formatErrorMessage(error: unknown): string {
   ) {
     if (isGasShortageMessage(lowerMessage)) return "Insufficient gas";
     if (isBalanceShortageMessage(lowerMessage)) return "Insufficient balance";
-    if (lowerMessage.includes("gas estimation") || lowerMessage.includes("estimategas") || lowerMessage.includes("gas uint64 overflow") || lowerMessage.includes("execution reverted")) return "Transaction failed — try again";
+    if (lowerMessage.includes("gas estimation") || lowerMessage.includes("estimategas") || lowerMessage.includes("gas uint64 overflow") || lowerMessage.includes("execution reverted")) return "Transaction failed - try again";
     if (lowerMessage.includes("allowance") || lowerMessage.includes("approve")) return "Approval failed";
     if (lowerMessage.includes("slippage")) return "High slippage";
     if (lowerMessage.includes("expired") || lowerMessage.includes("deadline")) return "Price expired";
@@ -98,7 +98,7 @@ export function formatErrorMessage(error: unknown): string {
     return "Insufficient balance";
   }
   if (lowerMessage.includes("gas estimation") || lowerMessage.includes("estimategas")) {
-    return "Transaction failed — try again";
+    return "Transaction failed - try again";
   }
   if (lowerMessage.includes("allowance") || lowerMessage.includes("approve") || lowerMessage.includes("permitted")) {
     return "Approval failed";
@@ -118,21 +118,21 @@ export function formatErrorMessage(error: unknown): string {
   if (lowerMessage.includes("expired") || lowerMessage.includes("deadline")) {
     return "Price expired";
   }
-  // Check wallet-connection errors BEFORE the route mapping — otherwise a message
+  // Check wallet-connection errors BEFORE the route mapping - otherwise a message
   // like "TRON wallet not found" matches "not found" and mis-renders as
   // "No route found", masking the real cause.
   if (lowerMessage.includes("wallet not connected") || lowerMessage.includes("wallet not found")) {
     return "Wallet not connected";
   }
   // A route that quoted but has no executor (e.g. a Cosmos/Skip route on a build
-  // without the Skip executor). This is NOT "no route" — surface it honestly.
+  // without the Skip executor). This is NOT "no route" - surface it honestly.
   if (lowerMessage.includes("no executor found")) {
     return "This swap route isn’t supported yet";
   }
   // Genuine routing failures only. Deliberately does NOT match a bare "route"
   // (that also matches "router:" in messages like "No executor found for
   // router: skip"), a bare "not found", or authored "…isn’t supported yet"
-  // guidance — those must fall through to the verbatim passthrough below rather
+  // guidance - those must fall through to the verbatim passthrough below rather
   // than being masked as "No route found".
   if (
     /no route|route not found|no path|no liquidity|cannot find a route|unable to find a (swap )?route/i.test(lowerMessage)
@@ -140,7 +140,7 @@ export function formatErrorMessage(error: unknown): string {
     return "No route found";
   }
 
-  // 7. Authored, human-readable messages — pass through verbatim.
+  // 7. Authored, human-readable messages - pass through verbatim.
   // Executors intentionally surface clean guidance (e.g. the cross-chain
   // minimum: "Amount too small for a cross-chain swap (~$0.76)…"). These carry
   // no technical noise (hex data, JSON, viem/stack traces), so show them as-is

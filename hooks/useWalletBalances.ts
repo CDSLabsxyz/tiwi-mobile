@@ -19,7 +19,7 @@ prefetchTokenLogos();
 prefetchAdminTokenLogoOverrides();
 
 // Nexxend-covered chains, used only by the legacy per-address fallback path.
-// Discovery itself is UNFILTERED — the server portfolio route sweeps every
+// Discovery itself is UNFILTERED - the server portfolio route sweeps every
 // chain in the registry and the UI applies the user's chain filter locally.
 const FALLBACK_CHAIN_IDS = [1, 56, 137, 42161, 8453, 10, 43114, 999, 59144, 250, 42220, 100, 7565164, 1100];
 
@@ -54,7 +54,7 @@ function portfolioAddressesFor(group: WalletGroup | undefined): PortfolioAddress
 
 // Spam/quality filtering
 const BLACKLISTED_SYMBOLS = ['SN3', 'BSB'];
-// Native assets are never dropped for being cheap or logo-less — a real holding
+// Native assets are never dropped for being cheap or logo-less - a real holding
 // on a long-tail chain would otherwise vanish. Derived from the registry's
 // native-symbol map plus the majors/stables users expect to always see.
 const SACRED_SYMBOLS = [
@@ -63,13 +63,13 @@ const SACRED_SYMBOLS = [
 ];
 // `native` is how the UTXO/Stacks/Bitcoin direct readers spell a native coin;
 // EVM uses the zero-address sentinel and Solana the System Program. All sacred.
-// (`So111…112` is WRAPPED SOL — a real, separate holding, kept sacred too.)
+// (`So111…112` is WRAPPED SOL - a real, separate holding, kept sacred too.)
 const SACRED_ADDRESSES = ['native', '0x0000000000000000000000000000000000000000', '0x0000000000000000000000000000000000001010', SOLANA_NATIVE_ADDRESS, 'So11111111111111111111111111111111111111112'];
 const SPAM_KEYWORDS = ['.com', '.xyz', '.net', '.io', '.org', 'claim', 'airdrop', 'visit', 'free', 'reward', 'voucher', 'gift', 'win', 'bonus'];
 const DUST_TOKEN_USD_CEILING = 0.01;
 const UNVERIFIED_TOKEN_USD_CEILING = 1;
 
-// Symbols that airdrop scammers commonly impersonate — stablecoins and
+// Symbols that airdrop scammers commonly impersonate - stablecoins and
 // wrapped tokens. A token claiming one of these symbols MUST sit at the
 // officially-known contract address for its chain; otherwise it's the
 // classic fake-USDC/fake-USDT scam with a bogus price feed.
@@ -146,7 +146,7 @@ const OFFICIAL_STABLE_ADDRESSES: Record<number, Record<string, string>> = {
         USDC: '0xceba9300f2b948710d2653dd7b07f33a8b32118c',
         USDT: '0x48065fbbe25f71c9282ddf5e1cd6d6a887483d5e',
     },
-    100: { // Gnosis — the one catching the fake USDC the user keeps seeing
+    100: { // Gnosis - the one catching the fake USDC the user keeps seeing
         USDC: '0xddafbb505ad214d7b80b1f830fccc89b60fb7a83',
         USDT: '0x4ecaba5870353805a9f068101a40e0f32ed605c6',
     },
@@ -156,7 +156,7 @@ const OFFICIAL_STABLE_ADDRESSES: Record<number, Record<string, string>> = {
     },
 };
 
-// Native symbols can ONLY exist on their home chain — a token claiming to be
+// Native symbols can ONLY exist on their home chain - a token claiming to be
 // "BNB" on chain 1100 (TON) is scam/corrupt data. The map is registry-derived
 // (constants/knownChains.ts) so every legitimate home chain is covered; WBNB is
 // the one wrapped symbol we pin, since it's a common impersonation target.
@@ -212,7 +212,7 @@ function isExplicitlyUnverified(token: any): boolean {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Cross-refetch stability — the other half of the web app's `finalize()`.
+// Cross-refetch stability - the other half of the web app's `finalize()`.
 //
 // Every refetch rebuilds the portfolio from ~a dozen independent, individually
 // flaky sources. Judging a token on ONE snapshot means a source that timed out,
@@ -226,8 +226,8 @@ const lastGoodTokens = new Map<string, any[]>();
 const missingStrikes = new Map<string, number>();
 
 // Every spelling a source has used for "this chain's own coin". Sources
-// disagree — Nexxend says 'native', the direct RPC readers say the zero
-// address, Moralis says 0xeee…e — and the SAME holding can arrive under a
+// disagree - Nexxend says 'native', the direct RPC readers say the zero
+// address, Moralis says 0xeee…e - and the SAME holding can arrive under a
 // different one on each refetch, since dedupe keeps whichever row priced
 // higher and that flips with the price source.
 const NATIVE_ADDRESS_ALIASES = new Set([
@@ -251,7 +251,7 @@ function isNativeAddress(address: string | undefined): boolean {
  * collapse onto one address so an alias change between fetches cannot make a
  * coin look like two different tokens.
  *
- * Keys only — the row's own `address` is left untouched, because Solana's
+ * Keys only - the row's own `address` is left untouched, because Solana's
  * native row must keep its real mint for the send/swap paths.
  */
 function canonicalAddress(address: string | undefined): string {
@@ -262,13 +262,13 @@ function canonicalAddress(address: string | undefined): string {
 
 // MUST use the canonical form: keying on the raw address let a native row
 // whose alias changed between refetches miss its own previous entry, so the
-// grace pass carried the old row forward *alongside* the new one — the wallet
+// grace pass carried the old row forward *alongside* the new one - the wallet
 // then listed BNB twice, same balance, one row holding a stale price.
 const tokenRowKey = (t: any) => `${t.chainId}-${canonicalAddress(t.address)}`;
 
 /**
  * (1) Drop every unpriced non-native token. A holding we cannot put a dollar
- *     value on is points/airdrop junk — "Berachain Point", "Grass Point",
+ *     value on is points/airdrop junk - "Berachain Point", "Grass Point",
  *     "DTX Point" and friends, all at $0.00. A real holding gets a price from
  *     the per-chain registry, however small (TREE at $0.83 stays).
  *
@@ -277,8 +277,8 @@ const tokenRowKey = (t: any) => `${t.chainId}-${canonicalAddress(t.address)}`;
  *     transient outage is worse than showing it briefly unpriced.
  *
  * (2) Carry forward holdings missing from this fetch for MISSING_GRACE_CYCLES
- *     with their last known price, so one dead source — or one failed price
- *     lookup on an otherwise real token — can't blank a chain.
+ *     with their last known price, so one dead source - or one failed price
+ *     lookup on an otherwise real token - can't blank a chain.
  */
 function applyStabilityGrace(tokens: any[], walletKey: string): any[] {
     const pricingWorked = tokens.some((t) => parseFloat(t.usdValue || '0') > 0);
@@ -288,7 +288,7 @@ function applyStabilityGrace(tokens: any[], walletKey: string): any[] {
             (t) => parseFloat(t.usdValue || '0') > 0
                 || isNativeAddress(t.address)
                 // A wrapped native (WBNB/WETH/WPOL/…) is the native coin by
-                // another name — never points junk. If the price registry has
+                // another name - never points junk. If the price registry has
                 // no quote for the wrapper on some long-tail chain, show the
                 // holding unpriced rather than deleting it.
                 || isKnownWrappedNative(t.chainId, t.address),
@@ -331,12 +331,12 @@ function filterToken(b: any): boolean {
     // Phishing patterns first, exactly like the web app \u2014 before the sacred
     // whitelist, so "USDT \u00b7 visit claim.xyz" can't ride in on its symbol.
     if (isLikelySpamToken(b)) return false;
-    // Reject tokens on chains we don't support — these would render with
+    // Reject tokens on chains we don't support - these would render with
     // an "Unknown" chain label and are almost always airdrop spam.
     const chainIdNum = Number(b.chainId);
     if (!chainIdNum || !KNOWN_CHAIN_IDS.has(chainIdNum)) return false;
 
-    // Native symbol-to-chain enforcement — reject tokens where the symbol
+    // Native symbol-to-chain enforcement - reject tokens where the symbol
     // is a native asset but the chainId doesn't match. Prevents "TON" appearing
     // on BSC or "BNB" appearing on TON.
     const allowedChainsForNative = nativeHomeChains(symbol);
@@ -344,14 +344,14 @@ function filterToken(b: any): boolean {
         return false;
     }
 
-    // A canonical wrapped native is authoritative by address — it IS the
+    // A canonical wrapped native is authoritative by address - it IS the
     // contract the impersonation guard below would check against. Must come
     // first: WETH/WBNB/WAVAX/WMATIC are in IMPERSONATED_STABLES, and on any
     // chain missing from OFFICIAL_STABLE_ADDRESSES the guard would mark the
     // real wrapper "unchecked" and then drop it whenever it went unpriced.
     if (isKnownWrappedNative(chainIdNum, addr)) return true;
 
-    // Airdrop impersonation guard — a token claiming to be USDC/USDT/
+    // Airdrop impersonation guard - a token claiming to be USDC/USDT/
     // DAI/etc. MUST be at the real contract address for its chain.
     // Everything else is the fake-stablecoin scam with a bogus price
     // feed (e.g. "0.744 USDC = $744,000"). Must be before SACRED_SYMBOLS
@@ -362,13 +362,13 @@ function filterToken(b: any): boolean {
         if (officialAddr) {
             if (addr !== officialAddr) return false;
         } else {
-            // No official-address table for this chain — we now surface every
+            // No official-address table for this chain - we now surface every
             // chain in the registry, so most long-tail chains land here. A
             // genuine stablecoin trades inside its peg band, so an implausible
             // price is the fake-USDC tell; an ABSENT price proves nothing, and
             // normalizeToken would go on to force it to $1 (turning 1,000,000
             // fake USDC into "$1,000,000"). Only a peg-band price keeps the
-            // SACRED_SYMBOLS free pass — everything else has to earn its place
+            // SACRED_SYMBOLS free pass - everything else has to earn its place
             // through the quality gate below.
             const price = parseFloat(b.priceUSD || '0');
             const pegged = PEGGED_STABLES.has(symbol);
@@ -395,7 +395,7 @@ function filterToken(b: any): boolean {
     if (isTWC) return true;
 
     // A stablecoin impersonator on a chain with no official-address table has
-    // to at least carry a price — normalizeToken would otherwise peg it to $1
+    // to at least carry a price - normalizeToken would otherwise peg it to $1
     // and a million fake USDC would land in the total.
     if (impersonationUnchecked && usdValue <= 0) return false;
 
@@ -414,7 +414,7 @@ function filterToken(b: any): boolean {
     return true;
 }
 
-// URLs from sources known to be unreliable or dead — skip them so we
+// URLs from sources known to be unreliable or dead - skip them so we
 // fall through to Koin Gallery / DexScreener instead.
 function isUnreliableLogo(url?: string): boolean {
     if (!url) return true;
@@ -423,7 +423,7 @@ function isUnreliableLogo(url?: string): boolean {
     return false;
 }
 
-// Stablecoins always peg to $1 — override any wrong backend price
+// Stablecoins always peg to $1 - override any wrong backend price
 const STABLECOIN_SYMBOLS = new Set(['USDT', 'USDC', 'DAI', 'BUSD', 'TUSD', 'FRAX', 'USDP', 'GUSD', 'LUSD', 'FDUSD']);
 
 function normalizeToken(b: any) {
@@ -438,7 +438,7 @@ function normalizeToken(b: any) {
     let usdValue = b.usdValue || '0';
     let priceUSD = b.priceUSD || '0';
 
-    // Fix stablecoin pricing — they should always be ~$1.00
+    // Fix stablecoin pricing - they should always be ~$1.00
     // If the backend returns a price <$0.50 or >$2 for a verified stablecoin, override to $1.
     if (STABLECOIN_SYMBOLS.has(sym) && balance > 0) {
         const reportedPrice = parseFloat(priceUSD);
@@ -588,7 +588,7 @@ export function useWalletBalances() {
     const updateCustomTokenBalance = useCustomTokenStore((state) => state.updateTokenBalance);
 
     // An explicit chain filter narrows DISCOVERY too (fewer RPC sweeps); with no
-    // filter we sweep everything — the chain chips in the wallet screen filter
+    // filter we sweep everything - the chain chips in the wallet screen filter
     // the rendered list locally, so clamping discovery here would permanently
     // hide long-tail holdings.
     const chainIdsForFetch = useMemo(() => {
@@ -610,7 +610,7 @@ export function useWalletBalances() {
     );
 
     // Cache key for this wallet. The version suffix invalidates every snapshot
-    // written by an older balance pipeline — otherwise the app opens showing a
+    // written by an older balance pipeline - otherwise the app opens showing a
     // stale, far thinner token list from disk. Bump it whenever the discovery
     // or filtering behaviour changes materially.
     // v4: stricter auto-discovered spam/dust filtering, so every v3 snapshot
@@ -632,10 +632,10 @@ export function useWalletBalances() {
 
                 // ── 1. Discovery: one server-side aggregation call ──
                 // /api/v1/mobile/portfolio fans out to EVERY balance source the
-                // web app uses — Nexxend majors plus the long-tail
+                // web app uses - Nexxend majors plus the long-tail
                 // *-direct-balances readers across EVM (~50 chains), Cosmos,
                 // Solana, Tron, TON, Sui, Aptos, Bitcoin, Starknet, Polkadot,
-                // the UTXO chains and Stacks — then merges + reprices them
+                // the UTXO chains and Stacks - then merges + reprices them
                 // through the accurate per-chain price registry. The legacy
                 // per-address Nexxend + Moralis path below is kept as a fallback
                 // so a route outage never blanks the portfolio.
@@ -648,7 +648,7 @@ export function useWalletBalances() {
                     }) as any;
                     rawBalances = Array.isArray(resp?.balances) ? resp.balances : [];
                     // A 200 with nothing in it means every upstream source
-                    // degraded — treat it like an outage so the on-device
+                    // degraded - treat it like an outage so the on-device
                     // readers below still surface the user's native balances.
                     if (rawBalances.length === 0) portfolioFailed = true;
                 } catch (portfolioErr: any) {
@@ -727,7 +727,7 @@ export function useWalletBalances() {
                     if (!b) return;
                     // Key on (chain, contract) ONLY. Including the symbol let two
                     // rows for the same contract survive when sources spelled the
-                    // name differently — they then rendered twice and collided on
+                    // name differently - they then rendered twice and collided on
                     // the list's `${chainId}-${address}` React key ("Encountered
                     // two children with the same key"). Same key the web app uses.
                     // `canonicalAddress` is shared with tokenRowKey so a row keeps
@@ -744,11 +744,11 @@ export function useWalletBalances() {
                 // Admin-uploaded logos are tiny and contract-keyed; load them
                 // before row normalization so portfolio and picker icons agree.
                 await ensureAdminTokenLogoOverrides().catch(() => {});
-                // Fire broad logo cache warming in background — don't block balance render
+                // Fire broad logo cache warming in background - don't block balance render
                 ensureTokenLogos().catch(() => {});
                 // ── 5b. Cross-refetch grace (web parity) ──
                 // filterToken keeps every non-spam holding; this pass is what
-                // finally retires a token — after 4 consecutive $0 fetches —
+                // finally retires a token - after 4 consecutive $0 fetches -
                 // and carries a briefly-missing one forward for 3 cycles so a
                 // timed-out source never blanks a chain.
                 let tokens = applyStabilityGrace(
@@ -771,7 +771,7 @@ export function useWalletBalances() {
                 // token we dropped (fake USDC, fake USDT, etc.) cannot
                 // pollute the total balance card. The backend's pre-summed
                 // `totalUSD` / `dailyChange` fields are deliberately
-                // ignored here — they'd carry the spam value forward even
+                // ignored here - they'd carry the spam value forward even
                 // after the client filter removed the offending row.
                 let totalNetWorthUsd: string;
                 let portfolioChangeAmount: string;
@@ -794,7 +794,7 @@ export function useWalletBalances() {
 
                 const pctChange = totalUsdYesterday > 0 ? (totalGainUsd / totalUsdYesterday) * 100 : 0;
 
-                // Preserve sub-cent precision — `.toFixed(2)` would turn a
+                // Preserve sub-cent precision - `.toFixed(2)` would turn a
                 // real balance of $0.000958 into the string "0.00", which
                 // the Total Balance card then displays as $0.00 even
                 // though the user actually holds something. The formatter
@@ -837,7 +837,7 @@ export function useWalletBalances() {
         staleTime: 1000 * 60 * 3,
         gcTime: 1000 * 60 * 15,
         // MUST be true. `initialData` paints the snapshot persisted to disk, and
-        // `initialDataUpdatedAt` marks it stale — but with refetchOnMount:false
+        // `initialDataUpdatedAt` marks it stale - but with refetchOnMount:false
         // that staleness went nowhere, so opening the app re-rendered the old
         // snapshot and NEVER refetched. Balances only updated on pull-to-refresh,
         // which is why a reload after a backend change appeared to do nothing.

@@ -5,7 +5,7 @@ import { Buffer } from 'buffer';
 import { ExecutionResult, SignerEngine, TransactionRequest } from './SignerTypes';
 
 /**
- * StarknetLocalEngine — native STRK send for in-app (mnemonic) wallets.
+ * StarknetLocalEngine - native STRK send for in-app (mnemonic) wallets.
  *
  * Stark-curve key ground from the mnemonic (m/44'/9004'/0'/0/0); the account
  * ADDRESS is the counterfactual OpenZeppelin deployment (matches deriveStarknet-

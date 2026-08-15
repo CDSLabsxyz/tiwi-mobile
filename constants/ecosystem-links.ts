@@ -1,5 +1,5 @@
 /**
- * TIWI ecosystem apps that have no native screen yet — they open in the
+ * TIWI ecosystem apps that have no native screen yet - they open in the
  * in-app browser. Shared by the home quick-actions rows and the More page so
  * the two can't drift apart.
  */

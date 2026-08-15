@@ -141,7 +141,7 @@ export class RelayExecutor implements SwapRouterExecutor {
             console.log(`[RelayExecutor] Cross-chain: ${isCrossChain}, Solana source: ${isSolanaSource}, Solana dest: ${isSolanaDest}`);
             console.log(`[RelayExecutor] Steps: ${relayQuote.steps?.length || 0}`);
 
-            // Solana SOURCE signs with a Solana wallet — branch BEFORE creating any EVM wallet
+            // Solana SOURCE signs with a Solana wallet - branch BEFORE creating any EVM wallet
             // client, else getEVMWalletClient(7565164) throws "Chain 7565164 is not an EVM chain".
             if (isSolanaSource) {
                 return this.executeSolanaSwap(params);
@@ -189,7 +189,7 @@ export class RelayExecutor implements SwapRouterExecutor {
 
                 // ONLY if no proper spender was found, fall back to the call targets ('to').
                 // Previously we ALWAYS added every 'to' as a spender, which approved the token
-                // to unrelated contracts (even the token itself) — a pile of redundant signatures.
+                // to unrelated contracts (even the token itself) - a pile of redundant signatures.
                 if (spenderAddresses.size === 0) {
                     for (const step of relayQuote.steps || []) {
                         for (const item of step.items || []) {

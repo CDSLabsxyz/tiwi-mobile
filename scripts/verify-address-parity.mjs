@@ -2,7 +2,7 @@
  * Cross-app address-parity check.
  *
  * The mobile wallet and the web wallet (tiwi-user-app) must derive BYTE-IDENTICAL
- * addresses from the same recovery phrase — a user imports one phrase and expects
+ * addresses from the same recovery phrase - a user imports one phrase and expects
  * the same accounts in both. A drift means funds sent to an address shown by one
  * app are unreachable from the other.
  *
@@ -63,7 +63,7 @@ const WEB = {
 // ── Compile the app's own derivation modules and load them ───────────────────
 // Using the shipped sources (rather than a re-implementation) is the point: this
 // fails if someone edits a derivation path in the app.
-// Emit INSIDE the project — the compiled modules require the app's own
+// Emit INSIDE the project - the compiled modules require the app's own
 // dependencies, which node can only resolve from a path under the project root.
 const outDir = mkdtempSync(join(ROOT, '.parity-build-'));
 try {

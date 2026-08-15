@@ -60,7 +60,7 @@ interface MyMemoryResponse {
 }
 
 async function translateViaAPI(text: string, targetLang: string): Promise<string> {
-    // `|` must be pre-encoded — see comment in autoTranslate.ts for why
+    // `|` must be pre-encoded - see comment in autoTranslate.ts for why
     // leaving it raw causes RN's fetch to re-encode the whole query.
     const url =
         'https://api.mymemory.translated.net/get?q=' +

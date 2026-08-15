@@ -67,7 +67,7 @@ export class LocalSignerEngine implements SignerEngine {
         // Helper to perform the dual guard check
         const authorize = async (message: string) => {
             // If biometrics are enabled, attempt extra hardware-level verification.
-            // If it fails (user dismisses, not enrolled, etc.), fall through —
+            // If it fails (user dismisses, not enrolled, etc.), fall through -
             // the app-level passcode check already happened in the UI.
             if (securityStore.isBiometricsEnabled) {
                 try {
@@ -160,7 +160,7 @@ export class LocalSignerEngine implements SignerEngine {
             // Caller-supplied nonce + gas limit (both already on TransactionRequest,
             // previously ignored here). A caller that queues several txs at once
             // must own the nonce, and a tx that only becomes valid after an earlier
-            // queued tx lands can't be estimated — it must carry its own limit.
+            // queued tx lands can't be estimated - it must carry its own limit.
             if (typeof tx.nonce === 'number') txArgs.nonce = tx.nonce;
             const presetGas = tx.gasLimit ? BigInt(tx.gasLimit) : undefined;
             if (presetGas) txArgs.gas = presetGas;
@@ -170,7 +170,7 @@ export class LocalSignerEngine implements SignerEngine {
             try {
                 const publicClient = await this.getPublicClient(Number(tx.chainId) || 1);
 
-                // Price and limit are independent reads — awaiting them in series
+                // Price and limit are independent reads - awaiting them in series
                 // doubled the pre-flight latency of every signed tx. allSettled (not
                 // all) keeps the old behaviour where one failing read still lets the
                 // other apply.
@@ -178,7 +178,7 @@ export class LocalSignerEngine implements SignerEngine {
                     // 1. Gas Price Buffer (20% above network base)
                     publicClient.getGasPrice(),
                     // 2. Gas Limit Buffer. Simple native transfers are always 21,000
-                    //    gas — we use 21,000 so it stays a 'Transfer' on explorers.
+                    //    gas - we use 21,000 so it stays a 'Transfer' on explorers.
                     //    A preset limit skips the estimate entirely.
                     presetGas || isNative
                         ? Promise.resolve(presetGas ?? 21000n)

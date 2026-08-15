@@ -85,7 +85,7 @@ export const transactionService = {
             useWalletStore.getState();
         if (!legacyAddress) throw new Error('No active wallet found');
 
-        // Solana mainnet/devnet — pulled from the same constant used elsewhere
+        // Solana mainnet/devnet - pulled from the same constant used elsewhere
         // in the swap layer. Non-EVM recipients are base58 (Solana) or other
         // formats and must NOT be sent through the EVM signer (viem rejects
         // anything that isn't a 0x-prefixed 20-byte hex with InvalidAddressError,
@@ -93,19 +93,19 @@ export const transactionService = {
         const SOLANA_CHAIN_IDS = [7565164, 1399811149];
         const isSolana = SOLANA_CHAIN_IDS.includes(Number(params.chainId));
         // Canonical ids: Sui = 101, Aptos = 637. These are non-EVM (Move) chains
-        // signed by their own engines — never route them through the EVM signer.
+        // signed by their own engines - never route them through the EVM signer.
         const isSui = Number(params.chainId) === 101;
         const isAptos = Number(params.chainId) === 637;
-        // Injective (8000001) — eth_secp256k1, its own engine (NOT the cosmjs path).
+        // Injective (8000001) - eth_secp256k1, its own engine (NOT the cosmjs path).
         const isInjective = Number(params.chainId) === 8000001;
         // Bitcoin (8332, UTXO) & Starknet (account-abstraction).
         const isBitcoin = Number(params.chainId) === 8332;
         const isStarknet = Number(params.chainId) === 23448594291968334;
-        // Cosmos-family (ATOM/OSMO/juno/…) — standard secp256k1 via @cosmjs.
+        // Cosmos-family (ATOM/OSMO/juno/…) - standard secp256k1 via @cosmjs.
         const cosmosCfg = getCosmosConfig(params.chainId);
         const isCosmos = !!cosmosCfg;
         // TRON (base58 addresses, tronweb) & TON (ed25519, V4R2 external message).
-        // Both have their own engines — routing them to the EVM signer made viem
+        // Both have their own engines - routing them to the EVM signer made viem
         // reject the recipient outright.
         const isTron = Number(params.chainId) === 728126428;
         const isTon = [1100, 99999].includes(Number(params.chainId));
@@ -121,7 +121,7 @@ export const transactionService = {
 
         let txRequest: TransactionRequest;
         // For Solana, the active address from `useWalletStore` is the EVM
-        // address (legacy field). The signer needs the SOLANA address — pull
+        // address (legacy field). The signer needs the SOLANA address - pull
         // it from the active wallet group.
         let fromAddress = legacyAddress;
         if (isSolana) {
@@ -143,7 +143,7 @@ export const transactionService = {
             const SOL_MINT = 'So11111111111111111111111111111111111111112';
             const SOL_SYSTEM_PROGRAM = '11111111111111111111111111111111';
             const tokenAddr = (params.tokenAddress || '').trim();
-            // A row explicitly labelled WSOL is the wrapped SPL token — a
+            // A row explicitly labelled WSOL is the wrapped SPL token - a
             // different holding from lamports. Treating the wrapped mint as
             // native is only a concession to older sources that carried native
             // SOL under it; never do it when the caller says WSOL, or a WSOL
@@ -160,7 +160,7 @@ export const transactionService = {
 
             if (!isNativeSol) {
                 // SPL token transfers need a serialized program instruction
-                // — not wired through this generic helper yet.
+                // - not wired through this generic helper yet.
                 throw new Error('SPL token transfers are not supported here yet');
             }
 
@@ -171,7 +171,7 @@ export const transactionService = {
                 chainId: params.chainId,
             };
         } else if (isSui || isAptos) {
-            // Move chains — pull the chain-specific address from the active group
+            // Move chains - pull the chain-specific address from the active group
             // (the legacy `address` field is the EVM address).
             const activeGroup = walletGroups.find(g => g.id === activeGroupId)
                 ?? walletGroups.find(g => Object.values(g.addresses).some(
@@ -274,7 +274,7 @@ export const transactionService = {
                 || lowered === '0x0000000000000000000000000000000000000000'
                 || (params.symbol || '').toUpperCase() === nativeSym;
 
-            // The contract/jetton-master address rides in `data` — the engines
+            // The contract/jetton-master address rides in `data` - the engines
             // read it to decide between a native transfer and a token transfer.
             txRequest = {
                 chainFamily: isTron ? 'tron' : 'ton',
@@ -293,7 +293,7 @@ export const transactionService = {
             fromAddress = activeGroup?.addresses[cosmosCfg!.addressKey] ?? legacyAddress;
 
             // Cosmos native tokens reach here as the zero-address, an empty
-            // string, the native denom, or the native symbol — `params.isNative`
+            // string, the native denom, or the native symbol - `params.isNative`
             // (EVM sentinels) misses them, so use a chain-aware check.
             const tokenAddr = (params.tokenAddress || '').trim().toLowerCase();
             const rawToken = (params.tokenAddress || '').trim();
@@ -304,7 +304,7 @@ export const transactionService = {
                 || tokenAddr === cosmosCfg!.nativeDenom.toLowerCase();
 
             // Non-native balances on Cosmos are bank denoms (ibc/…, factory/…,
-            // or a plain u-denom) and send through the very same MsgSend — the
+            // or a plain u-denom) and send through the very same MsgSend - the
             // engine reads the denom off `data`. CW20 contracts are the one
             // shape that needs a different message, so they still stop here.
             const isCw20 = /^[a-z0-9]+1[a-z0-9]{38,}$/.test(rawToken);
@@ -345,17 +345,17 @@ export const transactionService = {
 
         // Execute via SignerController.
         // skipAuthorize: the user has already approved this action via the in-app
-        // passcode/biometric prompt before reaching this point — don't re-prompt.
+        // passcode/biometric prompt before reaching this point - don't re-prompt.
         const result = await signerController.executeTransaction(txRequest, fromAddress, { skipAuthorize: true });
 
         if (result.status === 'success' && result.hash) {
             // A broadcasted tx is NOT the same as a successful tx. Wait for
-            // the receipt before logging — reverts/OOG would otherwise get
+            // the receipt before logging - reverts/OOG would otherwise get
             // recorded as "Sent Successfully". If the receipt confirms a
             // revert, roll the returned status to 'failed' so the UI toast
             // surfaces the real outcome.
             //
-            // Solana: skip the EVM receipt poller — `sendRawTransaction` already
+            // Solana: skip the EVM receipt poller - `sendRawTransaction` already
             // returns a signature and the SOL signer engine surfaces failures
             // synchronously.
             const mined = (isSolana || isSui || isAptos || isCosmos || isInjective || isBitcoin || isStarknet || isTron || isTon)
@@ -365,7 +365,7 @@ export const transactionService = {
                 return { hash: result.hash, status: 'failed', error: 'Transaction reverted on-chain' };
             }
             if (mined === null) {
-                // Receipt unavailable — don't log a claim we can't verify.
+                // Receipt unavailable - don't log a claim we can't verify.
                 return result;
             }
             try {
@@ -382,7 +382,7 @@ export const transactionService = {
                 });
 
                 // Log to local activity. The `txType` is used as the row's
-                // category + feeds the activityService typeMap — passing
+                // category + feeds the activityService typeMap - passing
                 // 'transaction' would fall through to the 'Swap' default
                 // and mis-label every send as a swap in the list.
                 await activityService.logTransaction(
@@ -543,7 +543,7 @@ export const transactionService = {
      * addresses (Solana base58, Tron base58check, TON friendly form, Cosmos
      * bech32). Without this gate we'd surface "InvalidAddressError" the moment
      * a user opens Confirm on a SOL/TRON/TON/COSMOS/OSMOSIS send. Non-EVM
-     * chains compute fees inside their own signer engine — short-circuit here
+     * chains compute fees inside their own signer engine - short-circuit here
      * with zeroed values so the review screen renders cleanly.
      */
     async estimateGas(params: SendTokenParams): Promise<{ gasLimit: bigint; gasCostNative: bigint; gasCostUSD: number }> {

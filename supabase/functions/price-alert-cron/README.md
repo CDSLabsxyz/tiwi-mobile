@@ -1,7 +1,7 @@
 # price-alert-cron
 
 Supabase Edge Function that fires price-movement push notifications to
-TIWI wallet users — including when the app is fully closed.
+TIWI wallet users - including when the app is fully closed.
 
 Runs every ~5 minutes. For every row in `user_watched_tokens`, it:
 
@@ -34,7 +34,7 @@ in the SQL editor. This creates `price_alert_settings` and
 `user_watched_tokens` with the RLS policies the mobile app needs.
 
 Also make sure [`supabase/notifications_schema.sql`](../../notifications_schema.sql)
-has already been applied — this function reads `user_push_tokens` from it.
+has already been applied - this function reads `user_push_tokens` from it.
 
 ### 3. Function secrets
 

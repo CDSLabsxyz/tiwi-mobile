@@ -186,7 +186,7 @@ export const ERC20_ABI = [
 /**
  * TiwiStakingPool V2 ABI (pool-per-contract architecture).
  * Each pool is deployed as its own contract; frontend talks to it directly
- * at `poolContractAddress` — no numeric poolId. Mirrors
+ * at `poolContractAddress` - no numeric poolId. Mirrors
  * tiwi-super-app/lib/contracts/abis/TiwiStakingPool.json (reads + writes
  * actually used by the UI).
  */

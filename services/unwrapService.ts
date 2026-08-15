@@ -1,5 +1,5 @@
 /**
- * Unwrap service — turns a wrapped-native token back into the chain's native coin.
+ * Unwrap service - turns a wrapped-native token back into the chain's native coin.
  *
  * EVM     : `withdraw(uint256)` on the WETH9-style wrapper. Simulated first so a
  *           mis-registered address in constants/wrappedNatives.ts fails loudly
@@ -31,7 +31,7 @@ import {
   type PublicClient,
 } from 'viem';
 
-/** Minimal ERC20 read surface — only `balanceOf` is needed here. */
+/** Minimal ERC20 read surface - only `balanceOf` is needed here. */
 const ERC20_BALANCE_ABI = [
   {
     inputs: [{ name: 'account', type: 'address' }],
@@ -44,7 +44,7 @@ const ERC20_BALANCE_ABI = [
 
 /**
  * A read client for any EVM chain in the registry. Deliberately does NOT set
- * viem's `batch` option — several endpoints in these lists return malformed
+ * viem's `batch` option - several endpoints in these lists return malformed
  * batch responses, which surface as empty `0x` reads with no failover.
  */
 function getUnwrapPublicClient(chainId: number): PublicClient {
@@ -123,7 +123,7 @@ export async function unwrapToNative(params: {
     ? await unwrapSolana(info, owner, params.amount)
     : await unwrapEvm(info, owner, params.amount);
 
-  // Best-effort activity log — never let a logging failure mask a good tx.
+  // Best-effort activity log - never let a logging failure mask a good tx.
   activityService
     .logTransaction(
       owner,
@@ -184,7 +184,7 @@ async function unwrapEvm(
     throw new Error(res.error || 'Unwrap transaction failed.');
   }
 
-  // A broadcast is not a success — a revert here would otherwise be reported
+  // A broadcast is not a success - a revert here would otherwise be reported
   // as "unwrapped".
   const receipt = await client
     .waitForTransactionReceipt({ hash: res.hash as `0x${string}`, timeout: 90_000 })
@@ -224,11 +224,11 @@ async function unwrapSolana(
   if (requested > balance) throw new Error('Amount exceeds your WSOL balance.');
 
   // Closing the account still costs a network fee, and the fee payer is the
-  // owner — a wallet holding only WSOL and zero SOL can't pay it. Preflight
+  // owner - a wallet holding only WSOL and zero SOL can't pay it. Preflight
   // would fail with a bare "simulation failed", so say what's actually wrong.
   if (lamports !== null && lamports < 5_000) {
     throw new Error(
-      'Not enough SOL to pay the network fee. Closing the WSOL account costs about 0.000005 SOL — ' +
+      'Not enough SOL to pay the network fee. Closing the WSOL account costs about 0.000005 SOL - ' +
       'send a small amount of SOL to this wallet, then unwrap.',
     );
   }
@@ -238,7 +238,7 @@ async function unwrapSolana(
 
   const tx = new Transaction().add(
     // Closing the account credits its full lamport balance (rent + wrapped
-    // SOL) back to the owner — this is how wSOL is unwrapped.
+    // SOL) back to the owner - this is how wSOL is unwrapped.
     createCloseAccountInstruction(ata, ownerKey, ownerKey),
   );
 

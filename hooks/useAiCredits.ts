@@ -1,12 +1,11 @@
 /**
  * AI credit balance + billing for the mobile chat.
  *
- * The balance is NOT owned here. It lives in Supabase keyed by wallet and is
- * spent by `/api/v1/ai/chat` as it answers, so the same wallet sees the same
- * number in the web super-app and on the phone. This hook:
+ * Free credits are device-local so guests can chat without a wallet. Paid
+ * credits live in Supabase keyed by wallet. This hook:
  *
- *   • reads that balance on mount and after each answer,
- *   • caches the last one so the sheet still shows something offline,
+ *   • reads local free credits and server paid credits,
+ *   • caches the last paid balance so the sheet still shows something offline,
  *   • loads the admin-managed pricing (allowance, packs, treasury/token),
  *   • drives purchases, which pay on-chain and then let the SERVER grant the
  *     credits after it re-verifies the transfer.
@@ -16,17 +15,20 @@ import {
     DEFAULT_CREDIT_PACKS,
     DEFAULT_FREE_MONTHLY_CREDITS,
     EMPTY_PAYMENT_CONFIG,
+    combineLocalFreeWithPaid,
     emptyBalance,
     fetchCreditBalance,
     fetchCreditSettings,
     findIndexedPayTokenBalance,
     formatCompactAmount,
     getCreditSummary,
+    loadLocalFreeBalance,
     loadCachedBalance,
     purchaseCreditPack,
     readPayTokenBalance,
     retryPendingClaims,
     saveCachedBalance,
+    spendLocalFreeCredit,
     type AiCreditPack,
     type CreditBalance,
     type CreditSummary,
@@ -54,10 +56,11 @@ export interface AiCreditsApi {
     paySymbol: string;
 
     /**
-     * Adopt the balance returned by the chat route. The server already spent
-     * the credit — this only mirrors the result, it never deducts locally.
+     * Adopt the paid balance returned by the chat route after a paid credit
+     * spend. Local free credits are merged in on-device.
      */
     applyServerBalance: (balance: CreditBalance | null | undefined) => void;
+    spendFreeCredit: () => Promise<boolean>;
 
     buyingPackId: string | null;
     billingMessage: string | null;
@@ -101,14 +104,16 @@ export function useAiCredits(
         };
     }, []);
 
-    const adoptBalance = useCallback(
-        (next: CreditBalance, fromServer: boolean) => {
-            setBalance(next);
+    const adoptPaidBalance = useCallback(
+        async (paidBalance: CreditBalance | null | undefined, fromServer: boolean) => {
+            const localFree = await loadLocalFreeBalance(freeMonthlyCredits);
+            const next = combineLocalFreeWithPaid(localFree, paidBalance);
             setBalanceStale(!fromServer);
             setBalanceReady(true);
-            if (fromServer) void saveCachedBalance(address, next);
+            setBalance(next);
+            if (fromServer && paidBalance) void saveCachedBalance(address, paidBalance);
         },
-        [address],
+        [address, freeMonthlyCredits],
     );
 
     /**
@@ -118,19 +123,19 @@ export function useAiCredits(
     const refreshBalance = useCallback(async () => {
         const claimed = await retryPendingClaims(address);
         if (claimed) {
-            adoptBalance(claimed, true);
+            await adoptPaidBalance(claimed, true);
             return;
         }
-        const fresh = await fetchCreditBalance(address);
+        const fresh = address ? await fetchCreditBalance(address) : null;
         if (fresh) {
-            adoptBalance(fresh, true);
+            await adoptPaidBalance(fresh, true);
             return;
         }
-        // Unreachable — fall back to the last number we saw rather than
-        // blocking the composer on a flaky connection.
-        const cached = await loadCachedBalance(address);
-        adoptBalance(cached ?? emptyBalance(freeMonthlyCredits), false);
-    }, [address, adoptBalance, freeMonthlyCredits]);
+        // Paid ledger unreachable - keep local free credits working and use the
+        // last paid balance we saw, if any.
+        const cached = address ? await loadCachedBalance(address) : null;
+        await adoptPaidBalance(cached, false);
+    }, [address, adoptPaidBalance]);
 
     useEffect(() => {
         let cancelled = false;
@@ -140,15 +145,14 @@ export function useAiCredits(
         setBillingMessage(null);
 
         (async () => {
-            // Show the cached number immediately so the UI isn't blank, then
-            // let the server correct it.
-            const cached = await loadCachedBalance(address);
+            // Show local free + cached paid immediately, then let the server
+            // correct the paid side.
+            const cached = address ? await loadCachedBalance(address) : null;
+            const localFree = await loadLocalFreeBalance(freeMonthlyCredits);
             if (cancelled) return;
-            if (cached) {
-                setBalance(cached);
-                setBalanceStale(true);
-                setBalanceReady(true);
-            }
+            setBalance(combineLocalFreeWithPaid(localFree, cached));
+            setBalanceStale(!!cached);
+            setBalanceReady(true);
             loadedKeyRef.current = key;
             await refreshBalance();
         })();
@@ -159,13 +163,33 @@ export function useAiCredits(
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [address]);
 
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            const localFree = await loadLocalFreeBalance(freeMonthlyCredits);
+            if (!cancelled) setBalance((current) => combineLocalFreeWithPaid(localFree, current));
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [freeMonthlyCredits]);
+
     const applyServerBalance = useCallback(
         (next: CreditBalance | null | undefined) => {
             if (!next) return;
-            adoptBalance(next, true);
+            void adoptPaidBalance(next, true);
         },
-        [adoptBalance],
+        [adoptPaidBalance],
     );
+
+    const spendFreeCredit = useCallback(async () => {
+        const localFree = await spendLocalFreeCredit(freeMonthlyCredits);
+        if (!localFree) return false;
+        setBalance((current) => combineLocalFreeWithPaid(localFree, current));
+        setBalanceReady(true);
+        setBalanceStale(false);
+        return true;
+    }, [freeMonthlyCredits]);
 
     // ── Payment token balance ───────────────────────────────────────────────
     const refreshPayTokenBalance = useCallback(async () => {
@@ -183,7 +207,7 @@ export function useAiCredits(
     const paySymbol = payment.paymentTokenSymbol || 'TWC';
 
     // Prefer whichever source reports a positive balance, so a flaky RPC can't
-    // hide a balance the indexer already knows about — and vice versa.
+    // hide a balance the indexer already knows about - and vice versa.
     const onChainValue = payTokenBalance != null ? Number(payTokenBalance) : null;
     const indexedValue = useMemo(
         () => findIndexedPayTokenBalance(walletTokens, payment),
@@ -222,19 +246,19 @@ export function useAiCredits(
                 if (!result.ok) {
                     setBillingMessage(result.error);
                     // The payment may have gone through even when the claim
-                    // didn't — re-read so any credit that did land shows up.
+                    // didn't - re-read so any credit that did land shows up.
                     void refreshBalance();
                     return null;
                 }
                 const { receipt } = result;
                 setLastReceipt(receipt);
                 if (result.balance) {
-                    adoptBalance(result.balance, true);
+                    await adoptPaidBalance(result.balance, true);
                 } else {
                     void refreshBalance();
                 }
                 setBillingMessage(
-                    `Payment confirmed — ${receipt.credits} credits added.${receipt.txHash ? ` Tx: ${receipt.txHash.slice(0, 10)}…` : ''}`,
+                    `Payment confirmed - ${receipt.credits} credits added.${receipt.txHash ? ` Tx: ${receipt.txHash.slice(0, 10)}…` : ''}`,
                 );
                 void refreshPayTokenBalance();
                 return receipt;
@@ -242,7 +266,7 @@ export function useAiCredits(
                 setBuyingPackId(null);
             }
         },
-        [address, adoptBalance, payment, paySymbol, refreshBalance, refreshPayTokenBalance],
+        [address, adoptPaidBalance, payment, paySymbol, refreshBalance, refreshPayTokenBalance],
     );
 
     const summary = useMemo(() => getCreditSummary(balance), [balance]);
@@ -259,6 +283,7 @@ export function useAiCredits(
         payTokenBalanceLabel,
         paySymbol,
         applyServerBalance,
+        spendFreeCredit,
         buyingPackId,
         billingMessage,
         setBillingMessage,

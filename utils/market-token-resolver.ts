@@ -6,16 +6,16 @@ import { registerAdminTokenLogoOverrides, resolveTokenLogo } from '@/utils/admin
  *
  * `/api/v1/market/list` is an aggregate feed (CMC / CoinGecko / BlockMarketScan).
  * Every row it returns carries `address` = the provider's *slug* ("bitcoin",
- * "usd-coin") and `chainId` = 1, regardless of where the asset actually lives —
+ * "usd-coin") and `chainId` = 1, regardless of where the asset actually lives -
  * only TWC is patched server-side with its real BSC contract. So a market row
  * cannot be handed to the swap engine as-is: `{address:"bitcoin", chainId:1}` is
  * a ghost token that fails every balance read, quote and approval.
  *
  * This module resolves such a row to a real (chainId, contract) pair using two
  * sources, scored together:
- *   1. `/api/v1/swap-default-tokens` — the admin-curated allow-list. Trusted,
+ *   1. `/api/v1/swap-default-tokens` - the admin-curated allow-list. Trusted,
  *      carries real decimals, and is one cached request.
- *   2. `/api/v1/tokens?query=SYMBOL`  — the raw index. Much wider coverage but
+ *   2. `/api/v1/tokens?query=SYMBOL`  - the raw index. Much wider coverage but
  *      spam-ridden, so candidates must survive symbol + price sanity checks.
  *
  * Rows that already carry a real on-chain address (Spotlight / Listing entries,
@@ -66,7 +66,7 @@ const PROVIDER_SLUG = /^[a-z0-9]+(?:[-_][a-z0-9]+)+$/;
 /**
  * Whether `address` is something the swap engine can actually use.
  *
- * The zero address and the literal `native` both count — those are how the app
+ * The zero address and the literal `native` both count - those are how the app
  * spells a chain's own coin (see `isNativeToken` in utils/wallet). Provider
  * slugs are rejected first: they are the exact thing this module exists to
  * replace, and a long hyphen-free slug could otherwise sneak past base58.
@@ -172,7 +172,7 @@ interface ScoringContext {
 
 /**
  * Score one candidate against the market row. Returns null when the candidate
- * is disqualified — a different asset that merely shares a ticker.
+ * is disqualified - a different asset that merely shares a ticker.
  *
  * Symbol and price act as the *gate* ("is this the same asset?"); the chain is
  * what mostly decides the *ranking*. Once price has confirmed that BTC-on-Merlin,
@@ -208,7 +208,7 @@ function scoreCandidate(
 
     // Price sanity is the strongest signal we have against ticker squatters
     // ("HarryPotterObamaPacMan8Inu" trades as XRP on Ethereum). Only applied
-    // when both sides have a price — an unpriced index row is merely unranked,
+    // when both sides have a price - an unpriced index row is merely unranked,
     // never rejected.
     const candPrice = parsePrice(candidate.priceUSD);
     let priceScore = 0;
@@ -273,7 +273,7 @@ export interface ResolveOptions {
  * Resolve a market/spotlight row to a token the swap engine can quote.
  *
  * Returns null when the asset has no on-chain representation we can route
- * (XMR, PI, most RWA funds) — callers should tell the user rather than seeding
+ * (XMR, PI, most RWA funds) - callers should tell the user rather than seeding
  * a token that will fail at quote time.
  */
 export async function resolveMarketToken(
@@ -290,7 +290,7 @@ export async function resolveMarketToken(
         ),
     };
 
-    // Fast path — the row already knows its own contract (Spotlight/Listing
+    // Fast path - the row already knows its own contract (Spotlight/Listing
     // entries, TWC, token-index search results).
     const ownAddress = (token.address || '').trim();
     const ownChainId = Number(token.chainId);
@@ -323,7 +323,7 @@ export async function resolveMarketToken(
         getCuratedTokens(options.signal),
         api.tokens
             // The index is fuzzy-matched and ranks by its own relevance, so the
-            // right chain for a common ticker can sit well down the list — 50
+            // right chain for a common ticker can sit well down the list - 50
             // is what it takes for e.g. ADA's BSC entry to show up reliably.
             .list({ query: symbol, limit: 50 }, { signal: options.signal })
             .then((resp) => resp.tokens || [])
@@ -334,7 +334,7 @@ export async function resolveMarketToken(
 
     for (const t of curated) {
         // `address: null` / "PLACEHOLDER" marks a coming-soon stub in the
-        // curated list — it renders in the selector but can't be routed.
+        // curated list - it renders in the selector but can't be routed.
         if (t.chainId == null || !t.address || t.address === 'PLACEHOLDER') continue;
         const scored = scoreCandidate(
             {

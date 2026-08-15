@@ -74,7 +74,7 @@ export async function approveToken(
   walletClient?: WalletClient
 ): Promise<string> {
   try {
-    // On mobile there is no injected provider to fall back to — the local
+    // On mobile there is no injected provider to fall back to - the local
     // signer is the only source of a wallet client.
     const client = walletClient || await getEVMWalletClient(chainId);
 

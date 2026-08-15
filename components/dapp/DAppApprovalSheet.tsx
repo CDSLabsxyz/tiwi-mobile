@@ -28,7 +28,7 @@ export const DAppApprovalSheet: React.FC = () => {
     }, [current?.kind]);
 
     const onApprove = () => {
-        // Resolution handled by the bridge AFTER this — the bridge awaited
+        // Resolution handled by the bridge AFTER this - the bridge awaited
         // enqueue() which resolves here, then it runs the signer. Passing
         // `true` is just a signal; bridge ignores the value.
         approve(true);
@@ -126,7 +126,7 @@ const RequestBody: React.FC<{ req: DAppRequest }> = ({ req }) => {
 const Row: React.FC<{ k: string; v?: string }> = ({ k, v }) => (
     <View style={styles.row}>
         <Text style={styles.label}>{k}</Text>
-        <Text style={styles.value} selectable>{v || '—'}</Text>
+        <Text style={styles.value} selectable>{v || '-'}</Text>
     </View>
 );
 

@@ -10,10 +10,10 @@
 // Schema: supabase/price_alerts_schema.sql
 // Deploy: supabase/functions/price-alert-cron/README.md
 
-// @ts-ignore — Deno standard lib is resolved at runtime by Supabase.
+// @ts-ignore - Deno standard lib is resolved at runtime by Supabase.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 
-// @ts-ignore — Deno global is injected at runtime.
+// @ts-ignore - Deno global is injected at runtime.
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 // @ts-ignore
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -192,7 +192,7 @@ function formatPrice(price: number): string {
 
 // ─── MAIN ─────────────────────────────────────────────────────────────────
 
-// @ts-ignore — Deno.serve is the Supabase Edge Function entrypoint.
+// @ts-ignore - Deno.serve is the Supabase Edge Function entrypoint.
 Deno.serve(async (_req: Request) => {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
@@ -223,7 +223,7 @@ Deno.serve(async (_req: Request) => {
     const settingsByWallet = new Map<string, any>();
     (settings ?? []).forEach((s: any) => settingsByWallet.set(s.user_wallet, s));
 
-    // 3. Deduplicate tokens and fetch prices concurrently — we only hit the
+    // 3. Deduplicate tokens and fetch prices concurrently - we only hit the
     //    upstream APIs once per unique (chain_id, token_address).
     const priceKey = (chainId: number, address: string) =>
         `${chainId}:${String(address).toLowerCase()}`;
@@ -324,7 +324,7 @@ Deno.serve(async (_req: Request) => {
                         to: t,
                         sound: 'default',
                         title: `${row.symbol} Price Update`,
-                        body: `${row.symbol} is ${direction} ${absPct}% — now at ${formattedPrice}`,
+                        body: `${row.symbol} is ${direction} ${absPct}% - now at ${formattedPrice}`,
                         data: {
                             type: 'price_alert',
                             symbol: row.symbol,

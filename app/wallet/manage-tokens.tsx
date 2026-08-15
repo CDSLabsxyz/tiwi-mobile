@@ -23,7 +23,7 @@ import { erc20Abi, formatUnits } from 'viem';
 const PasteIcon = require('@/assets/wallet/clipboard.svg');
 const HYPEREVM_ICON = { uri: 'https://assets.coingecko.com/coins/images/50882/small/hyperliquid.jpg' };
 
-// Free public RPC endpoints — no API key required
+// Free public RPC endpoints - no API key required
 const TRUSTWALLET_SLUGS: Record<number, string> = {
     1: 'ethereum',
     56: 'smartchain',
@@ -77,7 +77,7 @@ async function hasContractCode(chainId: number, addr: string): Promise<boolean> 
 }
 
 /**
- * Read a token's identity straight off the chain — no price feed, no indexer,
+ * Read a token's identity straight off the chain - no price feed, no indexer,
  * no allowlist. `balanceOf` is folded in when we know the user's address.
  */
 async function readErc20(chainId: number, addr: string, walletAddr?: string): Promise<EvmHit | null> {
@@ -108,8 +108,8 @@ async function readErc20(chainId: number, addr: string, walletAddr?: string): Pr
 }
 
 /**
- * Find the chain(s) an ERC-20 is deployed on. Probes in two waves — selected
- * chain + majors, then everything else — and stops at the first wave that
+ * Find the chain(s) an ERC-20 is deployed on. Probes in two waves - selected
+ * chain + majors, then everything else - and stops at the first wave that
  * turns anything up, so a BSC token costs 8 `eth_getCode` calls, not 60.
  */
 async function scanEvmChains(addr: string, walletAddr: string | undefined, preferred?: number): Promise<EvmHit[]> {
@@ -232,7 +232,7 @@ const CHAINS = [
     { id: 118, name: 'Cosmos', icon: require('@/assets/home/chains/cosmos.svg') },
 ];
 
-// Synthesized native tokens — chain natives have no ERC-20 contract so they
+// Synthesized native tokens - chain natives have no ERC-20 contract so they
 // never appear in the token-list API. Each entry uses the 0x0 / chain-specific
 // sentinel address so getDexScreenerLogo resolves the right logo via the
 // NATIVE_TOKEN_ADDRESSES mapping in tokenLogoService.
@@ -243,19 +243,19 @@ const NATIVE_TOKENS: any[] = [
     { chainId: 137, symbol: 'POL', name: 'Polygon', decimals: 18, address: EVM_NATIVE_SENTINEL, isNative: true, _primaryNative: true },
     { chainId: 43114, symbol: 'AVAX', name: 'Avalanche', decimals: 18, address: EVM_NATIVE_SENTINEL, isNative: true, _primaryNative: true },
     { chainId: 999, symbol: 'HYPE', name: 'HyperEVM', decimals: 18, address: EVM_NATIVE_SENTINEL, isNative: true, _primaryNative: true },
-    // Solana's System Program, not the wrapped-SOL mint — `So111…112` is WSOL,
+    // Solana's System Program, not the wrapped-SOL mint - `So111…112` is WSOL,
     // a separate SPL holding that gets its own row when the user has one.
     { chainId: 7565164, symbol: 'SOL', name: 'Solana', decimals: 9, address: '11111111111111111111111111111111', isNative: true, _primaryNative: true },
     { chainId: 728126428, symbol: 'TRX', name: 'TRON', decimals: 6, address: 'native', isNative: true, _primaryNative: true },
     { chainId: 1100, symbol: 'TON', name: 'Toncoin', decimals: 9, address: 'native', isNative: true, _primaryNative: true },
     { chainId: 118, symbol: 'ATOM', name: 'Cosmos Hub', decimals: 6, address: 'uatom', isNative: true, _primaryNative: true },
-    // Per-L2 ETH — only surfaced when that chain's filter is active
+    // Per-L2 ETH - only surfaced when that chain's filter is active
     { chainId: 8453, symbol: 'ETH', name: 'Ethereum (Base)', decimals: 18, address: EVM_NATIVE_SENTINEL, isNative: true },
     { chainId: 42161, symbol: 'ETH', name: 'Ethereum (Arbitrum)', decimals: 18, address: EVM_NATIVE_SENTINEL, isNative: true },
     { chainId: 10, symbol: 'ETH', name: 'Ethereum (Optimism)', decimals: 18, address: EVM_NATIVE_SENTINEL, isNative: true },
 ];
 
-// Curated blue-chip + ecosystem tokens — prepended after natives so the
+// Curated blue-chip + ecosystem tokens - prepended after natives so the
 // default browse list always shows recognizable assets even when the
 // tokens API's "hot" category is full of long-tail spam. Addresses are
 // the canonical, widely-deployed contracts on each chain.
@@ -313,7 +313,7 @@ export default function ManageTokensScreen() {
     const [tokenInfo, setTokenInfo] = useState<any>(null);
     const [error, setError] = useState('');
     const [addModalVisible, setAddModalVisible] = useState(false);
-    // Token queued for removal — the trash icon only sets this; the
+    // Token queued for removal - the trash icon only sets this; the
     // actual delete happens after the user confirms in the modal.
     const [tokenToRemove, setTokenToRemove] = useState<{ address: string; chainId: number; symbol: string } | null>(null);
 
@@ -335,7 +335,7 @@ export default function ManageTokensScreen() {
     const fetchedTokens = balanceData?.tokens || [];
 
     // Keep custom-token balances live, same as the wallet tab does. Without
-    // this the row renders the snapshot taken at add time — a token added
+    // this the row renders the snapshot taken at add time - a token added
     // before it was funded (or one whose lookup couldn't reach the wallet's
     // EVM address) shows no amount forever, because the portfolio route
     // filters out cheap/long-tail holdings and never re-supplies it.
@@ -351,7 +351,7 @@ export default function ManageTokensScreen() {
 
         (async () => {
             for (const ct of myTokens) {
-                // Fast path — the portfolio route already carries this token.
+                // Fast path - the portfolio route already carries this token.
                 const match = fetchedTokens.find((t: any) =>
                     t.address?.toLowerCase() === ct.address.toLowerCase() && Number(t.chainId) === ct.chainId
                 );
@@ -464,20 +464,20 @@ export default function ManageTokensScreen() {
         return Array.from(map.values());
     }, [fetchedTokens, myTokens, hiddenWalletTokens, walletKey, isWalletTokenHidden]);
 
-    // Live token search — mirrors the Receive Asset page. When the user
+    // Live token search - mirrors the Receive Asset page. When the user
     // types, we hit the tokens list endpoint server-side so any token
     // on a supported chain can be found, not just the top-N preloaded.
     const [browseQuery, setBrowseQuery] = useState('');
     const [chainFilter, setChainFilter] = useState<number | null>(null);
 
-    // Chain filter applies to the whole page — Your Tokens and Browse both
+    // Chain filter applies to the whole page - Your Tokens and Browse both
     // narrow to the selected chain so the user sees a coherent per-chain view.
     const filteredYourTokens = useMemo(
         () => chainFilter ? yourTokens.filter(t => t.chainId === chainFilter) : yourTokens,
         [yourTokens, chainFilter]
     );
 
-    // Fetch a wider pool than we render — spam/CJK/impostor filtering and
+    // Fetch a wider pool than we render - spam/CJK/impostor filtering and
     // Your-Tokens dedupe can easily drop 30-50% of results, so pulling 150
     // upstream lets us still land at the 50-per-chain display target below.
     const { data: searchResponse, isLoading: isSearchingBrowse } = useTokens({
@@ -487,7 +487,7 @@ export default function ManageTokensScreen() {
         enabled: browseQuery.trim().length > 0,
     });
 
-    // No category filter — the API should return the full sorted token
+    // No category filter - the API should return the full sorted token
     // set (by liquidity/popularity). The "hot" bucket was too narrow and
     // gated non-EVM chains to near-empty lists.
     const { data: defaultBrowseResponse, isLoading: isLoadingBrowseDefaults } = useTokens({
@@ -521,7 +521,7 @@ export default function ManageTokensScreen() {
             )
             : eligibleNatives;
 
-        // Curated blue-chips + TWC/WKC — filter by chain chip, then by query.
+        // Curated blue-chips + TWC/WKC - filter by chain chip, then by query.
         const eligibleFeatured = FEATURED_TOKENS.filter(f =>
             chainFilter ? f.chainId === chainFilter : true
         );
@@ -535,7 +535,7 @@ export default function ManageTokensScreen() {
 
         const raw = [...matchingNatives, ...matchingFeatured, ...apiTokens];
 
-        // Native symbol per chain — anything on these (symbol, chainId) pairs
+        // Native symbol per chain - anything on these (symbol, chainId) pairs
         // is treated as the chain's native asset and floats to the top.
         const NATIVE_SYMBOL_BY_CHAIN: Record<number, string> = {
             1: 'ETH',
@@ -572,27 +572,27 @@ export default function ManageTokensScreen() {
                 .map((wt: any) => `${wt.chainId}-${(wt.address || '').toLowerCase()}`)
         );
 
-        // Keys for every row already shown in the "Your Tokens" section —
+        // Keys for every row already shown in the "Your Tokens" section -
         // browse list should never display those (they live up top already).
         const yourTokenKeys = new Set(yourTokens.map(y => y.key));
-        // Secondary index by chainId+symbol — wallet-balance APIs use varying
+        // Secondary index by chainId+symbol - wallet-balance APIs use varying
         // native sentinels (0x0, 'native', 'uatom', wrapped address) so a
         // strict address match can miss natives that are already held.
         const yourTokenSymbolKeys = new Set(
             yourTokens.map(y => `${y.chainId}-${(y.symbol || '').toUpperCase()}`)
         );
-        // Chain-agnostic symbol set — used only for PRIMARY natives shown
+        // Chain-agnostic symbol set - used only for PRIMARY natives shown
         // on the "All" tab. Prevents e.g. synthetic mainnet ETH appearing
         // in browse when the user already holds ETH on Base / Arb / Op.
         const yourTokenSymbols = new Set(
             yourTokens.map(y => (y.symbol || '').toUpperCase())
         );
 
-        // CJK detector — catches Chinese/Japanese/Korean chars anywhere
+        // CJK detector - catches Chinese/Japanese/Korean chars anywhere
         // in the symbol or name (spammy impersonation tokens often use these).
         const CJK_RE = /[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]/;
 
-        // Canonical chain for each chain-native symbol — on the "All" tab
+        // Canonical chain for each chain-native symbol - on the "All" tab
         // a token with one of these symbols must live on its home chain
         // or it's either a bridged wrapper or an impersonator.
         const PRIMARY_NATIVE_SYMBOL_TO_CHAIN: Record<string, number> = {
@@ -611,7 +611,7 @@ export default function ManageTokensScreen() {
         const filtered = raw.filter((t: any) => {
             if (!t?.address) return false;
 
-            // Hard chain guard — the API occasionally returns cross-chain
+            // Hard chain guard - the API occasionally returns cross-chain
             // results (bridged POL on BSC, wrapped BNB on ETH, etc.) even
             // when chains=[X] is passed. Enforce it strictly here so the
             // BSC tab never shows POL and the ETH tab never shows BNB.
@@ -629,7 +629,7 @@ export default function ManageTokensScreen() {
             const symbol = (t.symbol || '').toLowerCase();
             const address = (t.address || '').toLowerCase();
 
-            // Exclude anything already surfaced in "Your Tokens" — match by
+            // Exclude anything already surfaced in "Your Tokens" - match by
             // address, or (for natives) by symbol since the balance API's
             // native address format may differ from our synthetic sentinel.
             if (yourTokenKeys.has(`${t.chainId}-${address}`)) return false;
@@ -694,7 +694,7 @@ export default function ManageTokensScreen() {
     }, [searchResponse, defaultBrowseResponse, browseQuery, balanceData, yourTokens]);
 
     // Tap a browse-list "+": open the add modal and run the same full
-    // on-chain lookup the "Lookup Token" button does — fetches live
+    // on-chain lookup the "Lookup Token" button does - fetches live
     // balance, decimals and price so the preview matches the manual flow.
     const handleBrowsePick = (t: any) => {
         if (!t?.address || !t?.chainId) return;
@@ -730,7 +730,7 @@ export default function ManageTokensScreen() {
         setTokenInfo(null);
 
         const group = walletGroups.find(g => g.id === activeGroupId);
-        // `activeAddress` is the fallback for wallets with no active group —
+        // `activeAddress` is the fallback for wallets with no active group -
         // without it the on-chain reads were skipped entirely and every lookup
         // collapsed onto the price API, which is what produced the bogus
         // "not found on any supported network" for perfectly real tokens.
@@ -773,7 +773,7 @@ export default function ManageTokensScreen() {
             cosmosAddr ? fetchCosmosBalance(addr, cosmosAddr).catch(() => null) : Promise.resolve(null),
         ]);
 
-        // Price/logo, keyed by chain — enrichment only. A token with no price
+        // Price/logo, keyed by chain - enrichment only. A token with no price
         // feed is still a real token, so nothing below is allowed to reject it.
         const infoByChain = new Map<number, any>();
         tokenInfoResults.forEach(r => { if (r) infoByChain.set(r.chainId, r.info); });
@@ -870,7 +870,7 @@ export default function ManageTokensScreen() {
         if (tokenData?.chainId === 118) applyNonEvmBalance(cosmosBal);
 
         // Last resort: a non-EVM address nothing recognised, but a balance read
-        // came back. That proves the token exists on that chain — take it.
+        // came back. That proves the token exists on that chain - take it.
         if (!tokenData) {
             const nonEvm: [number, any][] = [[7565164, solBal], [728126428, tronBal], [1100, tonBal], [118, cosmosBal]];
             const hit = nonEvm.find(([, r]) => r && parseFloat(r.balanceFormatted || '0') > 0);
@@ -967,7 +967,7 @@ export default function ManageTokensScreen() {
                 >
                     <Text style={styles.subtitle}>Search popular tokens, toggle ones you have added, or paste a contract address.</Text>
 
-                    {/* Global chain filter — narrows both Your Tokens and Browse */}
+                    {/* Global chain filter - narrows both Your Tokens and Browse */}
                     <ScrollView
                         horizontal
                         showsHorizontalScrollIndicator={false}
@@ -994,7 +994,7 @@ export default function ManageTokensScreen() {
                         ))}
                     </ScrollView>
 
-                    {/* Your Tokens — wallet holdings + added tokens with show/hide toggle */}
+                    {/* Your Tokens - wallet holdings + added tokens with show/hide toggle */}
                     {filteredYourTokens.length > 0 && (
                         <View style={styles.section}>
                             <Text style={styles.sectionTitle}>Your Tokens</Text>
@@ -1062,7 +1062,7 @@ export default function ManageTokensScreen() {
                         </View>
                     )}
 
-                    {/* Search & Browse tokens — live server-side search via tokens API */}
+                    {/* Search & Browse tokens - live server-side search via tokens API */}
                     <View style={styles.section}>
                         <Text style={styles.sectionTitle}>Search Tokens</Text>
                         <View style={styles.inputWrapper}>
@@ -1157,7 +1157,7 @@ export default function ManageTokensScreen() {
                 </ScrollView>
             </KeyboardAvoidingView>
 
-            {/* Add by Contract Address — opens from the header + button */}
+            {/* Add by Contract Address - opens from the header + button */}
             <Modal visible={addModalVisible} transparent animationType="fade" onRequestClose={closeAddModal}>
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalCard}>
@@ -1275,7 +1275,7 @@ export default function ManageTokensScreen() {
                                             </View>
                                         </View>
 
-                                        {/* Which chain this actually resolved on — the scan covers far
+                                        {/* Which chain this actually resolved on - the scan covers far
                                             more networks than the chip row above, so the chosen chain
                                             is worth stating outright. */}
                                         <Text style={styles.previewChain}>

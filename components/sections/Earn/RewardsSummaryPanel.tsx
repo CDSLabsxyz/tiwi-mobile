@@ -6,11 +6,11 @@
  *   Ended    → Claimed  | Withdrawn
  *
  * "Ended" covers both fully-exited positions (status withdrawn/completed) and
- * pools whose on-chain endTime has passed — the caller decides via `hasEnded`.
+ * pools whose on-chain endTime has passed - the caller decides via `hasEnded`.
  *
  * Claimed math:
- *   Active — explicit Claim-button total only (`totalClaimed`).
- *   Ended  — `totalClaimed` + `rewardsEarned` (the auto-harvest leg of
+ *   Active - explicit Claim-button total only (`totalClaimed`).
+ *   Ended  - `totalClaimed` + `rewardsEarned` (the auto-harvest leg of
  *            Max-unstake is recorded in rewardsEarned, so both buckets
  *            together represent every reward that ever left the contract).
  */
@@ -32,7 +32,7 @@ interface Props {
     /** Token symbol suffix for the Withdrawn value (the STAKING token). */
     tokenSymbol?: string;
     /**
-     * Symbol for the CLAIMED / PENDING values — the pool's REWARD token, which
+     * Symbol for the CLAIMED / PENDING values - the pool's REWARD token, which
      * is a different asset from `tokenSymbol` on a "stake A, earn B" pool.
      */
     rewardSymbol?: string;

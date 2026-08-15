@@ -3,7 +3,7 @@
  *
  * Background pollers (notifications, balances, …) keep running while the device
  * is offline, on a captive portal, or switching networks. Those failures are
- * expected and already handled — logging them with `console.error` pops React
+ * expected and already handled - logging them with `console.error` pops React
  * Native's red LogBox overlay on every poll, which buries real errors.
  *
  * Use `logNetworkAwareError` so a dropped request degrades to a warning while

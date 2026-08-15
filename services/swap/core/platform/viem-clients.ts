@@ -1,5 +1,5 @@
 /**
- * Viem clients — React Native port.
+ * Viem clients - React Native port.
  *
  * The web original (`lib/frontend/utils/viem-clients.ts`) resolves wallet
  * clients from an injected browser provider. On mobile there is no injected
@@ -7,8 +7,8 @@
  * `LocalSignerEngine`, so the wallet-client half of this module lives in
  * `platform/wallet-helpers.ts` and this file only owns:
  *
- *   - `getChainForId`  — a viem `Chain` for ANY EVM chain in the registry.
- *   - `getCachedPublicClient` — a per-chain, multi-endpoint read client.
+ *   - `getChainForId`  - a viem `Chain` for ANY EVM chain in the registry.
+ *   - `getCachedPublicClient` - a per-chain, multi-endpoint read client.
  *
  * `getChainForId` is load-bearing: the app's older `SignerUtils.getChainById`
  * silently falls back to `mainnet` for unknown ids, which would sign a swap
@@ -103,7 +103,7 @@ export function getChainForId(chainId: number): Chain {
 
 /**
  * Same-shape helper as `getChainForId` but returns undefined instead of
- * throwing — for call sites that want to degrade rather than fail.
+ * throwing - for call sites that want to degrade rather than fail.
  */
 export function tryGetChainForId(chainId: number): Chain | undefined {
     try {
@@ -124,7 +124,7 @@ const publicClientCache = new Map<number, PublicClient>();
  *
  * This is the single biggest lever on *perceived* swap speed. viem's default is
  * 4000ms, so `waitForTransactionReceipt` can sit idle for up to 4s AFTER a
- * transaction is already mined — on BSC (~0.75s blocks) that's ~5x the actual
+ * transaction is already mined - on BSC (~0.75s blocks) that's ~5x the actual
  * confirmation time spent doing nothing. A multi-leg swap waits on 3–4 receipts
  * (fee transfer, approve, leg 1, leg 2), so the default was adding well over
  * ten seconds of pure dead time to a 2-leg swap.
@@ -144,7 +144,7 @@ const POLLING_INTERVAL_MS: Record<number, number> = {
     999: 500,      // HyperEVM
 };
 
-/** Poll interval for a chain — defaults to 1s, which beats viem's 4s anywhere. */
+/** Poll interval for a chain - defaults to 1s, which beats viem's 4s anywhere. */
 export function getPollingInterval(chainId: number): number {
     return POLLING_INTERVAL_MS[chainId] ?? 1_000;
 }
@@ -163,7 +163,7 @@ export function getPollingInterval(chainId: number): number {
  *   bsc.drpc.org            → rate-limit error for both calls
  *
  * viem maps batched responses back by id, so the two broken providers make
- * every call in the batch resolve to nothing — surfacing as
+ * every call in the batch resolve to nothing - surfacing as
  * `The contract function "balanceOf" returned no data ("0x")`. Because
  * `fallback` rotates/ranks across providers, it failed intermittently.
  *
@@ -210,7 +210,7 @@ export function getCachedPublicClient(chainId: number): PublicClient {
 /**
  * Transport for SIGNING clients.
  *
- * Ordered failover across every configured endpoint (no latency ranking — the
+ * Ordered failover across every configured endpoint (no latency ranking - the
  * ranker's background probes are wasted requests on a client that's idle
  * between swaps).
  *
@@ -238,7 +238,7 @@ export function isChainSupported(chainId: number): boolean {
 
 /**
  * Present so copied web executors that import it keep compiling. On mobile
- * there is no external provider to talk to — callers must go through
+ * there is no external provider to talk to - callers must go through
  * `getEVMWalletClient` in `platform/wallet-helpers.ts`.
  */
 export async function getWalletClientForChain(): Promise<never> {

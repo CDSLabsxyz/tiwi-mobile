@@ -13,7 +13,7 @@ const PasteIcon = require('@/assets/wallet/clipboard.svg');
 import { createPublicClient, http, erc20Abi, formatUnits } from 'viem';
 import { mainnet, bsc, polygon, base, arbitrum, optimism, avalanche } from 'viem/chains';
 
-// Free public RPC endpoints — no API key required
+// Free public RPC endpoints - no API key required
 const TRUSTWALLET_SLUGS: Record<number, string> = {
     1: 'ethereum',
     56: 'smartchain',
@@ -245,7 +245,7 @@ export const AddTokenModal: React.FC<AddTokenModalProps> = ({ visible, onClose, 
         const allChains = [1, 56, 137, 42161, 8453, 10, 43114, 59144, 250, 42220, 100, 7565164, 728126428, 1100, 118];
         const evmChains = Object.keys(CHAIN_CONFIG).map(Number);
 
-        // Fire EVERYTHING in parallel — this is the big speedup
+        // Fire EVERYTHING in parallel - this is the big speedup
         const [tokenInfoResults, searchResult, onChainResults, solBal, tronBal, tonBal, cosmosBal] = await Promise.all([
             // 1. TIWI tokenInfo across all chains
             Promise.all(allChains.map(async (cid) => {
@@ -276,7 +276,7 @@ export const AddTokenModal: React.FC<AddTokenModalProps> = ({ visible, onClose, 
 
         let tokenData: any = null;
 
-        // Pick best tokenInfo result — prefer selected chain, then first match
+        // Pick best tokenInfo result - prefer selected chain, then first match
         const tokenInfoMatch = tokenInfoResults.find(r => r?.chainId === selectedChain && r?.info?.pool?.priceUsd)
             || tokenInfoResults.find((r): r is NonNullable<typeof r> => r !== null);
 
@@ -317,7 +317,7 @@ export const AddTokenModal: React.FC<AddTokenModalProps> = ({ visible, onClose, 
             }
         }
 
-        // Pick best on-chain EVM result — balance > API match > selected chain > any valid
+        // Pick best on-chain EVM result - balance > API match > selected chain > any valid
         type ChosenResult = NonNullable<typeof onChainResults[number]>;
         const withBalance = onChainResults
             .filter((r): r is ChosenResult => r !== null && parseFloat(r.balanceFormatted) > 0)
@@ -394,7 +394,7 @@ export const AddTokenModal: React.FC<AddTokenModalProps> = ({ visible, onClose, 
             return;
         }
 
-        // Ensure we always have a logo — try multiple fallback sources
+        // Ensure we always have a logo - try multiple fallback sources
         if (!tokenData.logoURI || tokenData.logoURI === '') {
             tokenData.logoURI =
                 getTokenLogo(tokenData.symbol, tokenData.chainId, tokenData.address) ||

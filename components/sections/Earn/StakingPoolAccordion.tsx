@@ -3,21 +3,19 @@ import { colors } from '@/constants/colors';
 import { useStakingPool } from '@/hooks/useStakingPool';
 import { formatCompactNumber } from '@/utils/formatting';
 import AntDesign from '@expo/vector-icons/AntDesign';
-import { Image } from 'expo-image';
 import React, { useState } from 'react';
 import { LayoutAnimation, Platform, StyleSheet, Text, TouchableOpacity, UIManager, View } from 'react-native';
+import { PoolTokenIcon } from './PoolTokenIcon';
 
 // Enable LayoutAnimation for Android
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
     UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-const TWCIcon = require('../../../assets/home/tiwicat.svg');
-
 interface StakingPoolAccordionProps {
     /** Legacy on-chain numeric id OR DB UUID (V2). */
     poolId: number | string;
-    /** V2 per-pool contract address — when present, reads go directly to it. */
+    /** V2 per-pool contract address - when present, reads go directly to it. */
     poolContractAddress?: string;
     decimals?: number;
     /** Admin-set pool name. When present it becomes the title; symbol shows underneath. */
@@ -25,6 +23,8 @@ interface StakingPoolAccordionProps {
     tokenSymbol: string;
     tokenName: string;
     tokenIcon?: any;
+    rewardTokenSymbol?: string;
+    rewardTokenIcon?: any;
     minStakingPeriod?: string;
     onStakePress: () => void;
 }
@@ -36,17 +36,19 @@ export const StakingPoolAccordion: React.FC<StakingPoolAccordionProps> = ({
     name,
     tokenSymbol,
     tokenIcon,
+    rewardTokenSymbol,
+    rewardTokenIcon,
     minStakingPeriod,
     onStakePress
 }) => {
     const [isExpanded, setIsExpanded] = useState(false);
     // List rows read nothing that the event-log history scan produces, so skip
-    // it — it is the single most expensive thing this hook can do.
+    // it - it is the single most expensive thing this hook can do.
     const stakingData = useStakingPool(poolId, decimals ?? 9, {
         poolContractAddress,
         skipHistoryScan: true,
     });
-    const { apr, lockPeriod, tvlCompact, maxTvlCompact, activeStakersCount, isCoreLoading } = stakingData;
+    const { apr, lockPeriod, tvlCompact, activeStakersCount, isCoreLoading } = stakingData;
     const isLoading = isCoreLoading;
     const displayLockPeriod = minStakingPeriod || lockPeriod || 'No Lock';
 
@@ -82,10 +84,13 @@ export const StakingPoolAccordion: React.FC<StakingPoolAccordionProps> = ({
                 style={styles.header}
             >
                 <View style={styles.tokenInfo}>
-                    <Image
-                        source={tokenIcon || TWCIcon}
+                    <PoolTokenIcon
+                        tokenIcon={tokenIcon}
+                        tokenSymbol={tokenSymbol}
+                        rewardTokenIcon={rewardTokenIcon}
+                        rewardTokenSymbol={rewardTokenSymbol}
+                        size={36}
                         style={styles.tokenIcon}
-                        contentFit="cover"
                     />
                     <View style={styles.titleColumn}>
                         <Text style={styles.symbolText} numberOfLines={1}>
@@ -163,9 +168,6 @@ const styles = StyleSheet.create({
         marginRight: 8,
     },
     tokenIcon: {
-        width: 36,
-        height: 36,
-        borderRadius: 18,
         marginRight: 10,
     },
     titleColumn: {

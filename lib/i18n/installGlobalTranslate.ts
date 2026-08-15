@@ -4,7 +4,7 @@
  * RN 0.81 exposes `Text` via a lazy getter on the `react-native` module
  * (`get Text() { return require('./Libraries/Text/Text').default; }`).
  * Babel compiles `import { Text } from 'react-native'` to usage-site reads
- * like `(0, _reactNative.Text)(...)` — so if we overwrite the `Text`
+ * like `(0, _reactNative.Text)(...)` - so if we overwrite the `Text`
  * property on the exports object *before any component renders*, every
  * downstream call picks up the wrapped version.
  *
@@ -47,7 +47,7 @@ type TextComponent = React.ComponentType<TextProps & { ref?: React.Ref<any> }>;
 function createTranslatedText(Base: TextComponent): TextComponent {
     const Wrapped = React.forwardRef<any, TextProps>(function TiwiTranslatedText(props, ref) {
         // Subscribe to the current language and the auto-translate cache
-        // version. Both are plain useSelectors — cheap and selective.
+        // version. Both are plain useSelectors - cheap and selective.
         const language = useLocaleStore((s) => s.language);
         useAutoTranslateStore((s) => s.version);
 

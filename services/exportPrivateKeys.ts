@@ -21,7 +21,7 @@
  * state when the export screen unmounts.
  */
 
-// Only BIP32/BIP39 load with this module — they are small and every chain needs
+// Only BIP32/BIP39 load with this module - they are small and every chain needs
 // the seed. Everything else (@solana/web3.js, bs58, the Sui/Aptos/Starknet SDKs)
 // is imported inside its own task, so loading this module does not stall the
 // cheap keys behind a heavy SDK's initialisation.
@@ -30,7 +30,7 @@ import { mnemonicToSeedSync } from '@scure/bip39';
 import { tonKeyPairFromBip39 } from '@/services/chainKeys';
 
 export interface ExportedKey {
-    /** Stable id — matches the network list's ids where one exists. */
+    /** Stable id - matches the network list's ids where one exists. */
     id: string;
     /** Ecosystem label shown to the user. */
     label: string;
@@ -64,7 +64,7 @@ export interface DeriveOptions {
     /**
      * Called as each key resolves, so the screen can render the cheap keys
      * immediately instead of waiting on the slowest chain. Keys arrive out of
-     * order — sort by `displayOrder(key.id)`.
+     * order - sort by `displayOrder(key.id)`.
      */
     onKey?: (key: ExportedKey) => void;
 }
@@ -84,12 +84,12 @@ export function displayOrder(id: string): number {
  * Derive the exportable private keys for every ecosystem the wallet holds.
  *
  * PERFORMANCE: every derivation is independent once the BIP39 seed exists, so
- * they all run CONCURRENTLY. Serially they add up to seconds on device — the
+ * they all run CONCURRENTLY. Serially they add up to seconds on device - the
  * Sui and Aptos SDKs alone cost ~600ms and ~750ms to initialise, and awaiting
  * them one at a time made the export screen sit on a spinner. Parallel, the
  * wall clock is the single slowest chain. Do not reintroduce sequential awaits.
  *
- * Each derivation is isolated — one failing chain never blocks the others.
+ * Each derivation is isolated - one failing chain never blocks the others.
  */
 export async function deriveExportablePrivateKeys(
     mnemonic: string,
@@ -120,7 +120,7 @@ export async function deriveExportablePrivateKeys(
     const evmKey = evmPk ? `0x${toHex(evmPk)}` : undefined;
 
     await Promise.all([
-        // EVM — secp256k1 m/44'/60'/0'/0/0. Imports into MetaMask/Rabby/Trust
+        // EVM - secp256k1 m/44'/60'/0'/0/0. Imports into MetaMask/Rabby/Trust
         // and signs on every EVM network.
         task('EVM', () => evmKey ? [{
             id: 'ETH', label: 'Ethereum (EVM)', symbol: 'ETH', format: 'Hex',
@@ -128,8 +128,8 @@ export async function deriveExportablePrivateKeys(
             covers: 'Ethereum, BNB Chain, Polygon, Arbitrum, Base, Optimism, Avalanche, Linea, zkSync, Scroll, Sei & every other EVM network',
         }] : []),
 
-        // Injective — a Cosmos-SDK chain (inj1… addresses) that signs with
-        // Ethereum's eth_secp256k1 curve, so its private key IS the EVM key —
+        // Injective - a Cosmos-SDK chain (inj1… addresses) that signs with
+        // Ethereum's eth_secp256k1 curve, so its private key IS the EVM key -
         // NOT the m/44'/118' Cosmos key. Listed under its own name so users
         // find it.
         task('Injective', () => evmKey ? [{
@@ -138,7 +138,7 @@ export async function deriveExportablePrivateKeys(
             covers: 'Same key as your Ethereum (EVM) wallet',
         }] : []),
 
-        // Tron — secp256k1 m/44'/195'/0'/0/0. 64-char hex (TronLink format).
+        // Tron - secp256k1 m/44'/195'/0'/0/0. 64-char hex (TronLink format).
         task('Tron', () => {
             const pk = hd.derive("m/44'/195'/0'/0/0").privateKey;
             return pk ? [{
@@ -147,7 +147,7 @@ export async function deriveExportablePrivateKeys(
             }] : [];
         }),
 
-        // Cosmos — secp256k1 m/44'/118'/0'/0/0. One key for the whole family.
+        // Cosmos - secp256k1 m/44'/118'/0'/0/0. One key for the whole family.
         task('Cosmos', () => {
             const pk = hd.derive("m/44'/118'/0'/0/0").privateKey;
             return pk ? [{
@@ -157,7 +157,7 @@ export async function deriveExportablePrivateKeys(
             }] : [];
         }),
 
-        // Stacks — secp256k1 m/44'/5757'/0'/0/0. Hiro Wallet expects the
+        // Stacks - secp256k1 m/44'/5757'/0'/0/0. Hiro Wallet expects the
         // compressed form: 32-byte key with a trailing 0x01 marker.
         task('Stacks', () => {
             const pk = hd.derive("m/44'/5757'/0'/0/0").privateKey;
@@ -167,7 +167,7 @@ export async function deriveExportablePrivateKeys(
             }] : [];
         }),
 
-        // Solana — ed25519 m/44'/501'/0'/0'. Base58 of the 64-byte secret key
+        // Solana - ed25519 m/44'/501'/0'/0'. Base58 of the 64-byte secret key
         // (the exact string Phantom/Solflare import).
         task('Solana', async () => {
             const [{ Keypair }, { derivePath }, bs58] = await Promise.all([
@@ -182,7 +182,7 @@ export async function deriveExportablePrivateKeys(
             }];
         }),
 
-        // TON — ed25519 SLIP-0010 m/44'/607'/0'. Raw 64-byte secret key as hex.
+        // TON - ed25519 SLIP-0010 m/44'/607'/0'. Raw 64-byte secret key as hex.
         task('TON', async () => {
             const { secretKey } = await tonKeyPairFromBip39(m);
             return [{
@@ -191,7 +191,7 @@ export async function deriveExportablePrivateKeys(
             }];
         }),
 
-        // Sui and Aptos — both plain SLIP-0010 ed25519 seeds. Their SDKs cost
+        // Sui and Aptos - both plain SLIP-0010 ed25519 seeds. Their SDKs cost
         // ~600ms and ~750ms to initialise for what is a 32-byte derivation and
         // an encoding step, which was most of this screen's load time. Derived
         // from primitives instead; `scripts/verify-exported-keys.mjs` re-derives
@@ -200,7 +200,7 @@ export async function deriveExportablePrivateKeys(
             const { derivePath } = await import('ed25519-hd-key');
             const keys: ExportedKey[] = [];
 
-            // Sui — `suiprivkey1…`: bech32 of [scheme flag 0x00, …32-byte seed].
+            // Sui - `suiprivkey1…`: bech32 of [scheme flag 0x00, …32-byte seed].
             const suiSeed = derivePath("m/44'/784'/0'/0'/0'", seedHex).key;
             const bech32mod: any = await import('bech32');
             const bech32 = bech32mod.bech32 ?? bech32mod.default?.bech32 ?? bech32mod.default;
@@ -210,7 +210,7 @@ export async function deriveExportablePrivateKeys(
                 privateKey: bech32.encode('suiprivkey', bech32.toWords(new Uint8Array([0, ...suiSeed]))),
             });
 
-            // Aptos — `0x…` hex of the 32-byte seed (Petra import format).
+            // Aptos - `0x…` hex of the 32-byte seed (Petra import format).
             keys.push({
                 id: 'APTOS', label: 'Aptos', symbol: 'APT', format: 'Hex',
                 path: "m/44'/637'/0'/0'/0'",
@@ -220,7 +220,7 @@ export async function deriveExportablePrivateKeys(
             return keys;
         }),
 
-        // Bitcoin family — WIF, the format Electrum/Core/Litecoin Core import.
+        // Bitcoin family - WIF, the format Electrum/Core/Litecoin Core import.
         // Each is a separate BIP44/84 account, so each gets its own key. They
         // share one module load, so they stay in a single task.
         task('Bitcoin family', async () => {
@@ -243,7 +243,7 @@ export async function deriveExportablePrivateKeys(
             return keys;
         }),
 
-        // Starknet — the GROUND key, not the raw BIP32 child. Argent/Braavos
+        // Starknet - the GROUND key, not the raw BIP32 child. Argent/Braavos
         // expect the grinded stark key, which the address was derived from.
         task('Starknet', async () => {
             const pk = hd.derive("m/44'/9004'/0'/0/0").privateKey;
@@ -256,7 +256,7 @@ export async function deriveExportablePrivateKeys(
             }];
         }),
 
-        // Polkadot — sr25519. polkadot.js imports the 32-byte "raw seed", which
+        // Polkadot - sr25519. polkadot.js imports the 32-byte "raw seed", which
         // for this scheme is the substrate mini-secret (see derivePolkadotAddress).
         task('Polkadot', async () => {
             const { mnemonicToEntropy } = await import('@scure/bip39');

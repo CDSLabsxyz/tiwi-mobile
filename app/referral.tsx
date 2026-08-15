@@ -26,7 +26,7 @@ export default function ReferralScreen() {
     const router = useRouter();
     const { bottom } = useSafeAreaInsets();
     const { walletGroups, activeGroupId } = useWalletStore();
-    // Always use EVM address for referrals — ties all chains to one referral identity
+    // Always use EVM address for referrals - ties all chains to one referral identity
     const activeGroup = walletGroups.find(g => g.id === activeGroupId);
     const address = activeGroup?.addresses?.EVM || useWalletStore.getState().address;
 
@@ -98,7 +98,7 @@ export default function ReferralScreen() {
             return;
         }
 
-        // Check with backend — maybe code was created on another device
+        // Check with backend - maybe code was created on another device
         setIsProcessing(true);
         try {
             const freshStats = await apiClient.getReferralStats(address);
@@ -110,7 +110,7 @@ export default function ReferralScreen() {
         } catch {}
         setIsProcessing(false);
 
-        // No existing code — show the generate modal
+        // No existing code - show the generate modal
         setShowGenerateModal(true);
     };
 

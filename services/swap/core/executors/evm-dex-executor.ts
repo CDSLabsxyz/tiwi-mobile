@@ -943,7 +943,7 @@ export abstract class EVMDEXExecutor {
       }
 
       // Approval was already handled above (line ~381) via ensureTokenApproval.
-      // No redundant re-check — the receipt confirmation guarantees on-chain state.
+      // No redundant re-check - the receipt confirmation guarantees on-chain state.
 
       // Let the wallet or RPC simulator determine gas at signing time.
       // Frontend-side gas estimation can reject valid swaps with stale allowance/liquidity state.

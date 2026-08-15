@@ -99,7 +99,7 @@ export class RubicExecutor implements SwapRouterExecutor {
      */
     /**
      * True only when `trade` already holds an executable transaction. Rubic's /quoteBest returns
-     * `transaction: {}` (an empty but TRUTHY object) — the real calldata/serialized tx (`.data`)
+     * `transaction: {}` (an empty but TRUTHY object) - the real calldata/serialized tx (`.data`)
      * arrives only from /routes/swap. A plain `!trade.transaction` check misses the empty object
      * and skips the swap fetch, leaving nothing to sign.
      */
@@ -111,7 +111,7 @@ export class RubicExecutor implements SwapRouterExecutor {
 
     /**
      * Ensure the wallet's wSOL ATA holds at least `fromAmount` SOL before a Rubic Solana swap.
-     * Rubic accepts only the wSOL mint for Solana native and does NOT wrap — so a native-SOL wallet
+     * Rubic accepts only the wSOL mint for Solana native and does NOT wrap - so a native-SOL wallet
      * must wrap first, else the embedded Jupiter swap fails with InsufficientFunds (6024). Sends one
      * wrap tx (create ATA + transfer lamports + syncNative). Skips if the wallet already has enough.
      */
@@ -125,7 +125,7 @@ export class RubicExecutor implements SwapRouterExecutor {
         if (route.fromToken.chainId !== 7565164) return; // Solana source only
         const addr = String(route.fromToken.address || '').toLowerCase();
         const NATIVE_MARKERS = ['', 'native', '11111111111111111111111111111111', 'so11111111111111111111111111111111111111112'];
-        if (!NATIVE_MARKERS.includes(addr)) return; // an SPL token (already has its own ATA) — nothing to wrap
+        if (!NATIVE_MARKERS.includes(addr)) return; // an SPL token (already has its own ATA) - nothing to wrap
 
         const { Transaction, SystemProgram } = await import('@solana/web3.js');
         const { getAssociatedTokenAddressSync, createAssociatedTokenAccountIdempotentInstruction, createSyncNativeInstruction, getAccount, NATIVE_MINT } = await import('@solana/spl-token');
@@ -162,7 +162,7 @@ export class RubicExecutor implements SwapRouterExecutor {
             referrer: 'tiwi-super-app',
         };
 
-        // Route through our server-side proxy — Rubic's API sends no CORS headers,
+        // Route through our server-side proxy - Rubic's API sends no CORS headers,
         // so a direct browser fetch is blocked. See app/api/v1/rubic-swap/route.ts.
         const response = await fetch(apiUrl('/api/v1/rubic-swap'), {
             method: 'POST',
@@ -334,7 +334,7 @@ export class RubicExecutor implements SwapRouterExecutor {
                 );
             }
 
-            // Rubic requires the wSOL mint for Solana native but its tx does NOT wrap native SOL — it
+            // Rubic requires the wSOL mint for Solana native but its tx does NOT wrap native SOL - it
             // swaps wSOL directly, so a native-SOL wallet hits Jupiter InsufficientFunds (6024). Fund
             // the wSOL ATA with the swap amount first (no-op if the wallet already holds enough wSOL).
             await this.ensureWrappedSol(connection, wallet, fromAmount, route, onStatusUpdate);
@@ -346,7 +346,7 @@ export class RubicExecutor implements SwapRouterExecutor {
                 ? txRaw
                 : (txRaw?.data ?? txRaw?.serializedTransaction ?? txRaw?.transaction ?? txRaw?.tx);
             // Last resort: Rubic may nest the serialized tx under an unexpected key. A base64 Solana
-            // tx is a long string — grab the first long string value from the object.
+            // tx is a long string - grab the first long string value from the object.
             if (typeof transactionBase64 !== 'string' && txRaw && typeof txRaw === 'object') {
                 transactionBase64 = Object.values(txRaw).find((v) => typeof v === 'string' && v.length > 100);
             }

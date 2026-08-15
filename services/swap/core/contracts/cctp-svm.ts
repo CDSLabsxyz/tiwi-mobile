@@ -1,12 +1,12 @@
 /**
- * Solana (SVM) CCTP V2 — program IDs + PDA derivations.
+ * Solana (SVM) CCTP V2 - program IDs + PDA derivations.
  *
  * Every seed here was taken from the on-chain Anchor IDLs (fetched into lib/contracts/idl/) and the
  * data-holding PDAs were verified to resolve to live mainnet accounts (see __tests__/cctp-svm.test.ts).
  * Used by both the SVM source adapter (deposit_for_burn) and the dest adapter (receive_message).
  *
  * Signer/authority PDAs (sender_authority, *_event_authority, message_transmitter_authority) have NO
- * data account — they exist only as CPI signer seeds, so on-chain lookups return null by design.
+ * data account - they exist only as CPI signer seeds, so on-chain lookups return null by design.
  */
 import { PublicKey } from '@solana/web3.js';
 import { getAssociatedTokenAddressSync } from '@solana/spl-token';
@@ -44,7 +44,7 @@ export const deriveMessageTransmitterAuthority = (receiver: PublicKey = SVM_TOKE
   pda([utf8('message_transmitter_authority'), receiver.toBytes()], SVM_MESSAGE_TRANSMITTER);
 
 /**
- * used_nonce PDA — keyed by the message's 32-byte nonce. NOT declared in the IDL; seeds
+ * used_nonce PDA - keyed by the message's 32-byte nonce. NOT declared in the IDL; seeds
  * ["used_nonce", nonce] were confirmed by decoding a real mainnet receive_message and matching
  * account #4 exactly (see __tests__/cctp-message.test.ts). receive_message writes this to mark
  * the nonce spent, so a wrong derivation would break replay protection.
@@ -54,6 +54,6 @@ export const deriveUsedNonce = (nonce: Uint8Array) => {
   return pda([utf8('used_nonce'), nonce], SVM_MESSAGE_TRANSMITTER);
 };
 
-/** USDC associated token account for a Solana wallet — the CCTP mintRecipient on Solana. */
+/** USDC associated token account for a Solana wallet - the CCTP mintRecipient on Solana. */
 export const svmUsdcAta = (ownerBase58: string): string =>
   getAssociatedTokenAddressSync(SVM_USDC_MINT, new PublicKey(ownerBase58)).toBase58();

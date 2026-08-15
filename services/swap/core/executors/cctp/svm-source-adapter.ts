@@ -1,15 +1,15 @@
 /**
- * Solana (SVM) CCTP SOURCE adapter — burns USDC on Solana to a remote (EVM) domain.
+ * Solana (SVM) CCTP SOURCE adapter - burns USDC on Solana to a remote (EVM) domain.
  *
  *   swapToUsdc: Jupiter swap source token → USDC on Solana (skip if already USDC), return USDC in.
- *   depositForBurn: TokenMessengerMinterV2.deposit_for_burn — burns USDC; Circle mints it to
+ *   depositForBurn: TokenMessengerMinterV2.deposit_for_burn - burns USDC; Circle mints it to
  *     `mintRecipient` (the relayer's address) on the destination chain. Generates a fresh
  *     MessageSent event account (a signer keypair) that the program initializes.
  *
  * mintRecipient for an EVM dest is the relayer's EVM address as bytes32 → a Solana `pubkey` arg.
- * deposit_for_burn fits a LEGACY tx (~18 accounts, tiny data) — no ALT needed (unlike receive).
+ * deposit_for_burn fits a LEGACY tx (~18 accounts, tiny data) - no ALT needed (unlike receive).
  *
- * ⚠️ NOT verified end-to-end yet — see scripts/harness. The account layout + PDA seeds come from the
+ * ⚠️ NOT verified end-to-end yet - see scripts/harness. The account layout + PDA seeds come from the
  * on-chain IDL and are the same set proven on the dest side.
  */
 import {
@@ -102,7 +102,7 @@ export async function svmDepositForBurn(
 ): Promise<{ srcTxHash: string }> {
   const provider = new AnchorProvider(connection, keypairWallet(owner), { commitment: 'confirmed' });
   const tmm = new Program(tmmIdl as any, provider);
-  const messageSent = Keypair.generate(); // MessageSent event account — program initializes it
+  const messageSent = Keypair.generate(); // MessageSent event account - program initializes it
 
   const ix = await buildDepositForBurnInstruction({ tmm, owner: owner.publicKey, usdcMint }, p, messageSent.publicKey);
   const tx = new Transaction().add(ComputeBudgetProgram.setComputeUnitLimit({ units: 300_000 }), ix);
@@ -113,7 +113,7 @@ export async function svmDepositForBurn(
 /**
  * Browser-wallet variant of deposit_for_burn: signs via a wallet-adapter (publicKey +
  * signTransaction) instead of a Keypair. Used by the live executor for user Solana→EVM swaps.
- * ⚠️ Browser-signing path is UNTESTED headless — verify in-app before relying on it.
+ * ⚠️ Browser-signing path is UNTESTED headless - verify in-app before relying on it.
  */
 export async function svmDepositForBurnWithWallet(
   connection: Connection,

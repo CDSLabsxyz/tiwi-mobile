@@ -1,5 +1,5 @@
 /**
- * CCTP VM-adapter contracts — the seam that lets one CCTP rail span every VM family.
+ * CCTP VM-adapter contracts - the seam that lets one CCTP rail span every VM family.
  *
  * The `cctp_transfers` state machine, Circle attestation polling, and route quoting are all
  * VM-agnostic and live outside these adapters. Only the two chain-touching halves are polymorphic:
@@ -8,7 +8,7 @@
  *   DEST   (backend relayer-signed) → CctpDestAdapter.receiveMint(...) then .deliver(...)
  *
  * Each new chain implements one of each, plus its recipient encoder (encodeRecipientBytes32 in
- * cctp.ts). Everything else — DB, Iris, finality — is shared. See docs/cctp-non-evm-adapters.md.
+ * cctp.ts). Everything else - DB, Iris, finality - is shared. See docs/cctp-non-evm-adapters.md.
  */
 import type { Hex } from 'viem';
 import type { CctpVm } from './cctp';

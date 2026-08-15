@@ -87,7 +87,7 @@ export async function resolveChainSecret(
         ...addressKeysFor(chain, addressKey).map(k => group?.addresses?.[k]),
     ].filter(Boolean) as string[]));
 
-    // Door 2 — a private key imported for this chain.
+    // Door 2 - a private key imported for this chain.
     for (const candidate of candidates) {
         for (const slot of keySlotsFor(chain)) {
             try {
@@ -101,7 +101,7 @@ export async function resolveChainSecret(
         }
     }
 
-    // Door 1 / 3 — a mnemonic, keyed by the EVM address for multi-chain wallets
+    // Door 1 / 3 - a mnemonic, keyed by the EVM address for multi-chain wallets
     // or by the chain address for a chain-only phrase import.
     const mnemonicAddresses = Array.from(new Set([
         group?.addresses?.EVM,

@@ -6,11 +6,11 @@ import { formatCompactNumber } from '@/utils/formatting';
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAccount, useChainId, useSwitchChain, useWriteContract } from 'wagmi';
-import { useMarketPrice } from './useMarketPrice';
 import { useWalletStore } from '@/store/walletStore';
 import { signerController } from '@/services/signer/SignerController';
 import { apiClient } from '@/services/apiClient';
 import { activityService } from '@/services/activityService';
+import { api } from '@/lib/mobile/api-client';
 import { createPublicClient, encodeFunctionData, formatUnits, http, parseUnits } from 'viem';
 import { bsc } from 'viem/chains';
 
@@ -31,7 +31,7 @@ export interface OnChainPoolStats {
     stakingToken: `0x${string}` | null;
     /**
      * Reward-token identity. `pendingRewards`, `poolReward` and the claimed
-     * totals are denominated in THIS token, not the staking token — they differ
+     * totals are denominated in THIS token, not the staking token - they differ
      * on a "stake A, earn B" pool. Screens must label reward figures with
      * `rewardTokenSymbol`, not the staking symbol.
      */
@@ -47,7 +47,7 @@ export interface OnChainPoolStats {
     activeStakersCount: string;
     lockPeriod: string;
     isLoading: boolean;
-    /** Pool-config read only — see the note at the return site. */
+    /** Pool-config read only - see the note at the return site. */
     isCoreLoading: boolean;
     isTransactionPending: boolean;
     refetch: () => void;
@@ -56,7 +56,7 @@ export interface OnChainPoolStats {
     rewardDurationSeconds: number;
     /** Pool start time in Unix seconds (0 if unknown). */
     startTime: number;
-    /** Pool end time in Unix seconds — authoritative unlock anchor. */
+    /** Pool end time in Unix seconds - authoritative unlock anchor. */
     endTime: number;
     earningRate: number; // rewards per second
     emissionVelocity: number;
@@ -75,14 +75,15 @@ const ERC20_METADATA_ABI = [
 const STAKING_CHAIN_ID = 56; // BSC Mainnet
 const SECONDS_PER_YEAR_NUM = 31536000;
 const TWC_ADDRESS_BSC = '0xDA1060158F7D593667cCE0a15DB346BB3FfB3596';
+const tokenPriceKey = (chainId: number, address: string) => `${chainId}:${address.toLowerCase()}`;
 
 // AppKit's WagmiAdapter hard-codes transports to rpc.walletconnect.org, which
 // drops ~20% of eth_call requests on BSC. Reads go through a dedicated viem
 // client on a multi-provider fallback transport (Alchemy + Binance dataseed +
-// publicnode + drpc + ankr) — wagmi only handles writes via the connected signer.
+// publicnode + drpc + ankr) - wagmi only handles writes via the connected signer.
 // `batch.multicall` merges the reads issued by every mounted pool card in the
 // same tick into one Multicall3 call. The Earn list mounts one hook per pool,
-// each firing getPoolInfo + getUserInfo + allowance — that was 3 round trips
+// each firing getPoolInfo + getUserInfo + allowance - that was 3 round trips
 // per card, now it is one shared call.
 const bscReadClient = createPublicClient({
     chain: bsc,
@@ -97,9 +98,9 @@ const bscReadClient = createPublicClient({
  * Enhanced with Hybrid Signer Support & unified transaction tracking
  *
  * Supports two architectures:
- *   - V2 pool-per-contract: pass `poolContractAddress` — reads/writes go
+ *   - V2 pool-per-contract: pass `poolContractAddress` - reads/writes go
  *     directly to that pool contract using STAKING_POOL_V2_ABI.
- *   - Legacy factory: pass `poolId` — reads/writes go through the factory
+ *   - Legacy factory: pass `poolId` - reads/writes go through the factory
  *     at STAKING_FACTORY_ADDRESSES[56] with STAKING_FACTORY_ABI.
  *
  * `poolContractAddress` takes precedence when both are provided.
@@ -111,7 +112,7 @@ export function useStakingPool(
         poolContractAddress?: string;
         /**
          * Skip the Claim/Deposit event-log scan. That scan chunks up to ~250k
-         * blocks into 5k windows and issues a getLogs per window per event —
+         * blocks into 5k windows and issues a getLogs per window per event -
          * up to ~100 requests for a single pool. Only the stake and
          * stake-details screens read its output (`onChainClaimedTotal` /
          * `onChainTotalDeposited`), so list rows should pass `true` and avoid
@@ -130,13 +131,12 @@ export function useStakingPool(
 
     const { switchChainAsync } = useSwitchChain();
     const { showToast, hideToast } = useToastStore();
-    const { data: priceData } = useMarketPrice('TWC-USDT', STAKING_CHAIN_ID);
 
     // Check if this is a mock pool
     const isMock = typeof poolId === 'string' && poolId.startsWith('mock');
 
     // The legacy factory works in terms of a numeric pool id. Callers may pass
-    // either a number, a numeric string, or — by accident — a DB UUID. Anything
+    // either a number, a numeric string, or - by accident - a DB UUID. Anything
     // that isn't a well-formed integer coerces to undefined so we never hit
     // `BigInt('abc-123')` which would blow up the render.
     const numericPoolId = useMemo(() => {
@@ -176,7 +176,7 @@ export function useStakingPool(
     // rather than wagmi's useReadContract, because AppKit's WagmiAdapter pins
     // the transport to WalletConnect's relay which fails intermittently.
 
-    // getPoolInfo — V2 (no args, 13-tuple) or legacy factory (poolId arg, [config, state] tuple).
+    // getPoolInfo - V2 (no args, 13-tuple) or legacy factory (poolId arg, [config, state] tuple).
     const {
         data: poolInfo,
         isLoading: isPoolLoading,
@@ -203,7 +203,7 @@ export function useStakingPool(
 
     // Normalize: factory returns [config, state]; V2 returns a flat 13-tuple.
     // Downstream `poolConfig` / `poolState` expose the same indexed fields
-    // used across the rest of the hook — see `stats` memo below.
+    // used across the rest of the hook - see `stats` memo below.
     const { poolConfig, poolState, stakingToken } = useMemo(() => {
         if (!poolInfo) return { poolConfig: undefined, poolState: undefined, stakingToken: undefined as `0x${string}` | undefined };
         if (isV2) {
@@ -240,7 +240,7 @@ export function useStakingPool(
     // --- REWARD TOKEN IDENTITY ---
     // A pool has two tokens: `stakingToken` (deposits, maxTvl, totalStaked,
     // userInfo.amount) and `rewardToken` (poolReward, rewardBalance,
-    // pendingReward). They're the same asset for "stake A, earn A" — for
+    // pendingReward). They're the same asset for "stake A, earn A" - for
     // "stake A, earn B" every reward figure below must be formatted with the
     // REWARD token's decimals. Reading a 1 USDT (18dp) reward pool at TWC's 9dp
     // shows 1,000,000,000, and that number propagates into the APR, the live
@@ -272,7 +272,7 @@ export function useStakingPool(
                 }).catch(() => undefined),
             ]);
             return {
-                // Fall back to the staking decimals on a failed read — that's
+                // Fall back to the staking decimals on a failed read - that's
                 // the pre-existing behaviour, never worse than before.
                 decimals: Number.isFinite(Number(d)) ? Number(d) : decimals,
                 symbol: (sym as string | undefined) || null,
@@ -287,6 +287,27 @@ export function useStakingPool(
 
     /** Decimals to format any REWARD-denominated figure with. */
     const rewardDecimals = rewardTokenInfo?.decimals ?? decimals;
+
+    const { data: tokenPrices } = useQuery({
+        queryKey: [
+            'staking',
+            'tokenPrices',
+            stakingToken,
+            rewardTokenAddress,
+            rewardTokenInfo?.symbol,
+        ],
+        queryFn: async () => {
+            if (!stakingToken) return {};
+            const rewardAddress = rewardTokenAddress || stakingToken;
+            const resp = await api.tokens.prices([
+                { address: stakingToken, chainId: STAKING_CHAIN_ID },
+                { address: rewardAddress, chainId: STAKING_CHAIN_ID, symbol: rewardTokenInfo?.symbol || undefined },
+            ]);
+            return resp.prices || {};
+        },
+        enabled: !isMock && !!stakingToken,
+        staleTime: 60_000,
+    });
 
     const {
         data: userInfo,
@@ -331,7 +352,7 @@ export function useStakingPool(
         enabled: !!stakingToken && !!effectiveAddress,
     });
 
-    // Stakers count — counted from the backend's user_stakes table (unique
+    // Stakers count - counted from the backend's user_stakes table (unique
     // wallets per pool). The on-chain contracts don't store an enumerable
     // staker list, and reconstructing it from Deposit logs would require
     // scanning the full pool history each render. The DB is the practical
@@ -362,12 +383,12 @@ export function useStakingPool(
 
     // --- ON-CHAIN CLAIMED + DEPOSITED TOTALS ---
     // The staking contracts don't store cumulative per-user claimed or
-    // deposited figures — only current `u.amount` and `u.rewards`. We sum
+    // deposited figures - only current `u.amount` and `u.rewards`. We sum
     // `Claim(user, amount)` and `Deposit(user, amount)` events for this user
     // on this pool so the UI can:
     //   - fall back to on-chain truth for CLAIMED when the DB PATCH is stale
     //   - enforce the "lifetime deposited" per-wallet cap (unstaking does NOT
-    //     free up headroom — the limit is maxStake - Σ deposits, not
+    //     free up headroom - the limit is maxStake - Σ deposits, not
     //     maxStake - currentStaked)
     // Range is bounded by the user's on-chain `stakeTime` (deposits + claims
     // can't predate it) and chunked in 4,999-block windows to stay inside
@@ -378,7 +399,7 @@ export function useStakingPool(
     // Depend on the stake timestamp itself, not the whole `userInfo` object.
     // `userInfo` refetches every 10s and returns a fresh object each time, so
     // depending on it rebuilt this callback on every poll and re-ran the entire
-    // log scan — up to 100 getLogs calls, every 10 seconds, per mounted card.
+    // log scan - up to 100 getLogs calls, every 10 seconds, per mounted card.
     const stakeTimeSec = useMemo(
         () => Number((userInfo as any)?.[2] ?? (userInfo as any)?.stakeTime ?? 0),
         [userInfo],
@@ -411,7 +432,7 @@ export function useStakingPool(
                 ] };
 
             // The factory's Deposit event indexes the depositor as `funder`,
-            // while the V2 pool uses `user`. Same concept — just a naming
+            // while the V2 pool uses `user`. Same concept - just a naming
             // difference, but viem filters `args` by input name so we need
             // the matching key.
             const depositEvent = isV2
@@ -572,7 +593,7 @@ export function useStakingPool(
                         });
                         console.log(`[useStakingPool] Claim patched ${patchOk ? 'OK' : 'FAIL'}`);
                     } else {
-                        console.warn('[useStakingPool] Claim PATCH skipped — stakeId:', stakeId, 'claimed:', claimed);
+                        console.warn('[useStakingPool] Claim PATCH skipped - stakeId:', stakeId, 'claimed:', claimed);
                     }
                 }
 
@@ -660,7 +681,7 @@ export function useStakingPool(
                     setIsInternalSuccess(true);
                     setIsInternalPending(false);
                     // Await so the DB PATCH (addToClaimed / stakedAmount / etc.)
-                    // completes before we resolve — callers refetch the stake
+                    // completes before we resolve - callers refetch the stake
                     // list right after this returns and would otherwise race.
                     await handleTxConfirmed(hash, type, amount, receipt, meta);
                     return hash;
@@ -754,18 +775,18 @@ export function useStakingPool(
         await ensureCorrectChain();
         const pct = Math.max(1, Math.min(100, Math.round(percentage)));
         // Snapshot pending rewards BEFORE the tx so the DB PATCH records the
-        // correct claimed amount — the on-chain value will be ~0 (full) or
+        // correct claimed amount - the on-chain value will be ~0 (full) or
         // reduced by `pct` (partial) after the tx lands.
         const prePending = (userInfo as any)?.[3] ?? (userInfo as any)?.pending ?? 0n;
         // Refuse to broadcast a claim with 0 pending. On-chain this either
-        // reverts (some pool versions) or no-ops, but worse — a tap that
+        // reverts (some pool versions) or no-ops, but worse - a tap that
         // bypasses the modal and ends up routing to stake/deposit could
         // reuse the typed amount instead. Hard-fail at the source.
         if ((prePending as bigint) === 0n) {
             throw new Error('No rewards available to claim');
         }
         const claimedWei = (prePending as bigint) * BigInt(pct) / 100n;
-        // Pending is a REWARD amount — formatting it with the staking decimals
+        // Pending is a REWARD amount - formatting it with the staking decimals
         // wrote a 1e9-inflated figure into `user_stakes.total_claimed` on a
         // cross-token pool.
         const claimedAmount = formatUnits(claimedWei, rewardDecimals);
@@ -801,7 +822,7 @@ export function useStakingPool(
 
         if (preUserStaked === 0n) throw new Error('Nothing staked to unstake');
 
-        // Leg 1 — harvest pending rewards (skipped if zero). Recorded to
+        // Leg 1 - harvest pending rewards (skipped if zero). Recorded to
         // rewards_earned so it doesn't inflate the "Claimed" counter.
         if (prePending > 0n) {
             showToast('Harvesting rewards...', 'pending');
@@ -823,13 +844,13 @@ export function useStakingPool(
                         },
                     'Harvest', harvestedOnExit, { harvestedOnExit });
             } catch (e) {
-                // If harvest fails (user rejects, etc.), abort — don't strand them
+                // If harvest fails (user rejects, etc.), abort - don't strand them
                 // mid-exit. They can retry or do a plain unstake.
                 throw e;
             }
         }
 
-        // Leg 2 — withdraw full principal. Pass harvestedOnExit so the single
+        // Leg 2 - withdraw full principal. Pass harvestedOnExit so the single
         // Unstake PATCH records both stakedAmount=0/status=withdrawn AND
         // the harvested amount as rewards_earned.
         const amountStr = formatUnits(preUserStaked as bigint, decimals);
@@ -944,7 +965,7 @@ export function useStakingPool(
             // (constructor: `rewardPerSecond = (_poolReward * 1e12) / _rewardDurationSeconds`),
             // and `_updatePool` divides by `maxTvl * 1e12` to emit the actual
             // per-second reward. Reading the raw value with token decimals
-            // leaves it 10^12 too large — that's what produced the
+            // leaves it 10^12 too large - that's what produced the
             // 35,770,000% APR and the trillions/sec earning rate.
             //
             // Use the ground-truth formula from the contract directly, which
@@ -956,16 +977,27 @@ export function useStakingPool(
             const poolEmissionPerSec = rewardDurationSeconds > 0
                 ? poolRewardNum / rewardDurationSeconds
                 : 0;
-            const rewardPerTokenPerSec = poolEmissionPerSec / tvlForApr;
-            const apr = rewardPerTokenPerSec * SECONDS_PER_YEAR_NUM * 100;
+            const stakingTokenPrice = stakingToken
+                ? Number(tokenPrices?.[tokenPriceKey(STAKING_CHAIN_ID, stakingToken)] || 0)
+                : 0;
+            const rewardTokenPrice = Number(
+                tokenPrices?.[tokenPriceKey(STAKING_CHAIN_ID, rewardTokenAddress || stakingToken || '')] || 0,
+            );
 
-            aprValue = `${apr.toFixed(2)}%`;
+            if (poolEmissionPerSec <= 0 || tvlForApr <= 0) {
+                aprValue = '0.00%';
+            } else if (stakingTokenPrice > 0 && rewardTokenPrice > 0) {
+                const rewardPerYearUsd = poolEmissionPerSec * SECONDS_PER_YEAR_NUM * rewardTokenPrice;
+                const stakedCapacityUsd = tvlForApr * stakingTokenPrice;
+                const apr = stakedCapacityUsd > 0 ? (rewardPerYearUsd / stakedCapacityUsd) * 100 : 0;
+                aprValue = apr > 0 && apr < 0.01 ? '<0.01%' : `${apr.toFixed(2)}%`;
+            }
 
-            // User earning rate (TWC/sec) — derived from the same formula the
+            // User earning rate (TWC/sec) - derived from the same formula the
             // on-chain `_updatePool` uses: user's share of the fill-adjusted
             // emission. Equivalent closed form: user * poolReward / (maxTvl * duration).
             // The contract caps `_secondsElapsed` at `endTime`, so once the
-            // pool has expired no further rewards accrue — zero the displayed
+            // pool has expired no further rewards accrue - zero the displayed
             // rate to match.
             const endTimeSec = Number(poolConfig.endTime ?? poolConfig[9] ?? 0);
             const isPoolExpired = endTimeSec > 0 && Date.now() / 1000 >= endTimeSec;
@@ -974,8 +1006,8 @@ export function useStakingPool(
                 earningRate = (poolRewardNum * userStakedNum) / (maxTvl * rewardDurationSeconds);
             }
 
-            if (priceData?.priceUSD) {
-                tvlUsd = `$${formatCompactNumber(totalStakedNum * priceData.priceUSD, { decimals: 2 })}`;
+            if (stakingTokenPrice > 0) {
+                tvlUsd = `$${formatCompactNumber(totalStakedNum * stakingTokenPrice, { decimals: 2 })}`;
             }
         }
 
@@ -989,7 +1021,7 @@ export function useStakingPool(
         //    endTime,     ← index 9
         //    active, ...]
         // The earlier `?.[8] ?? .endTime` was reading startTime and only
-        // falling back to .endTime when startTime was 0/missing — which is
+        // falling back to .endTime when startTime was 0/missing - which is
         // why the unlock countdown collapsed to "completed" the moment any
         // active pool was opened.
         const startTimeSec = Number(poolConfig?.startTime ?? poolConfig?.[8] ?? 0);
@@ -1027,7 +1059,7 @@ export function useStakingPool(
             /**
              * True only while the pool's own config/state read is outstanding.
              * Everything a collapsed list row displays (APR, lock period, TVL,
-             * stakers) comes from that one read — `isLoading` additionally waits
+             * stakers) comes from that one read - `isLoading` additionally waits
              * on the user's position and token allowance, and allowance can't
              * even start until poolInfo resolves (it needs `stakingToken`), so
              * gating a row on it costs two serial round trips it never uses.
@@ -1046,7 +1078,7 @@ export function useStakingPool(
             poolReward: poolRewardNum,
             tvl: totalStakedNum
         };
-    }, [isMock, poolConfig, poolState, userInfo, allowance, stakingToken, rewardTokenAddress, rewardTokenInfo, rewardDecimals, isPoolLoading, isUserLoading, isAllowanceLoading, isTransactionPending, decimals, refetchAll, priceData, onChainClaimedTotal, onChainTotalDeposited, stakersCountData]);
+    }, [isMock, poolConfig, poolState, userInfo, allowance, stakingToken, rewardTokenAddress, rewardTokenInfo, rewardDecimals, isPoolLoading, isUserLoading, isAllowanceLoading, isTransactionPending, decimals, refetchAll, tokenPrices, onChainClaimedTotal, onChainTotalDeposited, stakersCountData]);
 
     return {
         ...stats,

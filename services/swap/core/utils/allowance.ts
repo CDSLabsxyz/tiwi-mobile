@@ -1,5 +1,5 @@
 /**
- * Allowance utilities — React Native port of lib/wallet/utils/allowance.ts.
+ * Allowance utilities - React Native port of lib/wallet/utils/allowance.ts.
  *
  * Reads go through the swap engine's own cached public clients so an allowance
  * check works on every registry chain, not just the six the app's constants/rpc

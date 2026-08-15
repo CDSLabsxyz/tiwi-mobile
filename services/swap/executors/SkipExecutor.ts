@@ -10,13 +10,13 @@ import {
 import { ExecuteSwapParams, SwapExecutionResult } from '../types';
 
 /**
- * SkipExecutor — executes Cosmos IBC swaps quoted by Skip, signing on the SOURCE
+ * SkipExecutor - executes Cosmos IBC swaps quoted by Skip, signing on the SOURCE
  * chain with the wallet's cosmjs key. Calls Skip's /v2/fungible/msgs DIRECTLY
  * (the backend proxy is 404 on prod) and broadcasts via a public RPC.
  *
  * Scope: cosmos SOURCE (cosmos→cosmos, cosmos→injective). Injective-SOURCE and
  * same-chain wasm-DEX routes fail honestly (need the injective msg path / extra
- * registries — matches the web's in-app limits).
+ * registries - matches the web's in-app limits).
  */
 export class SkipExecutor {
     async execute(params: ExecuteSwapParams): Promise<SwapExecutionResult> {
@@ -29,7 +29,7 @@ export class SkipExecutor {
 
             const sourceChainId = Number(fromToken.chainId);
             if (sourceChainId === 8000001) {
-                return { success: false, error: 'Injective-source swaps aren\'t supported in-app yet — try the reverse direction.' };
+                return { success: false, error: 'Injective-source swaps aren\'t supported in-app yet - try the reverse direction.' };
             }
             const config = COSMOS_CHAIN_CONFIG[sourceChainId];
             if (!config) {

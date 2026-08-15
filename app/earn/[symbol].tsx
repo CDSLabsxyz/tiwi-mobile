@@ -66,7 +66,7 @@ export default function EarnDetailScreen() {
         return () => { cancelled = true; };
     }, [symbol]);
 
-    // The route param is now a pool DB UUID for new links — never display it
+    // The route param is now a pool DB UUID for new links - never display it
     // directly in the header. Prefer the loaded pool's actual token symbol.
     const looksLikeUuid = !!symbol && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(symbol);
     const displaySymbol = pool?.tokenSymbol || (looksLikeUuid ? '' : symbol) || '';

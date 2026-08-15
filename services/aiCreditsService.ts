@@ -1,5 +1,5 @@
 /**
- * TIWI AI credits — mobile.
+ * TIWI AI credits - mobile.
  *
  * Mirrors the web super-app's credit model exactly:
  *   • A free monthly allowance (set by admin, read from /api/v1/ai-credit-settings)
@@ -7,12 +7,11 @@
  *   • Paid credits bought with TWC in Starter / Growth / Pro packs. The pack
  *     price is admin-configured; payment is an on-chain ERC20 transfer to the
  *     admin's treasury, and credits are granted only AFTER it confirms.
- *   • One credit is charged per answered message — the server tells us whether
+ *   • One credit is charged per answered message - the server tells us whether
  *     it charged (`credits.charged`), so blocked/empty replies cost nothing.
  *
- * Balances live on-device per wallet (AsyncStorage), the same as the web app
- * keeps them in localStorage per wallet. That makes them advisory rather than
- * server-enforced — matching web behaviour, not improving on it.
+ * Free balances are stored on this device so guests can chat without a wallet.
+ * Paid balances live in the shared backend ledger per wallet.
  */
 
 import { createTransportForChain } from '@/constants/rpc';
@@ -35,7 +34,7 @@ export type { AiCreditPack, AiCreditSettings };
 
 // ─── Defaults (used until the admin settings load, or if they fail) ───────────
 
-export const DEFAULT_FREE_MONTHLY_CREDITS = 10;
+export const DEFAULT_FREE_MONTHLY_CREDITS = 5;
 
 export const DEFAULT_CREDIT_PACKS: AiCreditPack[] = [
     { id: 'starter', label: 'Starter', credits: 25, twcAmount: 50 },
@@ -74,7 +73,7 @@ export const isEvmAddress = (v?: string | null) => /^0x[a-fA-F0-9]{40}$/.test((v
 /**
  * The address that actually pays for a pack.
  *
- * Payment is always an ERC20 transfer, so it must come from an EVM address —
+ * Payment is always an ERC20 transfer, so it must come from an EVM address -
  * but the user's active address can be non-EVM (Solana, TON, …) when they're
  * browsing another chain. Fall back to the active wallet group's EVM address
  * so buying credits works from any chain, mirroring the web app's
@@ -127,7 +126,7 @@ export const shortAddr = (a?: string) =>
     a && a.length > 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a || '';
 
 /**
- * Compact token amount for the narrow balance tile — TWC balances run into the
+ * Compact token amount for the narrow balance tile - TWC balances run into the
  * billions, and the full grouped number wraps onto two lines. Small balances
  * keep their precision so a dust amount never reads as "0".
  */
@@ -186,6 +185,92 @@ export const emptyBalance = (freeLimit = DEFAULT_FREE_MONTHLY_CREDITS): CreditBa
     totalLeft: freeLimit,
 });
 
+const finiteNumber = (value: unknown, fallback = 0): number => {
+    const next = Number(value);
+    return Number.isFinite(next) ? next : fallback;
+};
+
+export const normalizeBalanceForFreeLimit = (
+    balance: CreditBalance,
+    freeLimit = DEFAULT_FREE_MONTHLY_CREDITS,
+): CreditBalance => {
+    const limit = Math.max(0, Math.floor(finiteNumber(freeLimit, DEFAULT_FREE_MONTHLY_CREDITS)));
+    const freeUsed = Math.max(0, Math.floor(finiteNumber(balance.freeUsed, 0)));
+    const paidCredits = Math.max(0, Math.floor(finiteNumber(balance.paidCredits, 0)));
+    const paidUsed = Math.max(0, Math.min(paidCredits, Math.floor(finiteNumber(balance.paidUsed, 0))));
+    const monthlyLeft = Math.max(0, limit - freeUsed);
+    const paidLeft = Math.max(0, paidCredits - paidUsed);
+
+    return {
+        freeLimit: limit,
+        freeUsed,
+        paidCredits,
+        paidUsed,
+        monthlyLeft,
+        paidLeft,
+        totalLeft: monthlyLeft + paidLeft,
+    };
+};
+
+const LOCAL_FREE_CREDITS_KEY = '@tiwi/ai_free_credits_v1';
+
+export const currentCreditMonth = () => new Date().toISOString().slice(0, 7);
+
+export const loadLocalFreeBalance = async (
+    freeLimit = DEFAULT_FREE_MONTHLY_CREDITS,
+): Promise<CreditBalance> => {
+    const limit = Math.max(0, Math.floor(finiteNumber(freeLimit, DEFAULT_FREE_MONTHLY_CREDITS)));
+    try {
+        const raw = await AsyncStorage.getItem(LOCAL_FREE_CREDITS_KEY);
+        const parsed = raw ? JSON.parse(raw) : null;
+        const freeUsed = parsed?.month === currentCreditMonth()
+            ? Math.min(limit, Math.max(0, Math.floor(finiteNumber(parsed.freeUsed, 0))))
+            : 0;
+        return {
+            ...emptyBalance(limit),
+            freeUsed,
+            monthlyLeft: Math.max(0, limit - freeUsed),
+            totalLeft: Math.max(0, limit - freeUsed),
+        };
+    } catch {
+        return emptyBalance(limit);
+    }
+};
+
+const saveLocalFreeUsed = async (freeUsed: number): Promise<void> => {
+    await AsyncStorage.setItem(LOCAL_FREE_CREDITS_KEY, JSON.stringify({
+        month: currentCreditMonth(),
+        freeUsed: Math.max(0, Math.floor(finiteNumber(freeUsed, 0))),
+    }));
+};
+
+export const spendLocalFreeCredit = async (
+    freeLimit = DEFAULT_FREE_MONTHLY_CREDITS,
+): Promise<CreditBalance | null> => {
+    const current = await loadLocalFreeBalance(freeLimit);
+    if (current.monthlyLeft <= 0) return null;
+    await saveLocalFreeUsed(current.freeUsed + 1);
+    return loadLocalFreeBalance(freeLimit);
+};
+
+export const combineLocalFreeWithPaid = (
+    localFree: CreditBalance,
+    paid?: CreditBalance | null,
+): CreditBalance => {
+    const paidCredits = Math.max(0, Math.floor(finiteNumber(paid?.paidCredits, 0)));
+    const paidUsed = Math.min(paidCredits, Math.max(0, Math.floor(finiteNumber(paid?.paidUsed, 0))));
+    const paidLeft = Math.max(0, paidCredits - paidUsed);
+    return {
+        freeLimit: localFree.freeLimit,
+        freeUsed: localFree.freeUsed,
+        paidCredits,
+        paidUsed,
+        monthlyLeft: localFree.monthlyLeft,
+        paidLeft,
+        totalLeft: localFree.monthlyLeft + paidLeft,
+    };
+};
+
 export const getCreditSummary = (balance: CreditBalance): CreditSummary => ({
     monthlyLeft: Math.max(0, balance.monthlyLeft),
     paidLeft: Math.max(0, balance.paidLeft),
@@ -195,7 +280,7 @@ export const getCreditSummary = (balance: CreditBalance): CreditSummary => ({
 
 /**
  * Last-known balance, per wallet. Purely a cache so the sheet has something to
- * show (and the composer stays enabled) while offline — the server overwrites
+ * show (and the composer stays enabled) while offline - the server overwrites
  * it on the next successful call.
  */
 const balanceCacheKey = (address?: string | null) =>
@@ -312,11 +397,11 @@ export const retryPendingClaims = async (
                 await dropPendingClaim(address, claim.txHash);
             }
             // A 400 here means the server rejected the payment as invalid, not
-            // that it's unreachable — keep it queued rather than silently
+            // that it's unreachable - keep it queued rather than silently
             // discarding a real payment, so support can see it.
         } catch (error) {
             logNetworkAwareError('[AiCredits] pending claim retry failed:', error);
-            break; // still offline — try again next refresh
+            break; // still offline - try again next refresh
         }
     }
     return latest;
@@ -499,7 +584,7 @@ export interface PurchaseParams {
  * report success so the caller can grant credits.
  *
  * The transfer goes through `transactionService.sendToken`, the same local
- * signing path Send/Multi-Send use — so it works with the in-app wallet
+ * signing path Send/Multi-Send use - so it works with the in-app wallet
  * without a separate keystore prompt here.
  */
 export const purchaseCreditPack = async ({
@@ -512,19 +597,19 @@ export const purchaseCreditPack = async ({
         return { ok: false, error: 'Connect a wallet to buy AI credits with TWC.' };
     }
 
-    // Payment is REQUIRED — credits are never granted without a confirmed
+    // Payment is REQUIRED - credits are never granted without a confirmed
     // transfer, so an unconfigured treasury disables purchases entirely.
     if (!isEvmAddress(payment.treasuryAddress)) {
         return {
             ok: false,
-            error: 'AI credit purchases aren’t available yet — the payment wallet hasn’t been configured. Please try again later.',
+            error: 'AI credit purchases aren’t available yet - the payment wallet hasn’t been configured. Please try again later.',
         };
     }
     if (!(pack.twcAmount > 0)) {
         return { ok: false, error: 'This pack has no price set. Please try again later.' };
     }
 
-    // The paying address must be EVM — resolve it from the active wallet even
+    // The paying address must be EVM - resolve it from the active wallet even
     // when the user is currently browsing a non-EVM chain.
     const payer = resolveEvmPayerAddress(walletAddress);
     if (!payer) {
@@ -625,12 +710,12 @@ export const purchaseCreditPack = async ({
         };
 
         // Record the purchase so it shows up as "TIWI AI credits" in the
-        // activities board. Best-effort — never blocks the receipt UI.
+        // activities board. Best-effort - never blocks the receipt UI.
         void recordPurchaseActivity(receipt);
 
         // Credits are granted by the SERVER, which re-verifies this transfer
         // on-chain before crediting the shared ledger. That's what makes the
-        // pack usable from the web app too — and why the device never adds
+        // pack usable from the web app too - and why the device never adds
         // credits itself.
         onProgress?.('Confirming your credits…');
         // Written down BEFORE the claim so an interrupted call is retried
@@ -654,7 +739,7 @@ export const purchaseCreditPack = async ({
                     ok: false,
                     error:
                         claim?.error ||
-                        'Payment sent, but the credits could not be confirmed. Reopen this panel in a moment — the payment is recorded on-chain.',
+                        'Payment sent, but the credits could not be confirmed. Reopen this panel in a moment - the payment is recorded on-chain.',
                 };
             }
             await dropPendingClaim(payer, result.hash);
@@ -712,7 +797,7 @@ async function recordPurchaseActivity(receipt: Receipt): Promise<void> {
 
 export const receiptText = (r: Receipt): string =>
     [
-        'TIWI AI — Payment Receipt',
+        'TIWI AI - Payment Receipt',
         '',
         `Pack:         ${r.packLabel}`,
         `Credits:      ${r.credits} AI credits`,

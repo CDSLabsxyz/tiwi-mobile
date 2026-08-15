@@ -65,7 +65,7 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
         return tokensByWallet[walletKey] || [];
     }, [tokensByWallet, walletKey]);
 
-    // Tokens toggled off in Manage Tokens — suppress them entirely from the
+    // Tokens toggled off in Manage Tokens - suppress them entirely from the
     // swap selector (both "Your Assets" and "Other Tokens") until re-enabled.
     const hiddenKeySet = useMemo(() => {
         const set = new Set<string>();
@@ -138,7 +138,7 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
     //
     // Combined with the old "only show chains this wallet holds" filter, that
     // meant a wallet WITHOUT an EVM address (a Cosmos- or Solana-only import)
-    // saw almost nothing — hence a Cosmos wallet being offered just "Cosmos Hub".
+    // saw almost nothing - hence a Cosmos wallet being offered just "Cosmos Hub".
     //
     // Every chain is now listed. Restricting the list was wrong anyway: the
     // DESTINATION of a cross-chain swap doesn't have to be a chain you already
@@ -186,7 +186,7 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
 
         // "All Networks" means all of them. This used to drop every chain the
         // wallet had no address for, which on a non-EVM wallet was nearly the
-        // whole list — so the token search came back empty.
+        // whole list - so the token search came back empty.
         return chains?.map((c: any) => c.id) || [];
     }, [selectedChain, chains]);
 
@@ -222,7 +222,7 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
         const SOL_NATIVE = '11111111111111111111111111111111';
         const NATIVE_ADDRS = [NATIVE_TOKEN_ADDRESS, MORALIS_NATIVE_ADDRESS, SOL_NATIVE, 'native'];
         // One identity per (chain, token) that treats every spelling of "the
-        // native coin" as the same asset — sources disagree ('native', 0x0…0,
+        // native coin" as the same asset - sources disagree ('native', 0x0…0,
         // the System Program) and matching them literally left the wallet's
         // native balance stranded from the list row it belongs to.
         // `So111…112` is deliberately NOT a native spelling: that mint is
@@ -252,10 +252,10 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
         // 1b. Solana identity fix, applied client-side so the sheet is correct
         // regardless of which backend build is answering.
         //
-        // So111…112 is the WRAPPED-SOL SPL mint, not native SOL — a wallet holding
+        // So111…112 is the WRAPPED-SOL SPL mint, not native SOL - a wallet holding
         // it reads as "WSOL" in every other Solana wallet. Older backends list it
         // as "SOL", so: name that mint WSOL, and make sure native SOL is in the
-        // list. Once the backend serves both itself, both steps become no-ops —
+        // list. Once the backend serves both itself, both steps become no-ops -
         // the relabel matches what it already sends, and the injected row dedupes
         // away on the native identity key below.
         const SOLANA_CHAIN_ID = 7565164;
@@ -271,7 +271,7 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
             t => t.chainId === SOLANA_CHAIN_ID && (t.symbol || '').toUpperCase() === 'SOL'
         );
         if (wsolRow && !hasNativeSol) {
-            // Borrow the wrapped row's price/logo/liquidity — same underlying asset.
+            // Borrow the wrapped row's price/logo/liquidity - same underlying asset.
             // The address is Solana's System Program, NOT the EVM zero-address:
             // it is what the swap engine recognises as native SOL, and what the
             // balance pipeline carries a lamport balance under.
@@ -295,7 +295,7 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
             const balanceNum = parseFloat(walletToken?.balanceFormatted || '0');
             // The catalogue row is not always priced (the token list and the
             // portfolio use different price sources), and when it wasn't, a
-            // held balance rendered as "$0.00" — the wallet's own price and
+            // held balance rendered as "$0.00" - the wallet's own price and
             // USD value are just as authoritative, so fall back to them.
             const priceNum = parseFloat(t.priceUSD || '0') || parseFloat(walletToken?.priceUSD || '0');
             const totalUSD = balanceNum * priceNum || parseFloat(walletToken?.usdValue || '0');
@@ -614,7 +614,7 @@ export const UnifiedAssetSelectSheet: React.FC<UnifiedAssetSelectSheetProps> = (
                 <Text style={styles.chainName}>{chain.name}</Text>
                 {/* Chains this wallet already has an address on are sorted to
                     the top; the badge says why they're up there. The rest stay
-                    fully selectable — you can still swap TO a chain you don't
+                    fully selectable - you can still swap TO a chain you don't
                     hold yet by pasting a recipient address. */}
                 {!isAll && chain.inWallet && !isSelected && (
                     <View style={styles.walletBadge}>

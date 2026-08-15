@@ -2,15 +2,15 @@
  * Unified Token Logo Service
  *
  * Fetches and caches token logos from multiple sources:
- *   1. CoinGecko  — best coverage, reliable CDN (coin-images.coingecko.com)
- *   2. Koin Gallery — returns coinmarketcap/coingecko CDN URLs
- *   3. DexScreener — dynamic URL from chain + address
- *   4. TrustWallet GitHub — open-source fallback for EVM tokens
+ *   1. CoinGecko  - best coverage, reliable CDN (coin-images.coingecko.com)
+ *   2. Koin Gallery - returns coinmarketcap/coingecko CDN URLs
+ *   3. DexScreener - dynamic URL from chain + address
+ *   4. TrustWallet GitHub - open-source fallback for EVM tokens
  *
  * The cache warms once on first call and is reused for the app lifetime.
  *
  * Wrapped natives (WBNB/WETH/WSOL/…) are special-cased to their native coin's
- * icon — see `getTokenLogo`.
+ * icon - see `getTokenLogo`.
  */
 import { getKnownWrappedNative } from '@/constants/wrappedNatives';
 import { getAdminTokenLogo } from '@/utils/admin-token-logos';
@@ -39,7 +39,7 @@ async function fetchCoinGeckoLogos(): Promise<Record<string, string>> {
         );
         if (!res.ok) return map;
 
-        const coins: Array<{ symbol: string; image: string }> = await res.json();
+        const coins: { symbol: string; image: string }[] = await res.json();
         for (const c of coins) {
             if (c.image && c.symbol) {
                 map[c.symbol.toUpperCase()] = c.image;
@@ -63,7 +63,7 @@ async function fetchKoinGalleryLogos(): Promise<Record<string, string>> {
         if (!res.ok) return map;
 
         const json = await res.json();
-        const tokens: Array<{ symbol: string; logo_url: string }> = json.data || [];
+        const tokens: { symbol: string; logo_url: string }[] = json.data || [];
         for (const t of tokens) {
             if (t.logo_url && t.symbol) {
                 map[t.symbol.toUpperCase()] = t.logo_url;
@@ -105,6 +105,20 @@ const NATIVE_TOKEN_ADDRESSES: Record<number, string> = {
     7565164: 'So11111111111111111111111111111111111111112',
 };
 
+const CURATED_TOKEN_LOGOS: Record<string, string> = {
+    '56:0x72928a49c4e88f382b0b6ff3e561f56dd75485f9': 'https://pbcgjumsqgrwzuazmcwm.supabase.co/storage/v1/object/public/token-icons/listing/1786381800582-ysuc7omc2fc.jpg',
+};
+
+function curatedLogoKey(chainId?: number, address?: string): string | undefined {
+    if (!chainId || !address) return undefined;
+    return `${chainId}:${address.trim().toLowerCase()}`;
+}
+
+function getCuratedTokenLogo(chainId?: number, address?: string): string | undefined {
+    const key = curatedLogoKey(chainId, address);
+    return key ? CURATED_TOKEN_LOGOS[key] : undefined;
+}
+
 export function getDexScreenerLogo(chainId?: number, address?: string): string | undefined {
     if (!chainId) return undefined;
     const slug = DEXSCREENER_CHAIN_SLUGS[chainId];
@@ -114,7 +128,7 @@ export function getDexScreenerLogo(chainId?: number, address?: string): string |
         || address === 'native'
         || address === '0x0000000000000000000000000000000000000000'
         || address === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
-        // Solana's System Program — native SOL. DexScreener has no pool for it,
+        // Solana's System Program - native SOL. DexScreener has no pool for it,
         // so the logo resolves through the wrapped mint below.
         || address === '11111111111111111111111111111111';
 
@@ -184,7 +198,7 @@ async function warmCache(): Promise<void> {
             logoCache = merged;
             cacheReady = true;
         } catch {
-            // If everything fails, cache stays empty — callers fall through to DexScreener
+            // If everything fails, cache stays empty - callers fall through to DexScreener
         }
     })();
 
@@ -203,20 +217,22 @@ async function warmCache(): Promise<void> {
 export function getTokenLogo(symbol?: string, chainId?: number, address?: string): string | undefined {
     const adminLogo = getAdminTokenLogo(address, chainId);
     if (adminLogo) return adminLogo;
+    const curatedLogo = getCuratedTokenLogo(chainId, address);
+    if (curatedLogo) return curatedLogo;
 
     // 0. Wrapped natives render as their native coin (WBNB → BNB icon), the way
     //    every major wallet shows them. This has to run BEFORE the generic path:
     //    DexScreener has no image for most wrappers (its WBNB path is a 404) yet
     //    still *constructs* a URL for any slugged chain, which both shadows the
     //    TrustWallet lookup below and renders as a letter avatar once the Image
-    //    errors. Returning undefined here is deliberate — it lets the caller fall
+    //    errors. Returning undefined here is deliberate - it lets the caller fall
     //    back to the provider/chain logo instead of a guessed 404.
     const wrapped = getKnownWrappedNative(chainId, address);
     if (wrapped) {
         const nativeLogo = logoCache[wrapped.nativeSymbol.toUpperCase()];
         if (nativeLogo) return nativeLogo;
         // TrustWallet does index the wrappers, but ONLY at the checksummed
-        // address — pass the registry's, never the row's.
+        // address - pass the registry's, never the row's.
         const tw = getTrustWalletLogo(chainId, wrapped.address);
         if (tw) return tw;
         // Non-EVM (WSOL): the wrapper IS the canonical DexScreener token for the
@@ -230,10 +246,10 @@ export function getTokenLogo(symbol?: string, chainId?: number, address?: string
         const cached = logoCache[symbol.toUpperCase()];
         if (cached) return cached;
     }
-    // 2. DexScreener — dynamic from chain + address
+    // 2. DexScreener - dynamic from chain + address
     const dex = getDexScreenerLogo(chainId, address);
     if (dex) return dex;
-    // 3. TrustWallet — EVM tokens with known address
+    // 3. TrustWallet - EVM tokens with known address
     const tw = getTrustWalletLogo(chainId, address);
     if (tw) return tw;
 

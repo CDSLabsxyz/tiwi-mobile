@@ -44,7 +44,7 @@ const subTabs: { id: string; label: string }[] = [
 // Canonical TWC token. Used to guarantee TWC is always at #1 in Explore even
 // when the upstream market list hasn't returned it yet (cold start, paginated
 // list, network hiccup). Real price/volume merge in if present in the API
-// response — this is just a fallback skeleton.
+// response - this is just a fallback skeleton.
 const TWC_ADDRESS = '0xDA1060158F7D593667cCE0a15DB346BB3FfB3596';
 const TWC_FALLBACK = {
     id: `56-${TWC_ADDRESS.toLowerCase()}`,
@@ -102,7 +102,7 @@ export default function MarketScreen() {
 
     const openTokenInSwap = useOpenTokenInSwap();
     const { favorites, toggleFavorite, isFavorite, getFavoriteTokens } = useMarketStore();
-    // Live TWC data — used to enrich the fallback row with real price/24h change
+    // Live TWC data - used to enrich the fallback row with real price/24h change
     // when TWC isn't in the upstream market list.
     const { data: twcLive } = useTWCToken();
 
@@ -128,7 +128,7 @@ export default function MarketScreen() {
     } = useEnrichedMarkets({
         marketType: marketType,
         limit: 250,
-        // Enabled on Favourite too — needed to enrich saved favorites with live
+        // Enabled on Favourite too - needed to enrich saved favorites with live
         // volume / market cap / current price (the persisted favorite shape
         // doesn't carry those fields).
         enabled: true,
@@ -308,7 +308,7 @@ export default function MarketScreen() {
         ((marketPairs as any[]) || []).forEach((m: any) => {
             if (m.id) byId.set(m.id.toLowerCase(), m);
             if (m.address) byAddrKey.set(`${m.chainId}-${m.address.toLowerCase()}`, m);
-            // Index by both raw symbol and displaySymbol — CEX pairs come back
+            // Index by both raw symbol and displaySymbol - CEX pairs come back
             // as `BTCUSDT`/`TWC-USDT` while favourites persist the base ticker
             // (`BTC`/`TWC`). Prefer entries with a real address over synthetic
             // CEX rows so we pick the on-chain row first when both exist.
@@ -369,7 +369,7 @@ export default function MarketScreen() {
                     rank: 999,
                 } as any);
 
-            // Dedupe — users can accumulate multiple saved ids for the same
+            // Dedupe - users can accumulate multiple saved ids for the same
             // token (e.g. BTC saved once via /market detail, once via a CEX
             // row). Collapse them to a single row.
             const dedupeKey = entry.address
@@ -652,7 +652,7 @@ export default function MarketScreen() {
                 {/* Header title row */}
                 <View style={styles.mainTabsContainer}>
                     <Text style={styles.headerTitle}>Swap</Text>
-                    {/* legacy tab scroller hidden — only Swap is active for now
+                    {/* legacy tab scroller hidden - only Swap is active for now
                     <ScrollView
                         horizontal
                         showsHorizontalScrollIndicator={false}
@@ -788,7 +788,7 @@ export default function MarketScreen() {
                     </TouchableOpacity>
                 </View>
 
-                {/* Sub-Tabs & Sort — only for Swap tab */}
+                {/* Sub-Tabs & Sort - only for Swap tab */}
                 {!isComingSoonTab && (
                     <>
                         <ScrollView

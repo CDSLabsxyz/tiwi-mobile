@@ -1,5 +1,5 @@
 /**
- * EVM CCTP source adapter — approve USDC → TokenMessengerV2, then depositForBurn.
+ * EVM CCTP source adapter - approve USDC → TokenMessengerV2, then depositForBurn.
  *
  * This is the 'evm' implementation of CctpSourceAdapter. It is a faithful extraction of the burn
  * half that used to live inline in tiwi-cctp-executor.ts; behavior is unchanged. Non-EVM source
@@ -34,7 +34,7 @@ export const evmCctpSourceAdapter: CctpSourceAdapter = {
       (m: string) => onStatusUpdate?.({ stage: 'approving', message: m }), wallet,
     );
 
-    // depositForBurn — burns USDC here; Circle mints it to mintRecipient (the relayer) on dest.
+    // depositForBurn - burns USDC here; Circle mints it to mintRecipient (the relayer) on dest.
     onStatusUpdate?.({ stage: 'signing', message: 'Confirming the cross-chain transfer in your wallet...' });
     const data = encodeFunctionData({
       abi: TOKEN_MESSENGER_V2_ABI,

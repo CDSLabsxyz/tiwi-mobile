@@ -2,7 +2,7 @@
  * Cosmos-family chain config for on-device signing.
  *
  * Values mirror the web app's COSMOS_MULTISEND_CONFIG (lib/wallet/utils/
- * multi-send-cosmos.ts) exactly — wrong denom/gasPrice = failed tx.
+ * multi-send-cosmos.ts) exactly - wrong denom/gasPrice = failed tx.
  *
  * Injective (8000001) is DELIBERATELY EXCLUDED: it's eth_secp256k1 (its inj1…
  * address is the EVM key re-encoded, coinType 60), so DirectSecp256k1HdWallet

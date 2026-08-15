@@ -147,7 +147,7 @@ export default function AssetDetailScreen() {
         // Classify using the same rules as the main Activities screen:
         // when on-chain disagrees with the stored category, trust on-chain.
         // A tx logged as "Swap" whose resolver determines there's no
-        // received leg is actually a pure Send — relabel it.
+        // received leg is actually a pure Send - relabel it.
         let mappedType: AssetActivity["type"] = "swap";
         if (onChain?.resolvedDirection === 'sent'
           && !typeLower.includes('received') && !typeLower.includes('receive')) {
@@ -197,7 +197,7 @@ export default function AssetDetailScreen() {
     }
 
     // `asset.activities` (fetched via fetchAssetDetail) hits the same
-    // backend endpoint as useUnifiedActivities and returns the same txs —
+    // backend endpoint as useUnifiedActivities and returns the same txs -
     // but labeled as "Swap" for rows the logger mislabeled. Merging it
     // produces duplicate ghost Swap rows alongside the real Sent rows
     // from the unified pipeline. Use unified only; fall back to
@@ -229,7 +229,7 @@ export default function AssetDetailScreen() {
       if (!asset) setIsLoading(true);
 
       try {
-        // The chain is part of the token's identity — the same address is a
+        // The chain is part of the token's identity - the same address is a
         // different token on another chain, so a detail fetch without it can
         // come back as somebody else's token (this is what renamed WSOL to
         // Fogo's FOGO, which shares Solana's `So111…112` mint address).
@@ -361,7 +361,7 @@ export default function AssetDetailScreen() {
     } as any);
   };
 
-  // The chain travels with the asset id — without it the activities screen
+  // The chain travels with the asset id - without it the activities screen
   // re-resolves the address against every chain and can land on another
   // chain's token of the same address.
   const assetQuery = (() => {

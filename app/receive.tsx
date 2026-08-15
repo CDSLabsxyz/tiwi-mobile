@@ -93,7 +93,7 @@ export default function ReceiveScreen() {
     // Chain options for the filter chips, derived from the shared network list
     // so this screen offers the same networks the wallet actually holds an
     // address on. Rows without a numeric id (Other EVM Networks) or without a
-    // signing chain (receive-only) are skipped — the chips drive token fetches.
+    // signing chain (receive-only) are skipped - the chips drive token fetches.
     const WALLET_CHAINS: { id: number; chain: ChainType; addressKey: AddressKey; name: string; icon: any }[] =
         WALLET_NETWORKS
             .filter(n => !!n.chainId && !!n.chain)
@@ -118,7 +118,7 @@ export default function ReceiveScreen() {
         return chains?.map((c: any) => c.id) || [];
     }, [selectedChainFilter, chains]);
 
-    // Fetch tokens — same approach as swap token selector
+    // Fetch tokens - same approach as swap token selector
     // 1. Search tokens
     const { data: searchResponse, isLoading: isSearchingTokens } = useTokens({
         chains: fetchChainIds,
@@ -139,14 +139,14 @@ export default function ReceiveScreen() {
         const TWC_ADDRESS = '0xda1060158f7d593667cce0a15db346bb3ffb3596'.toLowerCase();
         const NATIVE_ADDRS = [NATIVE_TOKEN_ADDRESS, MORALIS_NATIVE_ADDRESS];
 
-        // Chains the user actually has an address for — used to gate what shows as "owned"
+        // Chains the user actually has an address for - used to gate what shows as "owned"
         const availableChainIds = new Set(
             WALLET_CHAINS
                 .filter(wc => !!activeGroup?.addresses?.[wc.chain])
                 .map(wc => wc.id)
         );
 
-        // Native symbol-to-chain mapping — blocks fake natives like "TON" on BSC
+        // Native symbol-to-chain mapping - blocks fake natives like "TON" on BSC
         const NATIVE_SYMBOL_CHAINS: Record<string, number[]> = {
             'ETH': [1, 10, 42161, 8453, 59144],
             'BNB': [56], 'WBNB': [56],
@@ -163,7 +163,7 @@ export default function ReceiveScreen() {
         const isValidNativeOnChain = (symbol: string, chainId: number): boolean => {
             const sym = (symbol || '').toUpperCase();
             const allowed = NATIVE_SYMBOL_CHAINS[sym];
-            if (!allowed) return true; // not a native symbol — no restriction
+            if (!allowed) return true; // not a native symbol - no restriction
             return allowed.includes(Number(chainId));
         };
 

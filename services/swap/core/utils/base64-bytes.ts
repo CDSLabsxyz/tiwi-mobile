@@ -2,7 +2,7 @@
  * Byte-level base64 codecs (browser-safe, via atob/btoa).
  *
  * NOTE: `@injectivelabs/sdk-ts`'s exported `toBase64`/`fromBase64` are JSON
- * helpers (they base64 a `JSON.stringify`), NOT byte codecs — don't use those
+ * helpers (they base64 a `JSON.stringify`), NOT byte codecs - don't use those
  * for pubkeys/signatures. Use these instead.
  */
 
