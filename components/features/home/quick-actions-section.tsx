@@ -36,7 +36,6 @@ export const QuickActionsSection: React.FC = () => {
             icon: null,
             ioniconName: 'lock-closed-outline' as const,
             route: browserRoute(ECOSYSTEM_LINKS.tiwilock),
-            disabled: true,
         },
         { id: 'multisend', label: 'Multisend', icon: null, ioniconName: 'people-outline' as const, route: '/send' },
     ];

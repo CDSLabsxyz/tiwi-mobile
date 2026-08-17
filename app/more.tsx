@@ -73,7 +73,6 @@ const allActions: MoreAction[] = [
         icon: 'lock-closed-outline',
         route: browserRoute(ECOSYSTEM_LINKS.tiwilock),
         category: 'recommended',
-        disabled: true,
     },
     {
         id: 'campaign',
