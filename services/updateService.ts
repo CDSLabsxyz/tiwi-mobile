@@ -13,6 +13,18 @@ import * as IntentLauncher from 'expo-intent-launcher';
 import { Platform } from 'react-native';
 import { supabase } from '@/lib/supabase';
 
+/**
+ * Sideloaded builds update themselves by downloading an APK and handing it to
+ * the Android installer. Google Play forbids that for an app like this, so the
+ * `playstore` profile clears this flag and plugins/withSideloadUpdates.js drops
+ * REQUEST_INSTALL_PACKAGES from that manifest.
+ *
+ * Every entry point below returns early when the flag is off, so the Play build
+ * never offers an update it cannot install.
+ */
+export const SIDELOAD_UPDATES_ENABLED =
+    process.env.EXPO_PUBLIC_SIDELOAD_UPDATES === 'true';
+
 export interface VersionInfo {
     version: string;
     apkUrl: string;
@@ -82,6 +94,12 @@ class UpdateService {
      * Check Supabase `app_versions` table for the latest version.
      */
     async checkForUpdate(): Promise<VersionInfo | null> {
+        if (!SIDELOAD_UPDATES_ENABLED) {
+            // Play build: the store handles updates.
+            this.setStatus('no-update');
+            return null;
+        }
+
         if (Platform.OS !== 'android' && !DEBUG_UPDATE_FLOW) {
             this.setStatus('no-update');
             return null;
@@ -192,6 +210,12 @@ class UpdateService {
     }
 
     async installUpdate(): Promise<void> {
+        if (!SIDELOAD_UPDATES_ENABLED) {
+            // No REQUEST_INSTALL_PACKAGES in this manifest; the intent would fail.
+            this.setStatus('no-update');
+            return;
+        }
+
         if (!this.downloadedApkUri) {
             this.error = 'No downloaded update found';
             this.setStatus('error');
@@ -229,6 +253,8 @@ class UpdateService {
     }
 
     async autoUpdate(): Promise<void> {
+        if (!SIDELOAD_UPDATES_ENABLED) return;
+
         const update = await this.checkForUpdate();
         if (!update) return;
 

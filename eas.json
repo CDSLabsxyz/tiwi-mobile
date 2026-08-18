@@ -77,7 +77,8 @@
         "EXPO_PUBLIC_LIQUIDITY_ROUTER_56": "0x76B8EC67C51B966C3d38A5eC1651c27e64870860",
         "EXPO_PUBLIC_LIQUIDITY_ROUTER_10": "0xA0205e8d1Fcb52f4f320665304C660fcC83a0B4C",
         "EXPO_PUBLIC_LIQUIDITY_ROUTER_8453": "0xA0205e8d1Fcb52f4f320665304C660fcC83a0B4C",
-        "EXPO_PUBLIC_LIQUIDITY_ROUTER_42161": "0xc88d026e6709D9c5E1baa457Ce623c0c57360FD9"
+        "EXPO_PUBLIC_LIQUIDITY_ROUTER_42161": "0xc88d026e6709D9c5E1baa457Ce623c0c57360FD9",
+        "EXPO_PUBLIC_SIDELOAD_UPDATES": "true"
       },
       "channel": "production"
     },
@@ -85,6 +86,9 @@
       "extends": "production",
       "android": {
         "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_SIDELOAD_UPDATES": "false"
       }
     }
   },

@@ -13,7 +13,11 @@
       "supportsTablet": true,
       "bundleIdentifier": "app.tiwiprotocol.xyz",
       "infoPlist": {
-        "UIBackgroundModes": ["remote-notification", "fetch", "processing"],
+        "UIBackgroundModes": [
+          "remote-notification",
+          "fetch",
+          "processing"
+        ],
         "NSCameraUsageDescription": "Used to scan QR codes and barcodes."
       }
     },
@@ -29,7 +33,6 @@
       "permissions": [
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
-        "android.permission.REQUEST_INSTALL_PACKAGES",
         "android.permission.CAMERA"
       ]
     },
@@ -88,13 +91,17 @@
             "targetSdkVersion": 36,
             "minSdkVersion": 24,
             "kotlinVersion": "2.1.20",
-            "buildArchs": ["armeabi-v7a", "arm64-v8a"],
+            "buildArchs": [
+              "armeabi-v7a",
+              "arm64-v8a"
+            ],
             "enableBundleCompression": true
           }
         }
       ],
       "./plugins/withFastPbkdf2Fix.js",
-      "./plugins/withAndroidRawAssets.js"
+      "./plugins/withAndroidRawAssets.js",
+      "./plugins/withSideloadUpdates.js"
     ],
     "experiments": {
       "typedRoutes": true,
