@@ -21,7 +21,10 @@ const withSideloadUpdates = (config) => {
   const sideload = process.env.EXPO_PUBLIC_SIDELOAD_UPDATES === 'true';
 
   return withAndroidManifest(config, (config) => {
-    const manifest = config.modResults;
+    // modResults is the WRAPPER ({ manifest: {...} }), not the manifest node.
+    // Writing keys onto the wrapper adds a second root and the serializer
+    // emits <root><manifest/></root>, which fails manifest validation.
+    const manifest = config.modResults.manifest;
     manifest['uses-permission'] = manifest['uses-permission'] ?? [];
 
     const existing = manifest['uses-permission'].findIndex(
