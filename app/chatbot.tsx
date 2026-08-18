@@ -17,6 +17,7 @@
  */
 
 import { AiCreditsSheet } from '@/components/ai/AiCreditsSheet';
+import { AI_CREDIT_PACKS_ENABLED } from '@/services/aiCreditsService';
 import { AiMessageFooter } from '@/components/ai/AiMessageFooter';
 import { AiReceiptModal } from '@/components/ai/AiReceiptModal';
 import { ChatHistoryDrawer } from '@/components/ai/ChatHistoryDrawer';
@@ -933,6 +934,10 @@ export default function ChatbotScreen() {
   };
 
   const handleBuyPack = async (pack: Parameters<typeof creditsApi.buy>[0]) => {
+    // Play builds ship without purchasable packs; nothing should reach the
+    // treasury transfer even if a stale sheet is somehow still mounted.
+    if (!AI_CREDIT_PACKS_ENABLED) return;
+
     const receipt = await creditsApi.buy(pack);
     if (receipt) {
       setAttachError(null);
@@ -1680,7 +1685,7 @@ export default function ChatbotScreen() {
         onClose={() => setCreditsOpen(false)}
         summary={creditsApi.summary}
         freeMonthlyCredits={creditsApi.freeMonthlyCredits}
-        packs={creditsApi.packs}
+        packs={AI_CREDIT_PACKS_ENABLED ? creditsApi.packs : []}
         paySymbol={creditsApi.paySymbol}
         payTokenBalanceLabel={creditsApi.payTokenBalanceLabel}
         buyingPackId={creditsApi.buyingPackId}

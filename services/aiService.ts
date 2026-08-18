@@ -6,14 +6,18 @@
 
 import { api, TIWI_API_BASE_URL, type AiCreditBalance, type AiValidationResult } from '@/lib/mobile/api-client';
 
-const OPENAI_API_KEY = process.env.EXPO_PUBLIC_OPENAI_API_KEY || '';
-const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
+/**
+ * No model-provider key lives on the device.
+ *
+ * Anything named EXPO_PUBLIC_* is compiled into the JS bundle, so a shipped
+ * OpenAI or Gemini key can be read by anyone who unzips the APK and billed
+ * against our account. Chat therefore goes only to our own endpoints, which
+ * hold the provider keys server-side.
+ */
 const BACKEND_URL = process.env.EXPO_PUBLIC_AI_BACKEND_URL || 'https://tiwiprotocol-ai.vercel.app/api/chat';
 const SUPERAPP_AI_URL =
   process.env.EXPO_PUBLIC_SUPERAPP_AI_URL ||
   `${TIWI_API_BASE_URL.replace(/\/$/, '')}/api/v1/ai/chat`;
-const OPENAI_STREAM_URL = 'https://api.openai.com/v1/chat/completions';
-const GEMINI_STREAM_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse&key=${GEMINI_API_KEY}`;
 
 export interface AIChatContext {
   walletAddress?: string | null;
@@ -322,9 +326,7 @@ const imageUriToBase64 = async (uri: string): Promise<string> => {
  * Strategy order:
  *  1. TIWI super-app backend - has the knowledge base, live market data,
  *     site scraping, portfolio injection, and brand scrubbing
- *  2. OpenAI direct - client-side fallback for unmetered/guest chats only
- *  3. Gemini - secondary unmetered fallback
- *  4. Legacy backend - last unmetered resort
+ *  2. Legacy backend - unmetered fallback
  */
 export const streamAIResponse = async (options: StreamAIOptions): Promise<void> => {
   const { prompt, images = [], context, abortSignal, onChunk, onComplete, onError } = options;
@@ -364,27 +366,9 @@ export const streamAIResponse = async (options: StreamAIOptions): Promise<void> 
     }
   }
 
-  // 2. OpenAI direct
-  if (OPENAI_API_KEY) {
-    try {
-      await streamFromOpenAI(enrichedPrompt, first?.uri, first?.mimeType, onChunk, fallbackComplete('openai'), onError, abortSignal);
-      return;
-    } catch (e: any) {
-      console.warn('[AIService] OpenAI failed, trying Gemini:', e.message);
-    }
-  }
-
-  // 3. Gemini
-  if (GEMINI_API_KEY) {
-    try {
-      await streamFromGemini(enrichedPrompt, first?.uri, first?.mimeType, onChunk, fallbackComplete('gemini'), onError, abortSignal);
-      return;
-    } catch (e: any) {
-      console.warn('[AIService] Gemini failed, trying legacy backend:', e.message);
-    }
-  }
-
-  // 4. Legacy backend
+  // 2. Legacy backend. The direct OpenAI and Gemini fallbacks that used to sit
+  // here were removed with the client-side keys; both of our endpoints proxy
+  // the providers, so this is the only remaining fallback.
   try {
     await streamFromBackend(prompt, first?.uri, first?.mimeType, onChunk, fallbackComplete('backend'), onError, abortSignal);
   } catch {
@@ -487,173 +471,6 @@ async function streamFromSuperApp(
 }
 
 // ─── OpenAI streaming ────────────────────────────────────────────────────────
-
-async function streamFromOpenAI(
-  prompt: string,
-  imageUri?: string,
-  imageMimeType?: string,
-  onChunk?: (chunk: string) => void,
-  onComplete?: (fullText: string) => void,
-  onError?: (error: Error) => void,
-  abortSignal?: AbortSignal
-): Promise<void> {
-  if (!OPENAI_API_KEY) throw new Error('No OpenAI API key');
-
-  const messages: any[] = [
-    { role: 'system', content: SYSTEM_PROMPT },
-  ];
-
-  if (imageUri) {
-    const imageBase64 = await imageUriToBase64(imageUri);
-    messages.push({
-      role: 'user',
-      content: [
-        { type: 'text', text: prompt },
-        {
-          type: 'image_url',
-          image_url: {
-            url: `data:${imageMimeType || 'image/jpeg'};base64,${imageBase64}`,
-          },
-        },
-      ],
-    });
-  } else {
-    messages.push({ role: 'user', content: prompt });
-  }
-
-  const body = JSON.stringify({
-    model: 'gpt-4o-mini',
-    messages,
-    stream: true,
-    temperature: 0.7,
-    max_tokens: 2048,
-  });
-
-  return new Promise<void>((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', OPENAI_STREAM_URL);
-    xhr.setRequestHeader('Content-Type', 'application/json');
-    xhr.setRequestHeader('Authorization', `Bearer ${OPENAI_API_KEY}`);
-
-    let lastIndex = 0;
-    let fullText = '';
-
-    xhr.onreadystatechange = () => {
-      if (xhr.readyState === 3 || xhr.readyState === 4) {
-        const responseText = xhr.responseText;
-        const newText = responseText.substring(lastIndex);
-        lastIndex = responseText.length;
-
-        const lines = newText.split('\n');
-        for (const line of lines) {
-          if (!line.trim() || !line.startsWith('data: ')) continue;
-          const jsonStr = line.replace('data: ', '').trim();
-          if (jsonStr === '[DONE]') continue;
-          try {
-            const data = JSON.parse(jsonStr);
-            const text = data?.choices?.[0]?.delta?.content;
-            if (text) {
-              fullText += text;
-              onChunk?.(text);
-            }
-          } catch {}
-        }
-      }
-
-      if (xhr.readyState === 4) {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          onComplete?.(fullText);
-          resolve();
-        } else {
-          reject(new Error(`OpenAI returned status ${xhr.status}`));
-        }
-      }
-    };
-
-    xhr.onerror = () => reject(new Error('Network request failed'));
-    if (abortSignal) abortSignal.addEventListener('abort', () => xhr.abort());
-    xhr.send(body);
-  });
-}
-
-// ─── Gemini streaming ────────────────────────────────────────────────────────
-
-async function streamFromGemini(
-  prompt: string,
-  imageUri?: string,
-  imageMimeType?: string,
-  onChunk?: (chunk: string) => void,
-  onComplete?: (fullText: string) => void,
-  onError?: (error: Error) => void,
-  abortSignal?: AbortSignal
-): Promise<void> {
-  if (!GEMINI_API_KEY) throw new Error('No Gemini API key');
-
-  let imageBase64: string | undefined;
-  if (imageUri) {
-    imageBase64 = await imageUriToBase64(imageUri);
-  }
-
-  const parts: any[] = [{ text: prompt }];
-  if (imageBase64) {
-    parts.unshift({
-      inlineData: { mimeType: imageMimeType || 'image/jpeg', data: imageBase64 },
-    });
-  }
-
-  const body = JSON.stringify({
-    systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-    contents: [{ role: 'user', parts }],
-    generationConfig: { temperature: 0.7, maxOutputTokens: 2048 },
-  });
-
-  return new Promise<void>((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', GEMINI_STREAM_URL);
-    xhr.setRequestHeader('Content-Type', 'application/json');
-
-    let lastIndex = 0;
-    let fullText = '';
-
-    xhr.onreadystatechange = () => {
-      if (xhr.readyState === 3 || xhr.readyState === 4) {
-        const responseText = xhr.responseText;
-        const newText = responseText.substring(lastIndex);
-        lastIndex = responseText.length;
-
-        const lines = newText.split('\n');
-        for (const line of lines) {
-          if (!line.trim() || !line.startsWith('data: ')) continue;
-          const jsonStr = line.replace('data: ', '').trim();
-          if (jsonStr === '[DONE]') continue;
-          try {
-            const data = JSON.parse(jsonStr);
-            const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-            if (text) {
-              fullText += text;
-              onChunk?.(text);
-            }
-          } catch {}
-        }
-      }
-
-      if (xhr.readyState === 4) {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          onComplete?.(fullText);
-          resolve();
-        } else {
-          reject(new Error(`Gemini returned status ${xhr.status}`));
-        }
-      }
-    };
-
-    xhr.onerror = () => reject(new Error('Network request failed'));
-    if (abortSignal) abortSignal.addEventListener('abort', () => xhr.abort());
-    xhr.send(body);
-  });
-}
-
-// ─── Backend fallback ────────────────────────────────────────────────────────
 
 async function streamFromBackend(
   prompt: string,

@@ -8,7 +8,19 @@
 
 import { Platform } from 'react-native';
 
-const SPEECH_TO_TEXT_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_SPEECH_API_KEY || process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
+/**
+ * Voice input needs a key ON THE DEVICE: expo-audio records locally and posts
+ * straight to Google. EXPO_PUBLIC_* values ship inside the JS bundle, so this
+ * key is readable by anyone who unzips the APK.
+ *
+ * It must therefore be a DEDICATED key, restricted in Google Cloud Console to
+ * the Speech-to-Text API and to this Android package + signing certificate.
+ * It used to fall back to EXPO_PUBLIC_GEMINI_API_KEY, which shipped a general
+ * purpose key capable of billing model calls; that fallback is gone. If the
+ * key is unset, transcribeAudio throws and the mic degrades to unavailable
+ * rather than silently using a broader credential.
+ */
+const SPEECH_TO_TEXT_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_SPEECH_API_KEY || '';
 
 /**
  * Convert audio file to text using Google Speech-to-Text API
@@ -20,7 +32,7 @@ export const transcribeAudio = async (
   languageCode: string = 'en-US'
 ): Promise<string> => {
   if (!SPEECH_TO_TEXT_API_KEY) {
-    throw new Error('Google Speech-to-Text API key not configured. Set EXPO_PUBLIC_GOOGLE_SPEECH_API_KEY or EXPO_PUBLIC_GEMINI_API_KEY');
+    throw new Error('Voice input is unavailable: set EXPO_PUBLIC_GOOGLE_SPEECH_API_KEY to a key restricted to the Speech-to-Text API.');
   }
 
   try {

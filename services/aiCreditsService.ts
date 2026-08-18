@@ -36,6 +36,18 @@ export type { AiCreditPack, AiCreditSettings };
 
 export const DEFAULT_FREE_MONTHLY_CREDITS = 5;
 
+/**
+ * Whether AI credit PACKS can be bought inside the app.
+ *
+ * A pack is paid with an on-chain TWC transfer to the treasury, which is
+ * selling digital content outside Google Play's billing system. Play requires
+ * in-app digital purchases to go through Play Billing, so the `playstore`
+ * profile sets this to 'false' and that build ships with the free monthly
+ * allowance only. Sideloaded builds are unaffected.
+ */
+export const AI_CREDIT_PACKS_ENABLED =
+    process.env.EXPO_PUBLIC_AI_CREDIT_PACKS !== 'false';
+
 export const DEFAULT_CREDIT_PACKS: AiCreditPack[] = [
     { id: 'starter', label: 'Starter', credits: 25, twcAmount: 50 },
     { id: 'growth', label: 'Growth', credits: 75, twcAmount: 125 },

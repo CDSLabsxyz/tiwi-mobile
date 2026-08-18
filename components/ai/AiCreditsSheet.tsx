@@ -99,6 +99,16 @@ export function AiCreditsSheet({
                         </View>
                     </View>
 
+                    {packs.length === 0 ? (
+                        // Play build: packs are disabled, so there is nothing to buy.
+                        // Say why rather than showing an empty scroller.
+                        <View style={styles.packListContent}>
+                            <Text style={styles.packCredits}>
+                                {`This version includes ${freeMonthlyCredits} free AI credits each month. `}
+                                {'Your allowance renews automatically.'}
+                            </Text>
+                        </View>
+                    ) : (
                     <ScrollView style={styles.packList} contentContainerStyle={styles.packListContent}>
                         {packs.map((pack) => {
                             const busy = buyingPackId === pack.id;
@@ -137,6 +147,7 @@ export function AiCreditsSheet({
                             </TouchableOpacity>
                         )}
                     </ScrollView>
+                    )}
                 </View>
             </View>
         </Modal>
