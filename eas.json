@@ -80,6 +80,12 @@
         "EXPO_PUBLIC_LIQUIDITY_ROUTER_42161": "0xc88d026e6709D9c5E1baa457Ce623c0c57360FD9"
       },
       "channel": "production"
+    },
+    "playstore": {
+      "extends": "production",
+      "android": {
+        "buildType": "app-bundle"
+      }
     }
   },
   "submit": {
