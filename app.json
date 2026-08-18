@@ -93,7 +93,8 @@
           }
         }
       ],
-      "./plugins/withFastPbkdf2Fix.js"
+      "./plugins/withFastPbkdf2Fix.js",
+      "./plugins/withAndroidRawAssets.js"
     ],
     "experiments": {
       "typedRoutes": true,
