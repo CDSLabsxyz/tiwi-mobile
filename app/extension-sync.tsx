@@ -8,13 +8,14 @@
 import { CustomStatusBar } from '@/components/ui/custom-status-bar';
 import { colors } from '@/constants/colors';
 import {
+    completeExtensionLink,
     ExtensionLink,
     getExtensionLinks,
     isSyncPayloadExpired,
-    linkExtension,
     parseExtensionSyncPayload,
     unlinkExtension,
 } from '@/services/extensionLinkService';
+import * as Device from 'expo-device';
 import { useToastStore } from '@/store/useToastStore';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
@@ -38,7 +39,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 const STEPS = [
     'Open the TIWI Wallet Core extension in your desktop browser.',
     'Go to Settings → Mobile sync to show the pairing QR code.',
-    'Tap Scan QR code below and point your camera at it.',
+    'Tap Scan QR code below - or enter the 8-character code by hand.',
 ];
 
 export default function ExtensionSyncScreen() {
@@ -51,6 +52,7 @@ export default function ExtensionSyncScreen() {
     const [scanning, setScanning] = useState(false);
     const [manualVisible, setManualVisible] = useState(false);
     const [manualValue, setManualValue] = useState('');
+    const [linking, setLinking] = useState(false);
     const busyRef = useRef(false);
 
     const loadLinks = useCallback(async () => {
@@ -89,7 +91,7 @@ export default function ExtensionSyncScreen() {
             try {
                 const payload = parseExtensionSyncPayload(raw);
                 if (!payload) {
-                    showToast('That QR code is not a TIWI extension sync code.', 'error');
+                    showToast('That is not a TIWI extension sync code.', 'error');
                     return;
                 }
                 if (isSyncPayloadExpired(payload)) {
@@ -97,14 +99,31 @@ export default function ExtensionSyncScreen() {
                     return;
                 }
 
-                await linkExtension(payload);
+                setLinking(true);
+                // Names the extension will show as the paired device.
+                const deviceName =
+                    [Device.deviceName, Device.modelName].find(Boolean) || 'Mobile device';
+
+                const result = await completeExtensionLink(payload, deviceName);
+                if (!result.ok) {
+                    showToast(result.message, 'error');
+                    return;
+                }
+
                 await loadLinks();
                 setScanning(false);
-                showToast('Extension linked to this device.', 'success');
+                const count = result.link.accounts?.length ?? 0;
+                showToast(
+                    count
+                        ? `Linked. ${count} watch-only addresses from ${result.link.walletName || 'the extension'}.`
+                        : 'Extension linked to this device.',
+                    'success'
+                );
             } catch (error: any) {
                 console.error('[ExtensionSync] Link failed:', error);
                 showToast(error?.message || 'Could not link the extension.', 'error');
             } finally {
+                setLinking(false);
                 // Short guard so a QR held in frame doesn't re-fire immediately.
                 setTimeout(() => {
                     busyRef.current = false;
@@ -280,6 +299,12 @@ export default function ExtensionSyncScreen() {
                                 <View key={link.code} style={styles.linkRow}>
                                     <View style={styles.linkInfo}>
                                         <Text style={styles.linkLabel}>{link.label}</Text>
+                                        {!!link.accounts?.length && (
+                                            <Text style={styles.linkMeta}>
+                                                {link.walletName ? `${link.walletName} · ` : ''}
+                                                {link.accounts.length} watch-only addresses
+                                            </Text>
+                                        )}
                                         <Text style={styles.linkMeta}>
                                             Linked {new Date(link.linkedAt).toLocaleString()}
                                         </Text>
@@ -297,6 +322,15 @@ export default function ExtensionSyncScreen() {
                 </ScrollView>
             )}
 
+            <Modal visible={linking} transparent animationType="fade">
+                <View style={styles.modalBackdrop}>
+                    <View style={styles.linkingCard}>
+                        <ActivityIndicator color={colors.primaryCTA} />
+                        <Text style={styles.modalBody}>Linking with the extension…</Text>
+                    </View>
+                </View>
+            </Modal>
+
             <Modal
                 visible={manualVisible}
                 transparent
@@ -307,15 +341,18 @@ export default function ExtensionSyncScreen() {
                     <View style={styles.modalCard}>
                         <Text style={styles.modalTitle}>Enter sync code</Text>
                         <Text style={styles.modalBody}>
-                            Paste the tiwi://mobile-sync link shown under the extension&apos;s QR code.
+                            Type the 8-character code shown under the QR in the extension. The
+                            tiwi://mobile-sync link works here too.
                         </Text>
                         <TextInput
                             value={manualValue}
                             onChangeText={setManualValue}
-                            placeholder="tiwi://mobile-sync?code=…"
+                            placeholder="ABCD-EFGH"
                             placeholderTextColor={colors.mutedText}
-                            autoCapitalize="none"
+                            autoCapitalize="characters"
                             autoCorrect={false}
+                            autoComplete="off"
+                            maxLength={64}
                             style={styles.input}
                         />
                         <View style={styles.modalActions}>
@@ -421,6 +458,14 @@ const styles = StyleSheet.create({
     listSection: { gap: 12, marginTop: 8 },
     listTitle: { fontFamily: 'Manrope-SemiBold', fontSize: 12, color: colors.mutedText },
     emptyText: { fontFamily: 'Manrope-Medium', fontSize: 13, color: colors.bodyText },
+    linkingCard: {
+        alignItems: 'center',
+        gap: 12,
+        borderRadius: 16,
+        backgroundColor: colors.bgCards,
+        paddingHorizontal: 28,
+        paddingVertical: 24,
+    },
     linkRow: {
         flexDirection: 'row',
         alignItems: 'center',

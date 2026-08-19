@@ -30,6 +30,7 @@
     "@mayanfinance/swap-sdk": "^15.1.0",
     "@mysten/sui": "^1.45.2",
     "@mysten/sui-v2": "npm:@mysten/sui@^2.22.0",
+    "@noble/ciphers": "^2.3.0",
     "@noble/hashes": "^1.8.0",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/netinfo": "11.4.1",
