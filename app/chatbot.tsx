@@ -504,10 +504,16 @@ export default function ChatbotScreen() {
         return;
       }
 
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission Required', 'Please grant access to your photos to upload images.');
-        return;
+      // Android goes straight to the system photo picker. It hands back only
+      // the items the user picks and needs no READ_MEDIA_IMAGES, which Play
+      // rejects as a broad storage permission when a picker would do. Asking
+      // here would fail, because that permission is blocked in app.json.
+      if (Platform.OS !== 'android') {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert('Permission Required', 'Please grant access to your photos to upload images.');
+          return;
+        }
       }
 
       const remainingSlots = MAX_IMAGES - selectedImages.length;
